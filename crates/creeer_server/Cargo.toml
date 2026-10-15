@@ -1,0 +1,12 @@
+[package]
+name = "creeer_server"
+description = "Headless dedicated server."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

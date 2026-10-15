@@ -1,0 +1,16 @@
+# Performance baseline for `cargo xtask perf` (machine-specific).
+# Regenerate with `cargo xtask perf --save-baseline` after an intended change.
+xpbd_5k_beams_8sub_seq_p50_ms 0.520100 lower
+xpbd_5k_beams_8sub_par_p50_ms 0.054300 info
+xpbd_5k_beams_20sub_seq_p50_ms 1.311100 lower
+xpbd_5k_beams_20sub_par_p50_ms 0.126800 info
+xpbd_5k_beams_50sub_seq_p50_ms 3.244300 lower
+xpbd_5k_beams_50sub_par_p50_ms 0.311400 info
+xpbd_sag_ratio_8sub 8.632018 lower
+xpbd_sag_ratio_20sub 2.196875 lower
+xpbd_sag_ratio_50sub 1.188017 lower
+xpbd_sag_ratio_100sub 1.047266 lower
+xpbd_sag_ratio_200sub 1.012349 lower
+terrain_generate_ms_per_chunk 3.126564 lower
+terrain_mesh_ms_per_chunk 0.410202 lower
+terrain_chunks_per_s_all_threads 2250.386236 higher

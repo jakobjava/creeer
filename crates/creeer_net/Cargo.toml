@@ -1,0 +1,12 @@
+[package]
+name = "creeer_net"
+description = "Network protocol, replication and interest management."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

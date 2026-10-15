@@ -1,0 +1,47 @@
+# Cross-platform CI (plan.md §5): every push and pull request is built, linted and tested on
+# Windows, Linux and macOS. The golden-bit and golden-hash tests in creeer_math and
+# creeer_physics fail if simulation results differ between platforms.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Format, clippy, tests
+        run: cargo xtask ci
+
+  spikes:
+    # Shared CI machines are slow and noisy, so budgets here are informational; the gating
+    # perf check (`cargo xtask perf`) runs on the developer machine against its baseline.
+    name: spikes (${{ matrix.os }})
+    needs: check
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Spike measurements
+        run: cargo run --release -p creeer_tools -- bench-spikes

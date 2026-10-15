@@ -1,0 +1,12 @@
+[package]
+name = "creeer_materials"
+description = "Species database, mixtures, material properties and microstructure."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

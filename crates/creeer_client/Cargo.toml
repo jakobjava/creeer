@@ -1,0 +1,22 @@
+[package]
+name = "creeer_client"
+description = "Game client: window, input, rendering, UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+creeer_math.workspace = true
+creeer_core.workspace = true
+creeer_render.workspace = true
+creeer_ui.workspace = true
+winit.workspace = true
+egui.workspace = true
+egui-winit.workspace = true
+pollster.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

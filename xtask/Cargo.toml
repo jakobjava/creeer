@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+description = "Project automation: `cargo xtask ci`, `cargo xtask perf`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

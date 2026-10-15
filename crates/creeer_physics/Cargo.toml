@@ -1,0 +1,14 @@
+[package]
+name = "creeer_physics"
+description = "Unified XPBD solver: nodes, beams, rigid bodies, contacts, plasticity, fracture."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+creeer_math.workspace = true
+rayon.workspace = true
+
+[lints]
+workspace = true

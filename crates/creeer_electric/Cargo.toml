@@ -1,0 +1,12 @@
+[package]
+name = "creeer_electric"
+description = "Modified Nodal Analysis circuit solver (DC, transient, AC phasors)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

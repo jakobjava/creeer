@@ -1,0 +1,12 @@
+[package]
+name = "creeer_orbit"
+description = "Orbital mechanics: Kepler rails, restricted n-body propagation, reference frames, maneuvers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

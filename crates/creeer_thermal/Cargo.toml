@@ -1,0 +1,12 @@
+[package]
+name = "creeer_thermal"
+description = "Lumped thermal network: conduction, convection, radiation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

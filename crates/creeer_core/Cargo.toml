@@ -1,0 +1,15 @@
+[package]
+name = "creeer_core"
+description = "Core runtime: fixed-tick clock, ids, events."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

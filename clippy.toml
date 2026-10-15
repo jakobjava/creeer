@@ -1,0 +1,29 @@
+# Cross-platform determinism (plan.md §5): the standard library's transcendental
+# functions call the platform C math library, whose last bit can differ between
+# Windows, Linux and macOS. Use `creeer_math::det::*` instead. Rendering-only code
+# that does not feed back into the simulation may opt out with
+# `#[allow(clippy::disallowed_methods)]`.
+disallowed-methods = [
+    { path = "f64::sin", reason = "use creeer_math::det::sin (deterministic)" },
+    { path = "f64::cos", reason = "use creeer_math::det::cos (deterministic)" },
+    { path = "f64::tan", reason = "use creeer_math::det::tan (deterministic)" },
+    { path = "f64::sin_cos", reason = "use creeer_math::det::sin_cos (deterministic)" },
+    { path = "f64::asin", reason = "use creeer_math::det::asin (deterministic)" },
+    { path = "f64::acos", reason = "use creeer_math::det::acos (deterministic)" },
+    { path = "f64::atan", reason = "use creeer_math::det::atan (deterministic)" },
+    { path = "f64::atan2", reason = "use creeer_math::det::atan2 (deterministic)" },
+    { path = "f64::sinh", reason = "use creeer_math::det::sinh (deterministic)" },
+    { path = "f64::cosh", reason = "use creeer_math::det::cosh (deterministic)" },
+    { path = "f64::tanh", reason = "use creeer_math::det::tanh (deterministic)" },
+    { path = "f64::exp", reason = "use creeer_math::det::exp (deterministic)" },
+    { path = "f64::exp2", reason = "use creeer_math::det::exp2 (deterministic)" },
+    { path = "f64::exp_m1", reason = "use creeer_math::det::exp_m1 (deterministic)" },
+    { path = "f64::ln", reason = "use creeer_math::det::ln (deterministic)" },
+    { path = "f64::ln_1p", reason = "use creeer_math::det::ln_1p (deterministic)" },
+    { path = "f64::log2", reason = "use creeer_math::det::log2 (deterministic)" },
+    { path = "f64::log10", reason = "use creeer_math::det::log10 (deterministic)" },
+    { path = "f64::powf", reason = "use creeer_math::det::pow (deterministic)" },
+    { path = "f64::powi", reason = "powi's accuracy is unspecified; use creeer_math::det::pow or explicit multiplication" },
+    { path = "f64::cbrt", reason = "use creeer_math::det::cbrt (deterministic)" },
+    { path = "f64::hypot", reason = "use creeer_math::det::hypot (deterministic)" },
+]

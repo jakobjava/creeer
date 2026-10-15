@@ -1,0 +1,12 @@
+[package]
+name = "creeer_building"
+description = "Parametric parts, structure-to-physics conversion and blueprints."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "creeer_sim"
+description = "World composition: all simulation systems, simulation LOD, save/load."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

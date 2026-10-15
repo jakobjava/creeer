@@ -1,0 +1,17 @@
+[package]
+name = "creeer_ui"
+description = "egui panels and engineering overlays."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+creeer_core.workspace = true
+egui.workspace = true
+egui_plot.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

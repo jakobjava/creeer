@@ -1,0 +1,12 @@
+[package]
+name = "creeer_fluids"
+description = "Pipe networks, atmospheres, aerodynamics and buoyancy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

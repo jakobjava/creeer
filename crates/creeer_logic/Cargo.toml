@@ -1,0 +1,12 @@
+[package]
+name = "creeer_logic"
+description = "Signals, logic gates, sensors and sandboxed Luau controllers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

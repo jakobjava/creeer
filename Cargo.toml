@@ -1,0 +1,70 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.99"
+
+[workspace.dependencies]
+# Internal crates
+creeer_math = { path = "crates/creeer_math" }
+creeer_core = { path = "crates/creeer_core" }
+creeer_render = { path = "crates/creeer_render" }
+creeer_ui = { path = "crates/creeer_ui" }
+creeer_physics = { path = "crates/creeer_physics" }
+creeer_terrain = { path = "crates/creeer_terrain" }
+
+# External crates (versions chosen in F0, see docs/adr)
+glam = { version = "0.34.1", features = ["libm"] }
+libm = "0.2.16"
+
+# Graphics, windowing, UI (egui 0.36 pins wgpu 30 and winit 0.30)
+wgpu = "30.0.1"
+winit = "0.30.13"
+egui = "0.36.2"
+egui-wgpu = "0.36.2"
+egui-winit = "0.36.2"
+egui_plot = "0.37.0"
+bytemuck = { version = "1.25.2", features = ["derive"] }
+pollster = "1.0.1"
+
+# Simulation
+rayon = "1.12.0"
+
+# Test-only
+approx = "0.5.1"
+proptest = "1.12.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Silent float truncation is a classic source of physics bugs; make it explicit.
+cast_possible_truncation = "warn"
+float_cmp = "warn"
+
+# Our own crates get light optimisation so debug runs stay playable;
+# dependencies (wgpu, parry, ...) are fully optimised.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Day-to-day optimised builds: fast to compile, keeps line tables for profilers.
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
+
+# Shipping builds: maximum optimisation (plan.md §5).
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+strip = true

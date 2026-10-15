@@ -1,0 +1,12 @@
+[package]
+name = "creeer_mech"
+description = "Mechanical drivetrain network: shafts, gears, belts, clutches."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

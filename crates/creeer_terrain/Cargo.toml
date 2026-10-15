@@ -1,0 +1,13 @@
+[package]
+name = "creeer_terrain"
+description = "Planet generation, geology, ore deposits, voxel octree, meshing and edits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+creeer_math.workspace = true
+
+[lints]
+workspace = true
