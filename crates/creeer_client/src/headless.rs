@@ -1,0 +1,221 @@
+//! Headless modes: screenshots and the render benchmark (no window needed).
+
+use super::*;
+
+/// Command-line options of the headless screenshot mode.
+#[derive(Debug)]
+pub(crate) struct ScreenshotOptions {
+    path: PathBuf,
+    view: String,
+    far: bool,
+    factory: bool,
+    size: (u32, u32),
+    sun_elevation: f64,
+    time: f64,
+    shadows: ShadowQuality,
+    overlay: Overlay,
+}
+
+impl ScreenshotOptions {
+    pub(crate) fn parse(args: &[String]) -> Result<Option<Self>, String> {
+        let Some(position) = args.iter().position(|a| a == "--screenshot") else {
+            return Ok(None);
+        };
+        let path = args
+            .get(position + 1)
+            .ok_or("--screenshot needs a file name")?;
+        let value_of = |flag: &str| {
+            args.iter()
+                .position(|a| a == flag)
+                .and_then(|i| args.get(i + 1))
+        };
+        Ok(Some(Self {
+            path: PathBuf::from(path),
+            view: value_of("--view")
+                .cloned()
+                .unwrap_or_else(|| "overview".into()),
+            far: args.iter().any(|a| a == "--far"),
+            factory: !args.iter().any(|a| a == "--no-factory"),
+            size: (1600, 900),
+            overlay: match value_of("--overlay").map(String::as_str) {
+                None | Some("off") => Overlay::Off,
+                Some("temperature") => Overlay::Temperature,
+                Some("stress") => Overlay::AxialStress,
+                Some(other) => {
+                    return Err(format!(
+                        "--overlay expects off/temperature/stress, got `{other}`"
+                    ));
+                }
+            },
+            shadows: match value_of("--shadows").map(String::as_str) {
+                None | Some("high") => ShadowQuality::High,
+                Some("medium") => ShadowQuality::Medium,
+                Some("low") => ShadowQuality::Low,
+                Some(other) => {
+                    return Err(format!("--shadows expects low/medium/high, got `{other}`"));
+                }
+            },
+            time: match value_of("--time") {
+                Some(seconds) => seconds
+                    .parse()
+                    .map_err(|_| format!("--time expects seconds, got `{seconds}`"))?,
+                None => 1.0,
+            },
+            sun_elevation: match value_of("--sun") {
+                Some(degrees) => degrees
+                    .parse()
+                    .map_err(|_| format!("--sun expects degrees, got `{degrees}`"))?,
+                None => DEFAULT_SUN_ELEVATION,
+            },
+        }))
+    }
+}
+
+/// Renders `frames` animated frames headless at 1080p and prints frame-time percentiles.
+pub(crate) fn bench(
+    frames: usize,
+    view: &str,
+    factory: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
+    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let camera =
+        demo::camera_preset(view, DVec3::ZERO).ok_or_else(|| format!("unknown view `{view}`"))?;
+    let mut sim = OrbitSandbox::demo();
+    let sky = demo::sky(DVec3::ZERO);
+    let lighting = sky.lighting(
+        camera.position,
+        demo::sun_direction(DEFAULT_SUN_ELEVATION),
+        &Lighting::default(),
+    );
+    let (mut scene, mut lines) = (Scene::default(), DebugLines::default());
+    let mut total = TimingStats::new(frames.max(1));
+    let mut build = TimingStats::new(frames.max(1));
+    let dt = 1.0 / f64::from(TICK_RATE_HZ);
+    for frame in 0..frames + 30 {
+        let start = Instant::now();
+        sim.step(dt);
+        let snapshot = sim.snapshot();
+        #[allow(clippy::cast_precision_loss)]
+        let time = frame as f64 * dt;
+        let demo = DemoFrame {
+            origin: DVec3::ZERO,
+            time,
+            orbits: OrbitView {
+                previous: &snapshot,
+                current: &snapshot,
+                alpha: 1.0,
+            },
+            factory,
+            overlay: Overlay::Off,
+        };
+        demo::build(&mut scene, &mut lines, &meshes, &demo);
+        let built = start.elapsed();
+        renderer.render_offscreen(Frame {
+            camera: &camera,
+            scene: &scene,
+            lighting: &lighting,
+            lines: &lines,
+            sky: Some(&sky),
+            heatmap: None,
+            overlay: None,
+            clear_color: BACKGROUND,
+        });
+        // The first 30 frames warm up caches, shader compilation and buffer growth.
+        if frame >= 30 {
+            total.push(start.elapsed());
+            build.push(built);
+        }
+    }
+    let stats = renderer.stats();
+    let info = renderer.adapter_info();
+    let p = |s: &TimingStats, q: f64| s.percentile_ms(q).unwrap_or(f64::NAN);
+    println!(
+        "bench `{view}` 1920x1080, {} instances ({} drawn, {} culled), {} on {} ({:?})",
+        scene.instance_count(),
+        stats.instances_drawn,
+        stats.instances_culled,
+        frames,
+        info.name,
+        info.backend
+    );
+    println!(
+        "  full frame (CPU + GPU): p50 {:.2} ms, p99 {:.2} ms, max {:.2} ms  ->  {:.0} FPS at p50",
+        p(&total, 50.0),
+        p(&total, 99.0),
+        total.max_ms().unwrap_or(f64::NAN),
+        1000.0 / p(&total, 50.0)
+    );
+    println!(
+        "  scene build (CPU):      p50 {:.2} ms, p99 {:.2} ms",
+        p(&build, 50.0),
+        p(&build, 99.0)
+    );
+    Ok(())
+}
+
+/// Renders the sandbox once without a window and saves it as a PNG.
+pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let mut renderer = pollster::block_on(Renderer::new_headless(options.size))?;
+    renderer.set_shadow_quality(options.shadows);
+    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let origin = if options.far { FAR_ORIGIN } else { DVec3::ZERO };
+    let camera = demo::camera_preset(&options.view, origin)
+        .ok_or_else(|| format!("unknown view `{}`", options.view))?;
+
+    // Advance the orbit system a few seconds so the bodies are spread out.
+    let mut sim = OrbitSandbox::demo();
+    for _ in 0..300 {
+        sim.step(1.0 / f64::from(TICK_RATE_HZ));
+    }
+    let snapshot = sim.snapshot();
+    let (mut scene, mut lines) = (Scene::default(), DebugLines::default());
+    let orbits = OrbitView {
+        previous: &snapshot,
+        current: &snapshot,
+        alpha: 1.0,
+    };
+    let demo = DemoFrame {
+        origin,
+        time: options.time,
+        orbits,
+        factory: options.factory,
+        overlay: options.overlay,
+    };
+    demo::build(&mut scene, &mut lines, &meshes, &demo);
+    let sky = demo::sky(origin);
+    let lighting = sky.lighting(
+        camera.position,
+        demo::sun_direction(options.sun_elevation),
+        &Lighting::default(),
+    );
+    let heatmap = options.overlay.heatmap();
+    let image = renderer.capture(Frame {
+        camera: &camera,
+        scene: &scene,
+        lighting: &lighting,
+        lines: &lines,
+        sky: Some(&sky),
+        heatmap: heatmap.as_ref(),
+        overlay: None,
+        clear_color: BACKGROUND,
+    });
+    image.save_png(&options.path)?;
+    let stats = renderer.stats();
+    let info = renderer.adapter_info();
+    println!(
+        "saved {} ({}x{}, view `{}`) on {} ({:?}): {} instances drawn, {} culled, {} draw calls, exposure {:.2} (average luminance {:.3})",
+        options.path.display(),
+        image.width,
+        image.height,
+        options.view,
+        info.name,
+        info.backend,
+        stats.instances_drawn,
+        stats.instances_culled,
+        stats.draw_calls,
+        stats.exposure,
+        stats.average_luminance
+    );
+    Ok(())
+}

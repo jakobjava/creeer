@@ -13,7 +13,7 @@ use std::process::{Command, ExitCode};
 const USAGE: &str = "usage: cargo xtask <task>
 
 tasks:
-  ci                        fmt check, clippy (-D warnings), tests
+  ci                        file length, fmt check, clippy (-D warnings), tests
   perf [--save-baseline]    spike budgets + regression check against perf/baseline.txt";
 
 /// Allowed slowdown before `perf` reports a regression.
@@ -40,6 +40,11 @@ fn main() -> ExitCode {
 }
 
 fn ci() -> ExitCode {
+    println!("==> file length: at most {MAX_FILE_LINES} lines per source file");
+    if !file_lengths_ok() {
+        eprintln!("xtask ci: step `file length` failed");
+        return ExitCode::FAILURE;
+    }
     let steps: &[(&str, &[&str])] = &[
         ("format", &["fmt", "--all", "--check"]),
         (
@@ -188,4 +193,45 @@ fn cargo(args: &[&str]) -> bool {
         .args(args)
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Longest allowed source file (tests included). Long files are hard to read and review;
+/// split them by responsibility instead (agreed project rule, see plan.md §6).
+const MAX_FILE_LINES: usize = 400;
+
+/// Checks every `.rs` and `.wgsl` file under `crates/` and `xtask/`.
+fn file_lengths_ok() -> bool {
+    let mut files = Vec::new();
+    for root in ["crates", "xtask"] {
+        collect_sources(Path::new(root), &mut files);
+    }
+    let mut ok = true;
+    for path in files {
+        let lines = std::fs::read_to_string(&path).map_or(0, |text| text.lines().count());
+        if lines > MAX_FILE_LINES {
+            eprintln!(
+                "  {} has {lines} lines (max {MAX_FILE_LINES})",
+                path.display()
+            );
+            ok = false;
+        }
+    }
+    ok
+}
+
+fn collect_sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_sources(&path, out);
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "rs" || ext == "wgsl")
+        {
+            out.push(path);
+        }
+    }
 }

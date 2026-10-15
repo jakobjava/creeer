@@ -12,9 +12,11 @@ wgpu.workspace = true
 egui.workspace = true
 egui-wgpu.workspace = true
 bytemuck.workspace = true
+png.workspace = true
 
 [dev-dependencies]
 approx.workspace = true
+pollster.workspace = true
 
 [lints]
 workspace = true

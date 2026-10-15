@@ -222,7 +222,8 @@ creeer/
 
 ## 6. Quality and verification strategy (essential)
 
-- **Unit tests** in every crate. CI runs `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test`, through `cargo xtask ci` locally (and GitHub Actions if a remote is added).
+- **Unit tests** in every crate. CI runs a file-length check, `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test`, through `cargo xtask ci` locally and in GitHub Actions.
+- **Small files:** at most **400 lines per source file** (`.rs` and `.wgsl`, tests included), enforced by `cargo xtask ci`. Code is split by responsibility (for example, one module per render pass; large test blocks in a sibling `tests.rs`), so every file stays readable for the project owner.
 - **Physics validation suite** against analytic results, each with a documented tolerance:
   - Mechanics: pendulum period; projectile flight with and without drag; terminal velocity; cantilever deflection δ = FL³/3EI; Euler buckling load; a beam's natural frequency; momentum and energy conservation in collisions; friction on a ramp (μ).
   - Orbits: energy and angular-momentum drift over 1000 orbits; Hohmann transfer Δv; escape velocity.

@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 creeer_core.workspace = true
+creeer_render.workspace = true
 egui.workspace = true
 egui_plot.workspace = true
 

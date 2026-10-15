@@ -565,6 +565,8 @@ dependencies = [
  "creeer_math",
  "egui",
  "egui-wgpu",
+ "png",
+ "pollster",
  "wgpu",
 ]
 
@@ -594,6 +596,7 @@ dependencies = [
  "creeer_core",
  "creeer_physics",
  "creeer_terrain",
+ "png",
  "rayon",
 ]
 
@@ -602,6 +605,7 @@ name = "creeer_ui"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_render",
  "egui",
  "egui_plot",
 ]

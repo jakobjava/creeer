@@ -4,7 +4,7 @@ A realistic-physics building and engineering sandbox: smooth procedural planets,
 
 The game runs on a custom engine written in Rust. See [`plan.md`](plan.md) for the full design and roadmap, and [`docs/adr/`](docs/adr) for the decision records.
 
-**Status:** Phase A. F0 (toolchain & engine skeleton) complete; next is F1 (renderer core).
+**Status:** Phase A. F0 (engine skeleton) and F1 (renderer core) complete; next is F2 (physics core).
 
 ## Building
 
@@ -13,7 +13,9 @@ Requirements: the Rust toolchain (pinned by `rust-toolchain.toml`, installed aut
 ```sh
 cargo xtask ci          # format check, clippy (warnings = errors), all tests
 cargo xtask perf        # spike budgets + regression check against perf/baseline.txt
-cargo run -p creeer_client --release   # F0 tech sandbox
+cargo run -p creeer_client --release   # tech sandbox (window)
+cargo run -p creeer_client --release -- --screenshot shot.png --view far --overlay temperature
+cargo run -p creeer_client --release -- --bench 600   # headless render benchmark
 ```
 
 ## Layout
