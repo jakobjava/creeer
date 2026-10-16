@@ -1,0 +1,200 @@
+//! The joint minimisation of a group's incremental potential (see `group.rs`).
+
+use super::group::{Coupling, Member, states, trial_states};
+use super::lbfgs::Lbfgs;
+use super::rigid_system::RigidSystem;
+use super::solver::Refactoring;
+use creeer_math::glam::DVec3;
+use std::time::Instant;
+
+/// The member's residual (−β²·∇G, fixed axes zeroed) including the coupling's forces.
+fn residuals(members: &mut [Member<'_>], coupling: &dyn Coupling, gradient: &mut [Vec<DVec3>]) {
+    for g in gradient.iter_mut() {
+        g.fill(DVec3::ZERO);
+    }
+    coupling.add_gradient(&states(members), gradient);
+    for ((s, v), g) in members.iter_mut().zip(gradient.iter()) {
+        let scale = v.work.beta * v.work.beta;
+        for (block, (d, g)) in v.work.direction.iter_mut().zip(g).enumerate() {
+            *d -= *g * s.block_mask(block) * scale;
+        }
+    }
+}
+
+/// Newton/L-BFGS iterations with line search on the group's incremental potential, until
+/// the estimated remaining error is below the tolerance.
+pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) {
+    let t = Instant::now();
+    let mut gradient: Vec<Vec<DVec3>> = members
+        .iter()
+        .map(|(_, v)| vec![DVec3::ZERO; v.work.direction.len()])
+        .collect();
+    let mut objective = coupling.energy(&states(members));
+    for (s, v) in members.iter_mut() {
+        let (g, elastic) = v.work.evaluate(s, false, true);
+        objective += g;
+        v.work.current_elastic = elastic;
+        v.work.gather(s);
+        v.update_turns(s);
+    }
+    residuals(members, coupling, &mut gradient);
+    members[0].1.timings.residual += t.elapsed();
+    let rigid: Vec<Option<[[f64; 6]; 6]>> = (0..members.len())
+        .map(|m| {
+            members[m]
+                .1
+                .rigid_matrix(members[m].0, coupling.rigid_stiffness(m))
+        })
+        .collect();
+    // Structures take the contacts' stiffness into their matrix (refactorising only when
+    // it changed materially).
+    for (m, (s, v)) in members.iter_mut().enumerate() {
+        if !s.elements.is_empty() && v.use_contact_stiffness(s, coupling.node_stiffness(m)) {
+            v.update_turns(s);
+        }
+    }
+    let mut system = RigidSystem::new(members, coupling, &rigid);
+    let offsets: Vec<usize> = members
+        .iter()
+        .scan(0, |offset, (_, v)| {
+            let start = *offset;
+            *offset += v.work.direction.len();
+            Some(start)
+        })
+        .collect();
+    let (tolerance, max_iterations) = (members[0].1.tolerance, members[0].1.max_iterations);
+    let mut lbfgs = Lbfgs::default();
+    let mut residual: Vec<DVec3> = members
+        .iter()
+        .flat_map(|(_, v)| v.work.direction.iter().copied())
+        .collect();
+    let mut direction = residual.clone();
+    let mut previous_move = f64::INFINITY;
+    let mut lag_updates = 0;
+    let mut refactored = false;
+    for _ in 0..max_iterations {
+        let t = Instant::now();
+        for (s, v) in members.iter_mut() {
+            v.last_iterations += 1;
+            if v.refactoring == Refactoring::EveryIteration && !s.elements.is_empty() {
+                v.refactor(s);
+                v.update_turns(s);
+                lbfgs.clear();
+            }
+        }
+        direction.copy_from_slice(&residual);
+        lbfgs.direction(&mut direction, |all| {
+            for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
+                if system.as_ref().is_some_and(|j| j.contains(m)) {
+                    continue;
+                }
+                let range = offsets[m]..offsets[m] + v.work.direction.len();
+                v.precondition(s, &mut all[range], matrix.as_ref());
+            }
+            if let Some(joint) = system.as_mut() {
+                joint.solve(all, &offsets);
+            }
+        });
+        let mut offset = 0;
+        for (_, v) in members.iter_mut() {
+            let len = v.work.direction.len();
+            v.work
+                .direction
+                .copy_from_slice(&direction[offset..offset + len]);
+            offset += len;
+        }
+        members[0].1.timings.solve += t.elapsed();
+        let longest = direction.iter().map(|d| d.length()).fold(0.0, f64::max);
+
+        // Line search on the total.
+        let t = Instant::now();
+        let mut alpha = 1.0;
+        let mut accepted = None;
+        for halving in 0..=12 {
+            let mut members_value = 0.0;
+            let mut elastic = Vec::with_capacity(members.len());
+            for (s, v) in members.iter_mut() {
+                v.work.set_trial(s, alpha);
+                let (g, e) = v.work.evaluate(s, true, halving == 0);
+                members_value += g;
+                elastic.push(e);
+            }
+            let value = members_value + coupling.energy(&trial_states(members));
+            if value <= objective {
+                accepted = Some((value, members_value, elastic, halving == 0));
+                break;
+            }
+            alpha *= 0.5;
+        }
+        members[0].1.timings.objective += t.elapsed();
+        let Some((value, members_value, elastic, first_trial)) = accepted else {
+            break; // G is at its minimum to machine precision.
+        };
+        objective = value;
+        let own = members_value;
+        let mut lag_changed = false;
+        for ((s, v), e) in members.iter_mut().zip(elastic) {
+            v.work.current_elastic = e;
+            std::mem::swap(&mut s.position, &mut v.work.trial_x);
+            std::mem::swap(&mut s.orientation, &mut v.work.trial_q);
+        }
+        // Remaining error: with convergence at rate ρ (measured from the last two steps)
+        // about step·ρ/(1 − ρ); before a rate is known, the step itself.
+        let moved = alpha * longest;
+        let rate = moved / previous_move;
+        let remaining = if previous_move.is_finite() && rate < 0.5 {
+            moved * rate / (1.0 - rate)
+        } else {
+            moved
+        };
+        previous_move = moved;
+        if remaining < tolerance {
+            // Converged with the lagged quantities: refresh them (at most 3 times) and go on
+            // if they moved (IPC's lagged friction iterations).
+            if lag_updates == 3 || !coupling.update_lag(&states(members)) {
+                break;
+            }
+            lag_updates += 1;
+            objective = own + coupling.energy(&states(members));
+            lag_changed = true;
+            previous_move = f64::INFINITY;
+            lbfgs.clear();
+        }
+        if alpha < 0.25 && !refactored {
+            refactored = true;
+            for (s, v) in members.iter_mut() {
+                if v.refactoring == Refactoring::WhenSlow && !s.elements.is_empty() {
+                    v.refactor(s);
+                    v.update_turns(s);
+                }
+            }
+            lbfgs.clear();
+        }
+        let t = Instant::now();
+        let step: Vec<DVec3> = direction.iter().map(|d| *d * alpha).collect();
+        for (s, v) in members.iter_mut() {
+            // The line search computed the forces at its first trial: if that was
+            // accepted, only the per-node sums remain to be done.
+            if first_trial {
+                v.work.gather(s);
+            } else {
+                v.work.residual(s);
+            }
+        }
+        residuals(members, coupling, &mut gradient);
+        let new: Vec<DVec3> = members
+            .iter()
+            .flat_map(|(_, v)| v.work.direction.iter().copied())
+            .collect();
+        let change = residual
+            .iter()
+            .zip(&new)
+            .map(|(old, new)| *old - *new)
+            .collect();
+        residual = new;
+        if !lag_changed {
+            lbfgs.push(step, change);
+        }
+        members[0].1.timings.residual += t.elapsed();
+    }
+}

@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 creeer_core.workspace = true
+creeer_math.workspace = true
 creeer_physics.workspace = true
 creeer_terrain.workspace = true
 png.workspace = true

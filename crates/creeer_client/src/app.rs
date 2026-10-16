@@ -29,6 +29,7 @@ struct Running {
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     sim: SimThread<OrbitSandbox>,
+    physics: physics_view::PhysicsView,
     meshes: DemoMeshes,
     scene: Scene,
     lines: DebugLines,
@@ -166,6 +167,7 @@ impl Running {
             egui_ctx,
             egui_state,
             sim: SimThread::spawn(OrbitSandbox::demo(), TICK_RATE_HZ),
+            physics: physics_view::PhysicsView::new(TICK_RATE_HZ),
             meshes,
             scene: Scene::default(),
             lines: DebugLines::default(),
@@ -253,6 +255,13 @@ impl Running {
             overlay: self.settings.overlay,
         };
         demo::build(&mut self.scene, &mut self.lines, &self.meshes, &demo);
+        self.physics.draw(
+            &mut self.scene,
+            &self.meshes,
+            origin,
+            now,
+            self.settings.overlay,
+        );
         self.scene_build_times.push(build_start.elapsed());
 
         // UI
@@ -271,6 +280,7 @@ impl Running {
                 },
             );
             self.sandbox_window(ui.ctx(), &published.current);
+            self.physics.window(ui.ctx(), &mut self.settings.overlay);
             if let Some(heatmap) = self.settings.overlay.heatmap() {
                 let (title, unit) = self.settings.overlay.label();
                 heatmap_legend(ui.ctx(), &heatmap, title, unit);

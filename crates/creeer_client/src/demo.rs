@@ -38,9 +38,9 @@ pub const PARTS_PER_MACHINE: usize = 4;
 /// Meshes used by the demo, registered once.
 #[derive(Clone, Copy, Debug)]
 pub struct DemoMeshes {
-    cube: MeshId,
-    cylinder: MeshId,
-    sphere: MeshId,
+    pub cube: MeshId,
+    pub cylinder: MeshId,
+    pub sphere: MeshId,
 }
 
 impl DemoMeshes {
@@ -212,6 +212,8 @@ pub enum Overlay {
     Temperature,
     /// Axial stress in the crank arms (MPa): tension positive, compression negative.
     AxialStress,
+    /// How much of its plastic capacity each member of the physics scenes uses (%).
+    Utilisation,
 }
 
 impl Overlay {
@@ -229,6 +231,11 @@ impl Overlay {
                 max: 120.0,
                 palette: Palette::Diverging,
             }),
+            Self::Utilisation => Some(Heatmap {
+                min: 0.0,
+                max: 100.0,
+                palette: Palette::Sequential,
+            }),
         }
     }
 
@@ -238,6 +245,7 @@ impl Overlay {
             Self::Off => ("", ""),
             Self::Temperature => ("Temperature", "°C"),
             Self::AxialStress => ("Axial stress", "MPa"),
+            Self::Utilisation => ("Utilisation", "% of plastic capacity"),
         }
     }
 }
@@ -292,6 +300,10 @@ pub fn camera_preset(name: &str, origin: DVec3) -> Option<Camera> {
         "orbit" => (DVec3::new(0.0, 250_000.0, 1_100_000.0), 0.0, -0.598),
         // Standing on the ground looking at the horizon.
         "horizon" => (DVec3::new(-30.0, 1.8, 40.0), 0.6, 0.06),
+        // The physics scenes (see `physics_view::PHYSICS_OFFSET`).
+        "physics" => (DVec3::new(-74.0, 11.0, 34.0), -0.15, -0.2),
+        "crash" => (DVec3::new(-82.0, 3.0, 7.0), -0.4, -0.26),
+        "stacks" => (DVec3::new(-76.0, 4.0, 9.0), 0.42, -0.25),
         _ => return None,
     };
     let mut camera = Camera::new(origin + position);
@@ -348,7 +360,8 @@ mod tests {
     #[test]
     fn presets_exist() {
         for name in [
-            "overview", "factory", "closeup", "top", "far", "orbit", "horizon",
+            "overview", "factory", "closeup", "top", "far", "orbit", "horizon", "physics", "crash",
+            "stacks",
         ] {
             assert!(camera_preset(name, DVec3::ZERO).is_some(), "{name}");
         }

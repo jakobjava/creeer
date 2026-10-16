@@ -1,8 +1,8 @@
 # ADR-0002: Physics solver: XPBD for dynamics, exact FEM for structures
 
-- **Status:** Accepted for F0; the stiff-dynamics solver choice stays open until the F2 comparison spike.
+- **Status:** Accepted. Decision point 3 (moving stiff structures) was settled by the F2 comparison spike: ADR-0004 (implicit BDF2 with a sparse direct solve).
 - **Date:** 2026-10-15
-- **Evidence:** `crates/creeer_physics/src/spike.rs`, `cargo run --release -p creeer_tools -- bench-spikes`
+- **Evidence:** `crates/creeer_physics/src/spike/`, `cargo run --release -p creeer_tools -- bench-spikes`
 
 ## Context
 

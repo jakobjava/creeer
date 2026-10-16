@@ -8,7 +8,8 @@
 //! - the F1 instancing budget (10,000 parts at 60 FPS).
 //!
 //! `creeer_client --screenshot <file.png> [--view <name>] [--far] [--no-factory] [--sun <deg>]
-//! [--time <s>]` renders
+//! [--time <s>] [--overlay <off|temperature|stress|utilisation>] [--physics <bridge|crash|stacking>
+//! [--physics-time <s>]]` renders
 //! one frame headless (no window) and saves it, for reviewing rendering changes.
 //! `creeer_client --bench <frames> [--view <name>] [--no-factory]` renders frames headless
 //! and reports frame-time percentiles (CPU scene build + GPU, no vsync).
@@ -17,6 +18,8 @@ mod app;
 mod demo;
 mod fly_camera;
 mod headless;
+mod physics_sandbox;
+mod physics_view;
 mod sandbox;
 
 use app::App;

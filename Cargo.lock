@@ -495,6 +495,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_core",
  "creeer_math",
+ "creeer_physics",
  "creeer_render",
  "creeer_ui",
  "egui",
@@ -594,6 +595,7 @@ name = "creeer_tools"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_math",
  "creeer_physics",
  "creeer_terrain",
  "png",

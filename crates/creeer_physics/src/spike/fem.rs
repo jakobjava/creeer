@@ -11,6 +11,19 @@ use super::*;
 /// (F2) will use a sparse factorisation.
 pub fn linear_static_sag(spec: BridgeSpec) -> f64 {
     let truss = Truss::box_bridge(DVec3::ZERO, spec);
+    let u = linear_static_displacement(spec);
+    truss
+        .midspan_nodes
+        .iter()
+        .map(|&node| -u[node].y)
+        .sum::<f64>()
+        / 4.0
+}
+
+/// Exact linear-elastic static displacement of every node of the reference truss under
+/// self-weight (dense direct stiffness method, see [`linear_static_sag`]).
+pub fn linear_static_displacement(spec: BridgeSpec) -> Vec<DVec3> {
+    let truss = Truss::box_bridge(DVec3::ZERO, spec);
     let n = 3 * truss.node_count();
     let ea = spec.material.youngs_modulus * spec.member_area;
 
@@ -62,12 +75,11 @@ pub fn linear_static_sag(spec: BridgeSpec) -> f64 {
     }
 
     let u = cholesky_solve(&mut k, &mut f, n);
-    truss
-        .midspan_nodes
+    u.as_chunks::<3>()
+        .0
         .iter()
-        .map(|&node| -u[3 * node + 1])
-        .sum::<f64>()
-        / 4.0
+        .map(|&[x, y, z]| DVec3::new(x, y, z))
+        .collect()
 }
 
 /// Solves K·u = f in place for a symmetric positive-definite K (row-major n×n).

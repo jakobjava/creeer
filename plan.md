@@ -31,7 +31,7 @@ Environment: Windows 11, RTX 4070 SUPER, git installed, **Rust not installed yet
 2. **Server-authoritative from day one.** Singleplayer is an in-process server reached through a local channel transport, which is the same code path as multiplayer. Networking is never retrofitted.
 3. **f64 everywhere in the simulation.** Rendering is camera-relative in f32 with reversed-Z depth. Each planet has its own reference frame (rotating near the surface, inertial in space).
 4. **Data-oriented hot paths.** Solvers (beams, circuits, pipes, chemistry) use their own struct-of-arrays data. The ECS only handles entity bookkeeping. Parallelism comes from `rayon` and simulation "islands".
-5. **Multi-rate fixed tick.** The game ticks at 60 Hz. Physics runs in substeps (count per island, see ADR-0002: low XPBD substep counts proved far too soft for steel). Electrical and fluid systems update every tick; chemistry and thermal at 10-20 Hz; orbits run adaptively.
+5. **Multi-rate fixed tick.** The game ticks at 60 Hz. Structures are stepped implicitly (BDF2, one step per tick, ADR-0004); low XPBD substep counts proved far too soft for steel (ADR-0002). Electrical and fluid systems update every tick; chemistry and thermal at 10-20 Hz; orbits run adaptively.
 6. **Simulation LOD:**
    - **Active:** full physics in a radius of about 2.5 km around players.
    - **Abstract:** unloaded factories run as rate equations with buffers, so factories keep producing while you're away.
@@ -52,8 +52,8 @@ Exact versions are pinned in `Cargo.lock` during F0. Each choice gets an ADR and
 | Math | `glam` (DVec3 for simulation, Vec3 for rendering) |
 | ECS | `bevy_ecs` standalone, pinned (fallback: `hecs`) |
 | Parallelism | `rayon` |
-| Collision | `parry3d-f64`. Dynamics come from our own unified XPBD solver (fallback: `rapier3d-f64`) |
-| Sparse linear algebra | `faer` (electrical MNA, pipe networks, static structural solves) |
+| Collision | Own narrow phase for spheres and boxes (SAT with clipping), sort-and-sweep broad phase (ADR-0005); `parry3d-f64` when convex hulls and meshes are needed. Dynamics come from our own solvers: implicit Newmark/BDF2 for structures (ADR-0004), contacts, impacts and plasticity per ADR-0005 |
+| Sparse linear algebra | Own deterministic sparse block Cholesky for structures (ADR-0004; bit-identical across platforms). `faer` remains an option for non-deterministic tools |
 | Noise and worldgen | `fastnoise-lite` / own noise implementation |
 | UI | `egui` + `egui_plot` with a custom theme |
 | Audio | `kira` |
@@ -71,7 +71,7 @@ creeer/
   crates/
     creeer_math/             # f64 math, reference frames, units parsing
     creeer_core/             # ECS setup, tick scheduler, ids, events
-    creeer_physics/          # unified XPBD: nodes, beams, rigid bodies, contacts, plasticity, fracture
+    creeer_physics/          # structures (implicit), rigid bodies, contacts, plasticity, fracture
     creeer_orbit/            # Kepler rails for bodies, restricted n-body for vessels, frames, maneuvers
     creeer_terrain/          # planet gen, geology, ore deposits, voxel octree, meshing, edits
     creeer_materials/        # species DB, mixtures, material properties, microstructure
@@ -98,8 +98,8 @@ creeer/
 
 ## 4. System designs (summary)
 
-**Physics core (`creeer_physics`):** XPBD for dynamics plus exact quasi-static FEM for structures at rest; the solver for moving stiff structures is chosen by a comparison spike at the start of F2 (see ADR-0002).
-- Everything is particles plus constraints. A beam is a stretch constraint plus bending and torsion constraints, with stiffness derived from the material's E and G and the cross-section's A, I and J. Rigid bodies are XPBD bodies in the same solver.
+**Physics core (`creeer_physics`):** structures (anything built from members) are stepped implicitly (Newmark for free structures, BDF2 for groups in contact, ADR-0004): an energy minimisation with line-searched Newton steps on a prefactorised sparse direct solve in the body frame (ADR-0004). Structures at rest use the exact quasi-static FEM (ADR-0002). Contacts, joints and loose objects follow ADR-0005.
+- Structures are nodes plus beam elements (stretch, bending and torsion; 6 DOF per node), with stiffness derived from the material's E and G and the cross-section's A, I and J.
 - Plasticity: rest lengths and angles change once stress passes the yield strength. Fracture happens past the ultimate tensile strength (UTS) or a strain limit.
 - Contacts and friction use parry. Islands are solved in parallel.
 - Static structures such as buildings sleep, and a quasi-static solve runs whenever their load changes. Poly Bridge-style collapse is possible.
@@ -185,7 +185,7 @@ creeer/
 
 **CPU techniques**
 - Struct-of-arrays data, no allocations in hot loops (arenas and pools), and cache-friendly node ordering.
-- Graph colouring so XPBD constraints solve in parallel.
+- Prefactorised sparse direct solves (nested-dissection ordering) for structures; parallel islands.
 - SIMD through `glam` and `wide`.
 - `rayon` work-stealing across simulation islands.
 - Sleeping bodies and islands, adaptive substeps, quasi-static solves for buildings.
@@ -251,8 +251,8 @@ There are no gameplay loops in this phase. Each milestone delivers a **tech sand
 |---|---|---|
 | **F0** | Toolchain & engine skeleton | Toolchain, workspace, CI script + 3-OS CI matrix, decoupled simulation/render threads, window + free camera + debug lines + egui FPS/frame-time overlay, headless runner, perf-gate harness. Three spikes measured: (a) XPBD with 5k beams at ≥ 8 substeps × 60 Hz within 4 ms on the minimum CPU class; (b) voxel chunk meshing throughput (target ≥ 200 chunks/s on 6 cores); (c) camera-relative rendering at 500 km radius with no jitter. ADR-0001 (engine/language) and ADR-0002 (solver) written |
 | F1 | Renderer core | wgpu renderer: PBR-lite stylised materials, sun lighting + cascaded shadows, instancing, GPU culling, LODs, reversed-Z at planetary scale, atmosphere scattering, stars, engineering overlay system, egui integration. Budgets: 10k instanced parts at 60 FPS on minimum spec |
-| F2 | Physics core | Unified XPBD (particles, beams with stretch/bend/torsion, rigid bodies, contacts, friction, plasticity, fracture, sleeping, parallel islands) + the full mechanics validation suite green. Sandbox: bridge under load with stress overlay, crash test, stacking |
-| F3 | Planets & terrain | Cube-sphere planet, geology + ore deposit generator (data-driven), voxel octree + LOD meshing, dig/fill edits, terrain collision with the XPBD world, radial gravity, day/night, edits saved as deltas. Sandbox: fly from orbit down to the surface without hitches, and dig tunnels |
+| F2 | Physics core | **Done** (ADR-0004, ADR-0005). Solver comparison spike (ADR-0004: implicit BDF2 + sparse direct solve). Structures (beams with stretch/bend/torsion, damping, rigid bodies, contacts, friction, plasticity, fracture, sleeping, parallel islands) + the full mechanics validation suite green. Sandbox: bridge under load with stress overlay, crash test, stacking |
+| F3 | Planets & terrain | Cube-sphere planet, geology + ore deposit generator (data-driven), voxel octree + LOD meshing, dig/fill edits, terrain collision with the physics world, radial gravity, day/night, edits saved as deltas. Sandbox: fly from orbit down to the surface without hitches, and dig tunnels |
 | F4 | Orbital mechanics & solar system | Procedural solar system, Kepler rails, restricted n-body propagation, reference-frame switching (rotating ↔ inertial), floating origin, time warp, map view with orbits. Orbit validation suite green. Sandbox: place a test mass in orbit and fly to the moon |
 | F5 | Networking & persistence | Client/server split, in-process server for singleplayer, interest management, snapshot interpolation, prediction for a test avatar, replication of soft bodies (plastic deltas) and terrain edits, dedicated server binary, versioned saves + migration tests. Bandwidth budgets met |
 | F6 | Simulation domains | The engines for each domain, each validated against analytic or reference results, each with a sandbox scene: **materials & chemistry** (species DB, mixtures, kinetics, equilibrium, mass/energy balance), **thermal** network, **electrical** MNA (DC/transient/AC), **fluids** (pipes, atmospheres, aero panels, buoyancy), **mechanical** drivetrain, **logic** (signals + sandboxed Luau VM) |

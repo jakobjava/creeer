@@ -10,6 +10,7 @@ publish = false
 creeer_math.workspace = true
 creeer_core.workspace = true
 creeer_render.workspace = true
+creeer_physics.workspace = true
 creeer_ui.workspace = true
 winit.workspace = true
 egui.workspace = true

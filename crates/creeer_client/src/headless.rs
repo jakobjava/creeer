@@ -1,6 +1,8 @@
 //! Headless modes: screenshots and the render benchmark (no window needed).
 
 use super::*;
+use crate::physics_sandbox::{PhysicsSandbox, PhysicsScene};
+use crate::physics_view;
 
 /// Command-line options of the headless screenshot mode.
 #[derive(Debug)]
@@ -14,6 +16,8 @@ pub(crate) struct ScreenshotOptions {
     time: f64,
     shadows: ShadowQuality,
     overlay: Overlay,
+    /// A physics scene to add, and how many seconds to simulate it first.
+    physics: Option<(PhysicsScene, f64)>,
 }
 
 impl ScreenshotOptions {
@@ -41,9 +45,10 @@ impl ScreenshotOptions {
                 None | Some("off") => Overlay::Off,
                 Some("temperature") => Overlay::Temperature,
                 Some("stress") => Overlay::AxialStress,
+                Some("utilisation") => Overlay::Utilisation,
                 Some(other) => {
                     return Err(format!(
-                        "--overlay expects off/temperature/stress, got `{other}`"
+                        "--overlay expects off/temperature/stress/utilisation, got `{other}`"
                     ));
                 }
             },
@@ -60,6 +65,25 @@ impl ScreenshotOptions {
                     .parse()
                     .map_err(|_| format!("--time expects seconds, got `{seconds}`"))?,
                 None => 1.0,
+            },
+            physics: match value_of("--physics").map(String::as_str) {
+                None => None,
+                Some(name) => {
+                    let scene = PhysicsScene::ALL
+                        .iter()
+                        .find(|(_, n)| n.starts_with(name))
+                        .ok_or(format!(
+                            "--physics expects bridge/crash/stacking, got `{name}`"
+                        ))?
+                        .0;
+                    let seconds = match value_of("--physics-time") {
+                        Some(s) => s
+                            .parse()
+                            .map_err(|_| format!("--physics-time expects seconds, got `{s}`"))?,
+                        None => 3.0,
+                    };
+                    Some((scene, seconds))
+                }
             },
             sun_elevation: match value_of("--sun") {
                 Some(degrees) => degrees
@@ -183,6 +207,27 @@ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std:
         overlay: options.overlay,
     };
     demo::build(&mut scene, &mut lines, &meshes, &demo);
+    if let Some((physics, seconds)) = options.physics {
+        let dt = 1.0 / f64::from(TICK_RATE_HZ);
+        let mut sandbox = PhysicsSandbox::new(physics, dt);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        for _ in 0..(seconds / dt).round() as usize {
+            sandbox.step(dt);
+        }
+        let snap = sandbox.snapshot();
+        println!(
+            "physics: t = {:.2} s, {:?} (bodies, asleep, contacts), last step {:.2} ms",
+            snap.time, snap.counts, snap.step_ms
+        );
+        let at = origin + physics_view::PHYSICS_OFFSET;
+        physics_view::draw(
+            &mut scene,
+            &meshes,
+            at,
+            (&snap, &snap, 1.0),
+            options.overlay,
+        );
+    }
     let sky = demo::sky(origin);
     let lighting = sky.lighting(
         camera.position,

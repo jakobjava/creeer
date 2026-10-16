@@ -16,10 +16,10 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
-const DT: f64 = 1.0 / 60.0;
+pub const DT: f64 = 1.0 / 60.0;
 /// Rough per-core speed of the minimum-spec CPU (Ryzen 5 2600 class) relative to a modern
 /// desktop core. Used to project measurements made on faster machines.
-const MIN_SPEC_CORE_FACTOR: f64 = 0.5;
+pub const MIN_SPEC_CORE_FACTOR: f64 = 0.5;
 /// Spike (a) budget: ms per tick for 5,000 beams on the minimum-spec CPU.
 const XPBD_BUDGET_MS: f64 = 4.0;
 /// Spike (b) budget: chunks per second on 6 minimum-spec cores.
@@ -35,17 +35,17 @@ pub enum Better {
 }
 
 #[derive(Debug, Default)]
-struct Report {
+pub struct Report {
     metrics: Vec<(&'static str, f64, Better)>,
     failures: Vec<String>,
 }
 
 impl Report {
-    fn metric(&mut self, name: &'static str, value: f64, better: Better) {
+    pub fn metric(&mut self, name: &'static str, value: f64, better: Better) {
         self.metrics.push((name, value, better));
     }
 
-    fn budget(&mut self, ok: bool, description: String) {
+    pub fn budget(&mut self, ok: bool, description: String) {
         println!(
             "  budget: {description} -> {}",
             if ok { "OK" } else { "MISSED" }
@@ -64,6 +64,9 @@ pub fn run(metrics_out: Option<&Path>) -> ExitCode {
     spike_a_speed(&mut report);
     spike_a_accuracy(&mut report);
     spike_b_meshing(&mut report, threads);
+    crate::solvers::run(&mut report);
+    crate::solvers::run_structures(&mut report);
+    crate::world_bench::run(&mut report);
 
     if let Some(path) = metrics_out {
         let mut text = String::new();
@@ -95,7 +98,7 @@ pub fn run(metrics_out: Option<&Path>) -> ExitCode {
 }
 
 /// Times `ticks` steps of `step`, after a short warm-up.
-fn time_ticks(mut step: impl FnMut(), ticks: usize) -> TimingStats {
+pub fn time_ticks(mut step: impl FnMut(), ticks: usize) -> TimingStats {
     for _ in 0..20 {
         step();
     }
@@ -108,7 +111,7 @@ fn time_ticks(mut step: impl FnMut(), ticks: usize) -> TimingStats {
     stats
 }
 
-fn p(stats: &TimingStats, percentile: f64) -> f64 {
+pub fn p(stats: &TimingStats, percentile: f64) -> f64 {
     stats.percentile_ms(percentile).unwrap_or(f64::NAN)
 }
 

@@ -4,7 +4,9 @@
 //! budgets and optionally writes the metrics for `cargo xtask perf`.
 
 mod image_diff;
+mod solvers;
 mod spikes;
+mod world_bench;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

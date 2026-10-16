@@ -52,6 +52,8 @@ pub struct Truss {
     /// Per-axis inverse mass. A zero component fixes the node along that axis, which is how
     /// supports are modelled: zero on all axes is a pin, zero on some axes is a roller.
     inv_mass: Vec<DVec3>,
+    /// Lumped node mass (kg): half of every member attached to the node.
+    mass: Vec<f64>,
     rest: Vec<DVec3>,
     beams: Vec<Beam>,
     /// Section indices used to measure midspan sag.
@@ -168,6 +170,7 @@ impl Truss {
             rest: position.clone(),
             position,
             inv_mass,
+            mass,
             beams,
             midspan_nodes: [node(mid, 0), node(mid, 1), node(mid, 2), node(mid, 3)],
             damping: 0.0,
@@ -348,8 +351,17 @@ pub fn measure_static_sag(substeps: u32) -> f64 {
     truss.midspan_sag()
 }
 
+#[cfg(test)]
+mod compare_tests;
+mod dynamics;
 mod fem;
+mod implicit;
+mod lattice;
 #[cfg(test)]
 mod tests;
+mod vbd;
 
-pub use fem::linear_static_sag;
+pub use dynamics::{Oscillation, explicit_reference_response, oscillation, rayleigh_frequency};
+pub use fem::{linear_static_displacement, linear_static_sag};
+pub use implicit::{ImplicitTruss, Linearisation, Scheme, sparse_static_displacement};
+pub use vbd::VbdTruss;
