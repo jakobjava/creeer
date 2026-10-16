@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod planet;
+mod sandbox_ui;
+
 #[derive(Default)]
 pub(crate) struct App {
     running: Option<Running>,
@@ -30,6 +33,8 @@ struct Running {
     egui_state: egui_winit::State,
     sim: SimThread<OrbitSandbox>,
     physics: physics_view::PhysicsView,
+    /// The planet sandbox, when it is open (instead of the tech demo).
+    planet: Option<crate::planet_view::PlanetView>,
     meshes: DemoMeshes,
     scene: Scene,
     lines: DebugLines,
@@ -87,6 +92,15 @@ impl ApplicationHandler for App {
                 let pressed = state == ElementState::Pressed;
                 if !pressed || !app.egui_ctx.egui_wants_pointer_input() {
                     app.set_looking(pressed);
+                }
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } if !response.consumed && !app.egui_ctx.egui_wants_pointer_input() => {
+                if let Some(planet) = &app.planet {
+                    planet.use_tool(&app.camera);
                 }
             }
             WindowEvent::MouseWheel { delta, .. } if !response.consumed => {
@@ -168,6 +182,7 @@ impl Running {
             egui_state,
             sim: SimThread::spawn(OrbitSandbox::demo(), TICK_RATE_HZ),
             physics: physics_view::PhysicsView::new(TICK_RATE_HZ),
+            planet: None,
             meshes,
             scene: Scene::default(),
             lines: DebugLines::default(),
@@ -235,6 +250,10 @@ impl Running {
         let dt = now - self.last_frame;
         self.last_frame = now;
         self.frame_times.push(dt);
+        if self.planet.is_some() {
+            self.planet_frame(now, dt);
+            return;
+        }
         self.fly.update(&mut self.camera, dt.as_secs_f64());
 
         let published = self.sim.latest();
@@ -294,6 +313,7 @@ impl Running {
         self.renderer.render(Frame {
             camera: &self.camera,
             scene: &self.scene,
+            terrain: &[],
             lighting: &self.lighting,
             sky: Some(&sky),
             heatmap: heatmap.as_ref(),
@@ -305,91 +325,5 @@ impl Running {
             }),
             clear_color: BACKGROUND,
         });
-    }
-
-    fn sandbox_window(&mut self, ctx: &egui::Context, snapshot: &SandboxSnapshot) {
-        egui::Window::new("Sandbox")
-            .default_pos([12.0, 330.0])
-            .resizable(false)
-            .show(ctx, |ui| {
-                if ui.checkbox(&mut self.settings.vsync, "VSync").changed() {
-                    self.renderer.set_vsync(self.settings.vsync);
-                }
-                ui.checkbox(&mut self.settings.factory, "Factory (10,000 parts)");
-                ui.horizontal(|ui| {
-                    ui.label("Overlay:");
-                    for (overlay, name) in [
-                        (Overlay::Off, "off"),
-                        (Overlay::Temperature, "temperature"),
-                        (Overlay::AxialStress, "axial stress"),
-                    ] {
-                        ui.radio_value(&mut self.settings.overlay, overlay, name);
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Shadows:");
-                    let before = self.settings.shadows;
-                    for (quality, name) in [
-                        (ShadowQuality::Low, "low"),
-                        (ShadowQuality::Medium, "medium"),
-                        (ShadowQuality::High, "high"),
-                    ] {
-                        ui.radio_value(&mut self.settings.shadows, quality, name);
-                    }
-                    if self.settings.shadows != before {
-                        self.renderer.set_shadow_quality(self.settings.shadows);
-                    }
-                });
-                ui.add(
-                    egui::Slider::new(&mut self.settings.sun_elevation, -12.0..=90.0)
-                        .text("sun elevation (°)"),
-                );
-                let stats = self.renderer.stats();
-                let build_ms = self.scene_build_times.percentile_ms(50.0).unwrap_or(0.0);
-                ui.label(format!(
-                    "drawn {} · culled {} · {} draw calls · scene build {build_ms:.2} ms",
-                    stats.instances_drawn, stats.instances_culled, stats.draw_calls
-                ));
-                ui.separator();
-                let delay = ui.add(
-                    egui::Slider::new(&mut self.settings.tick_delay_ms, 0.0..=40.0)
-                        .text("extra tick time (ms)"),
-                );
-                if delay.changed() {
-                    self.sim.set_extra_tick_delay(Duration::from_secs_f32(
-                        self.settings.tick_delay_ms / 1000.0,
-                    ));
-                }
-                let far = ui.checkbox(
-                    &mut self.settings.far_origin,
-                    "Move scene 500 km from the origin",
-                );
-                if far.changed() {
-                    // Shift the camera with the scene so the view stays identical.
-                    let shift = if self.settings.far_origin {
-                        FAR_ORIGIN
-                    } else {
-                        -FAR_ORIGIN
-                    };
-                    self.camera.position += shift;
-                }
-                ui.separator();
-                ui.label(format!("simulated time: {:.1} s", snapshot.time));
-                let speed = self
-                    .sim_speed
-                    .rate()
-                    .map_or_else(|| "-".to_owned(), |r| format!("{r:.2}"));
-                ui.label(format!("simulation speed: {speed}x real time"));
-                ui.label(format!(
-                    "orbital energy drift: {:+.2e} (leapfrog, should stay tiny)",
-                    snapshot.energy_drift
-                ));
-                let p = self.camera.position;
-                ui.label(format!("camera: ({:.3}, {:.3}, {:.3}) m", p.x, p.y, p.z));
-                ui.label(format!("fly speed: {:.1} m/s", self.fly.speed));
-                ui.separator();
-                ui.label("Right mouse: look · WASD: move · Space/Ctrl: up/down");
-                ui.label("Shift: ×10 speed · Mouse wheel: change speed");
-            });
     }
 }

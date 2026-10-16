@@ -45,6 +45,7 @@ fn render_landscape(renderer: &mut Renderer, sun_elevation: f64, yaw: f64) -> (I
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &Scene::default(),
+        terrain: &[],
         lighting: &lighting,
         lines: &DebugLines::default(),
         sky: Some(&sky),
@@ -139,6 +140,7 @@ fn heatmap_overlay_colours_parts_by_value() {
         let image = renderer.capture(Frame {
             camera: &camera,
             scene: &scene,
+            terrain: &[],
             lighting: &lighting,
             lines: &DebugLines::default(),
             sky: None,

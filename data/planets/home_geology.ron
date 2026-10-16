@@ -1,0 +1,186 @@
+#![enable(implicit_some)]
+// Geology of the reference planet: crustal provinces and ore deposits. Rock and mineral
+// names refer to data/geology/rocks.ron and minerals.ron. The planet's rotation axis is +Y.
+//
+// Provinces: every point belongs to the province with the highest score, where the score is
+// a smooth noise (`province_noise`) plus `bias`, minus a penalty that grows by 1 per 500 m
+// the surface lies outside the province's `elevation` range, so boundaries are irregular but
+// follow the landscape. Each province is a column of layers from the surface down; layer
+// thickness varies between its limits over `variation` distances; the last layer continues
+// to any depth. `folds` bends the layers (amplitude, wavelength).
+//
+// Deposits: the planet is divided into cells of `cell` size; in each cell a deposit of a kind
+// exists with probability `chance`, if the province, elevation and latitude at its centre
+// allow it. A deposit is an ellipsoid (lens) with horizontal radii from `size` and vertical
+// radius `thickness`, its centre `depth` below the surface; `irregularity` roughens its
+// outline. Inside, the ore rock's grade varies from 2.5× its average at the core to 0 at the
+// rim. Deposit models after USGS descriptive models (Cox & Singer 1986).
+Geology(
+    province_noise: (wavelength: "900 km", octaves: 2),
+    variation: "30 km",
+    provinces: [
+        (
+            name: "oceanic crust",
+            // The continent-ocean boundary lies at the foot of the continental slope.
+            elevation: ("-10 km", "-1800 m"),
+            bias: 0.8,
+            column: [
+                (rock: "mud", thickness: ("10 m", "150 m")),
+                (rock: "basalt", thickness: ("600 m", "2 km")),
+                (rock: "gabbro"),
+            ],
+        ),
+        (
+            name: "craton",
+            elevation: ("-1200 m", "10 km"),
+            column: [
+                (rock: "soil", thickness: ("0.3 m", "2 m")),
+                (rock: "sandstone", thickness: ("0 m", "60 m")),
+                (rock: "gneiss", thickness: ("50 m", "800 m")),
+                (rock: "granite"),
+            ],
+        ),
+        (
+            name: "sedimentary basin",
+            elevation: ("-1200 m", "700 m"),
+            bias: 0.05,
+            folds: Some(("120 m", "8 km")),
+            column: [
+                (rock: "soil", thickness: ("0.5 m", "3 m")),
+                (rock: "sandstone", thickness: ("10 m", "150 m")),
+                (rock: "shale", thickness: ("40 m", "300 m")),
+                (rock: "limestone", thickness: ("30 m", "250 m")),
+                (rock: "sandstone", thickness: ("40 m", "250 m")),
+                (rock: "shale", thickness: ("100 m", "500 m")),
+                (rock: "granite"),
+            ],
+        ),
+        (
+            name: "volcanic arc",
+            elevation: ("-500 m", "10 km"),
+            column: [
+                (rock: "soil", thickness: ("0.2 m", "1.5 m")),
+                (rock: "andesite", thickness: ("40 m", "600 m")),
+                (rock: "basalt", thickness: ("100 m", "800 m")),
+                (rock: "granite"),
+            ],
+        ),
+        (
+            name: "orogen",
+            elevation: ("1400 m", "10 km"),
+            bias: 0.1,
+            folds: Some(("350 m", "3 km")),
+            column: [
+                (rock: "soil", thickness: ("0.1 m", "1 m")),
+                (rock: "schist", thickness: ("50 m", "500 m")),
+                (rock: "marble", thickness: ("0 m", "150 m")),
+                (rock: "gneiss", thickness: ("200 m", "1500 m")),
+                (rock: "granite"),
+            ],
+        ),
+        (
+            name: "greenstone belt",
+            elevation: ("-500 m", "2500 m"),
+            bias: -0.05,
+            folds: Some(("200 m", "5 km")),
+            column: [
+                (rock: "soil", thickness: ("0.3 m", "2 m")),
+                (rock: "basalt", thickness: ("50 m", "400 m")),
+                (rock: "peridotite"),
+            ],
+        ),
+    ],
+    deposits: [
+        (
+            name: "porphyry copper-molybdenum",
+            rock: "porphyry copper ore",
+            provinces: ["volcanic arc", "orogen"],
+            cell: "40 km",
+            chance: 0.35,
+            size: ("600 m", "1800 m"),
+            thickness: ("500 m", "1200 m"),
+            depth: ("300 m", "1500 m"),
+            irregularity: 0.25,
+        ),
+        (
+            name: "banded iron formation",
+            rock: "banded iron formation",
+            provinces: ["craton"],
+            cell: "60 km",
+            chance: 0.4,
+            size: ("2 km", "8 km"),
+            thickness: ("40 m", "200 m"),
+            depth: ("30 m", "600 m"),
+            irregularity: 0.15,
+        ),
+        (
+            name: "placer gold",
+            rock: "gold placer gravel",
+            provinces: ["craton", "orogen", "volcanic arc", "greenstone belt"],
+            elevation: ("0 m", "900 m"),
+            cell: "15 km",
+            chance: 0.25,
+            size: ("150 m", "600 m"),
+            thickness: ("2 m", "6 m"),
+            depth: ("3 m", "8 m"),
+            irregularity: 0.35,
+        ),
+        (
+            name: "laterite bauxite",
+            rock: "laterite bauxite",
+            provinces: ["craton", "sedimentary basin", "volcanic arc"],
+            elevation: ("20 m", "700 m"),
+            latitude: ("0 deg", "28 deg"),
+            cell: "30 km",
+            chance: 0.4,
+            size: ("1 km", "4 km"),
+            thickness: ("4 m", "12 m"),
+            depth: ("6 m", "14 m"),
+            irregularity: 0.3,
+        ),
+        (
+            name: "evaporite",
+            rock: "rock salt",
+            provinces: ["sedimentary basin"],
+            cell: "50 km",
+            chance: 0.5,
+            size: ("3 km", "12 km"),
+            thickness: ("30 m", "150 m"),
+            depth: ("150 m", "900 m"),
+            irregularity: 0.1,
+        ),
+        (
+            name: "coal seam",
+            rock: "coal",
+            provinces: ["sedimentary basin"],
+            cell: "25 km",
+            chance: 0.6,
+            size: ("2 km", "8 km"),
+            thickness: ("1 m", "4 m"),
+            depth: ("20 m", "400 m"),
+            irregularity: 0.1,
+        ),
+        (
+            name: "magmatic nickel sulfide",
+            rock: "nickel sulfide ore",
+            provinces: ["greenstone belt"],
+            cell: "40 km",
+            chance: 0.4,
+            size: ("200 m", "700 m"),
+            thickness: ("20 m", "80 m"),
+            depth: ("100 m", "900 m"),
+            irregularity: 0.3,
+        ),
+        (
+            name: "sandstone uranium (roll front)",
+            rock: "uranium sandstone",
+            provinces: ["sedimentary basin"],
+            cell: "40 km",
+            chance: 0.3,
+            size: ("100 m", "500 m"),
+            thickness: ("2 m", "8 m"),
+            depth: ("15 m", "250 m"),
+            irregularity: 0.4,
+        ),
+    ],
+)

@@ -7,6 +7,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_math.workspace = true
+creeer_physics.workspace = true
+creeer_terrain.workspace = true
 
 [lints]
 workspace = true

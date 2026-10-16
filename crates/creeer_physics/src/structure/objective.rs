@@ -9,7 +9,7 @@ use super::Structure;
 use super::element::MEASURES;
 use super::solver::Work;
 use crate::so3;
-use creeer_math::glam::{DMat3, DQuat};
+use creeer_math::glam::{DMat3, DQuat, DVec3};
 use rayon::prelude::*;
 
 /// Elements per parallel task (smaller tasks cost more in scheduling than they save).
@@ -59,12 +59,17 @@ impl Work {
                 let turn = so3::log(q[i] * this.q_star[i].conjugate());
                 let moved = x[i] - this.x_hat[i];
                 // Air drag: a dashpot on the new velocity (x − x̂)/β.
+                // A planet's field enters through its potential, relative to x* like the rest.
+                let field = s.planet.as_ref().map_or(0.0, |g| {
+                    s.mass[i] * g.potential_difference(x[i], this.x_star[i])
+                });
                 0.5 * this.drag_rate[i] / this.beta * moved.length_squared()
                     + 0.5
                         * inv_b2
                         * (s.mass[i] * offset.length_squared()
                             + turn.dot(this.inertia_star[i] * turn))
-                    - (s.gravity * s.mass[i] + s.load[i]).dot(offset)
+                    - (s.gravity * s.mass[i] + s.load[i] + this.coriolis[i]).dot(offset)
+                    + field
                     - s.torque[i].dot(turn)
             })
             .collect();
@@ -124,7 +129,11 @@ impl Work {
             .for_each(|(block, out)| {
                 let i = block % n;
                 let mut r = if block < n {
-                    s.gravity * s.mass[i] + s.load[i]
+                    let field = s
+                        .planet
+                        .as_ref()
+                        .map_or(DVec3::ZERO, |g| g.acceleration(s.position[i]) * s.mass[i]);
+                    s.gravity * s.mass[i] + s.load[i] + this.coriolis[i] + field
                         - (s.position[i] - this.x_star[i]) * (s.mass[i] * inv_b2)
                         - (s.position[i] - this.x_hat[i]) * (this.drag_rate[i] / this.beta)
                 } else {
@@ -141,6 +150,17 @@ impl Work {
                 *out = r * s.block_mask(block) * scale;
             });
         self.direction = direction;
+    }
+
+    /// The Coriolis force of every node for the coming step, from its current velocity
+    /// (zero without a planet; `gravity.rs`).
+    pub(super) fn set_coriolis(&mut self, s: &Structure) {
+        for (i, f) in self.coriolis.iter_mut().enumerate() {
+            *f = s
+                .planet
+                .as_ref()
+                .map_or(DVec3::ZERO, |g| g.coriolis(s.velocity[i]) * s.mass[i]);
+        }
     }
 
     /// Sets the trial state x + α·d (rotations applied on the left, in the world frame).

@@ -126,7 +126,8 @@ pub fn box_box(
                 point_a,
                 point_b,
                 normal,
-                offset: 0.0,
+                radius_a: 0.0,
+                radius_b: 0.0,
             }]
         }
     }
@@ -188,7 +189,8 @@ fn clip(
                     point_a,
                     point_b,
                     normal,
-                    offset: 0.0,
+                    radius_a: 0.0,
+                    radius_b: 0.0,
                 }
             })
         })

@@ -4,7 +4,7 @@
 //! mouse wheel changes the base speed.
 
 use creeer_math::det;
-use creeer_math::glam::DVec3;
+
 use creeer_render::Camera;
 use std::f64::consts::FRAC_PI_2;
 use winit::keyboard::KeyCode;
@@ -92,7 +92,7 @@ impl FlyCamera {
         };
         let direction = camera.forward() * axis(self.forward, self.back)
             + camera.right() * axis(self.right, self.left)
-            + DVec3::Y * axis(self.up, self.down);
+            + camera.up() * axis(self.up, self.down);
         if let Some(direction) = direction.try_normalize() {
             let boost = if self.fast { 10.0 } else { 1.0 };
             camera.position += direction * self.speed * boost * dt;
@@ -103,6 +103,7 @@ impl FlyCamera {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use creeer_math::glam::DVec3;
 
     #[test]
     fn holding_w_moves_forward_at_speed() {

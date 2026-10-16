@@ -1,7 +1,9 @@
 //! Unified physics: nodes, beams, rigid bodies, contacts, plasticity, fracture.
 //!
-//! F2 is in progress: the solver comparison spike (ADR-0002 → ADR-0004) comes first.
+//! Structures and contacts follow ADR-0004 and ADR-0005; planet gravity and terrain
+//! contacts were added in F3 (`gravity`, `world::ground`).
 
+pub mod gravity;
 pub mod rotation;
 pub mod so3;
 pub mod sparse;

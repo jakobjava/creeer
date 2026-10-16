@@ -138,6 +138,7 @@ pub(crate) fn bench(
         renderer.render_offscreen(Frame {
             camera: &camera,
             scene: &scene,
+            terrain: &[],
             lighting: &lighting,
             lines: &lines,
             sky: Some(&sky),
@@ -238,6 +239,7 @@ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std:
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,
+        terrain: &[],
         lighting: &lighting,
         lines: &lines,
         sky: Some(&sky),

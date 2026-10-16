@@ -1,0 +1,60 @@
+// Rocks: modal composition (volume fractions of minerals, summing to 1), porosity, and the
+// colour terrain made of it is drawn with (sRGB; stylised, strong colours per material as in
+// the art style of plan.md). Bulk density follows from minerals and porosity (dry pores).
+//
+// Ore rocks carry their deposit's ore minerals at the deposit's average grade; inside a
+// deposit the grade varies around that (geology/deposits).
+[
+    // Surface materials
+    (name: "soil", color: "#6b4f35", porosity: 0.45, minerals: [
+        ("quartz", 0.50), ("kaolinite", 0.22), ("illite", 0.15), ("orthoclase", 0.08), ("goethite", 0.05)]),
+    (name: "gravel", color: "#8c8174", porosity: 0.30, minerals: [
+        ("quartz", 0.70), ("orthoclase", 0.18), ("plagioclase", 0.08), ("magnetite", 0.02), ("ilmenite", 0.02)]),
+    (name: "mud", color: "#5d625a", porosity: 0.55, minerals: [
+        ("illite", 0.50), ("kaolinite", 0.20), ("calcite", 0.20), ("quartz", 0.10)]),
+    // Igneous
+    (name: "granite", color: "#c4a194", porosity: 0.01, minerals: [
+        ("quartz", 0.30), ("orthoclase", 0.35), ("plagioclase", 0.24), ("biotite", 0.07), ("hornblende", 0.035), ("zircon", 0.005)]),
+    (name: "andesite", color: "#76706a", porosity: 0.08, minerals: [
+        ("plagioclase", 0.60), ("hornblende", 0.25), ("augite", 0.10), ("magnetite", 0.05)]),
+    (name: "basalt", color: "#3d3e44", porosity: 0.05, minerals: [
+        ("plagioclase", 0.48), ("augite", 0.36), ("olivine", 0.10), ("magnetite", 0.04), ("ilmenite", 0.02)]),
+    (name: "gabbro", color: "#4b5049", porosity: 0.005, minerals: [
+        ("plagioclase", 0.55), ("augite", 0.33), ("olivine", 0.10), ("ilmenite", 0.02)]),
+    (name: "peridotite", color: "#56653f", porosity: 0.005, minerals: [
+        ("olivine", 0.72), ("augite", 0.26), ("magnetite", 0.02)]),
+    // Sedimentary
+    (name: "sandstone", color: "#d6b47a", porosity: 0.15, minerals: [
+        ("quartz", 0.85), ("orthoclase", 0.10), ("kaolinite", 0.05)]),
+    (name: "shale", color: "#6f6a64", porosity: 0.10, minerals: [
+        ("illite", 0.58), ("quartz", 0.30), ("calcite", 0.08), ("pyrite", 0.02), ("kaolinite", 0.02)]),
+    (name: "limestone", color: "#c9c3b1", porosity: 0.10, minerals: [
+        ("calcite", 0.95), ("dolomite", 0.03), ("quartz", 0.02)]),
+    // Metamorphic
+    (name: "schist", color: "#7f8679", porosity: 0.02, minerals: [
+        ("quartz", 0.35), ("muscovite", 0.35), ("biotite", 0.20), ("garnet", 0.10)]),
+    (name: "gneiss", color: "#928b88", porosity: 0.01, minerals: [
+        ("quartz", 0.30), ("orthoclase", 0.25), ("plagioclase", 0.25), ("biotite", 0.15), ("garnet", 0.05)]),
+    (name: "marble", color: "#e6e2d9", porosity: 0.005, minerals: [
+        ("calcite", 0.95), ("dolomite", 0.05)]),
+    // Ores
+    (name: "porphyry copper ore", color: "#c0773f", porosity: 0.02, minerals: [
+        ("quartz", 0.36), ("orthoclase", 0.30), ("plagioclase", 0.16), ("biotite", 0.1255),
+        ("pyrite", 0.04), ("chalcopyrite", 0.012), ("bornite", 0.002), ("molybdenite", 0.0005)]),
+    (name: "banded iron formation", color: "#80352b", porosity: 0.03, minerals: [
+        ("quartz", 0.45), ("magnetite", 0.25), ("hematite", 0.25), ("goethite", 0.05)]),
+    (name: "gold placer gravel", color: "#b49a52", porosity: 0.30, minerals: [
+        ("quartz", 0.70), ("orthoclase", 0.18), ("plagioclase", 0.08), ("magnetite", 0.02),
+        ("ilmenite", 0.0199998), ("gold", 0.0000002)]),
+    (name: "laterite bauxite", color: "#b8552d", porosity: 0.25, minerals: [
+        ("gibbsite", 0.62), ("boehmite", 0.12), ("goethite", 0.12), ("hematite", 0.07), ("kaolinite", 0.07)]),
+    (name: "rock salt", color: "#ece4ee", porosity: 0.01, minerals: [
+        ("halite", 0.90), ("anhydrite", 0.05), ("sylvite", 0.03), ("gypsum", 0.02)]),
+    (name: "coal", color: "#1f1d1b", porosity: 0.05, minerals: [
+        ("coal matter", 0.85), ("illite", 0.10), ("quartz", 0.04), ("pyrite", 0.01)]),
+    (name: "nickel sulfide ore", color: "#7a7140", porosity: 0.005, minerals: [
+        ("olivine", 0.55), ("augite", 0.25), ("pyrrhotite", 0.10), ("magnetite", 0.05),
+        ("pentlandite", 0.04), ("chalcopyrite", 0.01)]),
+    (name: "uranium sandstone", color: "#b4ad55", porosity: 0.15, minerals: [
+        ("quartz", 0.84), ("orthoclase", 0.10), ("kaolinite", 0.055), ("pyrite", 0.0045), ("uraninite", 0.0005)]),
+]

@@ -57,7 +57,9 @@ impl Report {
 }
 
 /// Runs all spikes. `metrics_out`, if given, receives one `name value better` line per metric.
-pub fn run(metrics_out: Option<&Path>) -> ExitCode {
+/// With `report_only` (CI on shared machines), missed budgets become GitHub Actions warnings
+/// and the exit code stays successful; the budgets themselves are unchanged.
+pub fn run(metrics_out: Option<&Path>, report_only: bool) -> ExitCode {
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     println!("Creëer F0 spikes  ({threads} hardware threads)\n");
     let mut report = Report::default();
@@ -67,6 +69,7 @@ pub fn run(metrics_out: Option<&Path>) -> ExitCode {
     crate::solvers::run(&mut report);
     crate::solvers::run_structures(&mut report);
     crate::world_bench::run(&mut report);
+    crate::terrain_bench::run(&mut report, threads);
 
     if let Some(path) = metrics_out {
         let mut text = String::new();
@@ -90,6 +93,11 @@ pub fn run(metrics_out: Option<&Path>) -> ExitCode {
 
     if report.failures.is_empty() {
         println!("All spike budgets met.");
+        ExitCode::SUCCESS
+    } else if report_only {
+        for failure in &report.failures {
+            println!("::warning title=Missed spike budget::{failure}");
+        }
         ExitCode::SUCCESS
     } else {
         println!("Missed budgets:\n  {}", report.failures.join("\n  "));

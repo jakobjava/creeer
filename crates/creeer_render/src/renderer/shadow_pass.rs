@@ -18,11 +18,29 @@ pub(crate) struct ShadowPass {
     sampler: wgpu::Sampler,
     /// Layout of group 1 in the mesh pipeline (shadow map array + comparison sampler).
     pub sample_layout: wgpu::BindGroupLayout,
+    /// Layout of a cascade's matrix (group 1 of shadow-casting pipelines).
+    pub cascade_layout: wgpu::BindGroupLayout,
     /// Bind group for group 1 in the mesh pipeline.
     pub sample_bind_group: wgpu::BindGroup,
 }
 
 /// The depth texture array: one view per cascade for rendering, and the sampling bind group.
+/// Depth state of every shadow-casting pipeline.
+pub(super) fn shadow_depth_state() -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: SHADOW_FORMAT,
+        depth_write_enabled: Some(true),
+        depth_compare: Some(wgpu::CompareFunction::Less),
+        stencil: wgpu::StencilState::default(),
+        // Slope-scaled bias against self-shadowing on surfaces facing away at an angle.
+        bias: wgpu::DepthBiasState {
+            constant: 2,
+            slope_scale: 2.0,
+            clamp: 0.0,
+        },
+    }
+}
+
 fn create_maps(
     device: &wgpu::Device,
     size: u32,
@@ -178,18 +196,7 @@ impl ShadowPass {
                 cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: SHADOW_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                // Slope-scaled bias against self-shadowing on surfaces facing away at an angle.
-                bias: wgpu::DepthBiasState {
-                    constant: 2,
-                    slope_scale: 2.0,
-                    clamp: 0.0,
-                },
-            }),
+            depth_stencil: Some(shadow_depth_state()),
             multisample: wgpu::MultisampleState::default(),
             fragment: None,
             multiview_mask: None,
@@ -205,6 +212,7 @@ impl ShadowPass {
             cascade_bind_groups,
             sample_layout,
             sample_bind_group,
+            cascade_layout,
         }
     }
 
@@ -240,9 +248,10 @@ impl ShadowPass {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         globals: &wgpu::BindGroup,
-        buffers: &MeshBuffers<'_>,
+        buffers: Option<&MeshBuffers<'_>>,
         meshes: &MeshArena,
         draws: &[Vec<Draw>; CASCADES],
+        terrain: &super::terrain_pass::TerrainPass,
     ) {
         for (cascade, view) in self.layer_views.iter().enumerate() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -261,7 +270,10 @@ impl ShadowPass {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, globals, &[]);
             pass.set_bind_group(1, &self.cascade_bind_groups[cascade], &[]);
-            buffers.draw(&mut pass, meshes, &draws[cascade]);
+            if let Some(buffers) = buffers {
+                buffers.draw(&mut pass, meshes, &draws[cascade]);
+            }
+            terrain.draw_shadows(&mut pass, cascade);
         }
     }
 }

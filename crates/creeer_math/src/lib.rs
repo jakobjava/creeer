@@ -1,5 +1,5 @@
 //! f64 math for the simulation: reference frames, camera-relative render transforms and
-//! deterministic elementary functions.
+//! deterministic elementary functions, and quantities with units for data files.
 //!
 //! Conventions used across the whole project:
 //! - SI units everywhere (m, kg, s, N, K, ...).
@@ -9,6 +9,7 @@
 pub mod det;
 pub mod frame;
 pub mod render_space;
+pub mod units;
 
 pub use frame::Frame64;
 /// Re-exported so every crate uses the same glam version and features.

@@ -109,10 +109,10 @@ creeer/
 - Vessels are integrated under the gravity of all bodies (restricted n-body, adaptive high-order integrator). Lagrange points therefore exist naturally.
 - Maneuver planning uses numerical propagation. Reference frames switch between planet-rotating and inertial.
 
-**Terrain (`creeer_terrain`):**
-- A cube-sphere planet with a sparse voxel octree near the surface and heightmap LOD far away.
-- Each voxel stores density plus a rock or material ID. Meshing uses Surface Nets with seam handling between LOD levels (Dual Contouring is evaluated in an ADR).
-- Edits are stored as deltas against the seeded generator.
+**Terrain (`creeer_terrain`, ADR-0006):**
+- Heights live on cube-sphere tiles (one quadtree per face); the 3D terrain is a planet-centred octree of voxel chunks (32³ cells, 1 m at full detail) at every level of detail, from the ground to the whole planet. Sea level is the equipotential of the planet's gravity and rotation.
+- The density is computed from the heights and the edits; the rock comes from the geology. Meshing uses Surface Nets, with skirts only between chunks of different levels.
+- Edits are an ordered log of dig/fill brushes: deltas against the seeded generator, saved bit-exactly.
 - Geology: crust layers, igneous, sedimentary and metamorphic rocks, and real deposit models (porphyry Cu-Mo, banded iron, placer gold, laterite bauxite, evaporites, coal seams, oil/gas traps, nickel sulfides, uranium).
 - Trees are procedural beam structures that can be felled into logs.
 
@@ -252,7 +252,7 @@ There are no gameplay loops in this phase. Each milestone delivers a **tech sand
 | **F0** | Toolchain & engine skeleton | Toolchain, workspace, CI script + 3-OS CI matrix, decoupled simulation/render threads, window + free camera + debug lines + egui FPS/frame-time overlay, headless runner, perf-gate harness. Three spikes measured: (a) XPBD with 5k beams at ≥ 8 substeps × 60 Hz within 4 ms on the minimum CPU class; (b) voxel chunk meshing throughput (target ≥ 200 chunks/s on 6 cores); (c) camera-relative rendering at 500 km radius with no jitter. ADR-0001 (engine/language) and ADR-0002 (solver) written |
 | F1 | Renderer core | wgpu renderer: PBR-lite stylised materials, sun lighting + cascaded shadows, instancing, GPU culling, LODs, reversed-Z at planetary scale, atmosphere scattering, stars, engineering overlay system, egui integration. Budgets: 10k instanced parts at 60 FPS on minimum spec |
 | F2 | Physics core | **Done** (ADR-0004, ADR-0005). Solver comparison spike (ADR-0004: implicit BDF2 + sparse direct solve). Structures (beams with stretch/bend/torsion, damping, rigid bodies, contacts, friction, plasticity, fracture, sleeping, parallel islands) + the full mechanics validation suite green. Sandbox: bridge under load with stress overlay, crash test, stacking |
-| F3 | Planets & terrain | Cube-sphere planet, geology + ore deposit generator (data-driven), voxel octree + LOD meshing, dig/fill edits, terrain collision with the physics world, radial gravity, day/night, edits saved as deltas. Sandbox: fly from orbit down to the surface without hitches, and dig tunnels |
+| F3 | Planets & terrain | **Done** (ADR-0006). Cube-sphere planet, geology + ore deposit generator (data-driven), voxel octree + LOD meshing, dig/fill edits, terrain collision with the physics world, radial gravity, day/night, edits saved as deltas. Sandbox: fly from orbit down to the surface without hitches, and dig tunnels |
 | F4 | Orbital mechanics & solar system | Procedural solar system, Kepler rails, restricted n-body propagation, reference-frame switching (rotating ↔ inertial), floating origin, time warp, map view with orbits. Orbit validation suite green. Sandbox: place a test mass in orbit and fly to the moon |
 | F5 | Networking & persistence | Client/server split, in-process server for singleplayer, interest management, snapshot interpolation, prediction for a test avatar, replication of soft bodies (plastic deltas) and terrain edits, dedicated server binary, versioned saves + migration tests. Bandwidth budgets met |
 | F6 | Simulation domains | The engines for each domain, each validated against analytic or reference results, each with a sandbox scene: **materials & chemistry** (species DB, mixtures, kinetics, equilibrium, mass/energy balance), **thermal** network, **electrical** MNA (DC/transient/AC), **fluids** (pipes, atmospheres, aero panels, buoyancy), **mechanical** drivetrain, **logic** (signals + sandboxed Luau VM) |

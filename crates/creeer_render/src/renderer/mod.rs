@@ -20,6 +20,7 @@ use mesh_pass::MeshPass;
 use shadow_pass::ShadowPass;
 use sky_pass::SkyPass;
 use targets::{Targets, scene_depth_state, scene_multisample, shader};
+use terrain_pass::TerrainPass;
 use tonemap_pass::TonemapPass;
 
 mod encode;
@@ -31,6 +32,7 @@ mod setup;
 mod shadow_pass;
 mod sky_pass;
 mod targets;
+mod terrain_pass;
 mod tonemap_pass;
 use bytemuck::{Pod, Zeroable};
 use creeer_math::glam::Mat4;
@@ -43,6 +45,8 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 /// Multisample anti-aliasing (crisp edges on thin beams).
 const MSAA_SAMPLES: u32 = 4;
+/// Entries of the sky radiance table by sun elevation (`terrain.wgsl`).
+const SKY_TABLE: usize = 16;
 
 const GLOBALS_WGSL: &str = include_str!("../shaders/globals.wgsl");
 
@@ -80,6 +84,9 @@ pub struct Frame<'a> {
     pub camera: &'a Camera,
     /// Mesh instances.
     pub scene: &'a Scene,
+    /// Terrain chunks to draw: ids given to [`Renderer::insert_terrain`], each with the chunk
+    /// faces whose skirts to draw (bit f for face f of `TerrainMeshData::skirts`).
+    pub terrain: &'a [(u64, u8)],
     /// Sun and ambient light.
     pub lighting: &'a Lighting,
     /// World-space debug lines.
@@ -105,6 +112,10 @@ pub struct RenderStats {
     pub shadow_instances: usize,
     /// Indexed draw calls issued.
     pub draw_calls: usize,
+    /// Terrain chunks that passed frustum culling.
+    pub terrain_chunks_drawn: usize,
+    /// Terrain triangles drawn for the camera.
+    pub terrain_triangles: usize,
     /// Automatic exposure (only filled in by [`Renderer::capture`]).
     pub exposure: f32,
     /// Average scene luminance the exposure was derived from (only filled in by capture).
@@ -123,6 +134,7 @@ pub struct Renderer {
     globals_buffer: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
     mesh_pass: MeshPass,
+    terrain: TerrainPass,
     shadows: ShadowPass,
     line_pass: LinePass,
     tonemap: TonemapPass,
@@ -133,6 +145,8 @@ pub struct Renderer {
     egui: egui_wgpu::Renderer,
     line_vertices: Vec<LineVertex>,
     stats: RenderStats,
+    /// Sky radiance by sun elevation for the atmosphere and sun it was made for.
+    sky_table: Option<(Atmosphere, [f64; 3], [[f32; 4]; SKY_TABLE])>,
     /// Meshes available to [`Scene`]s drawn by this renderer.
     pub meshes: MeshArena,
 }

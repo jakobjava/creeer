@@ -13,6 +13,11 @@
 //! one frame headless (no window) and saves it, for reviewing rendering changes.
 //! `creeer_client --bench <frames> [--view <name>] [--no-factory]` renders frames headless
 //! and reports frame-time percentiles (CPU scene build + GPU, no vsync).
+//!
+//! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
+//! camera, with physics, day and night, digging and filling. Headless:
+//! `creeer_client --planet <orbit|high|low|surface|tunnel|night> <file.png> [--sun <deg>]`, and
+//! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
 
 mod app;
 mod demo;
@@ -20,6 +25,10 @@ mod fly_camera;
 mod headless;
 mod physics_sandbox;
 mod physics_view;
+mod planet_shot;
+mod planet_sim;
+mod planet_ui;
+mod planet_view;
 mod sandbox;
 
 use app::App;
@@ -68,6 +77,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_or("overview", String::as_str);
         let factory = !args.iter().any(|a| a == "--no-factory");
         return bench(frames, view, factory);
+    }
+    if args.iter().any(|a| a == "--planet-bench") {
+        return planet_shot::descent_bench(&args);
+    }
+    if args.iter().any(|a| a == "--planet") {
+        return planet_shot::run(&args);
     }
     if let Some(options) = ScreenshotOptions::parse(&args)? {
         return screenshot(&options);

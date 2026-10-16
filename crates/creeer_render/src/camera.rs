@@ -3,8 +3,9 @@
 use creeer_math::glam::camera::rh::proj::directx;
 use creeer_math::glam::{DQuat, DVec3, EulerRot, Mat4};
 
-/// A camera in simulation space. Conventions: right-handed, +Y up, looking down −Z when
-/// `yaw == pitch == 0`.
+/// A camera in simulation space. Conventions: right-handed, looking down −Z of its horizon
+/// frame when `yaw == pitch == 0`. The horizon frame (`frame`) says which way is up: the
+/// identity for flat scenes (+Y up), the local vertical on a planet.
 #[derive(Clone, Copy, Debug)]
 pub struct Camera {
     /// Position in simulation space (m, f64).
@@ -17,6 +18,8 @@ pub struct Camera {
     pub fov_y: f32,
     /// Distance of the near clipping plane (m). There is no far plane.
     pub near: f32,
+    /// Rotation from the world to the camera's horizon frame (its +Y is "up").
+    pub frame: DQuat,
 }
 
 impl Camera {
@@ -28,12 +31,25 @@ impl Camera {
             pitch: 0.0,
             fov_y: 70f32.to_radians(),
             near: 0.05,
+            frame: DQuat::IDENTITY,
         }
     }
 
     /// Orientation of the camera in simulation space.
     pub fn rotation(&self) -> DQuat {
-        DQuat::from_euler(EulerRot::YXZ, self.yaw, self.pitch, 0.0)
+        self.frame * DQuat::from_euler(EulerRot::YXZ, self.yaw, self.pitch, 0.0)
+    }
+
+    /// Up in the camera's horizon frame.
+    pub fn up(&self) -> DVec3 {
+        self.frame * DVec3::Y
+    }
+
+    /// Turns the horizon frame so that `up` is up, by the smallest rotation: moving over a
+    /// planet, the view keeps its heading and the horizon stays level.
+    pub fn level_to(&mut self, up: DVec3) {
+        let turn = DQuat::from_rotation_arc(self.up(), up.normalize());
+        self.frame = (turn * self.frame).normalize();
     }
 
     /// Unit vector the camera looks along.
@@ -114,6 +130,20 @@ mod tests {
             );
             previous = depth;
         }
+    }
+
+    #[test]
+    fn a_levelled_camera_keeps_its_heading() {
+        let mut camera = Camera::new(DVec3::ZERO);
+        camera.yaw = 0.3;
+        let up = DVec3::new(0.0, 0.8, 0.6).normalize();
+        camera.level_to(up);
+        assert_vec_close(camera.up(), up);
+        // Forward stays horizontal in the new frame, and level_to is idempotent.
+        assert!(camera.forward().dot(up).abs() < 1e-12);
+        let forward = camera.forward();
+        camera.level_to(up);
+        assert_vec_close(camera.forward(), forward);
     }
 
     #[test]

@@ -20,7 +20,7 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -30,6 +30,7 @@ jobs:
   spikes:
     # Shared CI machines are slow and noisy, so budgets here are informational; the gating
     # perf check (`cargo xtask perf`) runs on the developer machine against its baseline.
+    # `--report-only` turns missed budgets into warning annotations instead of a red job.
     name: spikes (${{ matrix.os }})
     needs: check
     continue-on-error: true
@@ -39,9 +40,9 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - name: Spike measurements
-        run: cargo run --release -p creeer_tools -- bench-spikes
+        run: cargo run --release -p creeer_tools -- bench-spikes --report-only

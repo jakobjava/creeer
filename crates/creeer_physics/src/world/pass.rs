@@ -123,7 +123,7 @@ impl World {
             side(a, na, raw.point_a),
             side_b,
             raw.normal,
-            raw.offset,
+            raw.offset(),
             k,
             // Overdamps the contact's own (unresolvable) vibration within the step.
             k * self.dt,
@@ -131,7 +131,22 @@ impl World {
         );
         let local_a = body_a.structure.orientation[na].conjugate()
             * (raw.point_a - body_a.structure.position[na]);
-        if let Some(point) = anchor::find(anchors, (a, na), local_a, b) {
+        contact.radius_a = raw.radius_a;
+        contact.radius_b = raw.radius_b;
+        let kept = anchor::find(anchors, (a, na), local_a, b);
+        if contact.rolls() {
+            // A contact with a sphere: the anchor lies under A's surface point, less the
+            // stick offset carried over from the last step (`friction.rs`).
+            let slip = match kept {
+                Some(anchor::Kept::Slip(u)) => u,
+                _ => DVec3::ZERO,
+            };
+            let at = raw.point_a - raw.normal * raw.radius_a - slip;
+            contact.anchor = match b {
+                Some((bb, nb)) => side(bb, nb, at),
+                None => Side::Fixed(at),
+            };
+        } else if let Some(anchor::Kept::Point(point)) = kept {
             contact.anchor = match b {
                 Some((bb, nb)) => Side::Node {
                     member: member(bb),

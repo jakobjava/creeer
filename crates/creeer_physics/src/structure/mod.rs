@@ -4,6 +4,7 @@
 //! freedom), joined rigidly by beam elements ([`element`]). It is stepped in time by the
 //! implicit solver of ADR-0004 ([`ImplicitSolver`]) or solved statically ([`statics`]).
 
+use crate::gravity::PlanetGravity;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 use rayon::prelude::*;
 
@@ -95,8 +96,10 @@ pub struct Structure {
     /// coefficient uses the speed at the start of each step, which keeps it implicit
     /// (stable at any speed).
     pub drag: Vec<f64>,
-    /// Gravitational acceleration (m/s²).
+    /// Uniform gravitational acceleration (m/s²).
     pub gravity: DVec3,
+    /// A planet's gravity in its rotating frame (`gravity.rs`), on top of `gravity`.
+    pub planet: Option<PlanetGravity>,
     pub(crate) rest: Vec<DVec3>,
     pub(crate) mass: Vec<f64>,
     /// Rotational inertia of each node in its rest frame (kg·m²).
@@ -173,8 +176,12 @@ impl Structure {
                 let w = self.angular_velocity[i];
                 let kinetic = 0.5 * self.mass[i] * self.velocity[i].length_squared()
                     + 0.5 * w.dot(inertia * w);
-                let potential = -(self.gravity * self.mass[i] + self.load[i])
+                let mut potential = -(self.gravity * self.mass[i] + self.load[i])
                     .dot(self.position[i] - self.rest[i]);
+                if let Some(planet) = &self.planet {
+                    potential +=
+                        self.mass[i] * planet.potential_difference(self.position[i], self.rest[i]);
+                }
                 (kinetic, potential)
             })
             .collect();

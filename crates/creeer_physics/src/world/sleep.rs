@@ -54,6 +54,21 @@ impl World {
         }
     }
 
+    /// Wakes every sleeping body with a collision shape within `radius` of `center`: call it
+    /// after the ground changed there (a terrain edit), or a body resting on removed ground
+    /// would float.
+    pub fn wake_near(&mut self, center: DVec3, radius: f64) {
+        for body in self.bodies.iter_mut().filter(|b| b.sleep.asleep) {
+            let s = &body.structure;
+            let near = body.shapes.iter().any(|&(node, shape)| {
+                (s.position[node] - center).length() < radius + shape.bounding_radius()
+            });
+            if near {
+                body.wake();
+            }
+        }
+    }
+
     /// After a step: counts still steps, and puts whole groups of touching bodies to sleep
     /// once all their bodies have been still long enough (one body falling asleep alone
     /// would be woken again at once by its still-awake neighbour).

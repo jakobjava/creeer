@@ -283,6 +283,7 @@ impl ImplicitSolver {
             w.rotations[i] = rotation;
             w.drag_rate[i] = drag;
         }
+        w.set_coriolis(s);
         let (x_hat, rotations, tau) = (&w.x_hat, &w.rotations, w.tau);
         s.elements
             .par_iter()

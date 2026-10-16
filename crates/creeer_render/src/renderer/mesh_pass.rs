@@ -81,8 +81,9 @@ impl MeshPass {
     ) -> Self {
         let source = concat!(
             include_str!("../shaders/heatmap.wgsl"),
-            "
-",
+            "\n",
+            include_str!("../shaders/lighting.wgsl"),
+            "\n",
             include_str!("../shaders/mesh.wgsl")
         );
         let module = shader(device, "mesh", source);

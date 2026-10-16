@@ -1,11 +1,13 @@
 //! Developer tools: data validator, headless scenario runner, benchmarks.
 //!
-//! `creeer_tools bench-spikes [--metrics <file>]` measures the F0 spikes against their
-//! budgets and optionally writes the metrics for `cargo xtask perf`.
+//! `creeer_tools bench-spikes [--metrics <file>] [--report-only]` measures the spikes against
+//! their budgets and optionally writes the metrics for `cargo xtask perf`. `--report-only`
+//! (used by CI) reports missed budgets as warnings instead of failing.
 
 mod image_diff;
 mod solvers;
 mod spikes;
+mod terrain_bench;
 mod world_bench;
 
 use std::path::PathBuf;
@@ -14,7 +16,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: creeer_tools <command>
 
 commands:
-  bench-spikes [--metrics <file>]   measure the F0 spikes against their budgets
+  bench-spikes [--metrics <file>] [--report-only]   measure the spikes against their budgets
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region";
 
@@ -35,15 +37,19 @@ fn main() -> ExitCode {
             _ => usage(),
         },
         Some("bench-spikes") => {
-            let metrics = match args.get(1).map(String::as_str) {
-                None => None,
-                Some("--metrics") => match args.get(2) {
-                    Some(path) => Some(PathBuf::from(path)),
-                    None => return usage(),
-                },
-                Some(_) => return usage(),
-            };
-            spikes::run(metrics.as_deref())
+            let (mut metrics, mut report_only) = (None, false);
+            let mut rest = args[1..].iter();
+            while let Some(arg) = rest.next() {
+                match arg.as_str() {
+                    "--metrics" => match rest.next() {
+                        Some(path) => metrics = Some(PathBuf::from(path)),
+                        None => return usage(),
+                    },
+                    "--report-only" => report_only = true,
+                    _ => return usage(),
+                }
+            }
+            spikes::run(metrics.as_deref(), report_only)
         }
         _ => usage(),
     }

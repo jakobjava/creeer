@@ -20,7 +20,8 @@ pub fn shapes(a: (Pose, Shape), b: (Pose, Shape), margin: f64) -> Vec<RawContact
                     point_a: a.0.position,
                     point_b: b.0.position,
                     normal,
-                    offset: ra + rb,
+                    radius_a: ra,
+                    radius_b: rb,
                 },
                 margin,
             )
@@ -48,7 +49,8 @@ pub fn with_static(a: (Pose, Shape), b: &StaticShape, margin: f64) -> Vec<RawCon
                     point_a: c,
                     point_b: c - normal * (normal.dot(c) - offset),
                     normal,
-                    offset: radius,
+                    radius_a: radius,
+                    radius_b: 0.0,
                 },
                 margin,
             )
@@ -64,7 +66,8 @@ pub fn with_static(a: (Pose, Shape), b: &StaticShape, margin: f64) -> Vec<RawCon
                         point_a: v,
                         point_b: v - normal * gap,
                         normal,
-                        offset: 0.0,
+                        radius_a: 0.0,
+                        radius_b: 0.0,
                     })
                 })
                 .collect()
@@ -97,7 +100,8 @@ fn flip(c: RawContact) -> RawContact {
         point_a: c.point_b,
         point_b: c.point_a,
         normal: -c.normal,
-        offset: c.offset,
+        radius_a: c.radius_b,
+        radius_b: c.radius_a,
     }
 }
 
@@ -131,7 +135,8 @@ fn sphere_box(c: DVec3, radius: f64, pose: Pose, half: DVec3, margin: f64) -> Ve
             point_a: c,
             point_b,
             normal,
-            offset: radius,
+            radius_a: radius,
+            radius_b: 0.0,
         },
         margin,
     )

@@ -1,5 +1,10 @@
 //! Friction anchors kept from one step to the next (see `contact.rs`): where on body B a
 //! contact point of body A sticks.
+//!
+//! Contacts between faces, edges and corners keep the anchor as a material point of B. A
+//! contact with a sphere moves over both surfaces as the sphere rolls, so it keeps its stick
+//! offset instead, and its next anchor lies that far from the new contact point
+//! (`friction.rs`).
 
 use super::Body;
 use super::contact::{Contacts, Side};
@@ -11,14 +16,22 @@ use creeer_math::glam::DVec3;
 /// same contact.
 const SAME_POINT: f64 = 0.02;
 
+/// What a contact keeps for the next step.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Kept {
+    /// The anchored point: in B's node frame, or in the world for fixed geometry.
+    Point(DVec3),
+    /// The stick offset of a rolling contact (world): A's friction point minus the anchor.
+    Slip(DVec3),
+}
+
 /// One anchor, with global body indices.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Anchor {
     a: (usize, NodeId),
     local_a: DVec3,
     b: Option<(usize, NodeId)>,
-    /// The anchored point: in B's node frame, or in the world for fixed geometry.
-    point: DVec3,
+    kept: Kept,
 }
 
 /// Last step's anchor for this contact, if it had one.
@@ -27,14 +40,14 @@ pub fn find(
     a: (usize, NodeId),
     local_a: DVec3,
     b: Option<(usize, NodeId)>,
-) -> Option<DVec3> {
+) -> Option<Kept> {
     anchors
         .iter()
         .filter(|x| x.a == a && x.b == b)
         .map(|x| (x, (x.local_a - local_a).length()))
         .filter(|(_, d)| *d < SAME_POINT)
         .min_by(|p, q| p.1.total_cmp(&q.1))
-        .map(|(x, _)| x.point)
+        .map(|(x, _)| x.kept)
 }
 
 /// The anchors after a group's step (moved where the contacts slid). `group` lists the
@@ -50,7 +63,8 @@ pub fn after_step(bodies: &[Body], group: &[usize], contacts: &Contacts) -> Vec<
     contacts
         .list
         .iter()
-        .filter_map(|c| {
+        .enumerate()
+        .filter_map(|(i, c)| {
             let Side::Node {
                 member,
                 node,
@@ -59,25 +73,35 @@ pub fn after_step(bodies: &[Body], group: &[usize], contacts: &Contacts) -> Vec<
             else {
                 return None;
             };
-            let moved = contacts.moved_anchor(c, &states);
-            let (b, point) = match c.anchor {
+            let b = match c.anchor {
                 Side::Node {
                     member: mb,
                     node: nb,
-                    local: lb,
-                } => {
-                    let s = &bodies[mb].structure;
-                    let local =
-                        moved.map_or(lb, |p| s.orientation[nb].conjugate() * (p - s.position[nb]));
-                    (Some((group[mb], nb)), local)
-                }
-                Side::Fixed(p) => (None, moved.unwrap_or(p)),
+                    ..
+                } => Some((group[mb], nb)),
+                Side::Fixed(_) => None,
+            };
+            let kept = if c.rolls() {
+                Kept::Slip(contacts.end_slip(i, &states))
+            } else {
+                let moved = contacts.moved_anchor(i, &states);
+                Kept::Point(match c.anchor {
+                    Side::Node {
+                        member: mb,
+                        node: nb,
+                        local: lb,
+                    } => {
+                        let s = &bodies[mb].structure;
+                        moved.map_or(lb, |p| s.orientation[nb].conjugate() * (p - s.position[nb]))
+                    }
+                    Side::Fixed(p) => moved.unwrap_or(p),
+                })
             };
             Some(Anchor {
                 a: (group[member], node),
                 local_a: local,
                 b,
-                point,
+                kept,
             })
         })
         .collect()

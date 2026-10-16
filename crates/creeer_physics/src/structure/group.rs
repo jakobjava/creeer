@@ -111,8 +111,9 @@ pub(super) fn trial_states<'a>(members: &'a [Member<'_>]) -> Vec<MemberState<'a>
         .collect()
 }
 
-/// Energy may rise by this fraction of the kinetic + elastic energy before the guard
-/// rejects a Newmark step (rounding and Newmark's bounded energy oscillation).
+/// Energy may rise by this fraction of the kinetic + elastic energy (before or after the
+/// step, whichever is larger) before the guard rejects a Newmark step (rounding, Newmark's
+/// bounded energy oscillation, and its second-order error in fields that vary in space).
 const ENERGY_SLACK: f64 = 1.0e-3;
 
 /// Total energy (kinetic, elastic, potential of gravity and loads, coupling) and its
@@ -184,9 +185,12 @@ pub fn step_group_with(
             members[0].1.timings.guard += t.elapsed();
             substep(members, coupling, scheme);
             let t = Instant::now();
-            let (after, _) = group_energy(members, coupling, true);
+            let (after, active_after) = group_energy(members, coupling, true);
             members[0].1.timings.guard += t.elapsed();
-            let limit = before + ENERGY_SLACK * active + 1e-9;
+            // The slack scales with the energy in motion before or after the step, whichever
+            // is larger: a body starting from rest in a varying field (planet gravity) makes
+            // a genuine second-order energy error that the 1 nJ floor alone would reject.
+            let limit = before + ENERGY_SLACK * active.max(active_after) + 1e-9;
             if after > limit {
                 // Fall back to ever more dissipative schemes; in non-convex contact situations
                 // even BDF2 can gain a little. As a last resort the excess is taken from the

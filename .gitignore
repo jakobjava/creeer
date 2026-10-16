@@ -2,3 +2,6 @@
 *.pdb
 *.tracy
 /perf/results/
+
+# Terrain edits saved by the planet sandbox
+planet_edits.bin

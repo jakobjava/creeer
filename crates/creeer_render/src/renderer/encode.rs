@@ -24,6 +24,7 @@ pub(super) struct Globals {
     sun_irradiance: [f32; 4],
     ground_albedo: [f32; 4],
     heatmap: [f32; 4],
+    sky_irradiance: [[f32; 4]; SKY_TABLE],
 }
 
 impl Renderer {
@@ -63,7 +64,9 @@ impl Renderer {
             self.shadows.size(),
         );
         let rgb = |c: [f32; 3]| [c[0], c[1], c[2], 0.0];
+        let sky_irradiance = self.sky_table(frame.sky);
         let globals = Globals {
+            sky_irradiance,
             view_proj: view_proj.to_cols_array_2d(),
             sun_direction: lighting.sun_direction.as_vec3().extend(0.0).to_array(),
             sun_color: rgb(lighting.sun_color),
@@ -109,6 +112,16 @@ impl Renderer {
             view_proj,
             shadows_on.then_some((&cascades, &basis)),
         );
+        self.terrain.prepare(
+            &self.device,
+            &self.queue,
+            frame.terrain,
+            frame.camera.position,
+            &Frustum::from_view_projection(view_proj),
+            shadows_on.then_some((&cascades, &basis)),
+        );
+        self.stats.terrain_chunks_drawn = self.terrain.drawn();
+        self.stats.terrain_triangles = self.terrain.triangles;
         frame
             .lines
             .write_vertices(frame.camera.position, &mut self.line_vertices);
@@ -138,15 +151,14 @@ impl Renderer {
         }
 
         // Pass 0: sun shadow cascades (cleared even when disabled, so sampling stays valid).
-        if let Some(buffers) = self.mesh_pass.buffers() {
-            self.shadows.encode(
-                &mut encoder,
-                &self.globals_bind_group,
-                &buffers,
-                &self.meshes,
-                &self.mesh_pass.shadow_draws,
-            );
-        }
+        self.shadows.encode(
+            &mut encoder,
+            &self.globals_bind_group,
+            self.mesh_pass.buffers().as_ref(),
+            &self.meshes,
+            &self.mesh_pass.shadow_draws,
+            &self.terrain,
+        );
 
         // Pass 1: 3D scene into the multisampled HDR target, resolved to a single sample.
         {
@@ -175,6 +187,11 @@ impl Renderer {
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
             self.mesh_pass
                 .draw(&mut pass, &self.meshes, &self.shadows.sample_bind_group);
+            self.terrain.draw(
+                &mut pass,
+                &self.shadows.sample_bind_group,
+                self.sky_pipeline.luts().1,
+            );
             if frame.sky.is_some() {
                 self.sky_pipeline.draw(&mut pass);
             }
@@ -261,4 +278,38 @@ fn sky_globals(sky: Option<&Sky>, camera: &Camera) -> Globals {
     let [r, g, b] = a.ground_albedo.map(f);
     globals.ground_albedo = [r, g, b, 0.0];
     globals
+}
+
+impl Renderer {
+    /// The sky radiance table for terrain lighting (`terrain.wgsl`): the cosine-weighted
+    /// radiance of the sky at the ground for sun cosines from −0.2 to 1, integrated once
+    /// per atmosphere and sun (`atmosphere::local_light`).
+    fn sky_table(&mut self, sky: Option<&Sky>) -> [[f32; 4]; SKY_TABLE] {
+        let Some(sky) = sky else {
+            return [[0.0; 4]; SKY_TABLE];
+        };
+        if let Some((atmosphere, sun, table)) = &self.sky_table
+            && *atmosphere == sky.atmosphere
+            && sun.map(f64::to_bits) == sky.sun_irradiance.map(f64::to_bits)
+        {
+            return *table;
+        }
+        let table = std::array::from_fn(|i| {
+            #[allow(clippy::cast_precision_loss)] // 16 entries
+            let mu_s = -0.2 + 1.2 * i as f64 / (SKY_TABLE - 1) as f64;
+            let to_sun = creeer_math::glam::DVec3::new((1.0 - mu_s * mu_s).sqrt(), mu_s, 0.0);
+            let light = crate::atmosphere::local_light(
+                &sky.atmosphere,
+                0.0,
+                creeer_math::glam::DVec3::Y,
+                to_sun,
+                sky.sun_irradiance,
+            );
+            #[allow(clippy::cast_possible_truncation)] // light values are small
+            let f = |v: f64| v as f32;
+            [f(light.sky[0]), f(light.sky[1]), f(light.sky[2]), 0.0]
+        });
+        self.sky_table = Some((sky.atmosphere, sky.sun_irradiance, table));
+        table
+    }
 }

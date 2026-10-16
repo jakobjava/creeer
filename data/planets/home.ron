@@ -1,0 +1,54 @@
+// The reference planet of the F3 tech sandbox: KSP scale (plan.md, "radius roughly
+// 300-600 km") with Earth's surface gravity and a 6-hour day.
+//
+// Elevation: the continent noise is mapped to the fraction of the planet's surface where
+// it is lower (0..1), and `curve` maps that fraction to a base height. A coast at 0.54
+// therefore means 46 % land whatever the seed. Mask `from`/`to` are fractions too. Heights
+// are relative to the datum radius ("sea level"; there is no water before F6, so ocean
+// basins are dry).
+Planet(
+    name: "Home",
+    seed: 20261016,
+    radius: "500 km",
+    surface_gravity: "9.81 m/s^2",
+    sidereal_day: "6 h",
+    axial_tilt: "23.5 deg",
+    // Provinces and ore deposits (relative to this file).
+    geology: "home_geology.ron",
+    elevation: (
+        continents: (wavelength: "700 km", octaves: 5),
+        curve: [
+            (0.00, "-3400 m"), // abyssal plain
+            (0.30, "-2700 m"),
+            (0.44, "-500 m"),  // continental slope and shelf
+            (0.52, "-80 m"),
+            (0.54, "20 m"),    // coast
+            (0.75, "220 m"),   // lowlands
+            (0.92, "800 m"),   // plateaus
+            (1.00, "1500 m"),
+        ],
+        layers: [
+            (
+                name: "mountains",
+                kind: Ridged,
+                noise: (wavelength: "80 km", octaves: 7, gain: 0.5),
+                amplitude: "3500 m",
+                // Mountain belts where the mask is in the top 30 % (land only).
+                mask: Some((noise: (wavelength: "600 km", octaves: 3), from: 0.70, to: 0.90)),
+                land_only: true,
+            ),
+            (
+                name: "hills",
+                kind: Fbm,
+                noise: (wavelength: "9 km", octaves: 5),
+                amplitude: "320 m",
+            ),
+            (
+                name: "detail",
+                kind: Fbm,
+                noise: (wavelength: "600 m", octaves: 9),
+                amplitude: "22 m",
+            ),
+        ],
+    ),
+)

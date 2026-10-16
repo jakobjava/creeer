@@ -10,11 +10,15 @@ pub mod contact;
 #[cfg(test)]
 mod crush_tests;
 mod detect;
+mod friction;
+pub mod ground;
 mod impact;
 pub mod narrow;
 mod pass;
 #[cfg(test)]
 mod pile_tests;
+#[cfg(test)]
+mod planet_tests;
 mod sat;
 pub mod shape;
 mod sleep;
@@ -22,10 +26,13 @@ mod stepping;
 #[cfg(test)]
 mod tests;
 
+use crate::gravity::PlanetGravity;
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
 use contact::{Contact, Contacts};
 use creeer_math::glam::{DQuat, DVec3};
+use ground::Ground;
 use shape::{Shape, StaticShape};
+use std::sync::Arc;
 /// Largest turn of a box within one (sub)step (rad).
 const MAX_TURN: f64 = 0.05;
 /// Most substeps per step.
@@ -101,6 +108,10 @@ pub struct World {
     pub bodies: Vec<Body>,
     /// Fixed geometry (ground, walls).
     pub statics: Vec<StaticShape>,
+    /// Ground given by a density field (planet terrain; `ground.rs`).
+    pub ground: Option<Arc<dyn Ground>>,
+    /// Planet gravity for every body added from now on (replacing their uniform gravity).
+    pub planet: Option<PlanetGravity>,
     /// Friction coefficient of the fixed geometry.
     pub static_friction: f64,
     /// Restitution of the fixed geometry.
@@ -123,6 +134,8 @@ impl World {
         Self {
             bodies: Vec::new(),
             statics: Vec::new(),
+            ground: None,
+            planet: None,
             static_friction: 0.6,
             static_restitution: 0.5,
             contact_stiffness: 1.0e8,
@@ -140,6 +153,10 @@ impl World {
 
     /// Adds a body and returns its index.
     pub fn add(&mut self, mut body: Body) -> usize {
+        if let Some(planet) = self.planet {
+            body.structure.gravity = DVec3::ZERO;
+            body.structure.planet = Some(planet);
+        }
         // The body may have been changed since its solver was made (velocity, gravity).
         body.solver.reset_history(&body.structure);
         self.bodies.push(body);

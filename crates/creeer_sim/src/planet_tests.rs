@@ -1,0 +1,198 @@
+//! Physics on the reference planet's real terrain.
+
+use crate::{TerrainGround, planet_gravity};
+use creeer_math::glam::{DMat3, DVec3};
+use creeer_physics::world::shape::Shape;
+use creeer_physics::world::{Body, World};
+use creeer_terrain::edits::{Brush, Edit};
+use creeer_terrain::elevation::fibonacci_sphere;
+use creeer_terrain::{Planet, Terrain};
+use std::sync::Arc;
+
+const DT: f64 = 1.0 / 60.0;
+
+fn terrain() -> Arc<Terrain> {
+    let path = creeer_terrain::data_path("planets/home.ron");
+    Arc::new(Terrain::new(Planet::load(&path).expect("home.ron loads")))
+}
+
+/// A surface point on land whose slope lies in `degrees`, and the ground normal there.
+fn spot(terrain: &Terrain, degrees: (f64, f64)) -> (DVec3, DVec3) {
+    fibonacci_sphere(4000)
+        .find_map(|up| {
+            let height = terrain.surface_height(up);
+            if height < 20.0 {
+                return None;
+            }
+            let p = up * (terrain.planet().datum.radius(up) + height);
+            let (_, gradient) = terrain.density_gradient(p);
+            let normal = gradient.normalize();
+            let slope = normal.angle_between(up).to_degrees();
+            (degrees.0..degrees.1)
+                .contains(&slope)
+                .then_some((p, normal))
+        })
+        .expect("such a spot exists")
+}
+
+fn world(terrain: &Arc<Terrain>) -> World {
+    let mut world = World::new(DT);
+    world.planet = Some(planet_gravity(terrain.planet()));
+    world.ground = Some(Arc::new(TerrainGround(Arc::clone(terrain))));
+    world
+}
+
+/// The deepest any point of a box's surface lies inside the terrain (m, 0 if none).
+fn penetration(terrain: &Terrain, world: &World, half: f64) -> f64 {
+    let s = &world.bodies[0].structure;
+    let r = DMat3::from_quat(s.orientation[0]);
+    let mut deepest = 0.0f64;
+    for i in 0..=10 {
+        for j in 0..=10 {
+            for k in 0..=10 {
+                let local = DVec3::new(f64::from(i), f64::from(j), f64::from(k)) / 5.0 - 1.0;
+                if local.abs().max_element() < 0.999 {
+                    continue; // inside the box
+                }
+                let d = terrain.density(s.position[0] + r * (local * half));
+                deepest = deepest.min(d);
+            }
+        }
+    }
+    -deepest
+}
+
+fn crate_at(position: DVec3) -> Body {
+    Body::rigid(
+        Shape::Box {
+            half: DVec3::splat(0.5),
+        },
+        200.0,
+        position,
+        DT,
+    )
+}
+
+#[test]
+fn a_crate_dropped_on_the_terrain_comes_to_rest_on_it() {
+    let terrain = terrain();
+    let (p, normal) = spot(&terrain, (2.0, 12.0));
+    let mut world = world(&terrain);
+    world.add(crate_at(p + normal * 2.0));
+    for _ in 0..360 {
+        world.step();
+    }
+    assert!(world.bodies[0].sleep.asleep, "comes to rest within 6 s");
+    let deepest = penetration(&terrain, &world, 0.5);
+    assert!(
+        deepest < 0.005,
+        "the terrain pokes {deepest} m into the crate"
+    );
+    // It rests on the ground, not above it: its centre is within a box diagonal.
+    let centre = world.bodies[0].structure.position[0];
+    assert!(
+        terrain.density(centre) < 0.9,
+        "floats {} m up",
+        terrain.density(centre)
+    );
+}
+
+#[test]
+fn a_ball_rolls_downhill_without_gaining_energy() {
+    let terrain = terrain();
+    let (p, normal) = spot(&terrain, (12.0, 25.0));
+    let mut world = world(&terrain);
+    world.static_friction = 0.8;
+    let mut ball = Body::rigid(Shape::Sphere { radius: 0.3 }, 30.0, p + normal * 0.31, DT);
+    ball.friction = 0.8;
+    world.add(ball);
+    world.step();
+    let start_energy = world.energy();
+    let start = world.bodies[0].structure.position[0];
+    let kinetic = |w: &World| w.bodies[0].structure.node_energy().0;
+    let mut previous = start_energy;
+    for tick in 0..180 {
+        world.step();
+        let e = world.energy();
+        // Rolling loses nothing in principle; contacts and steps may only take energy away.
+        // The frozen contact plane of a step differs from the curved terrain by ~d²·κ, so
+        // as in ADR-0005 a rise of 10⁻³ of the energy in motion is allowed per tick.
+        let slack = 1e-3 * kinetic(&world) + 1e-6;
+        assert!(
+            e <= previous + slack,
+            "tick {tick}: energy rose {previous} -> {e} J"
+        );
+        previous = e;
+    }
+    assert!(
+        previous <= start_energy + 1e-3 * kinetic(&world),
+        "energy gained overall"
+    );
+    let end = world.bodies[0].structure.position[0];
+    assert!(end.length() < start.length() - 1.0, "rolled downhill");
+    assert!(
+        world.bodies[0].structure.angular_velocity[0].length() > 0.5,
+        "it rolls"
+    );
+}
+
+#[test]
+fn digging_under_a_resting_crate_drops_it_into_the_hole() {
+    let terrain = terrain();
+    let (p, normal) = spot(&terrain, (0.0, 6.0));
+    let mut world = world(&terrain);
+    world.add(crate_at(p + normal * 0.6));
+    for _ in 0..240 {
+        world.step();
+    }
+    assert!(world.bodies[0].sleep.asleep);
+    let rest = world.bodies[0].structure.position[0];
+    terrain.edit(Edit::Dig(Brush::Sphere {
+        center: p - normal * 0.5,
+        radius: 2.5,
+    }));
+    world.wake_near(p, 3.0);
+    for _ in 0..240 {
+        world.step();
+    }
+    let end = world.bodies[0].structure.position[0];
+    assert!(
+        (rest - end).dot(normal) > 1.0,
+        "fell {} m",
+        (rest - end).dot(normal)
+    );
+    assert!(
+        penetration(&terrain, &world, 0.5) < 0.005,
+        "rests on the hole's floor"
+    );
+}
+
+#[test]
+fn planet_physics_is_bit_identical_across_platforms() {
+    // Golden hash: crates and a ball dropped on the real terrain in the rotating frame
+    // (terrain heights, planet gravity, Coriolis, contacts). CI runs it on Windows, Linux and
+    // macOS; if it changes on purpose, update the constant.
+    let terrain = terrain();
+    let (p, normal) = spot(&terrain, (2.0, 15.0));
+    let mut world = world(&terrain);
+    for i in 0..3 {
+        world.add(crate_at(p + normal * (1.0 + 1.2 * f64::from(i))));
+    }
+    world.add(Body::rigid(
+        Shape::Sphere { radius: 0.3 },
+        30.0,
+        p + normal * 5.0,
+        DT,
+    ));
+    for _ in 0..120 {
+        world.step();
+    }
+    let hash = world
+        .bodies
+        .iter()
+        .fold(0u64, |h, b| h.rotate_left(13) ^ b.structure.state_hash());
+    assert_eq!(
+        hash, 0x6439_5b38_a0ac_6ddd,
+        "planet physics hash {hash:#018x}"
+    );
+}

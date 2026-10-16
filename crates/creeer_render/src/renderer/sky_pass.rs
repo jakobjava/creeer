@@ -8,13 +8,19 @@ pub(super) struct SkyPass {
     transmittance: wgpu::Texture,
     multiscatter: wgpu::Texture,
     luts_bind_group: wgpu::BindGroup,
+    luts_layout: wgpu::BindGroupLayout,
     /// Atmosphere whose tables are currently uploaded.
     uploaded: Option<Atmosphere>,
 }
 
 impl SkyPass {
     pub(super) fn new(device: &wgpu::Device, globals_layout: &wgpu::BindGroupLayout) -> Self {
-        let module = shader(device, "sky", include_str!("../shaders/sky.wgsl"));
+        let source = concat!(
+            include_str!("../shaders/atmosphere.wgsl"),
+            "\n",
+            include_str!("../shaders/sky.wgsl")
+        );
+        let module = shader(device, "sky", source);
         let lut_texture = |label, (width, height): (usize, usize)| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -128,8 +134,14 @@ impl SkyPass {
             transmittance,
             multiscatter,
             luts_bind_group,
+            luts_layout,
             uploaded: None,
         }
+    }
+
+    /// The atmosphere tables (layout and bind group), for passes with aerial perspective.
+    pub(super) fn luts(&self) -> (&wgpu::BindGroupLayout, &wgpu::BindGroup) {
+        (&self.luts_layout, &self.luts_bind_group)
     }
 
     /// Uploads the precomputed tables if the atmosphere changed.

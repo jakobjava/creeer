@@ -137,6 +137,13 @@ impl Renderer {
         let mesh_pass = MeshPass::new(&device, &globals_layout, &shadows.sample_layout);
         let line_pass = LinePass::new(&device, &globals_layout);
         let sky_pipeline = SkyPass::new(&device, &globals_layout);
+        let terrain = TerrainPass::new(
+            &device,
+            &globals_layout,
+            &shadows.sample_layout,
+            sky_pipeline.luts().0,
+            &shadows.cascade_layout,
+        );
         let exposure = ExposurePass::new(&device, &globals_layout, &targets);
         let tonemap = TonemapPass::new(
             &device,
@@ -161,6 +168,7 @@ impl Renderer {
             globals_buffer,
             globals_bind_group,
             mesh_pass,
+            terrain,
             shadows,
             line_pass,
             tonemap,
@@ -170,6 +178,7 @@ impl Renderer {
             egui,
             line_vertices: Vec::new(),
             stats: RenderStats::default(),
+            sky_table: None,
             meshes: MeshArena::default(),
         }
     }

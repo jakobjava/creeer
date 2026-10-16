@@ -1,0 +1,146 @@
+use crate::chunk::ChunkKey;
+use crate::elevation::fibonacci_sphere;
+use crate::stream::{StreamSettings, Streamer, Update};
+use crate::{Planet, Terrain};
+use creeer_math::glam::DVec3;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+fn terrain() -> Arc<Terrain> {
+    let path = crate::data_path("planets/home.ron");
+    Arc::new(Terrain::new(Planet::load(&path).expect("loads")))
+}
+
+fn streamer(terrain: &Arc<Terrain>) -> Streamer<usize> {
+    let settings = StreamSettings {
+        cache: 100_000,
+        ..StreamSettings::default()
+    };
+    Streamer::new(Arc::clone(terrain), settings, |t, key| {
+        t.mesh_chunk(key).map(|m| m.triangle_count())
+    })
+}
+
+/// Updates until nothing is left to build; returns the last update.
+fn settle(s: &mut Streamer<usize>, camera: DVec3) -> Update<usize> {
+    let start = Instant::now();
+    loop {
+        let update = s.update(camera);
+        if s.queued == 0 && update.ready.is_empty() && start.elapsed() > Duration::from_millis(50) {
+            // One more update after the last result, to draw it.
+            return s.update(camera);
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(120),
+            "streaming does not settle"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Surface points around `center` (up to `radius` m away along the surface).
+fn surface_points(terrain: &Terrain, center: DVec3, radius: f64) -> Vec<DVec3> {
+    let up = center.normalize();
+    fibonacci_sphere(4000)
+        .filter(|d| d.angle_between(up) * 500_000.0 < radius)
+        .map(|d| d * (terrain.planet().datum.radius(d) + terrain.surface_height(d)))
+        .collect()
+}
+
+fn covered(draw: &[ChunkKey], points: &[DVec3]) -> f64 {
+    let inside = points
+        .iter()
+        .filter(|&&p| draw.iter().any(|k| k.distance_to(p) == 0.0))
+        .count();
+    inside as f64 / points.len() as f64
+}
+
+#[test]
+fn chunk_ids_are_unique_and_containment_works() {
+    let a = ChunkKey::containing(DVec3::new(-1000.0, 499_000.0, 12.0), 0);
+    let b = ChunkKey { level: 1, ..a };
+    assert_ne!(a.id(), b.id());
+    assert_ne!(
+        a.id(),
+        ChunkKey {
+            pos: a.pos + 1,
+            ..a
+        }
+        .id()
+    );
+    assert!(a.parent().contains(&a) && a.parent().parent().contains(&a));
+    assert!(!a.contains(&a.parent()));
+    assert!(!a.parent().contains(&ChunkKey {
+        pos: a.pos + 2,
+        ..a
+    }));
+}
+
+#[test]
+fn streaming_settles_on_a_consistent_level_of_detail() {
+    let terrain = terrain();
+    let up = DVec3::new(0.2, 0.9, -0.4).normalize();
+    let ground = up * (terrain.planet().datum.radius(up) + terrain.surface_height(up));
+    let camera = ground + up * 10.0;
+    let mut s = streamer(&terrain);
+    let update = settle(&mut s, camera);
+    let draw: Vec<ChunkKey> = update.draw.iter().map(|d| d.0).collect();
+    // Skirts exactly where the neighbour of the same level is not drawn.
+    for &(k, mask) in &update.draw {
+        for face in 0..6 {
+            let mut step = creeer_math::glam::IVec3::ZERO;
+            step[face / 2] = if face % 2 == 0 { -1 } else { 1 };
+            let neighbour = ChunkKey {
+                pos: k.pos + step,
+                ..k
+            };
+            let skirt = mask & (1 << face) != 0;
+            assert_eq!(skirt, !draw.contains(&neighbour), "{k:?} face {face}");
+        }
+    }
+    assert!(!draw.is_empty());
+    // Full detail under the camera.
+    assert!(
+        draw.iter()
+            .any(|k| k.level == 0 && k.distance_to(ground) == 0.0)
+    );
+    let detail = StreamSettings::default().detail;
+    for k in &draw {
+        // Settled: no drawn chunk still wants to be split, and its parent did.
+        assert!(
+            k.level == 0 || k.distance_to(camera) >= detail * k.size(),
+            "{k:?} wants a split"
+        );
+        assert!(k.parent().distance_to(camera) < detail * k.parent().size());
+        // No two drawn chunks overlap.
+        for other in &draw {
+            assert!(k == other || !k.contains(other), "{k:?} overlaps {other:?}");
+        }
+    }
+    let points = surface_points(&terrain, ground, 50_000.0);
+    assert!(covered(&draw, &points) > 0.99, "surface not covered");
+}
+
+#[test]
+fn flying_away_never_opens_holes() {
+    let terrain = terrain();
+    let start_up = DVec3::new(0.2, 0.9, -0.4).normalize();
+    let height = |up: DVec3| terrain.planet().datum.radius(up) + terrain.surface_height(up);
+    let mut s = streamer(&terrain);
+    settle(&mut s, start_up * (height(start_up) + 50.0));
+    // 20 km away: every frame of the transition still shows the whole surface around both.
+    let end_up = (start_up + DVec3::X * 0.04).normalize();
+    let camera = end_up * (height(end_up) + 50.0);
+    let points = surface_points(&terrain, (start_up + end_up) * 0.5, 60_000.0);
+    let start = Instant::now();
+    loop {
+        let update = s.update(camera);
+        let draw: Vec<ChunkKey> = update.draw.iter().map(|d| d.0).collect();
+        assert!(covered(&draw, &points) > 0.99, "a hole opened");
+        if s.queued == 0 && update.ready.is_empty() && start.elapsed() > Duration::from_millis(50) {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(120));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}

@@ -69,7 +69,9 @@ pub struct Pose {
 }
 
 /// A potential contact found at the start of a step: a point on A, a point on B, and the
-/// normal from B to A. Its gap is n·(p_A − p_B) − offset (negative when penetrating).
+/// normal from B to A. Its gap is n·(p_A − p_B) − r_A − r_B (negative when penetrating). For a
+/// sphere the point is its centre and r its radius; the surface point is p − n·r_A on A and
+/// p + n·r_B on B.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RawContact {
     /// Point on A (world).
@@ -78,13 +80,20 @@ pub struct RawContact {
     pub point_b: DVec3,
     /// Unit normal from B to A.
     pub normal: DVec3,
-    /// Radii to subtract from the distance between the points (spheres).
-    pub offset: f64,
+    /// Radius of A at the contact (spheres; 0 for a point on a surface).
+    pub radius_a: f64,
+    /// Radius of B at the contact.
+    pub radius_b: f64,
 }
 
 impl RawContact {
     /// The gap at detection time (m).
     pub fn gap(&self) -> f64 {
-        self.normal.dot(self.point_a - self.point_b) - self.offset
+        self.normal.dot(self.point_a - self.point_b) - self.offset()
+    }
+
+    /// The radii subtracted from the distance between the points (m).
+    pub fn offset(&self) -> f64 {
+        self.radius_a + self.radius_b
     }
 }

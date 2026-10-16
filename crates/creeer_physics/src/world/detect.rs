@@ -75,8 +75,16 @@ impl World {
                     found.push((a.body, a.node, Some((b.body, b.node)), raw));
                 }
             }
-            for fixed in self.statics.iter().filter(|_| !asleep(a.body)) {
+            if asleep(a.body) {
+                continue;
+            }
+            for fixed in &self.statics {
                 for raw in narrow::with_static((a.pose, a.shape), fixed, a.margin) {
+                    found.push((a.body, a.node, None, raw));
+                }
+            }
+            if let Some(ground) = &self.ground {
+                for raw in super::ground::contacts(&**ground, a.pose, a.shape, a.margin) {
                     found.push((a.body, a.node, None, raw));
                 }
             }

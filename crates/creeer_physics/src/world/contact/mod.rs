@@ -13,7 +13,9 @@
 //!   u is measured from an anchor point on B, and f₀ is |u| smoothed below 0.1 mm: sticking
 //!   is a stiff spring that never creeps, sliding is Coulomb friction μ·λ exactly.
 
-use crate::so3::skew;
+mod matrix;
+
+use super::friction::Carried;
 use crate::structure::group::{Coupling, MemberState, NodeCoupling, StepInfo};
 use creeer_math::glam::{DMat3, DVec3};
 
@@ -69,6 +71,11 @@ pub struct Contact {
     lambda: f64,
     /// The material point of B that A's point sticks to (friction measures slip from it).
     pub anchor: Side,
+    /// Radii of the two sides at the contact (spheres). With either above zero, friction
+    /// acts at carried points (`friction.rs`) instead of material points.
+    pub radius_a: f64,
+    /// Radius of side B.
+    pub radius_b: f64,
     /// Lever arms (world) of both points from their nodes at the start of the step.
     arm_a: DVec3,
     arm_b: DVec3,
@@ -99,6 +106,8 @@ impl Contact {
             gap_hat: 0.0,
             lambda: 0.0,
             anchor: b,
+            radius_a: 0.0,
+            radius_b: 0.0,
             arm_a: DVec3::ZERO,
             arm_b: DVec3::ZERO,
         }
@@ -107,6 +116,11 @@ impl Contact {
     /// Normal force at the start of the last step (N).
     pub fn normal_force(&self) -> f64 {
         self.lambda
+    }
+
+    /// Whether a side is a sphere, whose friction acts at carried points.
+    pub fn rolls(&self) -> bool {
+        self.radius_a > 0.0 || self.radius_b > 0.0
     }
 }
 
@@ -131,6 +145,10 @@ fn point(side: Side, states: &[MemberState<'_>]) -> (DVec3, DVec3) {
 pub struct Contacts {
     /// The contacts.
     pub list: Vec<Contact>,
+    /// For each contact of the step, its carried friction points (contacts with spheres;
+    /// `friction.rs`). Kept beside the contacts: most contacts have none, and a larger
+    /// `Contact` made every step slower.
+    carried: Vec<Option<[Carried; 2]>>,
     beta: f64,
     smoothing: f64,
 }
@@ -140,27 +158,50 @@ impl Contacts {
     pub fn new(list: Vec<Contact>) -> Self {
         Self {
             list,
+            carried: Vec::new(),
             beta: 1.0,
             smoothing: 1.0,
         }
     }
 
-    /// Gap and slip of contact `c` at `states`.
-    fn gap_and_slip(&self, c: &Contact, states: &[MemberState<'_>]) -> (f64, DVec3, DVec3, DVec3) {
+    /// The carried friction points of contact `i`, if it has them.
+    fn carried(&self, i: usize) -> Option<[Carried; 2]> {
+        self.carried.get(i).copied().flatten()
+    }
+
+    /// Gap and slip of contact `i` at `states`.
+    fn gap_and_slip(&self, i: usize, states: &[MemberState<'_>]) -> (f64, DVec3, DVec3, DVec3) {
+        let c = &self.list[i];
         let ((pa, ra), (pb, rb)) = (point(c.a, states), point(c.b, states));
         let gap = c.normal.dot(pa - pb) - c.offset;
-        let travel = pa - point(c.anchor, states).0;
+        let travel = match self.carried(i) {
+            Some([fa, fb]) => fa.position(states) - fb.position(states),
+            None => pa - point(c.anchor, states).0,
+        };
         let slip = travel - c.normal * c.normal.dot(travel);
         (gap, slip, ra, rb)
     }
 
-    /// Where the anchor of contact `c` must move after the step so that its offset is at
+    /// Where the anchor of contact `i` must move after the step so that its offset is at
     /// most [`STICK_DISTANCE`] (world point), or `None` if it stuck.
-    pub fn moved_anchor(&self, c: &Contact, states: &[MemberState<'_>]) -> Option<DVec3> {
-        let (_, slip, _, _) = self.gap_and_slip(c, states);
+    pub fn moved_anchor(&self, i: usize, states: &[MemberState<'_>]) -> Option<DVec3> {
+        let (_, slip, _, _) = self.gap_and_slip(i, states);
         let length = slip.length();
+        let anchor = self.list[i].anchor;
         (length > STICK_DISTANCE)
-            .then(|| point(c.anchor, states).0 + slip * (1.0 - STICK_DISTANCE / length))
+            .then(|| point(anchor, states).0 + slip * (1.0 - STICK_DISTANCE / length))
+    }
+
+    /// The stick offset of contact `i` after the step, at most [`STICK_DISTANCE`] long: what
+    /// a rolling contact carries into the next step (`anchor.rs`).
+    pub fn end_slip(&self, i: usize, states: &[MemberState<'_>]) -> DVec3 {
+        let (_, slip, _, _) = self.gap_and_slip(i, states);
+        let length = slip.length();
+        if length > STICK_DISTANCE {
+            slip * (STICK_DISTANCE / length)
+        } else {
+            slip
+        }
     }
 
     /// f₀ and f₁(x)/x of the friction smoothing.
@@ -177,39 +218,27 @@ impl Contacts {
     }
 }
 
-impl Contacts {
-    /// Gauss-Newton stiffness of a contact on its point (3×3): the penalty (and dashpot) along
-    /// the normal while it touches or will touch within the step (closing over its gap: an
-    /// impact, whose stiffness is the coupling that matters most), sticking friction across it.
-    fn stiffness(&self, c: &Contact) -> DMat3 {
-        let normal = if c.gap_hat + c.approach.min(0.0) * self.beta < 0.0 {
-            c.stiffness + c.damping / self.beta
-        } else {
-            0.0
-        };
-        // Sticking: the stiff spring of the anchor. Sliding: Coulomb's force μ·λ is constant,
-        // its secant over the slip of the step is the stiffness the step sees.
-        let slip = c.sliding * self.beta;
-        let tangent = if slip > self.smoothing {
-            c.friction * c.lambda / slip
-        } else {
-            c.friction * c.lambda * 2.0 / self.smoothing
-        };
-        let n = c.normal;
-        let outer = DMat3::from_cols(n * n.x, n * n.y, n * n.z);
-        outer * normal + (DMat3::IDENTITY - outer) * tangent
-    }
-}
-
 impl Coupling for Contacts {
     fn begin(&mut self, info: &StepInfo<'_>) {
         self.beta = info.beta;
         self.smoothing = STICK_DISTANCE;
+        self.carried.clear();
         for i in 0..self.list.len() {
             let c = self.list[i];
             let ((pa, arm_a), (pb, arm_b)) = (point(c.a, info.start), point(c.b, info.start));
             let gap_start = c.normal.dot(pa - pb) - c.offset;
             let (ha, hb) = (point(c.a, info.hat).0, point(c.b, info.hat).0);
+            // Contacts with spheres: friction at A's surface point and at the anchor, both
+            // carried by their bodies' linearised motion (`friction.rs`).
+            let carried = c.rolls().then(|| {
+                let surface = pa - c.normal * c.radius_a;
+                let anchor = point(c.anchor, info.start).0;
+                [
+                    Carried::new(c.a, surface, info.start),
+                    Carried::new(c.anchor, anchor, info.start),
+                ]
+            });
+            self.carried.push(carried);
             let c = &mut self.list[i];
             c.arm_a = arm_a;
             c.arm_b = arm_b;
@@ -221,8 +250,9 @@ impl Coupling for Contacts {
     fn energy(&self, states: &[MemberState<'_>]) -> f64 {
         self.list
             .iter()
-            .map(|c| {
-                let (gap, slip, _, _) = self.gap_and_slip(c, states);
+            .enumerate()
+            .map(|(i, c)| {
+                let (gap, slip, _, _) = self.gap_and_slip(i, states);
                 let (neg, neg_hat) = (gap.min(0.0), c.gap_hat.min(0.0));
                 0.5 * c.stiffness * neg * neg
                     + c.damping / (2.0 * self.beta) * (neg - neg_hat) * (neg - neg_hat)
@@ -234,25 +264,35 @@ impl Coupling for Contacts {
     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
         self.list
             .iter()
-            .map(|c| {
-                let neg = self.gap_and_slip(c, states).0.min(0.0);
+            .enumerate()
+            .map(|(i, c)| {
+                let neg = self.gap_and_slip(i, states).0.min(0.0);
                 0.5 * c.stiffness * neg * neg
             })
             .sum()
     }
 
     fn add_gradient(&self, states: &[MemberState<'_>], gradient: &mut [Vec<DVec3>]) {
-        for c in &self.list {
-            let (gap, slip, ra, rb) = self.gap_and_slip(c, states);
+        for (i, c) in self.list.iter().enumerate() {
+            let (gap, slip, ra, rb) = self.gap_and_slip(i, states);
             let (neg, neg_hat) = (gap.min(0.0), c.gap_hat.min(0.0));
             let d_gap = if gap < 0.0 {
                 c.stiffness * neg + c.damping / self.beta * (neg - neg_hat)
             } else {
                 0.0
             };
-            let g =
-                c.normal * d_gap + slip * (c.friction * c.lambda * self.smooth(slip.length()).1);
-            for (side, g, arm) in [(c.a, g, ra), (c.b, -g, rb)] {
+            let friction = slip * (c.friction * c.lambda * self.smooth(slip.length()).1);
+            // The normal force acts at the contact points; friction at the material points
+            // too (one force), or for spheres at the carried friction points.
+            let at_points = match self.carried(i) {
+                None => c.normal * d_gap + friction,
+                Some([fa, fb]) => {
+                    fa.add_gradient(states, friction, gradient);
+                    fb.add_gradient(states, -friction, gradient);
+                    c.normal * d_gap
+                }
+            };
+            for (side, g, arm) in [(c.a, at_points, ra), (c.b, -at_points, rb)] {
                 if let Side::Node { member, node, .. } = side {
                     let half = gradient[member].len() / 2;
                     gradient[member][node] += g;
@@ -265,7 +305,7 @@ impl Coupling for Contacts {
     fn update_lag(&mut self, states: &[MemberState<'_>]) -> bool {
         let mut changed = false;
         for i in 0..self.list.len() {
-            let gap = self.gap_and_slip(&self.list[i], states).0;
+            let gap = self.gap_and_slip(i, states).0;
             let c = &mut self.list[i];
             let force = c.stiffness * (-gap).max(0.0);
             // Only friction uses λ: contacts without friction never need a refresh.
@@ -278,88 +318,14 @@ impl Coupling for Contacts {
     }
 
     fn rigid_coupling(&self) -> Vec<NodeCoupling> {
-        let mut out = Vec::new();
-        for c in &self.list {
-            let (
-                Side::Node {
-                    member: ma,
-                    node: na,
-                    ..
-                },
-                Side::Node {
-                    member: mb,
-                    node: nb,
-                    ..
-                },
-            ) = (c.a, c.b)
-            else {
-                continue;
-            };
-            // The gap moves with J_a·δq_a − J_b·δq_b (J = [I, −[r]×]): the cross term is
-            // −J_aᵀ·H·J_b.
-            let h = self.stiffness(c);
-            let (sa, sb) = (skew(c.arm_a), skew(c.arm_b));
-            let blocks = [[h, -(h * sb)], [sa * h, -(sa * h * sb)]];
-            let mut m6 = [[0.0; 6]; 6];
-            for (bi, row) in blocks.iter().enumerate() {
-                for (bj, block) in row.iter().enumerate() {
-                    for r in 0..3 {
-                        for k in 0..3 {
-                            m6[3 * bi + r][3 * bj + k] = -block.col(k)[r];
-                        }
-                    }
-                }
-            }
-            out.push(((ma, na), (mb, nb), m6));
-        }
-        out
+        self.coupling_blocks()
     }
 
     fn node_stiffness(&self, member: usize) -> Vec<(usize, DMat3)> {
-        let mut blocks = Vec::new();
-        for c in &self.list {
-            for side in [c.a, c.b] {
-                if let Side::Node {
-                    member: m, node, ..
-                } = side
-                    && m == member
-                {
-                    blocks.push((node, self.stiffness(c)));
-                }
-            }
-        }
-        blocks
+        self.node_blocks(member)
     }
 
     fn rigid_stiffness(&self, member: usize) -> [[f64; 6]; 6] {
-        let mut h6 = [[0.0; 6]; 6];
-        for c in &self.list {
-            let h = self.stiffness(c);
-            for (side, arm) in [(c.a, c.arm_a), (c.b, c.arm_b)] {
-                let Side::Node {
-                    member: m, node: 0, ..
-                } = side
-                else {
-                    continue;
-                };
-                if m != member {
-                    continue;
-                }
-                // δp = δx − [r]×·δθ, so the 6×6 block is Jᵀ·H·J with J = [I, −[r]×]. The
-                // lever arm is the one at the start of the step.
-                let s = skew(arm);
-                let blocks = [[h, -(h * s)], [s * h, -(s * h * s)]];
-                for (bi, row) in blocks.iter().enumerate() {
-                    for (bj, block) in row.iter().enumerate() {
-                        for r in 0..3 {
-                            for k in 0..3 {
-                                h6[3 * bi + r][3 * bj + k] += block.col(k)[r];
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        h6
+        self.rigid_block(member)
     }
 }

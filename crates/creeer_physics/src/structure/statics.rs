@@ -24,7 +24,13 @@ pub fn linear(s: &Structure) -> Result<(Vec<DVec3>, Vec<DVec3>), NotPositiveDefi
     let mut chol = Cholesky::new(s.symbolic());
     chol.factor(&diag, &off)?;
     let mut f: Vec<DVec3> = (0..n)
-        .map(|i| (s.gravity * s.mass[i] + s.load[i]) * s.free_translation[i])
+        .map(|i| {
+            let field = s
+                .planet
+                .as_ref()
+                .map_or(DVec3::ZERO, |g| g.acceleration(s.position[i]) * s.mass[i]);
+            (s.gravity * s.mass[i] + s.load[i] + field) * s.free_translation[i]
+        })
         .chain((0..n).map(|i| s.torque[i] * s.free_rotation[i]))
         .collect();
     chol.solve(&mut f);

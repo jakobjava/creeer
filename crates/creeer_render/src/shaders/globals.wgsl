@@ -33,9 +33,13 @@ struct Globals {
     ground_albedo: vec4<f32>,
     // Engineering overlay: x on (1/0), y value at scale bottom, z value at top, w palette.
     heatmap: vec4<f32>,
+    // Cosine-weighted sky radiance at the ground for sun cosines from −0.2 to 1 (16 steps).
+    sky_irradiance: array<vec4<f32>, 16>,
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;
+
+const PI: f32 = 3.14159265;
 
 /// Rotates v by the unit quaternion q.
 fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
