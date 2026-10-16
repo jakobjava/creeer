@@ -127,6 +127,11 @@ impl Structure {
         self.mass.iter().sum()
     }
 
+    /// Mass of each node (kg).
+    pub fn masses(&self) -> &[f64] {
+        &self.mass
+    }
+
     /// Displacement of `node` from its rest position (m).
     pub fn displacement(&self, node: NodeId) -> DVec3 {
         self.position[node] - self.rest[node]

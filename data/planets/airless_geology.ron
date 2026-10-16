@@ -1,0 +1,43 @@
+#![enable(implicit_some)]
+// Geology of airless worlds (generated moons and asteroids): bright, plagioclase-rich
+// highlands and dark basalt plains, both under impact-gardened regolith, with lenses of
+// high-titanium basalt in the plains (the format is described in home_geology.ron).
+Geology(
+    province_noise: (wavelength: "150 km", octaves: 2),
+    variation: "8 km",
+    provinces: [
+        (
+            name: "highlands",
+            elevation: ("-400 m", "20 km"),
+            bias: 0.3,
+            column: [
+                (rock: "regolith", thickness: ("3 m", "12 m")),
+                (rock: "anorthosite", thickness: ("2 km", "8 km")),
+                (rock: "gabbro"),
+            ],
+        ),
+        (
+            name: "plains",
+            elevation: ("-20 km", "-600 m"),
+            bias: 0.3,
+            column: [
+                (rock: "regolith", thickness: ("1.5 m", "6 m")),
+                (rock: "basalt", thickness: ("200 m", "1500 m")),
+                (rock: "gabbro"),
+            ],
+        ),
+    ],
+    deposits: [
+        (
+            name: "high-titanium basalt",
+            rock: "ilmenite basalt",
+            provinces: ["plains"],
+            cell: "25 km",
+            chance: 0.5,
+            size: ("2 km", "8 km"),
+            thickness: ("40 m", "150 m"),
+            depth: ("20 m", "200 m"),
+            irregularity: 0.3,
+        ),
+    ],
+)

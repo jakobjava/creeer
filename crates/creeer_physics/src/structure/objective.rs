@@ -70,7 +70,7 @@ impl Work {
                             + turn.dot(this.inertia_star[i] * turn))
                     - (s.gravity * s.mass[i] + s.load[i] + this.coriolis[i]).dot(offset)
                     + field
-                    - s.torque[i].dot(turn)
+                    - (s.torque[i] + this.frame_torque[i]).dot(turn)
             })
             .collect();
         let value = nodes.iter().fold(0.0, |sum, v| sum + v);
@@ -140,7 +140,7 @@ impl Work {
                     let turn = so3::log(s.orientation[i] * this.q_star[i].conjugate());
                     let inertial = so3::inverse_left_jacobian(turn).transpose()
                         * (this.inertia_star[i] * turn);
-                    s.torque[i] - inertial * inv_b2
+                    s.torque[i] + this.frame_torque[i] - inertial * inv_b2
                 };
                 for &(element, group) in
                     &this.incidence[this.incidence_ptr[block]..this.incidence_ptr[block + 1]]
@@ -152,14 +152,43 @@ impl Work {
         self.direction = direction;
     }
 
-    /// The Coriolis force of every node for the coming step, from its current velocity
-    /// (zero without a planet; `gravity.rs`).
-    pub(super) fn set_coriolis(&mut self, s: &Structure) {
-        for (i, f) in self.coriolis.iter_mut().enumerate() {
-            *f = s
-                .planet
-                .as_ref()
-                .map_or(DVec3::ZERO, |g| g.coriolis(s.velocity[i]) * s.mass[i]);
+    /// The Coriolis force of every node for the coming step (zero without a planet;
+    /// `gravity.rs`). Newmark pairs the forces at the start and the end of a step, so the
+    /// velocity is extrapolated to the end, v + a·h, with the accelerations at the start
+    /// (`extrapolate`: linear and angular accelerations and h; without them the current
+    /// velocity is used). The start velocity alone is first order: a ship at 3 km/s in a
+    /// planet's rotating frame drifted 3.8 mm in 10 s against the same flight computed in the
+    /// inertial frame; extrapolated, 2.4 µm (ADR-0007).
+    ///
+    /// Spinning bodies feel the frame's rotation too: with L = I·(ω + Ω) the absolute angular
+    /// momentum, Euler's equation in the turning axes leaves the torque
+    /// τ = −Ω×I(ω + Ω) − ω×(IΩ) + I(ω×Ω) beyond what the solver integrates (I·ω conserved);
+    /// for a ball it is −I·Ω×ω, which keeps a free gyroscope's axis fixed among the stars
+    /// while the planet turns under it.
+    pub(super) fn set_coriolis(
+        &mut self,
+        s: &Structure,
+        extrapolate: Option<(&[DVec3], &[DVec3], f64)>,
+    ) {
+        let Some(g) = s.planet.as_ref() else {
+            self.coriolis.fill(DVec3::ZERO);
+            self.frame_torque.fill(DVec3::ZERO);
+            return;
+        };
+        let spin = g.spin;
+        for i in 0..s.node_count() {
+            let (v, w) = extrapolate
+                .map_or((s.velocity[i], s.angular_velocity[i]), |(a, al, h)| {
+                    (s.velocity[i] + a[i] * h, s.angular_velocity[i] + al[i] * h)
+                });
+            self.coriolis[i] = g.coriolis(v) * s.mass[i];
+            let inertia = self.inertia_star[i];
+            self.frame_torque[i] = if spin == DVec3::ZERO {
+                DVec3::ZERO
+            } else {
+                -spin.cross(inertia * (w + spin)) - w.cross(inertia * spin)
+                    + inertia * w.cross(spin)
+            };
         }
     }
 

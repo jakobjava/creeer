@@ -10,6 +10,7 @@ pub mod contact;
 #[cfg(test)]
 mod crush_tests;
 mod detect;
+pub mod frame;
 mod friction;
 pub mod ground;
 mod impact;
@@ -153,9 +154,9 @@ impl World {
 
     /// Adds a body and returns its index.
     pub fn add(&mut self, mut body: Body) -> usize {
-        if let Some(planet) = self.planet {
+        if let Some(planet) = &self.planet {
             body.structure.gravity = DVec3::ZERO;
-            body.structure.planet = Some(planet);
+            body.structure.planet = Some(planet.clone());
         }
         // The body may have been changed since its solver was made (velocity, gravity).
         body.solver.reset_history(&body.structure);

@@ -46,6 +46,10 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    // Metalness from 2 up marks a light source emitting (w − 2) times its colour.
+    if in.material.x >= 2.0 {
+        return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
+    }
     let n = normalize(in.normal);
     let v = normalize(-in.world);
     let l = globals.sun_direction.xyz;

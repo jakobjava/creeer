@@ -17,10 +17,10 @@ const R: f64 = 500_000.0;
 
 fn home(spin: bool) -> PlanetGravity {
     let omega = std::f64::consts::TAU / 21_600.0;
-    PlanetGravity {
-        mu: 9.81 * R * R,
-        spin: if spin { DVec3::Y * omega } else { DVec3::ZERO },
-    }
+    PlanetGravity::planet(
+        9.81 * R * R,
+        if spin { DVec3::Y * omega } else { DVec3::ZERO },
+    )
 }
 
 /// Ground from a density function, with a numerical gradient.
@@ -85,7 +85,7 @@ fn a_falling_body_is_deflected_east_by_the_coriolis_force() {
     let g = home(true);
     let start = DVec3::X * (R + 1000.0);
     let mut world = World::new(DT);
-    world.planet = Some(g);
+    world.planet = Some(g.clone());
     world.add(ball(start));
     for _ in 0..600 {
         world.step();
@@ -109,7 +109,7 @@ fn effective_gravity_is_weaker_at_the_equator() {
     let g = home(true);
     let fall = |start: DVec3| {
         let mut world = World::new(DT);
-        world.planet = Some(g);
+        world.planet = Some(g.clone());
         world.add(ball(start));
         for _ in 0..120 {
             world.step();

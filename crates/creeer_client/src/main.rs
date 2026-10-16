@@ -18,6 +18,11 @@
 //! camera, with physics, day and night, digging and filling. Headless:
 //! `creeer_client --planet <orbit|high|low|surface|tunnel|night> <file.png> [--sun <deg>]`, and
 //! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
+//!
+//! The F4 solar-system sandbox (button in the Sandbox window): a generated solar system with
+//! n-body orbits, ships in orbit, time warp, pushing bodies, and the map (M). Headless:
+//! `creeer_client --system <home|orbit|moon|map|system|lagrange|transfer> <file.png>` and
+//! `creeer_client --system-bench` (frame times in orbit, on the map, at warp).
 
 mod app;
 mod demo;
@@ -30,6 +35,14 @@ mod planet_sim;
 mod planet_ui;
 mod planet_view;
 mod sandbox;
+mod system_bench;
+mod system_cmd;
+mod system_frame;
+mod system_map;
+mod system_shot;
+mod system_sim;
+mod system_ui;
+mod system_view;
 
 use app::App;
 use headless::{ScreenshotOptions, bench, screenshot};
@@ -55,7 +68,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, Window, WindowId};
 
-const TICK_RATE_HZ: u32 = 60;
+pub(crate) const TICK_RATE_HZ: u32 = 60;
 /// Where the scene moves to for the precision test: the surface of a 500 km planet.
 const FAR_ORIGIN: DVec3 = DVec3::new(0.0, 500_000.0, 0.0);
 /// Default sun elevation above the horizon (degrees): late morning.
@@ -83,6 +96,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--planet") {
         return planet_shot::run(&args);
+    }
+    if args.iter().any(|a| a == "--system-bench") {
+        return system_bench::run();
+    }
+    if args.iter().any(|a| a == "--system") {
+        return system_shot::run(&args);
     }
     if let Some(options) = ScreenshotOptions::parse(&args)? {
         return screenshot(&options);

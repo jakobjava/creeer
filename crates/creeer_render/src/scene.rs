@@ -17,6 +17,9 @@ pub struct Material {
     pub roughness: f32,
     /// 0 = dielectric (paint, stone, plastic), 1 = bare metal.
     pub metalness: f32,
+    /// Light emitted, as a multiple of the base colour (0: none). A star is drawn with it;
+    /// it is unaffected by lighting and shadows.
+    pub emission: f32,
 }
 
 impl Material {
@@ -26,6 +29,7 @@ impl Material {
             base_color,
             roughness,
             metalness: 0.0,
+            emission: 0.0,
         }
     }
 
@@ -35,6 +39,17 @@ impl Material {
             base_color,
             roughness,
             metalness: 1.0,
+            emission: 0.0,
+        }
+    }
+
+    /// A light source of colour `base_color` (sRGB) and `strength`.
+    pub const fn emissive(base_color: [f32; 3], strength: f32) -> Self {
+        Self {
+            base_color,
+            roughness: 1.0,
+            metalness: 0.0,
+            emission: strength,
         }
     }
 }
@@ -150,7 +165,12 @@ impl InstanceRaw {
         Self {
             rotation: instance.frame.rotation.as_quat().to_array(),
             position: (instance.frame.position - camera).as_vec3().to_array(),
-            metalness: m.metalness,
+            // Emission travels in the metalness slot: values from 2 up mean "emits w − 2".
+            metalness: if m.emission > 0.0 {
+                2.0 + m.emission
+            } else {
+                m.metalness
+            },
             scale: instance.scale.to_array(),
             roughness: m.roughness,
             color: [r, g, b, instance.heat.unwrap_or(NO_HEAT)],

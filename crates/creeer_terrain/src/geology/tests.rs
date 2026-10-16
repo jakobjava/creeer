@@ -29,6 +29,10 @@ fn computed_rock_densities_match_measured_ones() {
         ("rock salt", 2100.0, 2250.0),
         ("coal", 1200.0, 1500.0),
         ("banded iron formation", 3300.0, 3900.0),
+        // Lunar samples: regolith 1.5–1.9 t/m³, anorthosite 2.6–2.8, high-Ti basalt 3.1–3.4.
+        ("regolith", 1400.0, 1900.0),
+        ("anorthosite", 2600.0, 2800.0),
+        ("ilmenite basalt", 3050.0, 3350.0),
     ] {
         let rock = &rocks.rocks[usize::from(rocks.rock(name).expect(name))];
         assert!(
@@ -53,6 +57,9 @@ fn ore_grades_are_realistic() {
     assert!((0.003..0.012).contains(&cu), "porphyry Cu {cu}");
     let mo = grade("porphyry copper ore", "Mo");
     assert!((0.0002..0.001).contains(&mo), "porphyry Mo {mo}");
+    // High-titanium mare basalt: TiO₂ 9–14 %, Ti 5.4–8.4 %.
+    let ti = grade("ilmenite basalt", "Ti");
+    assert!((0.05..0.09).contains(&ti), "ilmenite basalt Ti {ti}");
     let fe = grade("banded iron formation", "Fe");
     assert!((0.35..0.55).contains(&fe), "BIF Fe {fe}");
     let ni = grade("nickel sulfide ore", "Ni");

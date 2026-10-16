@@ -12,6 +12,7 @@ creeer_core.workspace = true
 creeer_render.workspace = true
 creeer_physics.workspace = true
 creeer_sim.workspace = true
+creeer_orbit.workspace = true
 creeer_terrain.workspace = true
 creeer_ui.workspace = true
 winit.workspace = true

@@ -43,14 +43,38 @@ impl Planet {
 
     /// Loads a planet from a RON file.
     pub fn load(path: &Path) -> Result<Self, DataError> {
+        Self::load_with(path, None)
+    }
+
+    /// Loads a planet from a RON file used as a template for a generated body: its bulk
+    /// numbers are replaced by `overrides`, and its relief and the wavelengths of its noise
+    /// are scaled with the radius, so a 2 km asteroid has the shape of a 100 km one.
+    pub fn load_with(path: &Path, overrides: Option<&Overrides>) -> Result<Self, DataError> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| DataError(format!("{}: {e}", path.display())))?;
         let def: PlanetDef =
             ron::from_str(&text).map_err(|e| DataError(format!("{}: {e}", path.display())))?;
         let dir = path.parent().unwrap_or(Path::new("."));
-        def.build(dir)
+        def.build(dir, overrides)
             .map_err(|e| DataError(format!("{}: {}", path.display(), e.0)))
     }
+}
+
+/// Bulk numbers of a generated body that replace a template's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Overrides {
+    /// Name.
+    pub name: String,
+    /// Seed of its terrain.
+    pub seed: u64,
+    /// Radius (m).
+    pub radius: f64,
+    /// Gravitational parameter (m³/s²).
+    pub mu: f64,
+    /// Sidereal rotation period (s).
+    pub sidereal_day: f64,
+    /// Axial tilt (rad).
+    pub axial_tilt: f64,
 }
 
 /// A problem in a data file.
@@ -137,7 +161,7 @@ struct LayerDef {
 }
 
 impl OctavesDef {
-    fn build(&self, field: &str) -> Result<Octaves, DataError> {
+    fn build(&self, field: &str, scale: f64) -> Result<Octaves, DataError> {
         if !(1..=24).contains(&self.octaves) {
             return Err(DataError(format!("{field}.octaves must be 1..=24")));
         }
@@ -145,11 +169,12 @@ impl OctavesDef {
             return Err(DataError(format!("{field}.gain must be in (0, 1)")));
         }
         Ok(Octaves {
-            wavelength: positive(
-                &format!("{field}.wavelength"),
-                &self.wavelength,
-                Dimension::LENGTH,
-            )?,
+            wavelength: scale
+                * positive(
+                    &format!("{field}.wavelength"),
+                    &self.wavelength,
+                    Dimension::LENGTH,
+                )?,
             octaves: self.octaves,
             gain: self.gain,
         })
@@ -159,17 +184,22 @@ impl OctavesDef {
 impl PlanetDef {
     /// Builds the planet; `dir` is the directory of its file (the geology file is relative
     /// to it, rocks and minerals are in `../geology`).
-    fn build(self, dir: &Path) -> Result<Planet, DataError> {
-        let radius = positive("radius", &self.radius, Dimension::LENGTH)?;
+    fn build(self, dir: &Path, overrides: Option<&Overrides>) -> Result<Planet, DataError> {
+        let template_radius = positive("radius", &self.radius, Dimension::LENGTH)?;
         let g = positive(
             "surface_gravity",
             &self.surface_gravity,
             Dimension::ACCELERATION,
         )?;
+        let radius = overrides.map_or(template_radius, |o| o.radius);
+        // Heights and wavelengths scale with the radius (1 for a planet's own file).
+        let scale = radius / template_radius;
+        let mu = overrides.map_or(g * radius * radius, |o| o.mu);
+        let seed = overrides.map_or(self.seed, |o| o.seed);
         let e = self.elevation;
         let mut curve = Vec::with_capacity(e.curve.len());
         for (i, (x, h)) in e.curve.iter().enumerate() {
-            let h = quantity(&format!("elevation.curve[{i}]"), h, Dimension::LENGTH)?;
+            let h = scale * quantity(&format!("elevation.curve[{i}]"), h, Dimension::LENGTH)?;
             if !(0.0..=1.0).contains(x) || curve.last().is_some_and(|&(last, _)| *x <= last) {
                 return Err(DataError(
                     "elevation.curve: surface fractions must ascend within 0..=1".into(),
@@ -185,7 +215,7 @@ impl PlanetDef {
             let field = format!("elevation.layers[{}]", l.name);
             let mask = match &l.mask {
                 Some(m) if 0.0 <= m.from && m.from < m.to && m.to <= 1.0 => Some(Mask {
-                    noise: m.noise.build(&format!("{field}.mask"))?,
+                    noise: m.noise.build(&format!("{field}.mask"), scale)?,
                     from: m.from,
                     to: m.to,
                 }),
@@ -199,38 +229,45 @@ impl PlanetDef {
             layers.push(Layer {
                 name: l.name.clone(),
                 kind: l.kind,
-                noise: l.noise.build(&field)?,
-                amplitude: positive(
-                    &format!("{field}.amplitude"),
-                    &l.amplitude,
-                    Dimension::LENGTH,
-                )?,
+                noise: l.noise.build(&field, scale)?,
+                amplitude: scale
+                    * positive(
+                        &format!("{field}.amplitude"),
+                        &l.amplitude,
+                        Dimension::LENGTH,
+                    )?,
                 mask,
                 land_only: l.land_only,
             });
         }
-        let continents = e.continents.build("elevation.continents")?;
-        let elevation = Arc::new(Elevation::new(radius, self.seed, continents, curve, layers));
-        let sidereal_day = positive("sidereal_day", &self.sidereal_day, Dimension::TIME)?;
+        let continents = e.continents.build("elevation.continents", scale)?;
+        let elevation = Arc::new(Elevation::new(radius, seed, continents, curve, layers));
+        let sidereal_day = match overrides {
+            Some(o) => o.sidereal_day,
+            None => positive("sidereal_day", &self.sidereal_day, Dimension::TIME)?,
+        };
         let datum = Datum {
             polar_radius: radius,
-            mu: g * radius * radius,
+            mu,
             omega: std::f64::consts::TAU / sidereal_day,
         };
         Ok(Planet {
             datum,
-            name: self.name,
-            seed: self.seed,
+            name: overrides.map_or(self.name, |o| o.name.clone()),
+            seed,
             radius,
-            mu: g * radius * radius,
+            mu,
             sidereal_day,
-            axial_tilt: quantity("axial_tilt", &self.axial_tilt, Dimension::NONE)?,
+            axial_tilt: match overrides {
+                Some(o) => o.axial_tilt,
+                None => quantity("axial_tilt", &self.axial_tilt, Dimension::NONE)?,
+            },
             geology: Geology::load(
                 &dir.join(&self.geology),
                 &dir.join("../geology"),
                 Arc::clone(&elevation),
                 datum,
-                self.seed,
+                seed,
             )?,
             elevation,
         })

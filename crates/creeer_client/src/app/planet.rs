@@ -96,6 +96,7 @@ impl Running {
             camera: &self.camera,
             scene: &self.scene,
             terrain: &planet.draw,
+            terrain_frames: &[],
             lighting: &self.lighting,
             sky: Some(&sky),
             heatmap: None,

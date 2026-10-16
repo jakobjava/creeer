@@ -57,4 +57,14 @@
         ("pentlandite", 0.04), ("chalcopyrite", 0.01)]),
     (name: "uranium sandstone", color: "#b4ad55", porosity: 0.15, minerals: [
         ("quartz", 0.84), ("orthoclase", 0.10), ("kaolinite", 0.055), ("pyrite", 0.0045), ("uraninite", 0.0005)]),
+    // Airless worlds (moons, asteroids): impact-gardened regolith over plagioclase-rich
+    // highland crust and dark plains basalt, after the lunar samples.
+    (name: "regolith", color: "#8d8a86", porosity: 0.45, minerals: [
+        ("plagioclase", 0.55), ("augite", 0.25), ("olivine", 0.12), ("ilmenite", 0.08)]),
+    (name: "anorthosite", color: "#bdbab4", porosity: 0.02, minerals: [
+        ("plagioclase", 0.92), ("augite", 0.06), ("olivine", 0.02)]),
+    // High-titanium plains basalt: an ore of titanium (TiO₂ about 13 %, as in Apollo 11 and 17
+    // samples).
+    (name: "ilmenite basalt", color: "#2f2f35", porosity: 0.05, minerals: [
+        ("plagioclase", 0.35), ("augite", 0.35), ("ilmenite", 0.18), ("olivine", 0.12)]),
 ]

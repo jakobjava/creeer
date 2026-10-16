@@ -1,0 +1,40 @@
+// Template for generated asteroids and Trojans (ADR-0007): lumpy bodies whose relief is a
+// fifth of their radius. The generator replaces name, seed, radius, gravity, day and tilt,
+// and scales every height and wavelength by radius / 10 km.
+Planet(
+    name: "Asteroid template",
+    seed: 3,
+    radius: "10 km",
+    surface_gravity: "0.007 m/s^2",
+    sidereal_day: "8 h",
+    axial_tilt: "0 deg",
+    geology: "airless_geology.ron",
+    elevation: (
+        continents: (wavelength: "14 km", octaves: 4),
+        curve: [
+            (0.00, "-2000 m"),
+            (0.50, "0 m"),
+            (1.00, "1500 m"),
+        ],
+        layers: [
+            (
+                name: "lobes",
+                kind: Fbm,
+                noise: (wavelength: "6 km", octaves: 3),
+                amplitude: "900 m",
+            ),
+            (
+                name: "boulders",
+                kind: Ridged,
+                noise: (wavelength: "1500 m", octaves: 5, gain: 0.5),
+                amplitude: "250 m",
+            ),
+            (
+                name: "detail",
+                kind: Fbm,
+                noise: (wavelength: "150 m", octaves: 7),
+                amplitude: "10 m",
+            ),
+        ],
+    ),
+)

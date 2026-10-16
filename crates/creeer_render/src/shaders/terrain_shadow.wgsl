@@ -8,6 +8,7 @@ fn vs_main(
     @location(1) normal: vec4<f32>,
     @location(2) color: vec4<f32>,
     @location(3) origin: vec4<f32>,
+    @location(4) rotation: vec4<f32>,
 ) -> @builtin(position) vec4<f32> {
-    return cascade_view_proj * vec4<f32>(position + origin.xyz, 1.0);
+    return cascade_view_proj * vec4<f32>(rotate(rotation, position) + origin.xyz, 1.0);
 }

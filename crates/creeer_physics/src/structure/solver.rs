@@ -131,8 +131,10 @@ pub(super) struct Work {
     pub inertia_star: Vec<DMat3>,
     /// Drag dashpot per node for this step: drag·|v| at its start (N·s/m).
     pub drag_rate: Vec<f64>,
-    /// Coriolis force per node for this step, from the velocity at its start (N).
+    /// Coriolis force per node for this step (N).
     pub coriolis: Vec<DVec3>,
+    /// The rotating frame's fictitious torque per node for this step (N·m).
+    pub frame_torque: Vec<DVec3>,
     /// Element measures at (x̂, q̂), for damping.
     pub s_hat: Vec<[f64; MEASURES]>,
     /// Plastic capacities of every element during this step.
@@ -192,6 +194,7 @@ impl ImplicitSolver {
                 inertia_star: vec![DMat3::ZERO; n],
                 drag_rate: vec![0.0; n],
                 coriolis: vec![DVec3::ZERO; n],
+                frame_torque: vec![DVec3::ZERO; n],
                 s_hat: vec![[0.0; MEASURES]; structure.element_count()],
                 caps: vec![[f64::INFINITY; MEASURES]; structure.element_count()],
                 rotations: vec![DMat3::IDENTITY; n],
@@ -255,7 +258,7 @@ impl ImplicitSolver {
             let (xa, xb) = (s.position[e.a], s.position[e.b]);
             *s_hat = e.measures(xa, w.rotations[e.a], xb, w.rotations[e.b]);
         }
-        w.set_coriolis(s);
+        w.set_coriolis(s, None);
         // With x = x* the residual is β²·f (no inertia term, no damping).
         w.residual(s);
         let scale = 1.0 / (w.beta * w.beta);

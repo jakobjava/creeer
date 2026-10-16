@@ -5,6 +5,7 @@
 //! (used by CI) reports missed budgets as warnings instead of failing.
 
 mod image_diff;
+mod orbit_bench;
 mod solvers;
 mod spikes;
 mod terrain_bench;

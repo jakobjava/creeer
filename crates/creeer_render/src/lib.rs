@@ -24,6 +24,6 @@ pub use mesh::{MeshArena, MeshData, MeshId, MeshVertex};
 pub use renderer::{Frame, OverlayFrame, RenderError, RenderStats, Renderer};
 pub use scene::{Instance, Lighting, Material, Scene, srgb_to_linear};
 pub use shadow::ShadowQuality;
-pub use terrain::{TerrainMeshData, TerrainVertex};
+pub use terrain::{TerrainFrame, TerrainMeshData, TerrainVertex};
 /// Re-exported so the client does not need its own (possibly mismatched) wgpu dependency.
 pub use wgpu;

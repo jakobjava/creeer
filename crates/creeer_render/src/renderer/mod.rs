@@ -87,6 +87,9 @@ pub struct Frame<'a> {
     /// Terrain chunks to draw: ids given to [`Renderer::insert_terrain`], each with the chunk
     /// faces whose skirts to draw (bit f for face f of `TerrainMeshData::skirts`).
     pub terrain: &'a [(u64, u8)],
+    /// Body frames the terrain chunks are drawn in (by the frame index given at upload);
+    /// empty: every chunk in simulation space.
+    pub terrain_frames: &'a [crate::TerrainFrame],
     /// Sun and ambient light.
     pub lighting: &'a Lighting,
     /// World-space debug lines.

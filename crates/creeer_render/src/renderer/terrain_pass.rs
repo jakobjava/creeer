@@ -13,7 +13,10 @@ use wgpu::util::DeviceExt;
 
 const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4];
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![3 => Float32x4];
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4];
+/// Bytes per instance: camera-relative origin (xyz, w unused) and the body's rotation.
+const INSTANCE_SIZE: u64 = 32;
 
 fn vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
     [
@@ -23,7 +26,7 @@ fn vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
             attributes: &VERTEX_ATTRIBUTES,
         }),
         Some(wgpu::VertexBufferLayout {
-            array_stride: 16,
+            array_stride: INSTANCE_SIZE,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &INSTANCE_ATTRIBUTES,
         }),
@@ -33,6 +36,8 @@ fn vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
 /// One uploaded chunk.
 struct GpuChunk {
     origin: DVec3,
+    /// Index of the body frame it is drawn in.
+    frame: u16,
     center: Vec3,
     radius: f32,
     vertices: wgpu::Buffer,
@@ -150,6 +155,7 @@ impl TerrainPass {
         &mut self,
         device: &wgpu::Device,
         id: u64,
+        frame: u16,
         origin: DVec3,
         mesh: &TerrainMeshData,
     ) {
@@ -175,6 +181,7 @@ impl TerrainPass {
             id,
             GpuChunk {
                 origin,
+                frame,
                 center,
                 radius,
                 vertices,
@@ -205,26 +212,35 @@ impl TerrainPass {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         ids: &[(u64, u8)],
+        frames: &[crate::TerrainFrame],
         camera: DVec3,
         frustum: &Frustum,
         shadows: Option<(&[Cascade; CASCADES], &LightBasis)>,
     ) {
-        let mut origins: Vec<[f32; 4]> = Vec::new();
+        let mut origins: Vec<[f32; 8]> = Vec::new();
         self.draws.clear();
         for draws in &mut self.shadow_draws {
             draws.clear();
         }
         self.triangles = 0;
-        let mut per_cascade: [Vec<(u64, u8, [f32; 4])>; CASCADES] = Default::default();
+        let mut per_cascade: [Vec<(u64, u8, [f32; 8])>; CASCADES] = Default::default();
         for &(id, skirts) in ids {
             let Some(chunk) = self.chunks.get(&id) else {
                 continue;
             };
-            let origin = (chunk.origin - camera).as_vec3();
-            let center = origin + chunk.center;
+            let body = frames
+                .get(usize::from(chunk.frame))
+                .copied()
+                .unwrap_or(crate::TerrainFrame::IDENTITY);
+            let rotation = body.rotation.as_quat();
+            let origin = (body.rotation * chunk.origin + body.position - camera).as_vec3();
+            let center = origin + rotation * chunk.center;
+            let mut instance_data = [0.0f32; 8];
+            instance_data[..3].copy_from_slice(&origin.to_array());
+            instance_data[4..].copy_from_slice(&rotation.to_array());
             if frustum.intersects_sphere(center, chunk.radius) {
                 let instance = u32::try_from(origins.len()).expect("instance count");
-                origins.push(origin.extend(0.0).to_array());
+                origins.push(instance_data);
                 self.draws.push((id, instance, skirts));
                 self.triangles += chunk.surface as usize / 3;
             }
@@ -235,7 +251,7 @@ impl TerrainPass {
             {
                 for (c, cascade) in cascades.iter().enumerate() {
                     if cascade.may_cast_into(basis, center, chunk.radius) {
-                        per_cascade[c].push((id, skirts, origin.extend(0.0).to_array()));
+                        per_cascade[c].push((id, skirts, instance_data));
                     }
                 }
             }
@@ -298,7 +314,7 @@ impl TerrainPass {
 fn instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("terrain instances"),
-        size: (capacity * 16) as u64,
+        size: capacity as u64 * INSTANCE_SIZE,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
@@ -307,7 +323,19 @@ fn instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
 impl Renderer {
     /// Uploads (or replaces) terrain chunk `id`, whose vertices are relative to `origin`.
     pub fn insert_terrain(&mut self, id: u64, origin: DVec3, mesh: &TerrainMeshData) {
-        self.terrain.insert(&self.device, id, origin, mesh);
+        self.terrain.insert(&self.device, id, 0, origin, mesh);
+    }
+
+    /// Uploads terrain chunk `id` of the body drawn in `Frame::terrain_frames[frame]`; its
+    /// origin and vertices are in that body's fixed frame.
+    pub fn insert_terrain_in(
+        &mut self,
+        id: u64,
+        frame: u16,
+        origin: DVec3,
+        mesh: &TerrainMeshData,
+    ) {
+        self.terrain.insert(&self.device, id, frame, origin, mesh);
     }
 
     /// Removes terrain chunk `id` (no-op if absent).

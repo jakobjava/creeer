@@ -4,7 +4,7 @@ A realistic-physics building and engineering sandbox: smooth procedural planets,
 
 The game runs on a custom engine written in Rust. See [`plan.md`](plan.md) for the full design and roadmap, and [`docs/adr/`](docs/adr) for the decision records.
 
-**Status:** Phase A. F0 (engine skeleton), F1 (renderer core), F2 (physics core) and F3 (planets & terrain) complete; next is F4 (orbital mechanics & solar system).
+**Status:** Phase A. F0 (engine skeleton), F1 (renderer core), F2 (physics core), F3 (planets & terrain) and F4 (orbital mechanics & solar system: n-body orbits, a generated solar system, time warp, the map) complete; next is F5 (networking & persistence).
 
 ## Building
 
@@ -18,11 +18,13 @@ cargo run -p creeer_client --release -- --screenshot shot.png --view far --overl
 cargo run -p creeer_client --release -- --bench 600   # headless render benchmark
 cargo run -p creeer_client --release -- --planet surface shot.png   # planet views: orbit/high/low/surface/tunnel/night
 cargo run -p creeer_client --release -- --planet-bench 40   # fly from orbit to the ground: frame times
+cargo run -p creeer_client --release -- --system moon shot.png   # solar system: home/orbit/moon/map/system/lagrange/transfer
+cargo run -p creeer_client --release -- --system-bench   # solar-system sandbox: frame times
 ```
 
 ## Layout
 
 - `crates/`: one crate per subsystem (`creeer_math`, `creeer_physics`, `creeer_orbit`, ...). Simulation crates have no rendering dependency.
 - `xtask/`: project automation.
-- `data/`: game content (materials, reactions, parts, planets) as RON files.
+- `data/`: game content (materials, reactions, parts, planets, solar systems) as RON files.
 - `docs/adr/`: architecture decision records. `docs/physics/`: derivations and validation reports.

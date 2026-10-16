@@ -70,6 +70,7 @@ pub fn run(metrics_out: Option<&Path>, report_only: bool) -> ExitCode {
     crate::solvers::run_structures(&mut report);
     crate::world_bench::run(&mut report);
     crate::terrain_bench::run(&mut report, threads);
+    crate::orbit_bench::run(&mut report);
 
     if let Some(path) = metrics_out {
         let mut text = String::new();

@@ -11,6 +11,9 @@ impl Running {
                 if ui.button("Planet sandbox (F3) ▸").clicked() {
                     self.enter_planet();
                 }
+                if ui.button("Solar system sandbox (F4) ▸").clicked() {
+                    self.enter_system();
+                }
                 if ui.checkbox(&mut self.settings.vsync, "VSync").changed() {
                     self.renderer.set_vsync(self.settings.vsync);
                 }

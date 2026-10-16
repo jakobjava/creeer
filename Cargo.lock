@@ -498,6 +498,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_core",
  "creeer_math",
+ "creeer_orbit",
  "creeer_physics",
  "creeer_render",
  "creeer_sim",
@@ -553,6 +554,14 @@ version = "0.0.1"
 [[package]]
 name = "creeer_orbit"
 version = "0.0.1"
+dependencies = [
+ "approx",
+ "creeer_math",
+ "proptest",
+ "rayon",
+ "ron",
+ "serde",
+]
 
 [[package]]
 name = "creeer_physics"
@@ -585,8 +594,10 @@ name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
  "creeer_math",
+ "creeer_orbit",
  "creeer_physics",
  "creeer_terrain",
+ "rayon",
 ]
 
 [[package]]
@@ -609,6 +620,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_core",
  "creeer_math",
+ "creeer_orbit",
  "creeer_physics",
  "creeer_sim",
  "creeer_terrain",

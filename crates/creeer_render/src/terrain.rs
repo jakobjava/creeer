@@ -120,3 +120,22 @@ mod tests {
         }
     }
 }
+
+/// Where a body's terrain is drawn: its body-fixed frame in simulation space. Chunks are
+/// uploaded in body-fixed coordinates; each frame says where the body is and how it is
+/// turned, so a moon's terrain can be drawn while it moves and spins.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TerrainFrame {
+    /// The body's centre (m).
+    pub position: creeer_math::glam::DVec3,
+    /// Body-fixed → simulation-space rotation.
+    pub rotation: creeer_math::glam::DQuat,
+}
+
+impl TerrainFrame {
+    /// Body-fixed coordinates are simulation space.
+    pub const IDENTITY: Self = Self {
+        position: creeer_math::glam::DVec3::ZERO,
+        rotation: creeer_math::glam::DQuat::IDENTITY,
+    };
+}

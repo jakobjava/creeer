@@ -15,6 +15,7 @@ creeer_render = { path = "crates/creeer_render" }
 creeer_ui = { path = "crates/creeer_ui" }
 creeer_physics = { path = "crates/creeer_physics" }
 creeer_terrain = { path = "crates/creeer_terrain" }
+creeer_orbit = { path = "crates/creeer_orbit" }
 creeer_materials = { path = "crates/creeer_materials" }
 creeer_sim = { path = "crates/creeer_sim" }
 

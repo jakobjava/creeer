@@ -3,10 +3,10 @@
 //! on machines without a usable adapter.
 
 use creeer_math::det;
-use creeer_math::glam::{DVec3, Vec3};
+use creeer_math::glam::{DQuat, DVec3, Vec3};
 use creeer_render::{
-    Atmosphere, Camera, DebugLines, Frame, Image, Lighting, Renderer, Scene, Sky, TerrainMeshData,
-    TerrainVertex, wgpu,
+    Atmosphere, Camera, DebugLines, Frame, Image, Lighting, Renderer, Scene, Sky, TerrainFrame,
+    TerrainMeshData, TerrainVertex, wgpu,
 };
 
 const RADIUS: f64 = 500_000.0;
@@ -63,6 +63,7 @@ fn render(renderer: &mut Renderer, sun_elevation: f64, pitch: f64, skirts: u8) -
         camera: &camera,
         scene: &Scene::default(),
         terrain: &[(7, skirts)],
+        terrain_frames: &[],
         lighting: &lighting,
         lines: &DebugLines::default(),
         sky: Some(&sky),
@@ -113,4 +114,58 @@ fn skirts_are_drawn_only_for_the_faces_asked_for() {
     );
     renderer.remove_terrain(7);
     assert_eq!(renderer.terrain_chunk_count(), 0);
+}
+
+/// The same patch drawn in a body frame that is turned and moved, seen by a camera turned and
+/// moved with it, under a sun and sky moved with it, gives the same picture: what a moon's
+/// terrain needs while the moon flies past.
+#[test]
+fn terrain_in_a_turned_and_moved_body_frame_looks_the_same() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let reference = render(&mut renderer, 40.0, -0.6, 0);
+    renderer.remove_terrain(7);
+    let turn = DQuat::from_axis_angle(DVec3::new(0.3, -0.5, 0.8).normalize(), 2.1);
+    let shift = DVec3::new(3.1e7, -2.2e7, 1.4e7);
+    let sky = Sky {
+        atmosphere: Atmosphere::earthlike(RADIUS),
+        planet_center: shift,
+        sun_irradiance: [3.6, 3.4, 3.1],
+        star_brightness: 1.0,
+    };
+    let ground = DVec3::Y * RADIUS;
+    renderer.insert_terrain_in(7, 0, ground, &patch());
+    let mut camera = Camera::new(turn * (ground + DVec3::Y * 20.0) + shift);
+    camera.frame = turn;
+    camera.pitch = -0.6;
+    let (s, c) = det::sin_cos(40f64.to_radians());
+    let to_sun = turn * DVec3::new(c, s, 0.0);
+    let lighting = sky.lighting(camera.position, to_sun, &Lighting::default());
+    let moved = renderer.capture(Frame {
+        camera: &camera,
+        scene: &Scene::default(),
+        terrain: &[(7, 0)],
+        terrain_frames: &[TerrainFrame {
+            position: shift,
+            rotation: turn,
+        }],
+        lighting: &lighting,
+        lines: &DebugLines::default(),
+        sky: Some(&sky),
+        heatmap: None,
+        overlay: None,
+        clear_color: wgpu::Color::BLACK,
+    });
+    let mut worst = 0u8;
+    for y in 0..90 {
+        for x in 0..160 {
+            let (a, b) = (reference.pixel(x, y), moved.pixel(x, y));
+            for k in 0..3 {
+                worst = worst.max(a[k].abs_diff(b[k]));
+            }
+        }
+    }
+    // The stars behind turn with the camera; the ground and sky must not change.
+    assert!(worst <= 6, "largest channel difference {worst}");
 }

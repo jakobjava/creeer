@@ -1,0 +1,91 @@
+// The default solar system of the F4 sandbox: KSP scale around the hand-made home planet.
+//
+// KSP scale means small worlds with ordinary surface gravity, so planets and moons are
+// about ten times denser than real rock (Home: 70,000 kg/m³); belt asteroids keep real
+// densities.
+//
+// Everything except the star and home is generated from `seed` (ADR-0007). Planets are
+// spaced outwards and inwards from home by ratios of semi-major axes and kept at least
+// `min_hill_separation` mutual Hill radii apart; moons lie between `roche_factor` times
+// their planet's Roche limit and `hill_fraction` of its Hill radius. Each candidate system
+// is integrated (`stability`) and the next candidate is tried if anything leaves its orbit.
+System(
+    name: "Home system",
+    seed: 20261016,
+    star: (
+        name: "Sun",
+        radius: "261600 km",
+        surface_gravity: "17.1 m/s^2",
+        day: "20 d",
+        color: (255, 236, 205),
+    ),
+    home: (
+        planet: "planets/home.ron",
+        semi_major_axis: "13.6 Gm",
+        eccentricity: 0.0,
+        moons: (1, 2),
+    ),
+    planets: (
+        inner: "2.5 Gm",
+        outer: "160 Gm",
+        spacing: (1.35, 1.9),
+        min_hill_separation: 12.0,
+        eccentricity: (0.0, 0.08),
+        inclination: ("0 deg", "4 deg"),
+        // Gas giants only beyond the snow line.
+        giant_beyond: "25 Gm",
+        giant_chance: 0.7,
+    ),
+    rocky: (
+        radius: ("120 km", "650 km"),
+        density: ("20000 kg/m^3", "75000 kg/m^3"),
+        day: Some(("4 h", "60 h")),
+        tilt: Some(("0 deg", "35 deg")),
+        moons: (0, 2),
+        surface: Some("planets/rocky.ron"),
+    ),
+    giant: (
+        radius: ("2000 km", "7000 km"),
+        density: ("3000 kg/m^3", "9000 kg/m^3"),
+        day: Some(("3 h", "14 h")),
+        tilt: Some(("0 deg", "30 deg")),
+        moons: (2, 5),
+    ),
+    // Moons are tidally locked: no day or tilt of their own.
+    moon: (
+        radius: ("25 km", "350 km"),
+        density: ("8000 kg/m^3", "40000 kg/m^3"),
+        surface: Some("planets/moon.ron"),
+    ),
+    moons: (
+        roche_factor: 2.0,
+        hill_fraction: 0.3,
+        spacing: (1.4, 2.4),
+        min_hill_separation: 8.0,
+        eccentricity: (0.0, 0.02),
+        inclination: ("0 deg", "2 deg"),
+    ),
+    belt: (
+        inner: "26 Gm",
+        outer: "38 Gm",
+        minors: 150,
+        // Asteroids heavy enough to swing a small moon's orbit in a close pass are majors.
+        majors: 3,
+        minor_radius: ("0.3 km", "15 km"),
+        major_radius: ("40 km", "120 km"),
+        density: "2400 kg/m^3",
+        eccentricity: (0.0, 0.12),
+        inclination: ("0 deg", "8 deg"),
+        surface: Some("planets/asteroid.ron"),
+    ),
+    trojans: (
+        per_giant: (2, 6),
+        radius: ("0.5 km", "8 km"),
+        density: "2000 kg/m^3",
+    ),
+    stability: (
+        planet_orbits: 1000.0,
+        moon_orbits: 200.0,
+        attempts: 30,
+    ),
+)

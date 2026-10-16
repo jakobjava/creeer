@@ -1,0 +1,43 @@
+// Template for generated rocky planets (ADR-0007): the generator replaces name, seed, radius,
+// gravity, day and tilt, and scales every height and wavelength by radius / 300 km.
+// Airless and dry until F6.
+Planet(
+    name: "Rocky template",
+    seed: 1,
+    radius: "300 km",
+    surface_gravity: "5 m/s^2",
+    sidereal_day: "12 h",
+    axial_tilt: "0 deg",
+    geology: "home_geology.ron",
+    elevation: (
+        continents: (wavelength: "450 km", octaves: 5),
+        curve: [
+            (0.00, "-3000 m"), // basins
+            (0.35, "-1200 m"),
+            (0.60, "0 m"),
+            (0.85, "900 m"),   // uplands
+            (1.00, "2200 m"),
+        ],
+        layers: [
+            (
+                name: "ranges",
+                kind: Ridged,
+                noise: (wavelength: "50 km", octaves: 7, gain: 0.5),
+                amplitude: "2800 m",
+                mask: Some((noise: (wavelength: "400 km", octaves: 3), from: 0.60, to: 0.85)),
+            ),
+            (
+                name: "hills",
+                kind: Fbm,
+                noise: (wavelength: "6 km", octaves: 5),
+                amplitude: "260 m",
+            ),
+            (
+                name: "detail",
+                kind: Fbm,
+                noise: (wavelength: "500 m", octaves: 9),
+                amplitude: "20 m",
+            ),
+        ],
+    ),
+)

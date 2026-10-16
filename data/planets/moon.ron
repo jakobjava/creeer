@@ -1,0 +1,43 @@
+// Template for generated moons (ADR-0007): dark lowland plains and bright, rugged highlands.
+// The generator replaces name, seed, radius, gravity, day (tidally locked: the orbital
+// period) and tilt, and scales every height and wavelength by radius / 100 km.
+Planet(
+    name: "Moon template",
+    seed: 2,
+    radius: "100 km",
+    surface_gravity: "0.5 m/s^2",
+    sidereal_day: "48 h",
+    axial_tilt: "0 deg",
+    geology: "airless_geology.ron",
+    elevation: (
+        continents: (wavelength: "160 km", octaves: 4),
+        curve: [
+            (0.00, "-2200 m"), // plains
+            (0.30, "-1500 m"),
+            (0.45, "-200 m"),
+            (0.70, "600 m"),   // highlands
+            (1.00, "1800 m"),
+        ],
+        layers: [
+            (
+                name: "massifs",
+                kind: Ridged,
+                noise: (wavelength: "18 km", octaves: 6, gain: 0.5),
+                amplitude: "1500 m",
+                mask: Some((noise: (wavelength: "120 km", octaves: 3), from: 0.45, to: 0.80)),
+            ),
+            (
+                name: "hummocks",
+                kind: Fbm,
+                noise: (wavelength: "3 km", octaves: 5),
+                amplitude: "160 m",
+            ),
+            (
+                name: "detail",
+                kind: Fbm,
+                noise: (wavelength: "300 m", octaves: 8),
+                amplitude: "12 m",
+            ),
+        ],
+    ),
+)

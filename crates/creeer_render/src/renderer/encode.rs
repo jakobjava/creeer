@@ -116,6 +116,7 @@ impl Renderer {
             &self.device,
             &self.queue,
             frame.terrain,
+            frame.terrain_frames,
             frame.camera.position,
             &Frustum::from_view_projection(view_proj),
             shadows_on.then_some((&cascades, &basis)),

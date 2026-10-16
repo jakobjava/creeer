@@ -27,7 +27,7 @@ pub mod tiles;
 #[cfg(test)]
 mod tiles_tests;
 
-pub use planet::{DataError, Planet};
+pub use planet::{DataError, Overrides, Planet};
 pub use terrain::Terrain;
 
 /// Path of a file in the repository's `data/` directory (for tools and tests).

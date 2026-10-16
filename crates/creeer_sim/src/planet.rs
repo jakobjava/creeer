@@ -14,10 +14,7 @@ use std::sync::Arc;
 
 /// The planet's gravity as seen from its rotating frame.
 pub fn planet_gravity(planet: &Planet) -> PlanetGravity {
-    PlanetGravity {
-        mu: planet.mu,
-        spin: DVec3::Y * planet.angular_speed(),
-    }
+    PlanetGravity::planet(planet.mu, DVec3::Y * planet.angular_speed())
 }
 
 /// A planet's terrain as the physics world's ground (edits included).

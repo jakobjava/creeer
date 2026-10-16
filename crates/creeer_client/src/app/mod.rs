@@ -4,6 +4,7 @@ use super::*;
 
 mod planet;
 mod sandbox_ui;
+pub(crate) mod system;
 
 #[derive(Default)]
 pub(crate) struct App {
@@ -35,6 +36,8 @@ struct Running {
     physics: physics_view::PhysicsView,
     /// The planet sandbox, when it is open (instead of the tech demo).
     planet: Option<crate::planet_view::PlanetView>,
+    /// The solar-system sandbox, when it is open.
+    system: Option<crate::system_view::SystemView>,
     meshes: DemoMeshes,
     scene: Scene,
     lines: DebugLines,
@@ -81,7 +84,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } if !response.consumed => {
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    app.fly.key(code, event.state == ElementState::Pressed);
+                    let pressed = event.state == ElementState::Pressed;
+                    if !(pressed && !event.repeat && app.system_key(code)) {
+                        app.fly.key(code, pressed);
+                    }
                 }
             }
             WindowEvent::MouseInput {
@@ -102,13 +108,20 @@ impl ApplicationHandler for App {
                 if let Some(planet) = &app.planet {
                     planet.use_tool(&app.camera);
                 }
+                if let Some(system) = &app.system
+                    && !system.map
+                {
+                    system.dig(&app.camera, system.snapshot().current.anchor);
+                }
             }
             WindowEvent::MouseWheel { delta, .. } if !response.consumed => {
                 let notches = match delta {
                     MouseScrollDelta::LineDelta(_, y) => f64::from(y),
                     MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
                 };
-                app.fly.scroll(notches);
+                if !app.system_scroll(notches) {
+                    app.fly.scroll(notches);
+                }
             }
             WindowEvent::RedrawRequested => app.frame(),
             _ => {}
@@ -118,6 +131,7 @@ impl ApplicationHandler for App {
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
         if let (Some(app), DeviceEvent::MouseMotion { delta }) = (&mut self.running, event)
             && app.looking
+            && !app.system_mouse(delta.0, delta.1)
         {
             app.fly.mouse_motion(delta.0, delta.1);
         }
@@ -183,6 +197,7 @@ impl Running {
             sim: SimThread::spawn(OrbitSandbox::demo(), TICK_RATE_HZ),
             physics: physics_view::PhysicsView::new(TICK_RATE_HZ),
             planet: None,
+            system: None,
             meshes,
             scene: Scene::default(),
             lines: DebugLines::default(),
@@ -254,6 +269,10 @@ impl Running {
             self.planet_frame(now, dt);
             return;
         }
+        if self.system.is_some() {
+            self.system_frame(now, dt);
+            return;
+        }
         self.fly.update(&mut self.camera, dt.as_secs_f64());
 
         let published = self.sim.latest();
@@ -314,6 +333,7 @@ impl Running {
             camera: &self.camera,
             scene: &self.scene,
             terrain: &[],
+            terrain_frames: &[],
             lighting: &self.lighting,
             sky: Some(&sky),
             heatmap: heatmap.as_ref(),

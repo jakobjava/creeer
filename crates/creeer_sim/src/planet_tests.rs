@@ -191,8 +191,12 @@ fn planet_physics_is_bit_identical_across_platforms() {
         .bodies
         .iter()
         .fold(0u64, |h, b| h.rotate_left(13) ^ b.structure.state_hash());
+    // Regenerated once, for a deliberate change of the model (ADR-0007): the Coriolis force
+    // from the velocity extrapolated to the end of the step, and the rotating frame's torque
+    // on spinning bodies. With both switched off the old value (0x6439_5b38_a0ac_6ddd)
+    // came back exactly.
     assert_eq!(
-        hash, 0x6439_5b38_a0ac_6ddd,
+        hash, 0xcca2_311e_b5a7_1167,
         "planet physics hash {hash:#018x}"
     );
 }
