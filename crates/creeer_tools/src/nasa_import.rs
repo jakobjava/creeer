@@ -130,6 +130,7 @@ fn read(path: &Path) -> Result<Vec<Entry>, String> {
             last.polynomials.extend(polynomials);
             continue;
         }
+        let atoms = precise(&name, atoms);
         entries.push(Entry {
             name,
             comment,
@@ -141,6 +142,44 @@ fn read(path: &Path) -> Result<Vec<Entry>, String> {
         });
     }
     Ok(entries)
+}
+
+/// The counts in `name` where it spells the formula more precisely than the record's
+/// two-decimal fields and agrees with them to that: wüstite, Fe.947O, whose record says
+/// Fe 0.95 (and its data are Pankratz's for Fe₀.₉₄₇O). Otherwise the record's `atoms`.
+fn precise(name: &str, atoms: Vec<(String, f64)>) -> Vec<(String, f64)> {
+    let formula = name.split('(').next().unwrap_or(name);
+    let mut spelled: Vec<(String, f64)> = Vec::new();
+    let chars: Vec<char> = formula.chars().collect();
+    let mut k = 0;
+    while k < chars.len() {
+        if !chars[k].is_ascii_uppercase() {
+            return atoms;
+        }
+        let mut symbol = chars[k].to_string();
+        k += 1;
+        if k < chars.len() && chars[k].is_ascii_lowercase() {
+            symbol.push(chars[k]);
+            k += 1;
+        }
+        let start = k;
+        while k < chars.len() && (chars[k].is_ascii_digit() || chars[k] == '.') {
+            k += 1;
+        }
+        let digits: String = chars[start..k].iter().collect();
+        let count = if digits.is_empty() {
+            1.0
+        } else {
+            digits.parse().unwrap_or(f64::NAN)
+        };
+        spelled.push((symbol, count));
+    }
+    let agrees = spelled.len() == atoms.len()
+        && spelled
+            .iter()
+            .zip(&atoms)
+            .all(|(s, a)| s.0 == a.0 && (s.1 - a.1).abs() <= 0.005);
+    if agrees { spelled } else { atoms }
 }
 
 /// Whether the game keeps a species.
@@ -201,8 +240,9 @@ pub fn run(thermo: &Path, out: &Path) -> Result<usize, String> {
          // converted to this format; ions, deuterated species, inert copies and reactants without\n\
          // coefficients left out; species split over two records joined; eleven first intervals\n\
          // the 2021 revision turned inside out (lower bound 300 K above the upper) start at 200 K\n\
-         // again, as before it. H(298.15 K) is the heat of formation. Written by `creeer_tools\n\
-         // import-nasa9`: do not edit by hand.\n[\n",
+         // again, as before it; wüstite's iron 0.947, as its name and data have it (its record's\n\
+         // two-decimal field says 0.95). H(298.15 K) is the heat of formation. Written by\n\
+         // `creeer_tools import-nasa9`: do not edit by hand.\n[\n",
     );
     let mut count = 0;
     let mut seen = std::collections::HashSet::new();

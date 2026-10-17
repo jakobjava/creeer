@@ -545,6 +545,10 @@ version = "0.0.1"
 [[package]]
 name = "creeer_chem"
 version = "0.0.1"
+dependencies = [
+ "creeer_materials",
+ "creeer_math",
+]
 
 [[package]]
 name = "creeer_client"
