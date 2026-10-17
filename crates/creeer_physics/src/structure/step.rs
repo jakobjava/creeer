@@ -111,6 +111,7 @@ impl ImplicitSolver {
     pub(super) fn finish_substep(&mut self, s: &mut Structure) {
         let beta = self.work.beta;
         let w = &self.work;
+        let rest = &self.rest_inverse;
         // Every node on its own (in parallel: the same arithmetic per node, so the same bits).
         (
             s.velocity.par_iter_mut(),
@@ -137,10 +138,10 @@ impl ImplicitSolver {
                 // torques are not in the momentum.)
                 #[allow(clippy::float_cmp)] // Newmark's own τ = β
                 let newmark = w.tau == beta;
-                *omega = if newmark && s.free_rotation[i] == DVec3::ONE {
+                *omega = if newmark && s.free_rotation[i] == DVec3::ONE && rest[i] != DMat3::ZERO {
                     let r = DMat3::from_quat(q);
-                    (r * s.inertia[i] * r.transpose()).inverse()
-                        * (w.momentum_star[i] + w.inertia_star[i] * turn / beta)
+                    let momentum = w.momentum_star[i] + w.inertia_star[i] * turn / beta;
+                    r * (rest[i] * (r.transpose() * momentum))
                 } else {
                     so3::log(q * w.q_hat[i].conjugate()) / beta
                 };

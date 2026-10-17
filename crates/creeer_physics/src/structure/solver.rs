@@ -114,6 +114,9 @@ pub struct ImplicitSolver {
     /// with the work of that mean (`group.rs`).
     pub(super) previous_load: Vec<DVec3>,
     pub(super) previous_torque: Vec<DVec3>,
+    /// Each node's rest inertia inverted (zero where it has none): its angular velocity from
+    /// its momentum, R·I⁻¹·Rᵀ·L, without inverting the turned inertia every step.
+    pub(super) rest_inverse: Vec<DMat3>,
     /// Check every Newmark step for energy gain and redo it with BDF2 if it gained (default
     /// on; see `step.rs`).
     pub energy_guard: bool,
@@ -220,6 +223,11 @@ impl ImplicitSolver {
             angular_acceleration: vec![DVec3::ZERO; n],
             previous_load: structure.load.clone(),
             previous_torque: structure.torque.clone(),
+            rest_inverse: structure
+                .inertia
+                .iter()
+                .map(|m| if m.determinant() > 0.0 { m.inverse() } else { DMat3::ZERO })
+                .collect(),
             energy_guard: true,
             fallbacks: 0,
             snapshot: Snapshot::default(),
