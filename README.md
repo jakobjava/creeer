@@ -4,7 +4,7 @@ A realistic-physics building and engineering sandbox: smooth procedural planets,
 
 The game runs on a custom engine written in Rust. See [`plan.md`](plan.md) for the full design and roadmap, and [`docs/adr/`](docs/adr) for the decision records.
 
-**Status:** Phase A. F0 (engine skeleton), F1 (renderer core), F2 (physics core), F3 (planets & terrain), F4 (orbital mechanics & solar system: n-body orbits, a generated solar system, time warp, the map) and F5 (networking & persistence: an authoritative server, in process for singleplayer or dedicated over UDP; versioned saves) complete; next is F6 (simulation domains).
+**Status:** Phase A. F0 (engine skeleton), F1 (renderer core), F2 (physics core), F3 (planets & terrain), F4 (orbital mechanics & solar system: n-body orbits, a generated solar system, time warp, the map) and F5 (networking & persistence: an authoritative server, in process for singleplayer or dedicated over UDP; versioned saves) and F6 (simulation domains: heat, electricity, drivetrains, chemistry, fluids, logic) complete. Performance and maximum realism, together, are paramount: every scene must run in real time without simplifying its physics.
 
 ## Building
 

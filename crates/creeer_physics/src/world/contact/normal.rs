@@ -147,7 +147,8 @@ impl Contacts {
             Side::Node { member, node, .. } => Some((member, node)),
             Side::Fixed(_) => None,
         };
-        let (gaps, measured) = (self.gaps(states), self.measured_depths(states));
+        let geometry = self.geometry(states);
+        let (gaps, measured) = (geometry.gaps(), &*geometry.measured);
         let mut out = Vec::new();
         for (i, c) in self.list.iter().enumerate() {
             if let Law::Hertz(h) = c.law {
@@ -157,7 +158,7 @@ impl Contacts {
         // A face's as its law was last evaluated, where that was at these depths (the step's
         // last trial: its end), else evaluated again.
         let memo = self.memo.lock();
-        for (k, (p, measured)) in self.patches.iter().zip(&measured).enumerate() {
+        for (k, (p, measured)) in self.patches.iter().zip(measured).enumerate() {
             let depths: [f64; 4] = std::array::from_fn(|k| -gaps[p.first + k]);
             #[allow(clippy::float_cmp)] // the very same depths
             let energy = match memo.get(k).and_then(Option::as_ref) {

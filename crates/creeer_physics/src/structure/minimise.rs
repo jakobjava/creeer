@@ -64,6 +64,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
     // step would stop where it began, as if converged (a NaN dashpot did, F5).
     debug_assert!(objective.is_finite(), "the step's objective is {objective}");
     members[0].1.timings.residual += t.elapsed();
+    let setup = crate::profile::start();
     let mut rigid: Vec<Option<[[f64; 6]; 6]>> = (0..members.len())
         .map(|m| {
             members[m]
@@ -71,19 +72,22 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
                 .rigid_matrix(members[m].0, coupling.rigid_stiffness(m))
         })
         .collect();
+    let mut system = RigidSystem::new(members, coupling, &rigid);
     // Structures take the contacts' stiffness into their matrix (refactorising only when
-    // it changed materially).
+    // it changed materially, judged without the joints a joint solve takes exactly).
+    let joints = Coupled::joints(members, coupling, &rigid, system.as_ref());
     for (m, (s, v)) in members.iter_mut().enumerate() {
         let mut blocks = coupling.node_stiffness(m);
         blocks.extend(s.dashpot_blocks(v.work.beta, v.work.dashpot_scale));
         blocks.extend(s.added_blocks(v.work.beta));
-        if !s.elements.is_empty() && v.use_contact_stiffness(s, blocks) {
+        let exempt: Vec<usize> = joints.iter().filter(|j| j.0 == m).map(|j| j.1).collect();
+        if !s.elements.is_empty() && v.use_contact_stiffness(s, blocks, &exempt) {
             v.update_turns(s);
         }
     }
-    let mut system = RigidSystem::new(members, coupling, &rigid);
     // Rigid bodies resting only on structures: solved jointly with them (`coupled.rs`).
     let coupled = Coupled::new(members, coupling, &rigid, system.as_ref());
+    setup.stop(crate::profile::Slot::Setup);
     let offsets: Vec<usize> = members
         .iter()
         .scan(0, |offset, (_, v)| {
@@ -128,11 +132,23 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             && previous_move > 10.0 * tolerance
             && coupling.relinearise(&states(members))
         {
+            let timer = crate::profile::start();
             system = remake(system.take(), members, coupling, &mut rigid);
+            timer.stop(crate::profile::Slot::Relinearise);
+            #[cfg(feature = "profile")]
+            if std::env::var_os("CREEER_CHECK_HESSIAN").is_some() {
+                let label = format!("iteration {iteration}");
+                super::hessian_check::check(members, coupling, &label);
+                super::hessian_check::check_own(members, coupling, &label);
+            }
+        }
+        if lag_updates > 0 {
+            crate::profile::add(crate::profile::Slot::LagIterations, 1);
         }
         let t = Instant::now();
         for (s, v) in members.iter_mut() {
             v.last_iterations += 1;
+            v.iterations_total += 1;
             if v.refactoring == Refactoring::EveryIteration && !s.elements.is_empty() {
                 v.refactor(s);
                 v.update_turns(s);
@@ -184,9 +200,18 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
 
         // Line search on the total.
         let t = Instant::now();
-        let mut alpha = 1.0;
+        // The first trial goes as far as the first contact now open closes, if that is short of
+        // the full step (`Coupling::closing`).
+        let mut alpha = coupling
+            .closing(&states(members), &direction, &offsets)
+            .map_or(1.0, |a| a.clamp(1e-3, 1.0));
+        let first_alpha = alpha;
         let mut accepted = None;
+        // The objective's slope along the direction at its start (the residual is −β²·∇G).
+        let beta = members[0].1.work.beta;
+        let slope = -downhill(&residual, &direction) / (beta * beta);
         for halving in 0..=12 {
+            crate::profile::add(crate::profile::Slot::Trials, 1);
             let mut members_value = 0.0;
             let mut elastic = Vec::with_capacity(members.len());
             for (s, v) in members.iter_mut() {
@@ -202,7 +227,19 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
                 accepted = Some((value, members_value, elastic, halving == 0));
                 break;
             }
-            alpha *= 0.5;
+            // Back to the minimum of the parabola through the start (its value and slope) and
+            // this trial, kept between a tenth and a half of this step: one trial back where
+            // halving took several (a rock pile's steps took 2.5 trials an iteration).
+            let curve = (value - objective - slope * alpha) / (alpha * alpha);
+            let back = if curve > 0.0 && slope < 0.0 {
+                -slope / (2.0 * curve)
+            } else {
+                0.5 * alpha
+            };
+            alpha = back.clamp(0.1 * alpha, 0.5 * alpha);
+            if alpha < 1.0 / 4096.0 {
+                break;
+            }
         }
         members[0].1.timings.objective += t.elapsed();
         let Some((value, members_value, elastic, first_trial)) = accepted else {
@@ -260,13 +297,15 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             if lag_updates == 3 || !coupling.update_lag(&states(members)) {
                 break;
             }
+            crate::profile::add(crate::profile::Slot::LagUpdates, 1);
             lag_updates += 1;
             objective = own + coupling.energy(&states(members));
             lag_changed = true;
             (previous_move, previous_rate) = (f64::INFINITY, None);
             lbfgs.clear();
         }
-        if alpha < 0.25 && !refactored {
+        // (Backtracking, not a step stopped where a contact closes, says the matrix is off.)
+        if alpha < 0.25 * first_alpha && !refactored {
             refactored = true;
             for (s, v) in members.iter_mut() {
                 if v.refactoring == Refactoring::WhenSlow && !s.elements.is_empty() {

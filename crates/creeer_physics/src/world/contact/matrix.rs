@@ -30,20 +30,23 @@ impl Contacts {
             c.damping / self.beta
         };
         let normal = if self.touching(c) { own + damped } else { 0.0 };
+        // Along the gap's gradient where it was last measured (`Contact::lever`).
+        let g = c.lever;
+        let along = DMat3::from_cols(g * g.x, g * g.y, g * g.z);
+        if let Some(tangent) = c.tangent {
+            return (along * normal, tangent);
+        }
         // Sticking: the stiff spring of the anchor. Sliding: Coulomb's force μ·λ is constant,
         // its secant over the slip of the step is the stiffness the step sees.
         let n = c.normal;
         let outer = DMat3::from_cols(n * n.x, n * n.y, n * n.z);
-        if let Some(tangent) = c.tangent {
-            return (outer * normal, tangent);
-        }
         let slip = c.sliding * self.beta;
         let tangent = if slip > self.smoothing {
             c.friction * c.lambda / slip
         } else {
             c.friction * c.lambda * 2.0 / self.smoothing
         };
-        (outer * normal, (DMat3::IDENTITY - outer) * tangent)
+        (along * normal, (DMat3::IDENTITY - outer) * tangent)
     }
 
     /// The stiffness blocks of a contact with the lever arms they act at: one block at the
@@ -148,7 +151,7 @@ impl Contacts {
             for (arm_a, arm_b, h) in self.arms_and_blocks(i) {
                 for (side, arm) in [(c.a, arm_a), (c.b, arm_b)] {
                     // δp = δx − [r]×·δθ, so the 6×6 block is Jᵀ·H·J with J = [I, −[r]×].
-                    // The lever arm is the one at the start of the step.
+                    // The lever arm where the contact was last measured (`Contact::lever`).
                     if let Some(m) = on_rigid(side) {
                         add_block(&mut h6[m], arm, arm, h, 1.0);
                     }
@@ -196,7 +199,7 @@ impl Contacts {
     fn levers(&self, first: usize, on_a: bool) -> [[f64; 6]; 4] {
         std::array::from_fn(|k| {
             let c = &self.list[first + k];
-            let (n, arm) = (c.normal, if on_a { c.arm_a } else { c.arm_b });
+            let (n, arm) = (c.lever, if on_a { c.arm_a } else { c.arm_b });
             let turn = arm.cross(n);
             [n.x, n.y, n.z, turn.x, turn.y, turn.z]
         })

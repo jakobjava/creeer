@@ -48,6 +48,38 @@ pub(super) struct Coupled {
 }
 
 impl Coupled {
+    /// The structure joints (member, node) a joint solve of the group would take: those in
+    /// contact with rigid bodies that rest only on structures (none past [`MOST`]). Their
+    /// contacts' stiffness is the solve's own (D), exactly, whatever the factorisation holds.
+    pub(super) fn joints(
+        members: &[Member<'_>],
+        coupling: &dyn Coupling,
+        rigid: &[Option<[[f64; 6]; 6]>],
+        system: Option<&RigidSystem>,
+    ) -> Vec<(usize, usize)> {
+        let structure = |m: usize| rigid[m].is_none() && !members[m].0.elements.is_empty();
+        let alone = |m: usize| rigid[m].is_some() && !system.is_some_and(|j| j.contains(m));
+        let mut joints: Vec<(usize, usize)> = coupling
+            .rigid_coupling()
+            .into_iter()
+            .filter_map(|((ma, na), (mb, nb), _)| {
+                if structure(ma) && alone(mb) && nb == 0 {
+                    Some((ma, na))
+                } else if structure(mb) && alone(ma) && na == 0 {
+                    Some((mb, nb))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        joints.sort_unstable();
+        joints.dedup();
+        if joints.len() > MOST {
+            joints.clear();
+        }
+        joints
+    }
+
     /// The joint solve of the group's rigid bodies that rest only on its structures, or
     /// `None` if there are none (or too many joints, or the system is singular).
     pub(super) fn new(
@@ -143,12 +175,7 @@ impl Coupled {
             .iter()
             .map(|&(s, node)| {
                 let (st, v) = &mut members[s];
-                std::array::from_fn(|k| {
-                    let mut column = vec![DVec3::ZERO; 2 * st.node_count()];
-                    column[node][k] = 1.0;
-                    v.precondition(st, &mut column, None);
-                    column
-                })
+                v.unit_columns(st, node)
             })
             .collect();
         let matrix = dense(&joints, &cross, &change, &columns, &bodies, rigid);

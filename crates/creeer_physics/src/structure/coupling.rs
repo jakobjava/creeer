@@ -59,6 +59,17 @@ pub trait Coupling: Sync {
     fn rigid_coupling(&self) -> Vec<NodeCoupling> {
         Vec::new()
     }
+    /// How far along `direction` (each member's blocks from `offsets[member]`) the first of
+    /// the coupling's terms now inactive comes into play, if one does within a full step: a
+    /// contact now apart that the step would press (its gap followed linearly).
+    fn closing(
+        &self,
+        _states: &[MemberState<'_>],
+        _direction: &[DVec3],
+        _offsets: &[usize],
+    ) -> Option<f64> {
+        None
+    }
     /// Translation stiffness the coupling adds at nodes of a structure member (3×3 blocks,
     /// possibly several per node), for its factorised matrix.
     fn node_stiffness(&self, _member: usize) -> Vec<(usize, DMat3)> {

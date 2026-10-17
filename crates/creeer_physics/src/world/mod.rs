@@ -20,6 +20,8 @@ mod ground_rise;
 mod ground_sample;
 #[cfg(test)]
 mod ground_tests;
+#[cfg(test)]
+mod hessian_probe_tests;
 pub mod hull;
 mod hull_build;
 #[cfg(test)]
@@ -37,6 +39,8 @@ mod left;
 #[cfg(test)]
 mod load_tests;
 pub mod narrow;
+#[cfg(test)]
+mod overlap_tests;
 mod pass;
 #[cfg(test)]
 mod pile_tests;
@@ -54,6 +58,7 @@ mod tests;
 mod turn;
 
 use crate::gravity::PlanetGravity;
+use crate::profile::{self, Slot};
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
 use contact::{Contact, Contacts};
 use creeer_math::glam::{DQuat, DVec3};
@@ -218,6 +223,8 @@ impl World {
 
     /// One (sub)step of `self.dt`.
     fn step_once(&mut self) {
+        profile::add(Slot::WorldSteps, 1);
+        let timer = profile::start();
         self.wake_disturbed();
         // Contacts between an awake and a sleeping body wake the sleeper, which may touch
         // further sleepers: detect until nothing new wakes (a hit at the top of a sleeping
@@ -239,8 +246,12 @@ impl World {
                 break found;
             }
         };
+        timer.stop(Slot::Detect);
+        let timer = profile::start();
         let anchors = std::mem::take(&mut self.anchors);
         let stepped = self.pass(&found, &anchors);
+        timer.stop(Slot::Pass);
+        let timer = profile::start();
         self.contacts.clear();
         self.groups.clear();
         self.left = Left::default();
@@ -253,6 +264,12 @@ impl World {
             self.groups.push((group, contacts));
         }
         self.update_sleep(&groups);
+        timer.stop(Slot::After);
+    }
+
+    /// The groups of the last step: bodies (indices) joined by contacts, stepped together.
+    pub fn groups(&self) -> impl Iterator<Item = &[usize]> {
+        self.groups.iter().map(|(g, _)| g.as_slice())
     }
 
     /// Removes the bodies `keep` refuses, the rest in their order, and returns each old

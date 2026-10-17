@@ -80,6 +80,9 @@ pub struct ImplicitSolver {
     pub tolerance: f64,
     /// Newton iterations used by the last step (summed over substeps).
     pub last_iterations: u32,
+    /// Newton iterations of all its steps so far (not saved): the work a scene's ticks cost,
+    /// the same on every machine (the sandbox's work gates).
+    pub iterations_total: u64,
     /// Where the time of the last step went.
     pub timings: Timings,
     /// Plastic flow and fracture in the last step.
@@ -102,6 +105,9 @@ pub struct ImplicitSolver {
     /// factorised matrix.
     pub(super) contact_blocks: Vec<(usize, DMat3)>,
     pub(super) chol: Cholesky,
+    /// The factor applied to the unit translations at nodes a coupled solve asked for (node,
+    /// its three columns), solved once per factorisation (`coupled.rs`).
+    pub(super) unit_columns: Vec<(usize, [Vec<DVec3>; 3])>,
     pub(super) previous_x: Vec<DVec3>,
     pub(super) previous_v: Vec<DVec3>,
     pub(super) previous_q: Vec<DQuat>,
@@ -171,6 +177,11 @@ pub(super) struct Work {
     /// (`plastic.rs`), found once a step (copied anew at every evaluation, the flows cost a
     /// 5k-member bridge 5 % of its step).
     pub scaled: Vec<[super::flow::Flow; MEASURES]>,
+    /// Each element's rate-lifted flows as its last evaluation in this step found them (w per
+    /// measure, `Flow::increment_from`): where the next one's Newton starts. Emptied as each
+    /// substep begins, so a step does not depend on the steps before it (a loaded world goes on
+    /// bit for bit).
+    pub flow_guess: Vec<[f64; MEASURES]>,
     pub rotations: Vec<DMat3>,
     /// Newton direction (translation blocks, then rotation blocks).
     pub direction: Vec<DVec3>,
@@ -213,6 +224,7 @@ impl ImplicitSolver {
             max_iterations: 500,
             tolerance: 3.0e-7,
             last_iterations: 0,
+            iterations_total: 0,
             timings: Timings::default(),
             last_yielding: super::Yielding::default(),
             refactoring: Refactoring::WhenSlow,
@@ -224,6 +236,7 @@ impl ImplicitSolver {
             turns: vec![DMat3::IDENTITY; n],
             contact_blocks: Vec::new(),
             chol: Cholesky::new(structure.symbolic()),
+            unit_columns: Vec::new(),
             previous_x: structure.position.clone(),
             previous_v: structure.velocity.clone(),
             previous_q: structure.orientation.clone(),

@@ -1,6 +1,6 @@
 //! The material under a patch (`patch.rs`): the pressure over the face's pressed part.
 
-use super::super::integrals::{pressed_mass, square_integral};
+use super::super::integrals::{cut_square_and_mass, square_integral};
 use super::Patch;
 
 impl Patch {
@@ -29,12 +29,19 @@ impl Patch {
         let mut pressed = [[0.0; 4]; 4];
         let mut energy = 0.0;
         let kappa = self.modulus;
+        crate::profile::add(crate::profile::Slot::FaceIntegrations, 1);
         for (t, &(area, w)) in self.triangles.iter().enumerate() {
             let f = self.depths_at(t, depths, offsets);
             if f.iter().all(|&d| d <= 0.0) {
                 continue;
             }
-            let (integral, gradient) = square_integral(f, area);
+            // Pressed all over, or in part (the cut's positive part found once for both).
+            let whole = f.iter().all(|&d| d > 0.0);
+            let ((integral, gradient), p) = if whole {
+                (square_integral(f, area), [[0.0; 3]; 3])
+            } else {
+                cut_square_and_mass(f, area)
+            };
             energy += 0.5 * kappa * integral;
             for k in 0..4 {
                 for (j, wj) in w.iter().enumerate() {
@@ -42,7 +49,7 @@ impl Patch {
                 }
             }
             // Pressed all over: the whole triangle's, found once (`Patch::new`).
-            if f.iter().all(|&d| d > 0.0) {
+            if whole {
                 for (row, full) in pressed.iter_mut().zip(&self.full[t]) {
                     for (m, f) in row.iter_mut().zip(full) {
                         *m += kappa * f;
@@ -50,12 +57,16 @@ impl Patch {
                 }
                 continue;
             }
-            let p = pressed_mass(f, area);
-            for k in 0..4 {
-                for l in 0..4 {
-                    for (a, wa) in w.iter().enumerate() {
-                        for (b, wb) in w.iter().enumerate() {
-                            pressed[k][l] += kappa * p[a][b] * wa[k] * wb[l];
+            // κ·∫NₖNₗ = Σₐᵦ κ·pₐᵦ·wₐₖ·wᵦₗ, its first three factors taken once for every l (the
+            // same products, added in the same order).
+            let left: [[[f64; 4]; 3]; 3] = std::array::from_fn(|a| {
+                std::array::from_fn(|b| w[a].map(|wak| kappa * p[a][b] * wak))
+            });
+            for (k, row) in pressed.iter_mut().enumerate() {
+                for (l, m) in row.iter_mut().enumerate() {
+                    for left_a in &left {
+                        for (left_ab, wb) in left_a.iter().zip(w) {
+                            *m += left_ab[k] * wb[l];
                         }
                     }
                 }

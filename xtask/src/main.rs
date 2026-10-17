@@ -84,6 +84,19 @@ fn perf(save_baseline: bool) -> ExitCode {
         "--metrics",
         LATEST,
     ]);
+    println!("==> timing the physics sandbox's scenes (release build)");
+    let scenes_ok = cargo(&[
+        "run",
+        "--quiet",
+        "--release",
+        "--package",
+        "creeer_client",
+        "--",
+        "--physics-bench",
+        "--metrics",
+        LATEST,
+    ]);
+    let budgets_ok = budgets_ok && scenes_ok;
     let Some(latest) = read_metrics(Path::new(LATEST)) else {
         eprintln!("xtask perf: no metrics were written to {LATEST}");
         return ExitCode::FAILURE;

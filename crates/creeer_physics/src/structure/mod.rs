@@ -32,6 +32,8 @@ mod hardening_tests;
 mod heat;
 #[cfg(test)]
 mod heat_tests;
+#[cfg(feature = "profile")]
+mod hessian_check;
 pub mod history;
 mod lbfgs;
 mod minimise;

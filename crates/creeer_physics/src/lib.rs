@@ -4,6 +4,7 @@
 //! contacts were added in F3 (`gravity`, `world::ground`).
 
 pub mod gravity;
+pub mod profile;
 pub mod rotation;
 pub mod so3;
 pub mod sparse;

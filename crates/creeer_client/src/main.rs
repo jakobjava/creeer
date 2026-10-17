@@ -43,11 +43,15 @@ mod lab_plots;
 mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
+mod physics_bench;
 mod physics_drive;
 mod physics_fluids;
 mod physics_heat;
+#[cfg(test)]
+mod physics_profile;
 mod physics_rocks;
 mod physics_sandbox;
+mod physics_scenes;
 mod physics_view;
 mod planet_net;
 mod planet_shot;
@@ -111,6 +115,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_or("overview", String::as_str);
         let factory = !args.iter().any(|a| a == "--no-factory");
         return bench(frames, view, factory);
+    }
+    if args.iter().any(|a| a == "--physics-bench") {
+        return physics_bench::bench(&args).map_err(Into::into);
     }
     if args.iter().any(|a| a == "--planet-bench") {
         return planet_shot::descent_bench(&args);

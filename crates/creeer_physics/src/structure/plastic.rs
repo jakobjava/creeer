@@ -64,7 +64,8 @@ impl Element {
             self.material.flow_stress(self.plastic_strain),
         );
         let n_p = sy * sec.area;
-        let axial = self.stiffness.apply(s)[0];
+        let force = self.stiffness.apply(s);
+        let axial = force[0];
         let room = (1.0 - (axial / n_p) * (axial / n_p)).max(0.0);
         let (my, mz) = (
             sy * sec.plastic_modulus[0] * room,
@@ -72,7 +73,16 @@ impl Element {
         );
         let caps = [n_p, sy / 3f64.sqrt() * sec.plastic_torsion, my, my, mz, mz];
         let per = self.per_unit();
-        std::array::from_fn(|m| Flow::new(caps[m], &self.material, self.plastic_strain, per[m], h))
+        std::array::from_fn(|m| {
+            let flow = Flow::new(caps[m], &self.material, self.plastic_strain, per[m], h);
+            // Near its capacity or flowing, the measure's rate terms are worked out once for the
+            // step (`Flow::with_rate`); elsewhere only if it comes to flow.
+            if force[m].abs() >= 0.5 * caps[m] || self.flow_rate[m] != 0.0 {
+                flow.with_rate()
+            } else {
+                flow
+            }
+        })
     }
 
     /// Equivalent plastic strain per unit of each measure: axial strain; torsional shear
@@ -84,17 +94,21 @@ impl Element {
         [1.0 / l, radius / l / 3f64.sqrt(), 0.5, 0.5, 0.5, 0.5]
     }
 
-    /// The plastic part p* that minimises the elasto-plastic potential at measures `s`.
-    pub(crate) fn plastic_split(
+    /// The plastic part p* that minimises the elasto-plastic potential at measures `s`, each
+    /// measure's rate-lifted flow started from `guess` and leaving its own there
+    /// (`Flow::increment_from`).
+    pub(crate) fn plastic_split_from(
         &self,
         s: &[f64; MEASURES],
         flows: &[Flow; MEASURES],
+        guess: &mut [f64; MEASURES],
     ) -> [f64; MEASURES] {
+        crate::profile::add(crate::profile::Slot::Splits, 1);
         let k = |m: usize, n: usize| self.stiffness.entry(m, n);
         let mut p = [0.0; MEASURES];
         for m in 0..2 {
             if k(m, m) > 0.0 {
-                p[m] = flows[m].increment(s[m], k(m, m));
+                p[m] = flows[m].increment_from(s[m], k(m, m), &mut guess[m]);
             }
         }
         // End-moment pairs (a, b) about each axis are coupled by k₁₂: coordinate descent,
@@ -105,9 +119,11 @@ impl Element {
                 continue;
             }
             for _ in 0..24 {
-                let a =
-                    flows[pair].increment(s[pair] + k12 / k11 * (s[pair + 1] - p[pair + 1]), k11);
-                let b = flows[pair + 1].increment(s[pair + 1] + k12 / k11 * (s[pair] - a), k11);
+                crate::profile::add(crate::profile::Slot::Sweeps, 1);
+                let x = s[pair] + k12 / k11 * (s[pair + 1] - p[pair + 1]);
+                let a = flows[pair].increment_from(x, k11, &mut guess[pair]);
+                let x = s[pair + 1] + k12 / k11 * (s[pair] - a);
+                let b = flows[pair + 1].increment_from(x, k11, &mut guess[pair + 1]);
                 #[allow(clippy::float_cmp)] // an exact fixed point: nothing changes any more
                 let done = a == p[pair] && b == p[pair + 1];
                 p[pair] = a;
@@ -129,10 +145,11 @@ impl Element {
         s_hat: &[f64; MEASURES],
         gamma: f64,
         scaled: &[Flow; MEASURES],
+        guess: &mut [f64; MEASURES],
     ) -> [f64; MEASURES] {
         let shift = gamma / (1.0 + gamma);
         let v = std::array::from_fn(|m| s[m] - shift * s_hat[m]);
-        self.plastic_split(&v, scaled)
+        self.plastic_split_from(&v, scaled, guess)
     }
 
     /// The potential ψ (elastic, damping and plastic work of the step), the stored elastic
@@ -144,8 +161,9 @@ impl Element {
         s_hat: &[f64; MEASURES],
         gamma: f64,
         (flows, scaled): (&[Flow; MEASURES], &[Flow; MEASURES]),
+        guess: &mut [f64; MEASURES],
     ) -> (f64, f64, [f64; MEASURES]) {
-        let p = self.damped_split(s, s_hat, gamma, scaled);
+        let p = self.damped_split(s, s_hat, gamma, scaled, guess);
         let elastic: [f64; MEASURES] = std::array::from_fn(|m| s[m] - p[m]);
         let rate: [f64; MEASURES] = std::array::from_fn(|m| elastic[m] - s_hat[m]);
         let stored = self.stiffness.energy(&elastic, &elastic);
@@ -163,7 +181,7 @@ impl Element {
     }
 
     /// Plastic strain represented by plastic increments `p`.
-    fn strain_of(&self, p: &[f64; MEASURES]) -> f64 {
+    pub(crate) fn strain_of(&self, p: &[f64; MEASURES]) -> f64 {
         p.iter()
             .zip(self.per_unit())
             .map(|(p, g)| (p * g).abs())
@@ -192,14 +210,17 @@ impl Structure {
                     .par_iter()
                     .zip(work.scaled.par_iter().zip(&work.s_hat)),
             )
+            .enumerate()
             .with_min_len(128)
-            .map(|(e, (caps, (scaled, s_hat)))| {
+            .map(|(index, (e, (caps, (scaled, s_hat))))| {
                 if e.broken {
                     return (Yielding::default(), false);
                 }
                 let s = e.measures(position[e.a], rotations[e.a], position[e.b], rotations[e.b]);
                 let gamma = e.material.damping / work.beta;
-                let p = e.damped_split(&s, s_hat, gamma, scaled);
+                // From where the step's last evaluation left each measure's flow.
+                let mut guess = work.flow_guess.get(index).copied().unwrap_or_default();
+                let p = e.damped_split(&s, s_hat, gamma, scaled, &mut guess);
                 e.flow_rate = p.map(|p| p / work.h);
                 // Compressed enough to be split (`buckling.rs`), on its elastic part.
                 let wants = splits && e.wants_split(&std::array::from_fn(|m| s[m] - p[m]));

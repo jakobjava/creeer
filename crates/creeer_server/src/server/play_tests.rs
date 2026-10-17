@@ -205,7 +205,13 @@ fn a_frame_bent_in_a_crash_is_drawn_bent() {
         .zip(shape(&game))
         .map(|(a, b)| (*a - b).length())
         .fold(0.0, f64::max);
-    assert!(bent > 0.03, "not bent: {bent} m");
+    // Bent well past what a drawn shape may be off by, so drawing it bent is tested. (How far
+    // is chaotic: a tumbling block's last bounce turns on rounding, and changes at the 1e-15
+    // level put it anywhere in 2.7–3.6 cm.)
+    assert!(
+        bent > 2.0 * crate::replicate::SHAPE_TOLERANCE,
+        "not bent: {bent} m"
+    );
     assert!(s.members().iter().all(|m| !m.3), "a member broke");
     let Kind::Structure(drawn) = &game.clients[0].0.kinds[&frame] else {
         panic!("not a structure")

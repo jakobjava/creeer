@@ -30,6 +30,7 @@
 pub mod cap;
 mod coupling;
 mod dashpot;
+mod geometry;
 mod integrals;
 pub mod law;
 mod layer;
@@ -147,9 +148,13 @@ pub struct Contact {
     pub radius_a: f64,
     /// Radius of side B.
     pub radius_b: f64,
-    /// Lever arms (world) of both points from their nodes at the start of the step.
+    /// Lever arms (world) of both points from their nodes, and the gap's gradient with respect
+    /// to A's point, for the step's matrices: as the step starts, and measured again at each
+    /// iterate a group of rigid bodies relinearises at (`Coupling::relinearise`). Kept from the
+    /// start alone, a tumbling rock's blocks were off by up to a tenth as its normals turned.
     arm_a: DVec3,
     arm_b: DVec3,
+    lever: DVec3,
     /// How its normal turns within the step (`turning.rs`).
     pub turning: turning::Turning,
     /// Contacts with balls between rigid bodies: whether they resist spinning, the orientations
@@ -189,6 +194,7 @@ impl Contact {
             radius_b: 0.0,
             arm_a: DVec3::ZERO,
             arm_b: DVec3::ZERO,
+            lever: DVec3::ZERO,
             turning: turning::Turning::Frozen,
         }
     }
@@ -254,6 +260,8 @@ pub struct Contacts {
     smoothing: f64,
     /// The last result of each patch's law (`normal.rs`).
     memo: Memo,
+    /// The geometry at the last state measured (`geometry.rs`).
+    kept: geometry::Kept,
     /// The most any contact carries at rest (N; `Self::set_weight`).
     weight: f64,
     /// The elastic energy the last step left in these contacts, if known (`Self::set_left`).
@@ -287,6 +295,7 @@ impl Contacts {
             beta: 1.0,
             smoothing: 1.0,
             memo: Memo::default(),
+            kept: geometry::Kept::default(),
             weight: 0.0,
             left: None,
             twist_smoothing: 1.0,
@@ -323,7 +332,7 @@ impl Contacts {
     /// Where the anchor of contact `i` must move after the step so that its offset is at
     /// most [`STICK_DISTANCE`] (world point), or `None` if it stuck.
     pub fn moved_anchor(&self, i: usize, states: &[MemberState<'_>]) -> Option<DVec3> {
-        let (_, _, _, slip, _, _) = self.gap_and_slip(i, states);
+        let slip = self.geometry(states).at[i].3;
         let length = slip.length();
         let anchor = self.list[i].anchor;
         (length > STICK_DISTANCE)
@@ -333,7 +342,7 @@ impl Contacts {
     /// The stick offset of contact `i` after the step, at most [`STICK_DISTANCE`] long: what
     /// a rolling contact carries into the next step (`anchor.rs`).
     pub fn end_slip(&self, i: usize, states: &[MemberState<'_>]) -> DVec3 {
-        let (_, _, _, slip, _, _) = self.gap_and_slip(i, states);
+        let slip = self.geometry(states).at[i].3;
         let length = slip.length();
         if length > STICK_DISTANCE {
             slip * (STICK_DISTANCE / length)

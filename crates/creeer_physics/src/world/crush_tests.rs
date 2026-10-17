@@ -181,3 +181,54 @@ fn a_real_steel_crash_crushes_as_hardening_and_strain_rate_say() {
         );
     }
 }
+
+/// A 10 t block dropped 0.5 m onto the sandbox's 40 m bridge (267 tubes of 160 × 8 mm on two
+/// piers) collapses it plastically by about 0.37 m over half a second. The members flow at
+/// 0.4 /s at most, slowly enough for 60 Hz steps once the impact itself is over
+/// (`FAST_FLOW`): the sag and the plastic strain are those of 0.5 ms substeps throughout
+/// (0.374 m and 0.849 summed over the members, measured so), within 2 %.
+#[test]
+fn a_bridge_collapsing_under_a_block_sags_as_impact_substeps_have_it() {
+    use crate::structure::shapes::{Base, space_frame};
+    let mut world = World::new(DT);
+    world.statics.push(StaticShape::Plane {
+        normal: DVec3::Y,
+        offset: 0.0,
+    });
+    let tube = Section::round_tube(0.16, 0.008);
+    let mut deck = space_frame([20, 1, 2], 2.0, tube, STEEL_S235, Base::Free);
+    deck.translate(DVec3::new(-20.0, 4.0 + tube.extent[0], -2.0));
+    world.add(Body::structure(deck, DT));
+    for x in [-20.5, 20.5] {
+        world.statics.push(StaticShape::Box {
+            center: DVec3::new(x, 2.0, 0.0),
+            rotation: creeer_math::glam::DQuat::IDENTITY,
+            half: DVec3::new(1.0, 2.0, 3.0),
+        });
+    }
+    let deck_top = 6.0 + 2.0 * tube.extent[0];
+    let block = Shape::Box {
+        half: DVec3::new(2.2, 0.5, 2.2),
+    };
+    world.add(Body::rigid(
+        block,
+        10_000.0,
+        DVec3::new(0.0, deck_top + 1.0, 0.0),
+        DT,
+    ));
+    for _ in 0..300 {
+        world.step();
+    }
+    let sag = deck_top + 0.5 - world.bodies[1].structure.position[0].y;
+    let strain: f64 = world.bodies[0]
+        .structure
+        .elements
+        .iter()
+        .map(|e| e.plastic_strain)
+        .sum();
+    assert!((sag / 0.374 - 1.0).abs() < 0.02, "sagged {sag:.4} m");
+    assert!(
+        (strain / 0.849 - 1.0).abs() < 0.02,
+        "plastic strain {strain:.4}"
+    );
+}

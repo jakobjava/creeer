@@ -20,6 +20,7 @@ impl World {
     /// Steps the awake bodies, joined into groups by the contacts `found`. `anchors`: the
     /// friction anchors at the start of the step.
     pub(super) fn pass(&mut self, found: &[Found], anchors: &[anchor::Anchor]) -> Vec<Stepped> {
+        let setup = crate::profile::start();
         // Groups: bodies joined by contacts (union-find).
         let mut parent: Vec<usize> = (0..self.bodies.len()).collect();
         fn root(parent: &mut [usize], mut i: usize) -> usize {
@@ -144,10 +145,13 @@ impl World {
                 (bodies, contacts, Vec::new(), g)
             })
             .collect();
+        setup.stop(crate::profile::Slot::PassSetup);
         work.par_iter_mut()
             .for_each(|(bodies, contacts, anchors, group)| {
+                let timer = crate::profile::start();
                 stepping::step(bodies, contacts, dt);
                 *anchors = anchor::after_step(bodies, group, contacts);
+                timer.stop(crate::profile::Slot::GroupWorld);
             });
         work.into_iter()
             .map(|(_, contacts, anchors, g)| (g.clone(), contacts, anchors))
