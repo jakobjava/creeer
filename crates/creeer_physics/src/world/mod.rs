@@ -39,6 +39,8 @@ mod left;
 #[cfg(test)]
 mod load_tests;
 pub mod narrow;
+#[cfg(test)]
+mod overlap_tests;
 mod pass;
 #[cfg(test)]
 mod pile_tests;
@@ -263,6 +265,11 @@ impl World {
         }
         self.update_sleep(&groups);
         timer.stop(Slot::After);
+    }
+
+    /// The groups of the last step: bodies (indices) joined by contacts, stepped together.
+    pub fn groups(&self) -> impl Iterator<Item = &[usize]> {
+        self.groups.iter().map(|(g, _)| g.as_slice())
     }
 
     /// Removes the bodies `keep` refuses, the rest in their order, and returns each old

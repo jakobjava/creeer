@@ -90,3 +90,61 @@ fn profile_rocks_counts() {
         .collect();
     eprintln!("Rocks over 15 s: {}", parts.join(", "));
 }
+
+/// How often a world substeps for its turn while its largest group turns slowly enough.
+#[test]
+#[ignore = "profile"]
+fn profile_rock_turns() {
+    use creeer_physics::world::shape::Shape;
+    let mut sb = PhysicsSandbox::new(PhysicsScene::Rocks, 1.0 / 60.0);
+    let (mut fast, mut largest_slow, mut saved, mut total) = (0, 0, 0usize, 0usize);
+    let mut ticks: Vec<(f64, usize, usize)> = Vec::new();
+    for _ in 0..900 {
+        // The turns at the step's start, per body (boxes and hulls).
+        let world = sb.world();
+        let needs = |b: usize| -> usize {
+            let body = &world.bodies[b];
+            let turning = body
+                .shapes
+                .iter()
+                .any(|(_, s)| matches!(s, Shape::Box { .. } | Shape::Hull(_)));
+            if !turning || body.sleep.asleep {
+                return 1;
+            }
+            let turn = body.structure.angular_velocity[0].length() / 60.0;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let n = ((turn / 0.05).ceil() as usize).clamp(1, 16);
+            n
+        };
+        let n = (0..world.bodies.len()).map(needs).max().unwrap_or(1);
+        let groups: Vec<Vec<usize>> = world.groups().map(<[usize]>::to_vec).collect();
+        if n > 1 {
+            fast += 1;
+            if let Some(big) = groups.iter().max_by_key(|g| g.len()) {
+                let m = big.iter().map(|&b| needs(b)).max().unwrap_or(1);
+                if m == 1 {
+                    largest_slow += 1;
+                }
+                // Group-steps a world substep costs against what per-group substeps would.
+                total += groups.iter().map(|g| g.len() * n).sum::<usize>();
+                saved += groups
+                    .iter()
+                    .map(|g| g.len() * (n - g.iter().map(|&b| needs(b)).max().unwrap_or(1)))
+                    .sum::<usize>();
+            }
+        }
+        let big_needs = groups
+            .iter()
+            .max_by_key(|g| g.len())
+            .map_or(1, |g| g.iter().map(|&b| needs(b)).max().unwrap_or(1));
+        sb.step(1.0 / 60.0);
+        ticks.push((sb.step_ms(), n, big_needs));
+    }
+    ticks.sort_by(|a, b| b.0.total_cmp(&a.0));
+    for (ms, n, big) in ticks.iter().take(12) {
+        println!("slow tick {ms:.1} ms: world substeps {n}, largest group needs {big}");
+    }
+    println!(
+        "ticks that substep: {fast}; of them the largest group slow: {largest_slow}; body-steps saved by per-group substeps: {saved} of {total}"
+    );
+}

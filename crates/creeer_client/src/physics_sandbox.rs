@@ -158,6 +158,12 @@ impl PhysicsSandbox {
 }
 
 impl PhysicsSandbox {
+    /// The world (for profiles).
+    #[cfg(test)]
+    pub(crate) fn world(&self) -> &World {
+        &self.world
+    }
+
     /// Newton iterations its bodies have taken so far (`physics_bench.rs`).
     pub(crate) fn iterations(&self) -> u64 {
         self.world
