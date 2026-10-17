@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 creeer_core.workspace = true
+creeer_chem.workspace = true
 creeer_materials.workspace = true
 creeer_mech.workspace = true
 creeer_electric.workspace = true

@@ -19,6 +19,12 @@ const SIZE: f64 = 18.420_681;
 /// Iterations at most per set of condensed phases, and sets at most.
 const ITERATIONS: usize = 80;
 const SETS: usize = 40;
+/// Iterations a set of condensed phases gets before one that keeps going below nothing is
+/// taken out: Newton's first steps after a change are crude (they took magnetite below
+/// nothing on the way to its equilibrium with hematite, and the sets cycled), CEA's method
+/// lets them be negative on the way; a phase that cannot be in at all (calcite above its
+/// decomposition temperature) would never settle.
+const PATIENCE: usize = 8;
 
 /// What is held fixed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,11 +73,14 @@ struct State<'a> {
     p: f64,
     adiabatic: Option<f64>,
     pi: Vec<f64>,
+    /// Iterations since the condensed phases last changed.
+    settling: usize,
 }
 
 impl State<'_> {
     /// One Newton iteration; whether it had converged before its step.
     fn iterate(&mut self) -> Result<Step, String> {
+        self.settling += 1;
         let (sys, t) = (self.sys, det::exp(self.ln_t));
         let total = det::exp(self.ln_total);
         let (ne, nc) = (self.elements.len(), self.condensed.len());
@@ -203,7 +212,11 @@ impl State<'_> {
         let mut emptied = None;
         for (c, &j) in self.condensed.iter().enumerate() {
             let d = rhs[ne + c];
-            if self.moles[j] > 0.0 && d < 0.0 && lambda * d < -self.moles[j] {
+            if self.settling >= PATIENCE
+                && self.moles[j] > 0.0
+                && d < 0.0
+                && lambda * d < -self.moles[j]
+            {
                 lambda = self.moles[j] / -d;
                 emptied = Some(c);
             }
@@ -281,6 +294,7 @@ pub fn equilibrate(
         p,
         adiabatic,
         pi: Vec::new(),
+        settling: 0,
     };
     let present = |j: usize| start.map_or(feed[j], |s| s.0[j]) > 0.0;
     state.condensed = candidates.iter().copied().filter(|&j| present(j)).collect();
@@ -307,6 +321,7 @@ pub fn equilibrate(
     }
     let mut iterations = 0;
     for _ in 0..SETS {
+        state.settling = 0;
         let mut step = Step::Going;
         for _ in 0..ITERATIONS {
             iterations += 1;

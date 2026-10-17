@@ -189,3 +189,72 @@ fn ammonia_yield_rises_with_pressure() {
         assert!(nh3 > low && nh3 < high, "{p} Pa: {nh3}");
     }
 }
+
+/// Hematite reduced by ever more carbon monoxide at 1100 K walks down iron's oxides in order:
+/// hematite and magnetite, magnetite, magnetite and wüstite, wüstite, wüstite and iron, iron
+/// (the Baur–Glaessner sequence): never three iron phases at once (the phase rule; a third
+/// replaces one), the oxygen left in the solids only falling.
+#[test]
+fn iron_ore_walks_down_its_oxides() {
+    let table = SpeciesTable::reference();
+    let names = [
+        "CO",
+        "CO2",
+        "O2",
+        "N2",
+        "Fe(a)",
+        "Fe(c)",
+        "Fe.947O(cr)",
+        "Fe3O4(cr)",
+        "Fe2O3(cr)",
+    ];
+    let iron = ["Fe(a)", "Fe(c)", "Fe.947O(cr)", "Fe3O4(cr)", "Fe2O3(cr)"];
+    let mut last_oxygen = f64::INFINITY;
+    let mut seen = Vec::new();
+    for k in 0..=40 {
+        let co = 0.25 * f64::from(k);
+        let (sys, eq) = at(
+            &table,
+            &names,
+            &[("Fe2O3(cr)", 1.0), ("CO", co), ("N2", 1.0)],
+            1100.0,
+            ATM,
+        );
+        let present: Vec<&str> = iron
+            .iter()
+            .copied()
+            .filter(|n| eq.moles[sys.index(n).unwrap()] > 1e-9)
+            .collect();
+        assert!(present.len() <= 2, "{co} mol CO: {present:?}");
+        let oxygen: f64 = present
+            .iter()
+            .map(|n| {
+                eq.moles[sys.index(n).unwrap()]
+                    * sys.species[sys.index(n).unwrap()]
+                        .formula
+                        .atoms
+                        .get(&8)
+                        .copied()
+                        .unwrap_or(0.0)
+            })
+            .sum();
+        assert!(
+            oxygen <= last_oxygen + 1e-9,
+            "{co} mol CO: the solids gained oxygen"
+        );
+        last_oxygen = oxygen;
+        if seen.last() != Some(&present) {
+            seen.push(present);
+        }
+    }
+    let expected: Vec<Vec<&str>> = vec![
+        vec!["Fe2O3(cr)"],
+        vec!["Fe3O4(cr)", "Fe2O3(cr)"],
+        vec!["Fe3O4(cr)"],
+        vec!["Fe.947O(cr)", "Fe3O4(cr)"],
+        vec!["Fe.947O(cr)"],
+        vec!["Fe(a)", "Fe.947O(cr)"],
+        vec!["Fe(a)"],
+    ];
+    assert_eq!(seen, expected);
+}

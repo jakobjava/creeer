@@ -733,6 +733,7 @@ dependencies = [
 name = "creeer_tools"
 version = "0.0.1"
 dependencies = [
+ "creeer_chem",
  "creeer_core",
  "creeer_electric",
  "creeer_materials",

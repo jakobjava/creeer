@@ -68,9 +68,62 @@ pub(crate) fn revise(
         .filter(|&(_, w)| w < JOIN)
         .min_by(|a, b| a.1.total_cmp(&b.1));
     if let Some((j, _)) = joining {
-        condensed.push(j);
-        moles[j] = 0.0;
+        match dependence(condensed, j, sys, elements) {
+            // Its composition is the phases' in already (a_j = Σ c_k·a_k): it cannot join them,
+            // only replace one (the phase rule: iron, wüstite and magnetite coexist at one
+            // temperature only). The one that runs out first as it forms goes (the simplex's
+            // ratio test), the elements where they were.
+            Some(c) => {
+                let out = (0..condensed.len())
+                    .filter(|&k| c[k] > 1e-12)
+                    .min_by(|&a, &b| {
+                        (moles[condensed[a]] / c[a]).total_cmp(&(moles[condensed[b]] / c[b]))
+                    });
+                let Some(out) = out else { return false };
+                let made = (moles[condensed[out]] / c[out]).max(0.0);
+                for (k, &p) in condensed.iter().enumerate() {
+                    moles[p] -= c[k] * made;
+                }
+                moles[condensed[out]] = 0.0;
+                condensed[out] = j;
+                moles[j] = made;
+            }
+            None => {
+                condensed.push(j);
+                moles[j] = 0.0;
+            }
+        }
         return true;
     }
     false
+}
+
+/// The coefficients c with a_j = Σ c_k·a_k over the condensed phases `condensed`, if phase
+/// `j`'s composition lies in theirs (to rounding); `None` if it adds an independent one.
+fn dependence(condensed: &[usize], j: usize, sys: &System, elements: &[usize]) -> Option<Vec<f64>> {
+    let n = condensed.len();
+    if n == 0 {
+        return None;
+    }
+    let a = |i: usize, k: usize| sys.atoms[elements[i]][k];
+    // Least squares: (AᵀA)·c = Aᵀ·a_j.
+    let mut m = vec![0.0; n * n];
+    let mut b = vec![0.0; n];
+    for (r, &p) in condensed.iter().enumerate() {
+        for (s, &q) in condensed.iter().enumerate() {
+            m[r * n + s] = (0..elements.len()).map(|i| a(i, p) * a(i, q)).sum();
+        }
+        b[r] = (0..elements.len()).map(|i| a(i, p) * a(i, j)).sum();
+    }
+    if !crate::dense::solve(&mut m, &mut b, n) {
+        return None;
+    }
+    let residual: f64 = (0..elements.len())
+        .map(|i| {
+            let fit: f64 = condensed.iter().zip(&b).map(|(&p, c)| a(i, p) * c).sum();
+            (fit - a(i, j)) * (fit - a(i, j))
+        })
+        .sum();
+    let size: f64 = (0..elements.len()).map(|i| a(i, j) * a(i, j)).sum();
+    (residual <= 1e-18 * size).then_some(b)
 }
