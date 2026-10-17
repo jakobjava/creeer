@@ -10,6 +10,9 @@ pub mod engineering;
 pub mod formula;
 #[cfg(test)]
 mod material_tests;
+pub mod species;
+#[cfg(test)]
+mod species_tests;
 pub mod table;
 #[cfg(test)]
 mod tests;

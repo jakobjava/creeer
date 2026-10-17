@@ -8,6 +8,7 @@
 mod electric_bench;
 mod image_diff;
 mod mech_bench;
+mod nasa_import;
 mod network_bench;
 mod orbit_bench;
 mod solvers;
@@ -26,7 +27,9 @@ commands:
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
-  image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region";
+  image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region
+  import-nasa9 <thermo.inp> <out.ron>   NASA Glenn species data (the CEA program's thermo.inp)
+      into data/chemistry/species.ron";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -38,6 +41,18 @@ fn main() -> ExitCode {
                     image_diff::crop(args[1].as_ref(), args[2].as_ref(), [x, y, w, h], zoom)
                 }
                 _ => usage(),
+            }
+        }
+        Some("import-nasa9") if args.len() == 3 => {
+            match nasa_import::run(args[1].as_ref(), args[2].as_ref()) {
+                Ok(count) => {
+                    println!("{count} species written to {}", args[2]);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("import-nasa9: {e}");
+                    ExitCode::FAILURE
+                }
             }
         }
         Some("image-diff") => match (args.get(1), args.get(2)) {
