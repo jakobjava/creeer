@@ -5,6 +5,7 @@
 //!   Gibbs energy (ideal gas, pure condensed phases).
 //! - [`equilibrate`]: equilibrium by Gibbs energy minimisation under element balance (the
 //!   NASA CEA method), at fixed temperature and pressure or adiabatic.
+//! - [`vle`]: vapour pressures, boiling points, Raoult's law and flashes.
 
 mod equilibrium;
 #[cfg(test)]
@@ -12,7 +13,11 @@ mod equilibrium_tests;
 mod phases;
 #[cfg(test)]
 mod reaction_tests;
+pub mod real;
 mod system;
+pub mod vle;
+#[cfg(test)]
+mod vle_tests;
 
 pub use equilibrium::{Equilibrium, Fixed, equilibrate};
 pub use system::System;
