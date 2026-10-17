@@ -25,8 +25,12 @@ fn element_terms(
 ) -> ([f64; MEASURES], f64, f64) {
     let e = &s.elements[index];
     let gamma = e.material.damping / work.beta;
-    let (energy, stored, force) =
-        e.elastoplastic(measures, &work.s_hat[index], gamma, &work.caps[index]);
+    let (energy, stored, force) = e.elastoplastic(
+        measures,
+        &work.s_hat[index],
+        gamma,
+        (&work.caps[index], &work.scaled[index]),
+    );
     (force, energy, stored)
 }
 
@@ -195,10 +199,17 @@ impl Work {
     /// Sets the trial state x + α·d (rotations applied on the left, in the world frame).
     pub(super) fn set_trial(&mut self, s: &Structure, alpha: f64) {
         let n = s.node_count();
-        for i in 0..n {
-            self.trial_x[i] = s.position[i] + self.direction[i] * alpha;
-            let turn: DQuat = so3::exp(self.direction[n + i] * alpha);
-            self.trial_q[i] = (turn * s.orientation[i]).normalize();
-        }
+        let direction = &self.direction;
+        // Every node on its own (in parallel: the same arithmetic per node, so the same bits).
+        self.trial_x
+            .par_iter_mut()
+            .zip(&mut self.trial_q)
+            .enumerate()
+            .with_min_len(CHUNK)
+            .for_each(|(i, (x, q))| {
+                *x = s.position[i] + direction[i] * alpha;
+                let turn: DQuat = so3::exp(direction[n + i] * alpha);
+                *q = (turn * s.orientation[i]).normalize();
+            });
     }
 }

@@ -82,6 +82,19 @@ impl CubeCoord {
         }
     }
 
+    /// Gradients of this point's face coordinates (`s`, `t` on its face) with respect to the
+    /// point `p` it was found from (any length: the coordinates depend on direction only).
+    pub fn gradients(&self, p: DVec3) -> (DVec3, DVec3) {
+        let (n, u, v) = FACES[usize::from(self.face)];
+        let depth = p.dot(n);
+        // g = (p·a)/(p·n): ∇g = (a − g·n)/(p·n); s = warp(g): ds/dg = 1.2 − 0.6·g².
+        let along = |a: DVec3| {
+            let g = p.dot(a) / depth;
+            (a - n * g) * ((1.2 - 0.6 * g * g) / depth)
+        };
+        (along(u), along(v))
+    }
+
     /// Unit direction of this point.
     pub fn direction(&self) -> DVec3 {
         let (n, u, v) = FACES[usize::from(self.face)];
@@ -174,5 +187,26 @@ mod tests {
             .fold((f64::MAX, f64::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
         // ±9 % around the mean (the equal-angle map is exactly uniform here; gnomonic is 2:1).
         assert!(max / min < 1.2, "cell sizes {min}..{max}");
+    }
+
+    #[test]
+    fn face_coordinate_gradients_match_finite_differences() {
+        for d in directions() {
+            let p = d * 1234.5;
+            let c = CubeCoord::from_direction(p);
+            let (gs, gt) = c.gradients(p);
+            let h = 1e-4;
+            for axis in [DVec3::X, DVec3::Y, DVec3::Z] {
+                let (a, b) = (
+                    CubeCoord::on_face(c.face, p + axis * h),
+                    CubeCoord::on_face(c.face, p - axis * h),
+                );
+                let (ds, dt) = ((a.s - b.s) / (2.0 * h), (a.t - b.t) / (2.0 * h));
+                assert!(
+                    (ds - gs.dot(axis)).abs() < 1e-9 && (dt - gt.dot(axis)).abs() < 1e-9,
+                    "{d}: {ds} {dt} vs {gs} {gt}"
+                );
+            }
+        }
     }
 }

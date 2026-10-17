@@ -194,9 +194,31 @@ fn planet_physics_is_bit_identical_across_platforms() {
     // Regenerated once, for a deliberate change of the model (ADR-0007): the Coriolis force
     // from the velocity extrapolated to the end of the step, and the rotating frame's torque
     // on spinning bodies. With both switched off the old value (0x6439_5b38_a0ac_6ddd)
-    // came back exactly.
+    // came back exactly. Regenerated again in F5 for the new terrain shape (monotone continent
+    // curve, rounded ridge crests; `elevation.rs`): with the old elevation the previous value
+    // (0xcca2_311e_b5a7_1167) came back exactly. And for the F5 contacts (ADR-0005 amended:
+    // Hertz and face patches from the materials, the resolvable stiffness limit, critically
+    // damped dashpots, round bodies measured against the ground itself, convergence to 1 %
+    // of the deepest contact's force; the terrain's exact gradient away from edits), after
+    // 0xf482_3148_3885_64ad; then for dashpots on the gap's own rate and contacts at zero gap
+    // counting as touching, after 0x3f99_3c02_7f7d_3aa5 (which those two reverted gave back);
+    // then for one Newton block per patch instead of one per corner and corner pair (summed
+    // before scaling: rounding only; kept apart, 0xb059_c3b8_ddda_7fd5 came back); then for
+    // patches as the material in series with the limit (`patch.rs`), dashpots on the gap's
+    // rate along its own history, patch blocks as rank-one products, the solver's stricter
+    // stop and the contacts' limits set before any energy is measured, after
+    // 0x3e10_ca3d_3687_df04 (these were made together and not reverted one by one); then for
+    // a patch's products grouped by corner (rounding only; pairwise, 0xcd3a_e134_88b3_b01b
+    // came back); then for contacts stiffening under the load they carry at rest, steps redone
+    // with the substeps a box's turn needed, lifted patch corners without a dashpot, and the
+    // step's tolerance from the most loaded contact's F/k, after 0xcb56_b163_9b50_9eb7; then
+    // for the contact law revised (ADR-0005, 2026-10-17: lifted patch corners' forces applied,
+    // friction in impact impulses, face dashpots on pressed points, normals turning with their
+    // bodies, faces on the ground measured at their triangles' corners and pressing as a punch
+    // of their pressed area, faces counted by any part within the margin), after
+    // 0x0b2b_3e03_525c_b032 (made together, not reverted one by one).
     assert_eq!(
-        hash, 0xcca2_311e_b5a7_1167,
+        hash, 0x0949_6c57_efc7_e0f5,
         "planet physics hash {hash:#018x}"
     );
 }

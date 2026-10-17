@@ -1,12 +1,20 @@
 [package]
 name = "creeer_server"
-description = "Headless dedicated server."
+description = "The authoritative server: the world, its players' sessions, and the dedicated server binary."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_core.workspace = true
+creeer_math.workspace = true
+creeer_net.workspace = true
+creeer_physics.workspace = true
+creeer_sim.workspace = true
+creeer_terrain.workspace = true
+renet.workspace = true
+renet_netcode.workspace = true
 
 [lints]
 workspace = true

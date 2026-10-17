@@ -11,11 +11,13 @@ use creeer_math::glam::{DVec3, Vec3};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4];
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+    0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Snorm8x4, 4 => Float32
+];
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4];
-/// Bytes per instance: camera-relative origin (xyz, w unused) and the body's rotation.
+    wgpu::vertex_attr_array![5 => Float32x4, 6 => Float32x4];
+/// Bytes per instance: camera-relative origin (xyz) with the chunk's size (w, for the blend
+/// towards the coarser level), and the body's rotation.
 const INSTANCE_SIZE: u64 = 32;
 
 fn vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
@@ -38,13 +40,15 @@ struct GpuChunk {
     origin: DVec3,
     /// Index of the body frame it is drawn in.
     frame: u16,
+    /// Edge length (m), for blending towards the coarser level (0: none).
+    size: f32,
     center: Vec3,
     radius: f32,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
-    /// Indices of the surface; then the skirts of each face (start, end).
+    /// Indices of the surface; then the caps of each face (start, end).
     surface: u32,
-    skirts: [(u32, u32); 6],
+    caps: [(u32, u32); 6],
 }
 
 /// Terrain chunks and the pipelines that draw them.
@@ -54,7 +58,7 @@ pub(super) struct TerrainPass {
     chunks: HashMap<u64, GpuChunk>,
     instances: wgpu::Buffer,
     instance_capacity: usize,
-    /// (chunk, instance, skirt faces) drawn for the camera, then per cascade.
+    /// (chunk, instance, cap faces) drawn for the camera, then per cascade.
     draws: Vec<(u64, u32, u8)>,
     shadow_draws: [Vec<(u64, u32, u8)>; CASCADES],
     /// Triangles drawn for the camera in the last frame.
@@ -182,12 +186,13 @@ impl TerrainPass {
             GpuChunk {
                 origin,
                 frame,
+                size: mesh.chunk_size,
                 center,
                 radius,
                 vertices,
                 indices,
                 surface,
-                skirts: mesh.skirts,
+                caps: mesh.caps,
             },
         );
     }
@@ -224,7 +229,7 @@ impl TerrainPass {
         }
         self.triangles = 0;
         let mut per_cascade: [Vec<(u64, u8, [f32; 8])>; CASCADES] = Default::default();
-        for &(id, skirts) in ids {
+        for &(id, caps) in ids {
             let Some(chunk) = self.chunks.get(&id) else {
                 continue;
             };
@@ -237,11 +242,12 @@ impl TerrainPass {
             let center = origin + rotation * chunk.center;
             let mut instance_data = [0.0f32; 8];
             instance_data[..3].copy_from_slice(&origin.to_array());
+            instance_data[3] = chunk.size;
             instance_data[4..].copy_from_slice(&rotation.to_array());
             if frustum.intersects_sphere(center, chunk.radius) {
                 let instance = u32::try_from(origins.len()).expect("instance count");
                 origins.push(instance_data);
-                self.draws.push((id, instance, skirts));
+                self.draws.push((id, instance, caps));
                 self.triangles += chunk.surface as usize / 3;
             }
             // Only chunks within the shadow range cast: a coarse chunk far away overlaps every
@@ -251,16 +257,16 @@ impl TerrainPass {
             {
                 for (c, cascade) in cascades.iter().enumerate() {
                     if cascade.may_cast_into(basis, center, chunk.radius) {
-                        per_cascade[c].push((id, skirts, instance_data));
+                        per_cascade[c].push((id, caps, instance_data));
                     }
                 }
             }
         }
         for (c, list) in per_cascade.into_iter().enumerate() {
-            for (id, skirts, origin) in list {
+            for (id, caps, origin) in list {
                 let instance = u32::try_from(origins.len()).expect("instance count");
                 origins.push(origin);
-                self.shadow_draws[c].push((id, instance, skirts));
+                self.shadow_draws[c].push((id, instance, caps));
             }
         }
         if origins.len() > self.instance_capacity {
@@ -272,13 +278,13 @@ impl TerrainPass {
 
     fn issue(&self, pass: &mut wgpu::RenderPass<'_>, draws: &[(u64, u32, u8)]) {
         pass.set_vertex_buffer(1, self.instances.slice(..));
-        for &(id, instance, skirts) in draws {
+        for &(id, instance, caps) in draws {
             let chunk = &self.chunks[&id];
             pass.set_vertex_buffer(0, chunk.vertices.slice(..));
             pass.set_index_buffer(chunk.indices.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..chunk.surface, 0, instance..instance + 1);
-            for (face, &(start, end)) in chunk.skirts.iter().enumerate() {
-                if skirts & (1 << face) != 0 && end > start {
+            for (face, &(start, end)) in chunk.caps.iter().enumerate() {
+                if caps & (1 << face) != 0 && end > start {
                     pass.draw_indexed(start..end, 0, instance..instance + 1);
                 }
             }

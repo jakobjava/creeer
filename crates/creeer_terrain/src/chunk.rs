@@ -6,19 +6,19 @@
 //! the planet's axes, and each splits into the eight chunks of the next finer level.
 //!
 //! The density is negative inside rock and positive in air; the surface is its zero set.
-//! A chunk samples it on a 34³ grid, sample `(i, j, k)` at `origin + (i−1, j−1, k−1)·cell`,
-//! so it covers cells −1..=31 in each direction. It owns the surface crossing its own sample
-//! edges 0..32, and the one-cell rim lets it build those quads without its neighbours
+//! A chunk samples it on a 35³ grid, sample `(i, j, k)` at `origin + (i−1, j−1, k−1)·cell`,
+//! so it covers cells −1..=32 in each direction: one cell beyond each face. With that rim it
+//! builds every quad reaching into its box without its neighbours, and clips them at the box
 //! (`surface_nets.rs`), so neighbouring chunks of one level join without gaps.
 
 use crate::edits::Edit;
-use crate::terrain::Terrain;
+use crate::terrain::{Terrain, generated};
 use creeer_math::glam::{DVec3, IVec3};
 
 /// Cells per chunk edge.
 pub const CHUNK_CELLS: i32 = 32;
-/// Samples per chunk edge: cells −1..=31 need samples −1..=32.
-pub const SAMPLES: usize = 34;
+/// Samples per chunk edge: cells −1..=32 need samples −1..=33.
+pub const SAMPLES: usize = 35;
 /// Coarsest level (cells of 32 km; one chunk is about a whole 500 km planet).
 pub const MAX_CHUNK_LEVEL: u8 = 15;
 
@@ -268,8 +268,7 @@ impl Terrain {
     pub fn sample_chunk(&self, key: ChunkKey) -> ChunkSamples {
         let mut sampler = self.heights().sampler(key.cell_size());
         let datum = self.planet().datum;
-        let mut samples =
-            ChunkSamples::from_fn(key, |p| p.length() - datum.radius(p) - sampler.height(p));
+        let mut samples = ChunkSamples::from_fn(key, |p| generated(&datum, &mut sampler, p));
         for edit in &self.chunk_edits(key) {
             samples.apply(edit);
         }

@@ -42,8 +42,24 @@ pub fn linear(s: &Structure) -> Result<(Vec<DVec3>, Vec<DVec3>), NotPositiveDefi
 /// potential energy (starting from its current one) and zeroes its velocities. Returns the
 /// Newton iterations used.
 ///
+/// Members the load compresses enough are split (`buckling.rs`), and the structure with its
+/// new joints is solved again until none is: in equilibrium only as it was before the split,
+/// a 120 m tower rang at its new joints for seconds when its motion began (F5).
+///
 /// The structure must be supported: a free body under load has no equilibrium.
 pub fn nonlinear(s: &mut Structure, max_iterations: u32) -> u32 {
+    let mut iterations = 0;
+    loop {
+        let elements = s.element_count();
+        iterations += equilibrium(s, max_iterations);
+        if s.element_count() == elements {
+            return iterations;
+        }
+    }
+}
+
+/// One solve of [`nonlinear`].
+fn equilibrium(s: &mut Structure, max_iterations: u32) -> u32 {
     // β = 1000 s: inertia terms are ~10⁻⁶ of a typical stiffness and play no role in the
     // equilibrium; a larger β only worsens the matrix condition (10⁶× at 10⁶ s).
     let mut solver = ImplicitSolver::new(s, Scheme::BackwardEuler, 1.0e3, 1);

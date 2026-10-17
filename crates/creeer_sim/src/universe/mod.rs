@@ -200,7 +200,7 @@ impl Universe {
 
     /// Removes every vessel.
     pub fn clear_vessels(&mut self) {
-        self.bubble.world.bodies.clear();
+        self.bubble.world.retain_bodies(|_, _| false);
         self.bubble.vessels.clear();
         self.vessels.clear();
     }

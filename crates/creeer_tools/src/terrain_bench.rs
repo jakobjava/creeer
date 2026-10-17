@@ -109,7 +109,7 @@ pub fn run(report: &mut Report, threads: usize) {
     let drawn = loop {
         let update = streamer.update(camera);
         let drawn = update.draw.len();
-        if streamer.queued == 0
+        if streamer.outstanding() == 0
             && update.ready.is_empty()
             && start.elapsed() > Duration::from_millis(100)
         {

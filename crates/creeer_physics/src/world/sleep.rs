@@ -16,9 +16,9 @@ const STEPS_TO_SLEEP: u32 = 60;
 pub struct Sleep {
     /// Whether the body is asleep (not stepped).
     pub asleep: bool,
-    still: u32,
+    pub(super) still: u32,
     /// Loads when it fell asleep: any change wakes it.
-    load: Vec<DVec3>,
+    pub(super) load: Vec<DVec3>,
 }
 
 impl Body {
@@ -60,7 +60,8 @@ impl World {
     pub fn wake_near(&mut self, center: DVec3, radius: f64) {
         for body in self.bodies.iter_mut().filter(|b| b.sleep.asleep) {
             let s = &body.structure;
-            let near = body.shapes.iter().any(|&(node, shape)| {
+            let near = body.shapes.iter().any(|(node, shape)| {
+                let node = *node;
                 (s.position[node] - center).length() < radius + shape.bounding_radius()
             });
             if near {

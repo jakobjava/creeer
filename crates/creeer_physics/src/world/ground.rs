@@ -6,13 +6,19 @@
 //! step, and the contact normal is the gradient direction at the surface point.
 //!
 //! - **Spheres** (balls, structure joints): one contact, centre to surface.
-//! - **Boxes:** points on the box surface, on a grid at most 0.5 m apart. The corners
-//!   always count (on flat ground that is exactly the box–plane contact of ADR-0005).
-//!   Other points count only where the ground rises into the box beyond the plane
-//!   through the corners (their gap is below the corners' gaps interpolated to them), so a
-//!   box on flat ground keeps four contacts, but one resting on a bump touches the bump.
+//! - **Boxes:** every face turned towards the ground within the margin is a contact patch
+//!   (`contact/law.rs`), over curved ground pressing with the ground's depth measured across it
+//!   (`ground_rise.rs`; on flat ground exactly the box–plane patch). Points on a grid at most
+//!   0.5 m apart over the box's surface count too, where the ground rises into the box beyond
+//!   what its patches see: a bump, a point contact of that size. It presses
+//!   with what it rises beyond the face that already presses there: it starts to touch where
+//!   it first counts. (Counted only from 1 mm above the plane, under a face resting on the
+//!   ground it began 1 mm deep, and a rock on a hump was kicked every few steps, F5.)
 
-use super::shape::{Pose, RawContact, Shape};
+use super::ground_rise::{Pressing, face_gap};
+use super::ground_sample::{Feet, measure_face};
+use super::shape::{Domain, Follows, Pose, RawContact, Shape};
+use super::surface::Feature;
 use creeer_math::glam::{DMat3, DVec3};
 
 /// Fixed ground described by a density field.
@@ -22,19 +28,19 @@ pub trait Ground: Send + Sync + std::fmt::Debug {
 }
 
 /// Spacing of the sample points on a box's surface (m).
-const BOX_SAMPLE_SPACING: f64 = 0.5;
+pub(super) const BOX_SAMPLE_SPACING: f64 = 0.5;
 /// How much farther than the corner plane a surface point must reach to count (m).
-const BULGE: f64 = 1e-3;
+pub(super) const BULGE: f64 = 1e-3;
 
 /// Distance (m) from `p` to the ground's surface (negative inside), to first order.
-fn estimate(ground: &dyn Ground, p: DVec3) -> Option<f64> {
+pub(super) fn estimate(ground: &dyn Ground, p: DVec3) -> Option<f64> {
     let (d, g) = ground.density_gradient(p);
     let length = g.length();
     (length > 1e-9).then(|| d / length)
 }
 
 /// The surface point nearest `p` and the outward normal there: two projection steps.
-fn project(ground: &dyn Ground, p: DVec3) -> Option<(DVec3, DVec3)> {
+pub(super) fn project(ground: &dyn Ground, p: DVec3) -> Option<(DVec3, DVec3)> {
     let mut q = p;
     let mut normal = DVec3::Y;
     for _ in 0..2 {
@@ -49,8 +55,76 @@ fn project(ground: &dyn Ground, p: DVec3) -> Option<(DVec3, DVec3)> {
     Some((q, normal))
 }
 
+/// Step of the finite differences for the ground's curvature (m).
+const CURVATURE_STEP: f64 = 0.02;
+
+/// The ground's shape operator S at surface point `q` with outward normal `n`: near q the
+/// surface rises ½·tᵀ·S·t above its tangent plane at a tangential offset t, and its normal
+/// there is n − S·t (to first order). From the normals 2 cm to either side. A contact's gap
+/// is measured to this curved surface instead of the tangent plane: on curved ground a step
+/// ends pressed in or lifted by κ·d²/2 over its travel d against a plane, and the next step
+/// gave that back as energy (a ball rolling over bumps gained energy for tens of steps in a
+/// row, measured in F5).
+pub fn curvature(ground: &dyn Ground, q: DVec3, n: DVec3) -> Option<DMat3> {
+    let (t1, t2) = n.any_orthonormal_pair();
+    let mut s = DMat3::ZERO;
+    for t in [t1, t2] {
+        let (_, plus) = project(ground, q + t * CURVATURE_STEP)?;
+        let (_, minus) = project(ground, q - t * CURVATURE_STEP)?;
+        let mut st = (minus - plus) / (2.0 * CURVATURE_STEP);
+        st -= n * n.dot(st);
+        // S = Σ (S·tₖ) ⊗ tₖ.
+        s += DMat3::from_cols(st * t.x, st * t.y, st * t.z);
+    }
+    let s = (s + s.transpose()) * 0.5;
+    // Flatter than [`FLAT`]: the differences of the normals are rounding (3·10⁻¹³ m⁻¹ on a
+    // plane, from its gradient's), and a face's corners measured half a metre from its
+    // centroid saw that rounding: their forces split unevenly at 10⁻⁶ (F5).
+    let flat = s.to_cols_array().iter().all(|x| x.abs() < FLAT);
+    Some(if flat { DMat3::ZERO } else { s })
+}
+
+/// Ground curving less than this is flat (m⁻¹): a sphere a million kilometres across, flatter
+/// than any planet; over a metre it sags 10⁻¹⁰ m.
+pub(super) const FLAT: f64 = 1e-9;
+
+/// The point of the ground closest to `c` and the outward normal there, starting the search
+/// from the surface point `start`: alternately onto the surface along the gradient and
+/// sideways to the foot of `c`. A round contact on the ground is measured with it at every
+/// evaluation of its energy: the distance to the closest point is a smooth function of `c`
+/// whose gradient is the normal there, so energy and force agree, and no geometry is frozen
+/// for the step (a ball rolling at 3 m/s over 5 mm bumps saw its normal force swing from
+/// 108 to 1,125 N against 284 N with the ground frozen at the start of each 60 Hz step,
+/// measured in F5).
+pub fn closest(ground: &dyn Ground, c: DVec3, start: DVec3) -> Option<(DVec3, DVec3)> {
+    let mut q = start;
+    let mut normal = DVec3::Y;
+    for k in 0..CLOSEST_STEPS {
+        let (d, g) = ground.density_gradient(q);
+        let length = g.length();
+        if length <= 1e-9 {
+            return None;
+        }
+        normal = g / length;
+        q -= normal * (d / length);
+        if k + 1 < CLOSEST_STEPS {
+            let towards = c - q;
+            q += towards - normal * normal.dot(towards);
+        }
+    }
+    Some((q, normal))
+}
+
+/// Projection steps of [`closest`].
+const CLOSEST_STEPS: usize = 4;
+
 /// A contact of point `p` (with `offset` for a sphere's radius) with the ground.
-fn point_contact(ground: &dyn Ground, p: DVec3, offset: f64, margin: f64) -> Option<RawContact> {
+pub(super) fn point_contact(
+    ground: &dyn Ground,
+    p: DVec3,
+    offset: f64,
+    margin: f64,
+) -> Option<RawContact> {
     let (surface, normal) = project(ground, p)?;
     let contact = RawContact {
         point_a: p,
@@ -58,12 +132,24 @@ fn point_contact(ground: &dyn Ground, p: DVec3, offset: f64, margin: f64) -> Opt
         normal,
         radius_a: offset,
         radius_b: 0.0,
+        features: [
+            if offset > 0.0 {
+                Feature::Round(offset)
+            } else {
+                Feature::Face
+            },
+            Feature::Face,
+        ],
+        patch: None,
+        bend: curvature(ground, surface, normal),
+        follows: Follows::Neither,
+        inset: 0.0,
     };
     (contact.gap() < margin).then_some(contact)
 }
 
 /// Contacts of a shape at `pose` with the ground (gap below `margin`).
-pub fn contacts(ground: &dyn Ground, pose: Pose, shape: Shape, margin: f64) -> Vec<RawContact> {
+pub fn contacts(ground: &dyn Ground, pose: Pose, shape: &Shape, margin: f64) -> Vec<RawContact> {
     // Cheap rejection from the centre's distance. The first-order distance can
     // underestimate the true one on steep slopes, never by more than half.
     let Some(center) = estimate(ground, pose.position) else {
@@ -73,10 +159,11 @@ pub fn contacts(ground: &dyn Ground, pose: Pose, shape: Shape, margin: f64) -> V
         return Vec::new();
     }
     match shape {
-        Shape::Sphere { radius } => point_contact(ground, pose.position, radius, margin)
+        Shape::Sphere { radius } => point_contact(ground, pose.position, *radius, margin)
             .into_iter()
             .collect(),
-        Shape::Box { half } => box_contacts(ground, pose, half, margin),
+        Shape::Box { half } => box_contacts(ground, pose, *half, margin),
+        Shape::Hull(hull) => super::ground_hull::hull_contacts(ground, pose, hull, margin),
     }
 }
 
@@ -95,17 +182,19 @@ fn box_contacts(ground: &dyn Ground, pose: Pose, half: DVec3, margin: f64) -> Ve
     for (c, gap) in gaps.iter_mut().enumerate() {
         *gap = estimate(ground, at(corner_s(c))).unwrap_or(f64::INFINITY);
     }
-    let mut found = Vec::new();
-    for (c, &gap) in gaps.iter().enumerate() {
-        if gap < margin + BULGE {
-            found.extend(point_contact(ground, at(corner_s(c)), 0.0, margin));
-        }
+    let (lowest, &deepest) = gaps
+        .iter()
+        .enumerate()
+        .min_by(|a, b| a.1.total_cmp(b.1))
+        .expect("eight corners");
+    // Only if the box is close enough for the ground to reach it.
+    if deepest > margin + half.max_element() || project(ground, at(corner_s(lowest))).is_none() {
+        return Vec::new();
     }
-    // Other surface points: only if the box is close enough for the ground to reach them.
-    let lowest = gaps.iter().copied().fold(f64::INFINITY, f64::min);
-    if lowest > margin + half.max_element() {
-        return found;
-    }
+    // The faces that press as patches (`faces`), and other surface points where the ground
+    // rises beyond what the patches see.
+    let corners: [DVec3; 8] = std::array::from_fn(|c| at(corner_s(c)));
+    let (mut found, patched) = faces(ground, &corners, r, margin);
     let steps: [u32; 3] = half.to_array().map(|h| {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // small, positive
         let n = ((2.0 * h / BOX_SAMPLE_SPACING).ceil() as u32).clamp(2, 16);
@@ -139,14 +228,60 @@ fn box_contacts(ground: &dyn Ground, pose: Pose, half: DVec3, margin: f64) -> Ve
                     })
                     .sum();
                 let p = at(s);
+                // On a face pressing as a patch, the gap its patch sees there: a bump is what
+                // rises beyond.
+                let plane = face_gap(&patched, p).unwrap_or(plane);
                 let Some(gap) = estimate(ground, p) else {
                     continue;
                 };
                 if gap < margin && gap < plane - BULGE {
-                    found.extend(point_contact(ground, p, 0.0, margin));
+                    let bump = Feature::Round(BOX_SAMPLE_SPACING);
+                    found.extend(point_contact(ground, p, 0.0, margin).map(|mut c| {
+                        c.features = [Feature::Face, bump];
+                        c.inset = (plane - BULGE).min(0.0);
+                        c
+                    }));
                 }
             }
         }
     }
     found
+}
+
+/// The faces of a box turned towards the ground within `margin` of it: a patch each, over
+/// curved ground pressing with the ground's depth measured across it (`ground_sample.rs`),
+/// on flat ground the box–plane patch.
+fn faces(
+    ground: &dyn Ground,
+    corners: &[DVec3; 8],
+    r: DMat3,
+    margin: f64,
+) -> (Vec<RawContact>, Vec<Pressing>) {
+    // The box's corners are measured once though three faces share each.
+    let mut feet = Feet::new(ground);
+    let mut out = Vec::new();
+    let mut patched = Vec::new();
+    for k in 0..3 {
+        for sign in [-1.0, 1.0] {
+            // The face's corners in order around it: (+, +), (−, +), (−, −), (+, −) along the
+            // two other axes.
+            let (a, b) = ((k + 1) % 3, (k + 2) % 3);
+            let side = if sign > 0.0 { 1 << k } else { 0 };
+            let ring = [(1, 1), (0, 1), (0, 0), (1, 0)].map(|(i, j)| side | (i << a) | (j << b));
+            let parallelogram = ring.map(|c| corners[c]);
+            let points = Domain::WHOLE.points();
+            let Some(face) =
+                measure_face(&mut feet, &parallelogram, points, r.col(k) * sign, margin)
+            else {
+                continue;
+            };
+            out.extend(face.under.corners(&parallelogram, &face.domain, &mut feet));
+            patched.push(Pressing {
+                corners: parallelogram,
+                under: face.under,
+                domain: face.domain,
+            });
+        }
+    }
+    (out, patched)
 }

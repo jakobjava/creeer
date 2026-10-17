@@ -67,7 +67,7 @@ fn settle(
             &published,
             1.0,
         );
-        if (view.queued() == 0 && start.elapsed() > minimum)
+        if (view.outstanding() == 0 && start.elapsed() > minimum)
             || start.elapsed() > Duration::from_secs(120)
         {
             return built;

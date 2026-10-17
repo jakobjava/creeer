@@ -8,14 +8,37 @@
 
 use crate::DemoMeshes;
 use crate::physics_view;
-use crate::planet_sim::Command;
-use crate::planet_view::{PlanetView, load_terrain};
+use crate::planet_view::PlanetView;
 use creeer_math::det;
 use creeer_math::glam::DVec3;
+use creeer_net::message::Command;
 use creeer_render::{DebugLines, Frame, Lighting, Renderer, Scene};
 use creeer_terrain::edits::{Brush, Edit};
 use creeer_terrain::elevation::fibonacci_sphere;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Runs the game for `seconds` of real time (the hosted server steps on its own; the client
+/// takes in what it is told), first until the client has joined.
+fn play(view: &mut PlanetView, seconds: f64) -> Result<(), String> {
+    let start = Instant::now();
+    let step = Duration::from_millis(10);
+    while view.session.connection.status() != &creeer_server::client::Status::Joined {
+        if start.elapsed() > Duration::from_secs(10) {
+            return Err("the hosted server did not welcome the client".into());
+        }
+        view.session
+            .update(step.as_secs_f64(), (DVec3::ZERO, false));
+        std::thread::sleep(step);
+    }
+    let start = Instant::now();
+    while start.elapsed().as_secs_f64() < seconds {
+        view.session
+            .update(step.as_secs_f64(), (DVec3::ZERO, false));
+        std::thread::sleep(step);
+    }
+    Ok(())
+}
 
 /// Renders one planet view and saves it.
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -39,8 +62,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         sun_elevation = -30.0;
     }
 
-    let terrain = load_terrain()?;
-    let mut view = PlanetView::new(terrain.clone(), crate::TICK_RATE_HZ);
+    let mut view = PlanetView::singleplayer()?;
+    let terrain = Arc::clone(&view.terrain);
+    play(&mut view, 0.0)?;
     // A land spot with relief: the first point between 300 and 1500 m above the datum.
     let up = fibonacci_sphere(5000)
         .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
@@ -69,7 +93,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     Command::Ball(target)
                 });
             }
-            std::thread::sleep(Duration::from_secs(4));
+            play(&mut view, 4.0)?;
             view.ground_camera(up, 2.5, east, 6f64.to_radians())
         }
         "tunnel" => {
@@ -77,11 +101,17 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let ground = up * (terrain.planet().datum.radius(up) + terrain.surface_height(up));
             let a = ground - up * 3.0 - east * 2.0;
             let b = a + east * 30.0 - up * 6.0;
-            terrain.edit(Edit::Dig(Brush::Capsule { a, b, radius: 3.0 }));
-            terrain.edit(Edit::Dig(Brush::Sphere {
+            // Through the server, as a player digs: back here once it has done them.
+            view.session
+                .edit(Edit::Dig(Brush::Capsule { a, b, radius: 3.0 }));
+            view.session.edit(Edit::Dig(Brush::Sphere {
                 center: a - east * 2.0,
                 radius: 4.5,
             }));
+            play(&mut view, 0.5)?;
+            if terrain.edits().len() < 2 {
+                return Err("the server did not make the tunnel".into());
+            }
             crate::planet_view::place(a - east * 1.5 + up * 0.5, (b - a).normalize())
         }
         other => return Err(format!("unknown planet view `{other}`").into()),
@@ -109,12 +139,13 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut lighting = sky.lighting(camera.position, sun, &Lighting::default());
     lighting.shadow_distance = 250.0;
     let mut scene = Scene::default();
-    let snapshot = view.snapshot().current;
+    view.session.update(0.0, (DVec3::ZERO, false));
+    let snapshot = view.snapshot();
     physics_view::draw(
         &mut scene,
         &meshes,
         DVec3::ZERO,
-        (&snapshot.bodies, &snapshot.bodies, 1.0),
+        (&snapshot, &snapshot, 1.0),
         crate::demo::Overlay::Off,
     );
     let image = renderer.capture(Frame {
@@ -138,7 +169,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         stats.terrain_triangles,
         streaming.as_secs_f64(),
         view.altitude(camera.position),
-        snapshot.bodies.counts.0,
+        snapshot.counts.0,
     );
     Ok(())
 }
@@ -171,8 +202,8 @@ pub fn descent_bench(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(40.0);
-    let terrain = load_terrain()?;
-    let mut view = PlanetView::new(terrain.clone(), crate::TICK_RATE_HZ);
+    let mut view = PlanetView::singleplayer()?;
+    let terrain = Arc::clone(&view.terrain);
     let up = fibonacci_sphere(5000)
         .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
         .ok_or("no land spot found")?;

@@ -1,14 +1,16 @@
-//! The planet sandbox's window: tools, time of day, a geology probe at the crosshair,
-//! saving and loading terrain edits, and live numbers.
+//! The planet sandbox's window: tools, walking or flying, time of day, a geology probe at the
+//! crosshair, saving and loading the world (when this process hosts it), and live numbers.
 
-use crate::planet_sim::Command;
 use crate::planet_view::{PlanetView, TOOL_REACH, Tool};
+use creeer_net::message::Command;
 use creeer_render::Camera;
-use creeer_terrain::edits::Edits;
 use creeer_ui::egui;
 use std::path::Path;
 
-/// Where the sandbox saves its terrain edits.
+/// Where the sandbox saves its world.
+const WORLD_FILE: &str = "planet_world.creeer";
+/// Where the F3 sandbox saved its terrain edits (a version 1 save: loaded if there is no
+/// world file).
 const EDITS_FILE: &str = "planet_edits.bin";
 
 /// What the window asks the app to do.
@@ -25,7 +27,7 @@ pub enum Request {
 /// Draws the window; returns what the app should do.
 pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Request {
     let mut request = Request::None;
-    let snapshot = view.snapshot().current;
+    let snapshot = view.snapshot();
     egui::Window::new("Planet")
         .default_pos([12.0, 330.0])
         .resizable(false)
@@ -68,33 +70,33 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                     });
             }
             ui.horizontal(|ui| {
-                if ui.button("save edits").clicked() {
-                    let bytes = view.terrain.edits().to_bytes();
-                    if let Err(e) = std::fs::write(EDITS_FILE, bytes) {
-                        eprintln!("could not save {EDITS_FILE}: {e}");
+                ui.checkbox(&mut view.walking, "walk (V)");
+                if view.session.hosted() {
+                    if ui.button("save world").clicked()
+                        && let Err(e) = view.session.save(Path::new(WORLD_FILE))
+                    {
+                        eprintln!("{e}");
                     }
-                }
-                if ui.button("load edits").clicked() {
-                    match std::fs::read(EDITS_FILE).map(|b| Edits::from_bytes(&b)) {
-                        Ok(Ok(edits)) => view.send(Command::LoadEdits(edits)),
-                        Ok(Err(e)) => eprintln!("{EDITS_FILE}: {e}"),
-                        Err(e) => eprintln!("could not read {EDITS_FILE}: {e}"),
+                    if ui.button("load world").clicked() {
+                        let file = if Path::new(WORLD_FILE).exists() {
+                            WORLD_FILE
+                        } else {
+                            EDITS_FILE
+                        };
+                        if let Err(e) = view.session.load(Path::new(file)) {
+                            eprintln!("{e}");
+                        }
                     }
-                }
-                if ui.button("undo all").clicked() {
-                    view.send(Command::LoadEdits(Edits::default()));
                 }
                 if ui.button("remove bodies").clicked() {
                     view.send(Command::Clear);
                 }
             });
-            if Path::new(EDITS_FILE).exists() {
-                ui.small(format!(
-                    "{} edits · saved file: {EDITS_FILE}",
-                    snapshot.edits
-                ));
+            let edits = view.session.connection.edits.len();
+            if view.session.hosted() && Path::new(WORLD_FILE).exists() {
+                ui.small(format!("{edits} edits · saved world: {WORLD_FILE}"));
             } else {
-                ui.small(format!("{} edits", snapshot.edits));
+                ui.small(format!("{edits} edits"));
             }
             ui.separator();
             let hours = view.day_fraction * view.terrain.planet().sidereal_day / 3600.0;
@@ -118,17 +120,26 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
             ui.label(format!(
                 "altitude {altitude:.1} m · {latitude:.2}° lat, {longitude:.2}° lon"
             ));
-            let (bodies, asleep, contacts) = snapshot.bodies.counts;
+            let (bodies, asleep, _) = snapshot.counts;
+            let net = view.session.connection.network();
             ui.label(format!(
-                "{bodies} bodies ({asleep} asleep) · {contacts} contacts · physics {:.2} ms",
-                snapshot.bodies.step_ms
+                "{bodies} in view ({asleep} asleep) · {} · {:.0} ms · ↓{:.0} ↑{:.0} kbit/s",
+                if view.session.hosted() {
+                    "hosted"
+                } else {
+                    "online"
+                },
+                net.rtt * 1e3,
+                net.bytes_received_per_second * 8e-3,
+                net.bytes_sent_per_second * 8e-3,
             ));
-            let (cached, queued) = view.streaming();
+            let (cached, outstanding) = view.streaming();
             ui.label(format!(
-                "terrain: {} chunks drawn · {cached} cached · {queued} queued",
+                "terrain: {} chunks drawn · {cached} cached · {outstanding} to build",
                 view.draw.len()
             ));
             ui.label("Right mouse: look · WASD/Space/Ctrl: fly (speed follows altitude)");
+            ui.label("V: walk the avatar (WASD, Space jumps, Shift runs)");
             ui.label("Mouse wheel: speed · Left click: use tool at the crosshair");
         });
     request

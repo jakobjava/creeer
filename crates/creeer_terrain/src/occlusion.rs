@@ -60,18 +60,14 @@ pub fn openness(samples: &ChunkSamples, mesh: &TerrainMesh) -> Vec<f32> {
     let cell = samples.key.cell_size() as f32;
     let rays = cone();
     let mut out = Vec::with_capacity(mesh.positions.len());
-    for (p, n) in mesh
-        .positions
-        .iter()
-        .zip(&mesh.normals)
-        .take(mesh.surface_vertices)
-    {
+    for v in 0..mesh.positions.len() {
+        let n = mesh.normals[v];
         // Sample coordinates: the grid starts one cell before the chunk origin.
-        let start = *p / cell + Vec3::ONE;
+        let start = mesh.anchor(v) / cell + Vec3::ONE;
         let (t, b) = n.any_orthonormal_pair();
         let (mut open, mut total) = (0.0f32, 0.0f32);
         for ray in rays {
-            let dir = t * ray.x + b * ray.y + *n * ray.z;
+            let dir = t * ray.x + b * ray.y + n * ray.z;
             let weight = ray.z; // cosine weighting
             total += weight;
             let blocked = STEPS.iter().any(|&s| {
@@ -84,9 +80,6 @@ pub fn openness(samples: &ChunkSamples, mesh: &TerrainMesh) -> Vec<f32> {
             }
         }
         out.push(open / total);
-    }
-    for &source in &mesh.skirt_sources {
-        out.push(out[source as usize]);
     }
     out
 }

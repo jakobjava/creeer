@@ -46,6 +46,19 @@ impl Brush {
         }
     }
 
+    /// Gradient of [`Brush::distance`] at `p` (unit length; away from the axis).
+    pub fn gradient(&self, p: DVec3) -> DVec3 {
+        let axis = match *self {
+            Self::Sphere { center, .. } => center,
+            Self::Capsule { a, b, .. } => {
+                let ab = b - a;
+                let t = ((p - a).dot(ab) / ab.length_squared().max(1e-30)).clamp(0.0, 1.0);
+                a + ab * t
+            }
+        };
+        (p - axis).normalize_or(DVec3::Y)
+    }
+
     /// Radius of the brush (m).
     pub fn radius(&self) -> f64 {
         match *self {

@@ -73,7 +73,7 @@ impl ScreenshotOptions {
                         .iter()
                         .find(|(_, n)| n.starts_with(name))
                         .ok_or(format!(
-                            "--physics expects bridge/crash/stacking, got `{name}`"
+                            "--physics expects bridge/crash/stacking/rock, got `{name}`"
                         ))?
                         .0;
                     let seconds = match value_of("--physics-time") {

@@ -236,14 +236,17 @@ pub fn physics_snapshot(u: &Universe, step_ms: f64) -> PhysicsSnapshot {
     for body in &u.bubble.world.bodies {
         asleep += usize::from(body.sleep.asleep);
         let s = &body.structure;
-        for &(node, shape) in &body.shapes {
-            match shape {
+        for (node, shape) in &body.shapes {
+            let node = *node;
+            match *shape {
                 Shape::Box { half } => {
                     snapshot
                         .boxes
                         .push((s.position[node], s.orientation[node], half));
                 }
                 Shape::Sphere { radius } => snapshot.spheres.push((s.position[node], radius)),
+                // No hulls are made in the solar-system flight.
+                Shape::Hull(_) => {}
             }
         }
     }

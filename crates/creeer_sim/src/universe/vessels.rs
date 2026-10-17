@@ -67,7 +67,7 @@ pub fn centre_of_mass(body: &Body) -> (DVec3, DVec3, f64) {
 /// Takes body `index` out of the bubble (frame `pose` at time `t`) and stores it: landed if it
 /// rests on the ground of a surface frame, on rails otherwise.
 pub fn pack(bubble: &mut Bubble, pose: &Pose, index: usize, t: f64) -> Where {
-    let mut body = bubble.world.bodies.remove(index);
+    let mut body = bubble.world.remove_body(index);
     bubble.vessels.remove(index);
     if let Some(on) = bubble.anchor()
         && body.sleep.asleep

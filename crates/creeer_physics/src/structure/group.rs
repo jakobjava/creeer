@@ -32,6 +32,11 @@ pub struct StepInfo<'a> {
     pub start: &'a [MemberState<'a>],
     /// Members at x̂, q̂ (the velocity reference: damping acts on the change from here).
     pub hat: &'a [MemberState<'a>],
+    /// Members one step before the start (the history the schemes extrapolate from).
+    pub previous: &'a [MemberState<'a>],
+    /// How far ahead of the start x̂ lies (s): 0 for backward Euler, h/3 for BDF2, h/2 for
+    /// Newmark.
+    pub tau: f64,
 }
 
 /// Stiffness coupling two nodes of different members: (member, node) of each side and the
@@ -42,6 +47,11 @@ pub type NodeCoupling = ((usize, usize), (usize, usize), [[f64; 6]; 6]);
 pub trait Coupling: Sync {
     /// Called before every minimisation.
     fn begin(&mut self, info: &StepInfo<'_>);
+    /// The largest remaining error of positions (m) the step may stop at, as far as the
+    /// coupling's forces need it (the solver's own tolerance applies too).
+    fn tolerance(&self) -> f64 {
+        f64::INFINITY
+    }
     /// Contribution to the incremental potential (elastic, damping, friction).
     fn energy(&self, states: &[MemberState<'_>]) -> f64;
     /// Stored elastic energy only (for the energy guard).
@@ -226,7 +236,8 @@ pub fn step_group_with(
     }
     // Plastic flow and fracture, on the converged state.
     for (s, v) in members.iter_mut() {
-        let yielding = s.yield_members(&v.work);
+        let (yielding, wanted) = s.yield_members(&v.work);
+        v.wanted.extend(wanted);
         if yielding.yielded > 0 {
             // The elastic energy remembered for the energy guard is no longer valid.
             v.snapshot.end_x.clear();
@@ -245,6 +256,11 @@ fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Sche
         .iter()
         .map(|(s, _)| (s.position.clone(), s.orientation.clone()))
         .collect();
+    // The history before the prediction moves it on.
+    let previous: Vec<(Vec<DVec3>, Vec<DQuat>)> = members
+        .iter()
+        .map(|(_, v)| (v.previous_x.clone(), v.previous_q.clone()))
+        .collect();
     for (s, v) in members.iter_mut() {
         v.begin_substep(s, scheme);
     }
@@ -262,12 +278,21 @@ fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Sche
             orientation: &v.work.q_hat,
         })
         .collect();
+    let previous_states: Vec<MemberState<'_>> = previous
+        .iter()
+        .map(|(x, q)| MemberState {
+            position: x,
+            orientation: q,
+        })
+        .collect();
     let (beta, h) = (members[0].1.work.beta, members[0].1.h);
     coupling.begin(&StepInfo {
         beta,
         h,
         start: &start_states,
         hat: &hat,
+        previous: &previous_states,
+        tau: members[0].1.work.tau,
     });
     members[0].1.timings.predict += t.elapsed();
     minimise(members, coupling);

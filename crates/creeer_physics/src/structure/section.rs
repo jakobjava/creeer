@@ -23,10 +23,88 @@ pub struct Material {
     pub damping: f64,
     /// Plastic strain at which the material breaks (elongation at break).
     pub elongation: f64,
+    /// Plastic strain at which strain hardening starts: the yield stress holds over a plateau
+    /// before it (mild steel's Lüders bands; 0 for metals that harden at once, ∞ for none).
+    pub hardening_start: f64,
+    /// Plastic strain at which the ultimate strength is reached (uniform elongation); the
+    /// stress rises linearly to it from the plateau and holds there until the material breaks.
+    pub uniform_elongation: f64,
+    /// How the flow stress rises with the strain rate.
+    pub rate: RateSensitivity,
+}
+
+/// Cowper–Symonds rate sensitivity: at plastic strain rate ε̇ the flow stress is the static
+/// one times 1 + (ε̇/D)^{1/q} (Jones, *Structural Impact*, 2012, §8.3). The static stress
+/// is taken at `reference`, the rate of the tensile test that measured it: Cowper–Symonds
+/// alone adds 8 % for mild steel already there, and a building settling for years would
+/// carry that too. Below the reference the stress is the static one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RateSensitivity {
+    /// D (1/s); infinite: rate-insensitive.
+    pub d: f64,
+    /// q.
+    pub q: f64,
+    /// The strain rate of the static strengths (1/s).
+    pub reference: f64,
+}
+
+impl RateSensitivity {
+    /// No rate sensitivity.
+    pub const NONE: Self = Self {
+        d: f64::INFINITY,
+        q: 1.0,
+        reference: 0.0,
+    };
+
+    /// Whether the flow stress depends on the rate at all.
+    pub fn matters(&self) -> bool {
+        self.d.is_finite()
+    }
+}
+
+impl Material {
+    /// The static flow stress after plastic strain `strain` (Pa): the yield strength over the
+    /// plateau, rising linearly to the ultimate strength at the uniform elongation.
+    pub fn flow_stress(&self, strain: f64) -> f64 {
+        let span = self.uniform_elongation - self.hardening_start;
+        let rise = self.ultimate_strength - self.yield_strength;
+        if strain <= self.hardening_start || span <= 0.0 || !rise.is_finite() || rise <= 0.0 {
+            return self.yield_strength;
+        }
+        self.yield_strength + rise * ((strain - self.hardening_start) / span).min(1.0)
+    }
+
+    /// dσ/dε of the static flow stress after plastic strain `strain` (Pa).
+    pub fn hardening_modulus(&self, strain: f64) -> f64 {
+        let span = self.uniform_elongation - self.hardening_start;
+        let rise = self.ultimate_strength - self.yield_strength;
+        if strain < self.hardening_start
+            || strain >= self.uniform_elongation
+            || span <= 0.0
+            || !rise.is_finite()
+            || rise <= 0.0
+        {
+            return 0.0;
+        }
+        rise / span
+    }
+
+    /// The same material without hardening or rate sensitivity: perfectly plastic.
+    pub fn perfectly_plastic(self) -> Self {
+        Self {
+            hardening_start: f64::INFINITY,
+            rate: RateSensitivity::NONE,
+            ..self
+        }
+    }
 }
 
 /// Structural steel S235 (EN 10025): E = 210 GPa, ν = 0.3. Damping gives ζ ≈ 0.6 % at 2 Hz,
 /// typical of welded steel frames (0.5–2 %).
+/// Past yield: a Lüders plateau to 1.5 % plastic strain, hardening to the ultimate strength at
+/// 18 % (uniform elongation), breaking at 26 %; Cowper–Symonds D = 40.4 s⁻¹, q = 5 for mild
+/// steel (Jones, *Structural Impact*), referred to the tensile test's 2.5·10⁻⁴ s⁻¹
+/// (EN ISO 6892-1, method A1).
 pub const STEEL_S235: Material = Material {
     youngs_modulus: 210.0e9,
     shear_modulus: 80.8e9,
@@ -35,9 +113,20 @@ pub const STEEL_S235: Material = Material {
     ultimate_strength: 360.0e6,
     damping: 1.0e-3,
     elongation: 0.26,
+    hardening_start: 0.015,
+    uniform_elongation: 0.18,
+    rate: RateSensitivity {
+        d: 40.4,
+        q: 5.0,
+        reference: 2.5e-4,
+    },
 };
 
 /// Aluminium alloy 6061-T6: E = 68.9 GPa, ν = 0.33.
+/// Past yield it hardens at once, to its ultimate strength at 8 % (uniform elongation), and
+// breaks at 12 %. Taken as rate-insensitive: tests often find 6061-T6 nearly so, while the
+/// Cowper–Symonds fit commonly quoted for aluminium alloys (D = 6500 s⁻¹, q = 4) would add a
+/// third at crash rates; the materials database is to settle it.
 pub const ALUMINIUM_6061_T6: Material = Material {
     youngs_modulus: 68.9e9,
     shear_modulus: 26.0e9,
@@ -46,6 +135,9 @@ pub const ALUMINIUM_6061_T6: Material = Material {
     ultimate_strength: 310.0e6,
     damping: 1.0e-3,
     elongation: 0.12,
+    hardening_start: 0.0,
+    uniform_elongation: 0.08,
+    rate: RateSensitivity::NONE,
 };
 
 /// Geometric properties of a member's cross-section (SI units). Local axes: x along the

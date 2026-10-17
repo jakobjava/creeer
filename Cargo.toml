@@ -18,6 +18,8 @@ creeer_terrain = { path = "crates/creeer_terrain" }
 creeer_orbit = { path = "crates/creeer_orbit" }
 creeer_materials = { path = "crates/creeer_materials" }
 creeer_sim = { path = "crates/creeer_sim" }
+creeer_net = { path = "crates/creeer_net" }
+creeer_server = { path = "crates/creeer_server" }
 
 # External crates (versions chosen in F0, see docs/adr)
 glam = { version = "0.34.1", features = ["libm"] }
@@ -40,6 +42,11 @@ ron = "0.12.2"
 
 # Simulation
 rayon = "1.12.0"
+
+# Networking (F5, ADR-0008): renet's reliable and unreliable channels over any transport,
+# and its netcode UDP transport.
+renet = "2.0.0"
+renet_netcode = "2.0.0"
 
 # Test-only
 approx = "0.5.1"

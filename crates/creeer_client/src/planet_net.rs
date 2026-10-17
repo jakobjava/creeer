@@ -1,0 +1,198 @@
+//! The planet sandbox as a client of a server (F5, ADR-0008): of one it hosts itself for a
+//! singleplayer game (on a thread of its own, joined by an in-process connection), or of a
+//! dedicated server over UDP (`--connect`). Either way the window only draws what it is
+//! told and asks for what the player does; the world is the server's.
+
+use crate::physics_sandbox::PhysicsSnapshot;
+use creeer_math::glam::DVec3;
+use creeer_net::channel::TICK_RATE;
+use creeer_net::entity::{Kind, Shape};
+use creeer_net::message::Command;
+use creeer_server::client::Status;
+use creeer_server::host::{Host, read_save, write_save};
+use creeer_server::world::load_terrain;
+use creeer_server::{Connection, Server, ServerWorld};
+use creeer_terrain::Terrain;
+use creeer_terrain::edits::{Edit, Edits};
+use std::net::SocketAddr;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// The planet a singleplayer game is on.
+pub const PLANET: &str = "planets/home.ron";
+/// The player's name in a singleplayer game.
+const PLAYER: &str = "player";
+
+/// A game: the connection, and the server if this process hosts it.
+pub struct PlanetSession {
+    /// The connection to the server.
+    pub connection: Connection,
+    host: Option<Host>,
+    /// Client time not yet ticked (s).
+    behind: f64,
+}
+
+impl std::fmt::Debug for PlanetSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlanetSession")
+            .field("connection", &self.connection)
+            .field("hosted", &self.host.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PlanetSession {
+    /// A singleplayer game on the reference planet: a server hosted in this process, and
+    /// this client joined to it. Returns it with the client's terrain.
+    ///
+    /// # Errors
+    /// If the planet cannot be loaded.
+    pub fn singleplayer() -> Result<(Self, Arc<Terrain>), String> {
+        let mut server = Server::new(ServerWorld::new(load_terrain(PLANET)?, PLANET));
+        let end = server.connect_memory();
+        let mut connection = Connection::memory(end, PLAYER);
+        let terrain = load_terrain(PLANET)?;
+        connection.attach_terrain(Arc::clone(&terrain));
+        let session = Self {
+            connection,
+            host: Some(Host::spawn(server)),
+            behind: 0.0,
+        };
+        Ok((session, terrain))
+    }
+
+    /// A game on the dedicated server at `server`, as `name`: waits (up to ten seconds) to
+    /// be welcomed, then loads the planet it names. Returns it with the client's terrain.
+    ///
+    /// # Errors
+    /// If the server cannot be reached, refuses, or names a planet this client lacks.
+    pub fn connect(server: SocketAddr, name: &str) -> Result<(Self, Arc<Terrain>), String> {
+        let mut connection = Connection::udp(server, name)?;
+        let start = Instant::now();
+        let step = Duration::from_millis(10);
+        loop {
+            connection.update(step);
+            connection.flush();
+            match connection.status() {
+                Status::Joined => break,
+                Status::Refused(why) => return Err(format!("refused: {why}")),
+                Status::Closed(why) => return Err(format!("could not connect: {why}")),
+                Status::Connecting if start.elapsed() > Duration::from_secs(10) => {
+                    return Err(format!("no answer from {server}"));
+                }
+                Status::Connecting => std::thread::sleep(step),
+            }
+        }
+        let planet = connection
+            .welcome
+            .as_ref()
+            .map(|w| w.planet.clone())
+            .unwrap_or_default();
+        let terrain = load_terrain(&planet)?;
+        connection.attach_terrain(Arc::clone(&terrain));
+        let session = Self {
+            connection,
+            host: None,
+            behind: 0.0,
+        };
+        Ok((session, terrain))
+    }
+
+    /// Whether this process hosts the game (it may save and load it).
+    pub fn hosted(&self) -> bool {
+        self.host.is_some()
+    }
+
+    /// A frame of `dt` seconds passed: takes in what the server sent, and runs the client's
+    /// ticks due (each the player's input `walk`, `jump` for its avatar).
+    pub fn update(&mut self, dt: f64, (walk, jump): (DVec3, bool)) {
+        self.connection.update(Duration::from_secs_f64(dt));
+        let tick = 1.0 / f64::from(TICK_RATE);
+        // A frame of a slow machine catches up at most a quarter of a second.
+        self.behind = (self.behind + dt).min(0.25);
+        while self.behind >= tick {
+            self.behind -= tick;
+            self.connection.input(walk, jump);
+            self.connection.flush();
+        }
+    }
+
+    /// Asks the world for something.
+    pub fn command(&mut self, command: Command) {
+        self.connection.command(command);
+    }
+
+    /// Asks for a terrain edit.
+    pub fn edit(&mut self, edit: Edit) {
+        let mut one = Edits::default();
+        one.push(edit);
+        self.command(Command::Edit(one.to_bytes()));
+    }
+
+    /// Saves the world to `path` (hosted games only).
+    ///
+    /// # Errors
+    /// If this process does not host the game, or the file cannot be written.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let host = self.host.as_ref().ok_or("only the host saves the world")?;
+        write_save(path, &host.save()?).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// Loads the world from `path`, a save of any version (hosted games only).
+    ///
+    /// # Errors
+    /// If this process does not host the game, or the file is no save of this planet.
+    pub fn load(&self, path: &Path) -> Result<(), String> {
+        let host = self.host.as_ref().ok_or("only the host loads a world")?;
+        host.load(read_save(path)?)
+    }
+
+    /// The server's tick times, if this process hosts it.
+    pub fn tick_times(&self) -> Option<(creeer_core::TimingStats, u64)> {
+        self.host.as_ref().map(|h| (h.tick_times(), h.tick()))
+    }
+
+    /// What there is to draw: every entity in view where it is drawn now.
+    pub fn snapshot(&self) -> PhysicsSnapshot {
+        let c = &self.connection;
+        let mut out = PhysicsSnapshot::default();
+        let poses = c.poses();
+        for (id, kind) in &c.kinds {
+            let Some(pose) = poses.get(id) else { continue };
+            let (p, q) = (pose.position, pose.orientation);
+            match kind {
+                Kind::Body(Shape::Box(half)) => out.boxes.push((p, q, *half)),
+                Kind::Body(Shape::Sphere(radius)) | Kind::Avatar { radius, .. } => {
+                    out.spheres.push((p, *radius))
+                }
+                // The sandbox makes no rocks: a hull is drawn as the ball around it.
+                Kind::Body(Shape::Hull(corners)) => {
+                    let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
+                    out.spheres.push((p, radius));
+                }
+                Kind::Structure(frame) => {
+                    let broken = c.broken.get(id);
+                    for (k, [a, b]) in frame.members.iter().enumerate() {
+                        let (Some(na), Some(nb)) =
+                            (frame.nodes.get(*a as usize), frame.nodes.get(*b as usize))
+                        else {
+                            continue;
+                        };
+                        #[allow(clippy::cast_possible_truncation)] // fewer than 4 billion
+                        let gone = broken.is_some_and(|set| set.contains(&(k as u32)));
+                        out.beams
+                            .push((p + q * *na, p + q * *nb, frame.radius, 0.0, gone));
+                    }
+                }
+            }
+        }
+        let asleep = c
+            .receiver()
+            .newest()
+            .map_or(0, |s| s.states.values().filter(|s| s.asleep).count());
+        out.counts = (c.kinds.len(), asleep, 0);
+        out.time = c.drawn_at() / f64::from(TICK_RATE);
+        out
+    }
+}

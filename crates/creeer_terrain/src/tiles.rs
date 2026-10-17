@@ -144,6 +144,27 @@ impl HeightTile {
         }
         h
     }
+
+    /// Interpolated height (m) at face coordinates `(s, t)`, with its derivatives along `s`
+    /// and `t` (m per face unit): the exact slopes of the surface `sample` describes.
+    pub fn sample_with_slopes(&self, s: f64, t: f64) -> (f64, f64, f64) {
+        let (s0, t0) = self.key.origin();
+        let step = cell(self.key.level);
+        let (i, fx) = split((s - s0) / step);
+        let (j, fy) = split((t - t0) / step);
+        let (wx, wy) = (catmull_rom(fx), catmull_rom(fy));
+        let (dx, dy) = (catmull_rom_slope(fx), catmull_rom_slope(fy));
+        let (mut h, mut hs, mut ht) = (0.0, 0.0, 0.0);
+        for k in 0..4 {
+            let row = &self.heights[(j + k) * SIDE + i..][..4];
+            let along: f64 = row.iter().zip(&wx).map(|(&v, w)| f64::from(v) * w).sum();
+            let slope: f64 = row.iter().zip(&dx).map(|(&v, w)| f64::from(v) * w).sum();
+            h += along * wy[k];
+            hs += slope * wy[k];
+            ht += along * dy[k];
+        }
+        (h, hs / step, ht / step)
+    }
 }
 
 fn index(i: usize) -> f64 {
@@ -165,6 +186,17 @@ fn catmull_rom(t: f64) -> [f64; 4] {
         0.5 * (3.0 * t3 - 5.0 * t2 + 2.0),
         0.5 * (-3.0 * t3 + 4.0 * t2 + t),
         0.5 * (t3 - t2),
+    ]
+}
+
+/// Derivatives of the Catmull-Rom weights with respect to `t`.
+fn catmull_rom_slope(t: f64) -> [f64; 4] {
+    let t2 = t * t;
+    [
+        0.5 * (-3.0 * t2 + 4.0 * t - 1.0),
+        0.5 * (9.0 * t2 - 10.0 * t),
+        0.5 * (-9.0 * t2 + 8.0 * t + 1.0),
+        0.5 * (3.0 * t2 - 2.0 * t),
     ]
 }
 
@@ -283,5 +315,14 @@ impl HeightSampler<'_> {
     pub fn height(&mut self, dir: DVec3) -> f64 {
         let (tile, c) = self.tile(dir);
         tile.sample(c.s, c.t)
+    }
+
+    /// Height (m) above the datum in the direction of point `p`, and its gradient with
+    /// respect to `p` (per metre): exact for the interpolated surface.
+    pub fn height_gradient(&mut self, p: DVec3) -> (f64, DVec3) {
+        let (tile, c) = self.tile(p);
+        let (h, hs, ht) = tile.sample_with_slopes(c.s, c.t);
+        let (gs, gt) = c.gradients(p);
+        (h, gs * hs + gt * ht)
     }
 }

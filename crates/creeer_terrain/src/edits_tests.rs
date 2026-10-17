@@ -274,3 +274,31 @@ fn a_dug_tunnel_is_dark_and_a_dug_pit_is_lit() {
         "bowl openness {floor}"
     );
 }
+
+#[test]
+fn a_thin_roof_still_hides_the_sky() {
+    // A tunnel 4 m down with 1.5 m of rock over it: sky rays from its floor cross the roof
+    // between samples 4 and 8 m up (found in F5 at a tunnel's mouth); they march instead.
+    let terrain = home();
+    let (p, up) = underground(&terrain, 4.0);
+    let (east, _) = crate::geology::deposits::tangent_frame(up);
+    let tunnel = Brush::Capsule {
+        a: p - east * 14.0,
+        b: p + east * 14.0,
+        radius: 2.5,
+    };
+    terrain.edit(Edit::Dig(tunnel));
+    let key = ChunkKey::containing(p, 0);
+    let m = terrain.mesh_chunk(key).expect("has walls");
+    // The lower half of the wall: the floor, with the roof straight above.
+    let floor: Vec<f32> = (0..m.surface_vertices)
+        .filter(|&v| {
+            let q = key.origin() + m.positions[v].as_dvec3();
+            tunnel.distance(q).abs() < 0.5 && (q - p).dot(up) < -1.0
+        })
+        .map(|v| m.openness[v])
+        .collect();
+    assert!(floor.len() > 20, "{} floor vertices", floor.len());
+    let mean = floor.iter().sum::<f32>() / floor.len() as f32;
+    assert!(mean < 0.15, "floor openness {mean}");
+}

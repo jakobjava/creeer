@@ -6,6 +6,7 @@
 //! - Simulation math is f64; only render space is f32 (see [`render_space`]).
 //! - Simulation code uses [`det`] instead of `f64::sin` & co. for cross-platform determinism.
 
+pub mod codec;
 pub mod det;
 pub mod frame;
 pub mod render_space;

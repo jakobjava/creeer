@@ -1,0 +1,175 @@
+//! Saves read back as written, files of every earlier version read as they are now, and
+//! what is no save, a later version's or damaged is refused.
+//!
+//! The fixtures are saves as each version wrote them: `v1_f3_edits.bin` byte by byte from
+//! the F3 edit log's format (two edits), `v2_f5_world.bin` by this version (the scene below
+//! after half a second; `cargo test -p creeer_sim -- --ignored write_v2_fixture` writes it
+//! again, which only a new version may need). A change to how a version is written that
+//! would not read its fixture fails here: such a change is a new version, with a migration.
+
+use super::*;
+use crate::avatar;
+use creeer_math::glam::DVec3;
+use creeer_physics::structure::Section;
+use creeer_physics::structure::section::STEEL_S235;
+use creeer_physics::structure::shapes::{Base, space_frame};
+use creeer_physics::world::Body;
+use creeer_physics::world::shape::{Shape, StaticShape};
+use creeer_terrain::edits::{Brush, Edit};
+
+const V1: &[u8] = include_bytes!("fixtures/v1_f3_edits.bin");
+const V2: &[u8] = include_bytes!("fixtures/v2_f5_world.bin");
+const DT: f64 = 1.0 / 60.0;
+
+/// A crate, a ball, a player's avatar and a steel frame on level ground, half a second in,
+/// with a hole dug.
+fn scene() -> Save {
+    let mut world = World::new(DT);
+    world.statics.push(StaticShape::Plane {
+        normal: DVec3::Y,
+        offset: 0.0,
+    });
+    world.add(Body::rigid(
+        Shape::Box {
+            half: DVec3::splat(0.5),
+        },
+        200.0,
+        DVec3::new(0.0, 1.0, 0.0),
+        DT,
+    ));
+    world.add(Body::rigid(
+        Shape::Sphere { radius: 0.4 },
+        300.0,
+        DVec3::new(3.0, 2.0, 0.0),
+        DT,
+    ));
+    world.add(avatar::body(DVec3::new(-3.0, 0.5, 1.0), DT));
+    let frame = space_frame(
+        [2, 2, 2],
+        1.0,
+        Section::round_tube(0.05, 0.003),
+        STEEL_S235,
+        Base::Free,
+    );
+    let mut frame = Body::structure(frame, DT);
+    for p in &mut frame.structure.position {
+        *p += DVec3::new(5.0, 0.1, -2.0);
+    }
+    frame.solver.reset_history(&frame.structure);
+    world.add(frame);
+    for _ in 0..30 {
+        avatar::steer(&mut world, 2, (DVec3::X * 2.0, false), DVec3::Y);
+        world.step();
+    }
+    let mut edits = Edits::default();
+    edits.push(Edit::Dig(Brush::Sphere {
+        center: DVec3::new(10.0, 0.0, 10.0),
+        radius: 2.0,
+    }));
+    Save {
+        planet: "planets/home.ron".into(),
+        tick: 30,
+        next_id: 9,
+        edits,
+        world,
+        entities: vec![(1, None), (2, None), (5, Some("ada".into())), (8, None)],
+    }
+}
+
+#[test]
+#[ignore = "writes the version 2 fixture"]
+fn write_v2_fixture() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/save/fixtures/v2_f5_world.bin"
+    );
+    std::fs::write(path, scene().to_bytes()).unwrap();
+}
+
+#[test]
+fn a_save_reads_back_as_written() {
+    let save = scene();
+    let bytes = save.to_bytes();
+    let read = Save::from_bytes(&bytes).unwrap();
+    assert_eq!(read.to_bytes(), bytes);
+    assert_eq!(read.entities, save.entities);
+    assert_eq!(read.edits.log(), save.edits.log());
+}
+
+#[test]
+fn a_version_1_save_reads_as_a_world_with_its_edits() {
+    let save = Save::from_bytes(V1).unwrap();
+    assert_eq!(save.planet, V1_PLANET);
+    assert!(save.world.bodies.is_empty() && save.entities.is_empty());
+    let dig = Edit::Dig(Brush::Sphere {
+        center: DVec3::new(1000.0, 2000.0, -500.0),
+        radius: 3.0,
+    });
+    let fill = Edit::Fill(
+        Brush::Capsule {
+            a: DVec3::new(10.0, 20.0, 30.0),
+            b: DVec3::new(11.0, 21.0, 31.0),
+            radius: 1.5,
+        },
+        5,
+    );
+    assert_eq!(save.edits.log(), &[dig, fill]);
+    // And it is written as this version.
+    let again = Save::from_bytes(&save.to_bytes()).unwrap();
+    assert_eq!(again.edits.log(), save.edits.log());
+}
+
+#[test]
+fn the_version_2_fixture_reads_as_it_was_saved() {
+    let save = Save::from_bytes(V2).unwrap();
+    assert_eq!(
+        (save.planet.as_str(), save.tick, save.next_id),
+        ("planets/home.ron", 30, 9)
+    );
+    assert_eq!(save.entities, scene().entities);
+    assert_eq!(save.world.bodies.len(), 4);
+    assert_eq!(save.edits.len(), 1);
+    // The world in it is the scene's, bit for bit (the scene is deterministic), and saving
+    // it again gives the fixture's bytes.
+    assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
+    assert_eq!(save.to_bytes(), V2);
+}
+
+#[test]
+fn what_is_no_save_a_later_one_or_a_damaged_one_is_refused() {
+    assert_eq!(Save::from_bytes(b"hello").unwrap_err(), SaveError::NotASave);
+    let mut later = V2.to_vec();
+    later[8..12].copy_from_slice(&(VERSION + 1).to_le_bytes());
+    assert_eq!(
+        Save::from_bytes(&later).unwrap_err(),
+        SaveError::Newer(VERSION + 1)
+    );
+    for cut in (9..V2.len()).step_by(211) {
+        assert!(
+            matches!(Save::from_bytes(&V2[..cut]), Err(SaveError::Damaged(_))),
+            "cut at {cut}"
+        );
+    }
+    for cut in (9..V1.len()).step_by(7) {
+        assert!(
+            matches!(Save::from_bytes(&V1[..cut]), Err(SaveError::Damaged(_))),
+            "cut at {cut}"
+        );
+    }
+}
+
+#[test]
+fn a_section_of_a_later_version_is_skipped() {
+    let bytes = scene().to_bytes();
+    // One more section, with a tag this version does not know.
+    let mut w = Writer::new();
+    w.raw(&bytes[..12]);
+    let mut r = Reader::new(&bytes[12..]);
+    let n = r.varint().unwrap();
+    w.varint(n + 1);
+    w.raw(b"NEWS");
+    w.bytes_with_length(b"what a later game keeps");
+    w.raw(&bytes[12 + (bytes.len() - 12 - r.remaining())..]);
+    let read = Save::from_bytes(&w.finish()).unwrap();
+    assert_eq!(read.to_bytes(), bytes);
+}

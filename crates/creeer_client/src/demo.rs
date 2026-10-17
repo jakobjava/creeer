@@ -41,15 +41,21 @@ pub struct DemoMeshes {
     pub cube: MeshId,
     pub cylinder: MeshId,
     pub sphere: MeshId,
+    /// The physics sandbox's hulls (`hulls.rs`), at their own size.
+    pub hulls: [MeshId; crate::hulls::HULLS],
 }
 
 impl DemoMeshes {
-    /// Registers unit-sized primitives (1 m across) in the renderer's arena.
+    /// Registers unit-sized primitives (1 m across) and the sandbox's hulls in the renderer's
+    /// arena.
     pub fn register(arena: &mut MeshArena) -> Self {
         Self {
             cube: arena.add(&MeshData::cuboid(Vec3::splat(0.5))),
             cylinder: arena.add(&MeshData::cylinder(0.5, 0.5, 24)),
             sphere: arena.add(&MeshData::uv_sphere(0.5, 32, 16)),
+            hulls: crate::hulls::catalogue()
+                .each_ref()
+                .map(|h| arena.add(&crate::hulls::mesh(h))),
         }
     }
 }
@@ -304,6 +310,7 @@ pub fn camera_preset(name: &str, origin: DVec3) -> Option<Camera> {
         "physics" => (DVec3::new(-74.0, 11.0, 34.0), -0.15, -0.2),
         "crash" => (DVec3::new(-82.0, 3.0, 7.0), -0.4, -0.26),
         "stacks" => (DVec3::new(-76.0, 4.0, 9.0), 0.42, -0.25),
+        "rocks" => (DVec3::new(-75.5, 3.2, 6.5), 0.5, -0.3),
         _ => return None,
     };
     let mut camera = Camera::new(origin + position);
@@ -361,7 +368,7 @@ mod tests {
     fn presets_exist() {
         for name in [
             "overview", "factory", "closeup", "top", "far", "orbit", "horizon", "physics", "crash",
-            "stacks",
+            "stacks", "rocks",
         ] {
             assert!(camera_preset(name, DVec3::ZERO).is_some(), "{name}");
         }

@@ -12,32 +12,55 @@ mod crush_tests;
 mod detect;
 pub mod frame;
 mod friction;
+#[cfg(test)]
+mod friction_tests;
 pub mod ground;
+mod ground_hull;
+mod ground_rise;
+mod ground_sample;
+#[cfg(test)]
+mod ground_tests;
+pub mod hull;
+mod hull_build;
+#[cfg(test)]
+mod hull_contact_tests;
+#[cfg(test)]
+mod hull_ground_tests;
+#[cfg(test)]
+mod hull_motion_tests;
+mod hull_narrow;
+mod hull_sat;
+#[cfg(test)]
+mod hull_tests;
 mod impact;
+#[cfg(test)]
+mod load_tests;
 pub mod narrow;
 mod pass;
 #[cfg(test)]
 mod pile_tests;
 #[cfg(test)]
 mod planet_tests;
+mod query;
 mod sat;
+mod save;
 pub mod shape;
 mod sleep;
 mod stepping;
+pub mod surface;
 #[cfg(test)]
 mod tests;
+mod turn;
 
 use crate::gravity::PlanetGravity;
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
 use contact::{Contact, Contacts};
 use creeer_math::glam::{DQuat, DVec3};
 use ground::Ground;
+pub use query::{Support, Touch};
 use shape::{Shape, StaticShape};
 use std::sync::Arc;
-/// Largest turn of a box within one (sub)step (rad).
-const MAX_TURN: f64 = 0.05;
-/// Most substeps per step.
-const MAX_SUBSTEPS: usize = 16;
+use surface::Surface;
 
 /// A body of the world: a structure (or a rigid body: one node, no members) with collision
 /// shapes on its nodes.
@@ -53,6 +76,8 @@ pub struct Body {
     pub friction: f64,
     /// Coefficient of restitution of its surface (0: no bounce, 1: elastic).
     pub restitution: f64,
+    /// What its surface is made of (contact stiffness, `surface.rs`).
+    pub surface: Surface,
     /// Whether it is asleep (at rest, not stepped).
     pub sleep: sleep::Sleep,
     /// Whether its last step was an impact in which members still flowed plastically.
@@ -72,8 +97,13 @@ impl Body {
         Self::new(structure, vec![(0, shape)], dt)
     }
 
-    /// A structure whose joints collide as balls as thick as their thickest member.
+    /// A structure whose joints collide as balls as thick as their thickest member, with the
+    /// surface of its members' material (the first member's).
     pub fn structure(structure: Structure, dt: f64) -> Self {
+        let surface = structure
+            .elements
+            .first()
+            .map_or(Surface::STEEL, |e| Surface::of(&e.material));
         let mut radius = vec![0.0f64; structure.node_count()];
         for e in &structure.elements {
             let r = e.section.extent[0].max(e.section.extent[1]);
@@ -86,7 +116,9 @@ impl Body {
             .filter(|(_, r)| *r > 0.0)
             .map(|(node, radius)| (node, Shape::Sphere { radius }))
             .collect();
-        Self::new(structure, shapes, dt)
+        let mut body = Self::new(structure, shapes, dt);
+        body.surface = surface;
+        body
     }
 
     fn new(structure: Structure, shapes: Vec<(NodeId, Shape)>, dt: f64) -> Self {
@@ -96,6 +128,7 @@ impl Body {
             shapes,
             friction: 0.5,
             restitution: 0.2,
+            surface: Surface::STEEL,
             sleep: sleep::Sleep::default(),
             crushing: false,
         }
@@ -117,8 +150,8 @@ pub struct World {
     pub static_friction: f64,
     /// Restitution of the fixed geometry.
     pub static_restitution: f64,
-    /// Penalty stiffness per contact point (N/m): 1e8 gives 1 mm of penetration per 100 kN.
-    pub contact_stiffness: f64,
+    /// What the fixed geometry and the ground are made of.
+    pub static_surface: Surface,
     /// Contacts of the last step.
     pub contacts: Vec<Contact>,
     /// The groups of the last step: their bodies and contacts (member indices refer to the
@@ -139,7 +172,7 @@ impl World {
             planet: None,
             static_friction: 0.6,
             static_restitution: 0.5,
-            contact_stiffness: 1.0e8,
+            static_surface: Surface::CONCRETE,
             contacts: Vec::new(),
             groups: Vec::new(),
             anchors: Vec::new(),
@@ -157,52 +190,23 @@ impl World {
         if let Some(planet) = &self.planet {
             body.structure.gravity = DVec3::ZERO;
             body.structure.planet = Some(planet.clone());
+            // A planet's potential is measured from each node's rest place. A body built
+            // elsewhere and put here (a frame built about the origin: the planet's centre)
+            // would have it measured from there: infinite at the centre, and lost in rounding
+            // far from it, so the energy guard and the impact budget went blind (a crushed
+            // frame's velocities became NaN, F5). Its rest shape is moved, whole, to it.
+            let s = &mut body.structure;
+            #[allow(clippy::cast_precision_loss)] // a count
+            let n = s.position.len() as f64;
+            let shift = (s.position.iter().sum::<DVec3>() - s.rest.iter().sum::<DVec3>()) / n;
+            for r in &mut s.rest {
+                *r += shift;
+            }
         }
         // The body may have been changed since its solver was made (velocity, gravity).
         body.solver.reset_history(&body.structure);
         self.bodies.push(body);
         self.bodies.len() - 1
-    }
-
-    /// Advances the world by one step, split into substeps while boxes turn fast: contacts
-    /// are found at the start of a (sub)step with fixed normals and points, which describe a
-    /// box that turns 0.3 rad in the step (a crate struck by a ball, 18 rad/s) badly enough
-    /// to let corners pass into neighbours unnoticed. Substeps keep the turn below
-    /// [`MAX_TURN`].
-    pub fn step(&mut self) {
-        let turn = self
-            .bodies
-            .iter()
-            .filter(|b| !b.sleep.asleep)
-            .flat_map(|b| {
-                let s = &b.structure;
-                b.shapes
-                    .iter()
-                    .filter(|(_, shape)| matches!(shape, Shape::Box { .. }))
-                    .map(move |&(node, _)| s.angular_velocity[node].length())
-            })
-            .fold(0.0, f64::max)
-            * self.dt;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // small, clamped
-        let n = ((turn / MAX_TURN).ceil() as usize).clamp(1, MAX_SUBSTEPS);
-        if n == 1 {
-            self.step_once();
-            return;
-        }
-        let dt = self.dt;
-        #[allow(clippy::cast_precision_loss)]
-        let h = dt / n as f64;
-        for b in &mut self.bodies {
-            b.solver.set_time_step(&b.structure, h);
-        }
-        self.dt = h;
-        for _ in 0..n {
-            self.step_once();
-        }
-        self.dt = dt;
-        for b in &mut self.bodies {
-            b.solver.set_time_step(&b.structure, dt);
-        }
     }
 
     /// One (sub)step of `self.dt`.
@@ -240,6 +244,60 @@ impl World {
             self.groups.push((group, contacts));
         }
         self.update_sleep(&groups);
+    }
+
+    /// Removes the bodies `keep` refuses, the rest in their order, and returns each old
+    /// index's new one. What the world kept of the last step is renumbered (friction
+    /// anchors) or dropped (its contacts and groups, found again in the next step): left as
+    /// they were, they would join other bodies than they did.
+    pub fn retain_bodies(
+        &mut self,
+        mut keep: impl FnMut(usize, &Body) -> bool,
+    ) -> Vec<Option<usize>> {
+        let mut next = 0;
+        let map: Vec<Option<usize>> = self
+            .bodies
+            .iter()
+            .enumerate()
+            .map(|(i, body)| {
+                keep(i, body).then(|| {
+                    next += 1;
+                    next - 1
+                })
+            })
+            .collect();
+        let mut index = 0;
+        self.bodies.retain(|_| {
+            index += 1;
+            map[index - 1].is_some()
+        });
+        self.renumber(&map);
+        map
+    }
+
+    /// Takes body `index` out of the world (the bodies after it move down by one), as
+    /// [`Self::retain_bodies`] does.
+    pub fn remove_body(&mut self, index: usize) -> Body {
+        let body = self.bodies.remove(index);
+        let map: Vec<Option<usize>> = (0..=self.bodies.len())
+            .map(|i| match i.cmp(&index) {
+                std::cmp::Ordering::Less => Some(i),
+                std::cmp::Ordering::Equal => None,
+                std::cmp::Ordering::Greater => Some(i - 1),
+            })
+            .collect();
+        self.renumber(&map);
+        body
+    }
+
+    fn renumber(&mut self, map: &[Option<usize>]) {
+        self.anchors = self
+            .anchors
+            .iter()
+            .filter_map(|a| a.renumbered(map))
+            .collect();
+        self.contacts.clear();
+        self.groups.clear();
     }
 
     /// Total mechanical energy (J): all bodies, plus the elastic energy stored in contacts.

@@ -112,4 +112,12 @@ fn state_hash_is_identical_on_every_platform() {
 
 // Regenerated once, for a deliberate change of the model: member damping moved in series
 // with the plastic slider (ADR-0005). The old value came back exactly with the old damper.
-const GOLDEN_STRUCTURE_HASH: u64 = 0x3c29_4c75_dfec_43b5;
+// Regenerated again in F5 for the solver's stricter stop (no rate of convergence trusted after
+// a step that did not shrink, and a step the line search cut short not taken for the end;
+// `minimise.rs`): with the old stop the previous value (0x3c29_4c75_dfec_43b5) came back
+// exactly.
+// And for S235 hardening and its strain-rate sensitivity (F5, `flow.rs`): with S235
+// perfectly plastic the previous value (0xdb38_6119_4e85_05be) came back exactly.
+// And for the members' bowing (their geometric stiffness, `element.rs`): without it the
+// previous value (0x60ba_75d4_768b_c786) came back exactly.
+const GOLDEN_STRUCTURE_HASH: u64 = 0xeac4_63cf_00dd_3832;

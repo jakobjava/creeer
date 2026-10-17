@@ -30,7 +30,8 @@ pub(super) struct Snapshot {
 impl ImplicitSolver {
     /// Advances `structure` by one step.
     pub fn step(&mut self, structure: &mut Structure) {
-        step_group(&mut [(structure, self)], &mut NoCoupling);
+        step_group(&mut [(&mut *structure, &mut *self)], &mut NoCoupling);
+        self.split_compressed(structure);
     }
 
     pub(super) fn save(&mut self, s: &Structure) {
@@ -110,14 +111,24 @@ impl ImplicitSolver {
     pub(super) fn finish_substep(&mut self, s: &mut Structure) {
         let beta = self.work.beta;
         let w = &self.work;
-        for i in 0..s.node_count() {
-            s.velocity[i] = (s.position[i] - w.x_hat[i]) / beta;
-            s.angular_velocity[i] = so3::log(s.orientation[i] * w.q_hat[i].conjugate()) / beta;
-            // At the minimum M·(x − x*)/β² = f: this is the new acceleration.
-            self.acceleration[i] = (s.position[i] - w.x_star[i]) / (beta * beta);
-            self.angular_acceleration[i] =
-                so3::log(s.orientation[i] * w.q_star[i].conjugate()) / (beta * beta);
-        }
+        // Every node on its own (in parallel: the same arithmetic per node, so the same bits).
+        (
+            s.velocity.par_iter_mut(),
+            s.angular_velocity.par_iter_mut(),
+            self.acceleration.par_iter_mut(),
+            self.angular_acceleration.par_iter_mut(),
+        )
+            .into_par_iter()
+            .enumerate()
+            .with_min_len(128)
+            .for_each(|(i, (v, omega, a, alpha))| {
+                let (x, q) = (s.position[i], s.orientation[i]);
+                *v = (x - w.x_hat[i]) / beta;
+                *omega = so3::log(q * w.q_hat[i].conjugate()) / beta;
+                // At the minimum M·(x − x*)/β² = f: this is the new acceleration.
+                *a = (x - w.x_star[i]) / (beta * beta);
+                *alpha = so3::log(q * w.q_star[i].conjugate()) / (beta * beta);
+            });
     }
 
     /// For a rigid body (one node, no members): the dense 6×6 Newton matrix
@@ -200,11 +211,30 @@ impl ImplicitSolver {
         let beta = self.work.beta;
         // Per node: x̂, q̂, x*, q*, inertia at q*, rotation of q̂ (in parallel; every node is
         // independent, so the result does not depend on the threads).
-        let this = &*self;
-        let predicted: Vec<_> = (0..s.node_count())
+        // Written in place, each node by itself (the work arrays in parallel, by node).
+        let this = (
+            &self.previous_x,
+            &self.previous_v,
+            &self.previous_q,
+            &self.previous_w,
+            &self.acceleration,
+            &self.angular_acceleration,
+        );
+        let w = &mut self.work;
+        (
+            w.x_hat.par_iter_mut(),
+            w.q_hat.par_iter_mut(),
+            w.x_star.par_iter_mut(),
+            w.q_star.par_iter_mut(),
+            w.inertia_star.par_iter_mut(),
+            w.rotations.par_iter_mut(),
+            w.drag_rate.par_iter_mut(),
+        )
             .into_par_iter()
+            .enumerate()
             .with_min_len(128)
-            .map(|i| {
+            .for_each(|(i, out)| {
+                let (previous_x, previous_v, previous_q, previous_w, acceleration, angular) = this;
                 let (x, v) = (s.position[i], s.velocity[i]);
                 let (q, omega) = (s.orientation[i], s.angular_velocity[i]);
                 // Rotation carries angular momentum L = I·ω, not ω: when the inertia turns
@@ -213,12 +243,13 @@ impl ImplicitSolver {
                     let r = DMat3::from_quat(q);
                     r * s.inertia[i] * r.transpose()
                 };
-                let momentum = world_inertia(q) * omega;
+                let inertia_q = world_inertia(q);
+                let momentum = inertia_q * omega;
                 let transport = |q_hat: DQuat, w: DVec3| {
                     if q_hat == q {
                         w
                     } else {
-                        world_inertia(q_hat).inverse() * (momentum + world_inertia(q) * (w - omega))
+                        world_inertia(q_hat).inverse() * (momentum + inertia_q * (w - omega))
                     }
                 };
                 // x* = x̂ + β·v̂, and the new velocity will be (x − x̂)/β.
@@ -230,7 +261,7 @@ impl ImplicitSolver {
                         // Carry L to the predicted end orientation q* = exp(β·w)·q̂, which itself
                         // depends on w: a small fixed point (3 iterations reach ~1e-9 at 0.1 rad
                         // per step). Without it L drifts 1.8 % per step for a tumbling box.
-                        let alpha = this.angular_acceleration[i] * beta;
+                        let alpha = angular[i] * beta;
                         let mut w = transport(q_hat, omega) + alpha;
                         if q_hat != q {
                             for _ in 0..3 {
@@ -238,15 +269,14 @@ impl ImplicitSolver {
                                 w = transport(q_end, omega) + alpha;
                             }
                         }
-                        (x + v * beta, v + this.acceleration[i] * beta, q_hat, w)
+                        (x + v * beta, v + acceleration[i] * beta, q_hat, w)
                     }
                     Scheme::Bdf2 => {
-                        let q_hat =
-                            so3::exp(so3::log(q * this.previous_q[i].conjugate()) / 3.0) * q;
-                        let w = transport(q_hat, (4.0 * omega - this.previous_w[i]) / 3.0);
+                        let q_hat = so3::exp(so3::log(q * previous_q[i].conjugate()) / 3.0) * q;
+                        let w = transport(q_hat, (4.0 * omega - previous_w[i]) / 3.0);
                         (
-                            x + (x - this.previous_x[i]) / 3.0,
-                            (4.0 * v - this.previous_v[i]) / 3.0,
+                            x + (x - previous_x[i]) / 3.0,
+                            (4.0 * v - previous_v[i]) / 3.0,
                             q_hat,
                             w,
                         )
@@ -255,52 +285,37 @@ impl ImplicitSolver {
                 let x_star = x_hat + v_hat * s.free_translation[i] * beta;
                 let q_star = (so3::exp(w_hat * s.free_rotation[i] * beta) * q_hat).normalize();
                 let r = DMat3::from_quat(q_star);
-                let inertia = r * s.inertia[i] * r.transpose();
-                (
-                    x_hat,
-                    q_hat,
-                    x_star,
-                    q_star,
-                    inertia,
-                    DMat3::from_quat(q_hat),
-                    s.drag[i] * v.length(),
-                )
-            })
-            .collect();
+                *out.4 = r * s.inertia[i] * r.transpose();
+                (*out.0, *out.1, *out.2, *out.3) = (x_hat, q_hat, x_star, q_star);
+                *out.5 = DMat3::from_quat(q_hat);
+                *out.6 = s.drag[i] * v.length();
+            });
         self.previous_x.clone_from(&s.position);
         self.previous_v.clone_from(&s.velocity);
         self.previous_q.clone_from(&s.orientation);
         self.previous_w.clone_from(&s.angular_velocity);
         let w = &mut self.work;
-        for (i, (x_hat, q_hat, x_star, q_star, inertia, rotation, drag)) in
-            predicted.into_iter().enumerate()
-        {
-            w.x_hat[i] = x_hat;
-            w.q_hat[i] = q_hat;
-            w.x_star[i] = x_star;
-            w.q_star[i] = q_star;
-            w.inertia_star[i] = inertia;
-            w.rotations[i] = rotation;
-            w.drag_rate[i] = drag;
-        }
         w.set_coriolis(
             s,
             Some((&self.acceleration, &self.angular_acceleration, self.h)),
         );
-        let (x_hat, rotations, tau) = (&w.x_hat, &w.rotations, w.tau);
+        let (x_hat, rotations, tau, h) = (&w.x_hat, &w.rotations, w.tau, w.h);
+        let beta = w.beta;
         s.elements
             .par_iter()
             .zip(&mut w.s_hat)
-            .zip(&mut w.caps)
+            .zip(w.caps.par_iter_mut().zip(&mut w.scaled))
             .with_min_len(128)
-            .for_each(|((e, s_hat), caps)| {
+            .for_each(|((e, s_hat), (caps, scaled))| {
                 *s_hat = e.measures(x_hat[e.a], rotations[e.a], x_hat[e.b], rotations[e.b]);
                 // The elastic part at x̂: x̂ continues the plastic flow too.
                 for (s, rate) in s_hat.iter_mut().zip(&e.flow_rate) {
                     *s -= tau * rate;
                 }
                 // Plastic capacities for this step, from the axial force at its start.
-                *caps = e.capacities(s_hat);
+                *caps = e.capacities(s_hat, h);
+                let gamma = e.material.damping / beta;
+                *scaled = caps.map(|f| f.scaled(1.0 + gamma));
             });
     }
 }

@@ -1,18 +1,21 @@
-//! The F3 planet sandbox in the client: the reference planet's terrain streamed around the
-//! camera, physics on it (its own simulation thread), day and night, digging and filling.
+//! The planet sandbox in the client: the planet's terrain streamed around the camera, the
+//! world on it as the server tells it (one this process hosts, or a dedicated one:
+//! `planet_net.rs`), the player's avatar to walk about with, day and night, digging and
+//! filling.
 //!
 //! Everything is in the planet's rotating frame (centre at the origin, axis +Y). The sun turns
 //! about the axis once per sidereal day (a stand-in until the orbits of F4).
 
-use crate::planet_sim::{Command, Commands, PlanetSim, PlanetSnapshot};
-use creeer_core::SimThread;
+use crate::physics_sandbox::PhysicsSnapshot;
+use crate::planet_net::PlanetSession;
 use creeer_math::det;
 use creeer_math::glam::{DQuat, DVec3};
+use creeer_net::message::Command;
 use creeer_render::{Atmosphere, Camera, Renderer, Sky, TerrainMeshData, TerrainVertex};
+use creeer_terrain::Terrain;
 use creeer_terrain::chunk::ChunkKey;
 use creeer_terrain::stream::{StreamSettings, Streamer};
-use creeer_terrain::{Planet, Terrain};
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 /// Lowest height of the camera above the ground (m).
 const CAMERA_CLEARANCE: f64 = 1.5;
@@ -32,29 +35,34 @@ pub enum Tool {
     Crate,
     /// Drop a ball.
     Ball,
+    /// Put down a steel frame.
+    Frame,
 }
 
 impl Tool {
     /// All tools with their names.
-    pub const ALL: [(Self, &'static str); 5] = [
+    pub const ALL: [(Self, &'static str); 6] = [
         (Self::Dig, "dig"),
         (Self::Fill, "fill"),
         (Self::Tunnel, "tunnel"),
         (Self::Crate, "crate"),
         (Self::Ball, "ball"),
+        (Self::Frame, "frame"),
     ];
 }
 
 /// The running planet sandbox.
 pub struct PlanetView {
-    /// The planet's terrain (shared with the simulation and the terrain workers).
+    /// The planet's terrain as this client has it (shared with the terrain workers).
     pub terrain: Arc<Terrain>,
-    pub(crate) sim: SimThread<PlanetSim>,
-    pub(crate) commands: Commands,
+    /// The game.
+    pub session: PlanetSession,
+    /// Whether the player walks their avatar (else the camera flies free).
+    pub walking: bool,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
-    /// Terrain chunks to draw this frame, with their skirt faces.
+    /// Terrain chunks to draw this frame, with their cap faces.
     pub draw: Vec<(u64, u8)>,
     /// Active tool.
     pub tool: Tool,
@@ -85,39 +93,51 @@ pub fn render_mesh(terrain: &Terrain, key: ChunkKey) -> Option<TerrainMeshData> 
         .zip(&mesh.normals)
         .zip(&mesh.materials)
         .zip(&mesh.openness)
-        .map(|(((p, n), &m), &open)| {
+        .zip(mesh.coarse_normals.iter().zip(&mesh.morph))
+        .map(|((((p, n), &m), &open), (coarse, &morph))| {
             let color = rocks.get(usize::from(m)).map_or([128; 3], |r| r.color);
-            TerrainVertex::new(*p, *n, open, color, 0.88)
+            TerrainVertex::new(*p, *n, open, color, 0.88).with_coarser(*coarse, morph)
         })
         .collect();
     let index = |i: usize| u32::try_from(i).expect("chunk mesh too large");
     Some(TerrainMeshData {
         vertices,
         surface_indices: index(mesh.surface_indices),
-        skirts: mesh
-            .skirt_faces
+        caps: mesh
+            .cap_faces
             .clone()
             .map(|r| (index(r.start), index(r.end))),
         indices: mesh.indices,
+        #[allow(clippy::cast_possible_truncation)] // chunk sizes fit f32
+        chunk_size: key.size() as f32,
     })
 }
 
-/// Loads the reference planet.
-pub fn load_terrain() -> Result<Arc<Terrain>, String> {
-    let path = creeer_terrain::data_path("planets/home.ron");
-    let planet = Planet::load(&path).map_err(|e| e.to_string())?;
-    Ok(Arc::new(Terrain::new(planet)))
-}
-
 impl PlanetView {
-    /// Starts the sandbox on `terrain`.
-    pub fn new(terrain: Arc<Terrain>, tick_rate_hz: u32) -> Self {
-        let (sim, commands) = PlanetSim::new(Arc::clone(&terrain), 1.0 / f64::from(tick_rate_hz));
+    /// A singleplayer game on the reference planet (its server hosted in this process).
+    ///
+    /// # Errors
+    /// If the planet cannot be loaded.
+    pub fn singleplayer() -> Result<Self, String> {
+        let (session, terrain) = PlanetSession::singleplayer()?;
+        Ok(Self::new(session, terrain))
+    }
+
+    /// A game on the dedicated server at `server`, as `name`.
+    ///
+    /// # Errors
+    /// If it cannot be joined.
+    pub fn connect(server: std::net::SocketAddr, name: &str) -> Result<Self, String> {
+        let (session, terrain) = PlanetSession::connect(server, name)?;
+        Ok(Self::new(session, terrain))
+    }
+
+    fn new(session: PlanetSession, terrain: Arc<Terrain>) -> Self {
         let streamer = Streamer::new(Arc::clone(&terrain), StreamSettings::default(), render_mesh);
         let fill_rock = terrain.planet().geology.rocks.rock("granite").unwrap_or(0);
         Self {
-            sim: SimThread::spawn(sim, tick_rate_hz),
-            commands,
+            session,
+            walking: false,
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),
@@ -129,29 +149,25 @@ impl PlanetView {
         }
     }
 
-    /// Sends a command to the simulation.
-    pub fn send(&self, command: Command) {
-        self.commands
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(command);
+    /// Asks the world for something.
+    pub fn send(&mut self, command: Command) {
+        self.session.command(command);
     }
 
-    /// The latest simulation state.
-    pub fn snapshot(&self) -> creeer_core::Published<PlanetSnapshot> {
-        self.sim.latest()
+    /// What there is to draw now.
+    pub fn snapshot(&self) -> PhysicsSnapshot {
+        self.session.snapshot()
     }
 
-    /// Chunks in memory and still queued.
+    /// Chunks in memory, and still to come (queued or being built).
     pub fn streaming(&self) -> (usize, usize) {
-        (self.streamer.cached(), self.streamer.queued)
+        (self.streamer.cached(), self.streamer.outstanding())
     }
 
     /// Streams terrain for `camera`: uploads finished chunks, frees evicted ones, rebuilds
     /// chunks the simulation's edits touched, and chooses the chunks to draw.
     pub fn update_terrain(&mut self, renderer: &mut Renderer, camera: DVec3) {
-        let snapshot = self.sim.latest().current;
-        let generation = snapshot.edits_generation;
+        let generation = self.session.connection.edits_generation;
         if generation != self.seen_edits.0 {
             // All edits were replaced: rebuild everything that is cached.
             self.streamer
@@ -176,7 +192,7 @@ impl PlanetView {
         }
         self.draw.clear();
         self.draw
-            .extend(update.draw.iter().map(|(key, skirts)| (key.id(), *skirts)));
+            .extend(update.draw.iter().map(|(key, caps)| (key.id(), *caps)));
     }
 
     /// Height of `p` above the ground below it (m; negative underground).
@@ -184,6 +200,29 @@ impl PlanetView {
         self.terrain.density(p)
     }
 
+    /// The walk asked of the avatar: `forward` and `right` (−1 to 1 each) along the camera's
+    /// heading on the avatar's horizon, at `speed` (m/s).
+    pub fn walk(&self, camera: &Camera, (forward, right): (f64, f64), speed: f64) -> DVec3 {
+        let Some(avatar) = self.session.connection.avatar() else {
+            return DVec3::ZERO;
+        };
+        let up = avatar.position.normalize();
+        let flat = |v: DVec3| (v - up * v.dot(up)).normalize_or_zero();
+        (flat(camera.forward()) * forward + flat(camera.right()) * right).normalize_or_zero()
+            * speed
+    }
+
+    /// Puts the camera behind and above the avatar, looking the way it looks, never in the
+    /// ground.
+    pub fn follow(&self, camera: &mut Camera) {
+        let Some(avatar) = self.session.connection.avatar() else {
+            return;
+        };
+        let up = avatar.position.normalize();
+        camera.level_to(up);
+        camera.position = avatar.position + up * 1.2 - camera.forward() * 4.5;
+        self.constrain_camera(camera);
+    }
     /// Keeps the camera level with the local horizon and above the ground.
     pub fn constrain_camera(&self, camera: &mut Camera) {
         let up = camera.position.normalize();
@@ -239,34 +278,36 @@ impl PlanetView {
     }
 
     /// Applies the active tool where the camera looks.
-    pub fn use_tool(&self, camera: &Camera) {
+    pub fn use_tool(&mut self, camera: &Camera) {
         let dir = camera.forward();
         let Some(hit) = self.raycast(camera.position, dir, TOOL_REACH) else {
             return;
         };
         let up = hit.normalize();
         use creeer_terrain::edits::{Brush, Edit};
-        let command = match self.tool {
-            Tool::Dig => Command::Edit(Edit::Dig(Brush::Sphere {
+        let edit = match self.tool {
+            Tool::Dig => Edit::Dig(Brush::Sphere {
                 center: hit,
                 radius: 2.0,
-            })),
-            Tool::Fill => Command::Edit(Edit::Fill(
+            }),
+            Tool::Fill => Edit::Fill(
                 Brush::Sphere {
                     center: hit + up * 1.0,
                     radius: 2.0,
                 },
                 self.fill_rock,
-            )),
-            Tool::Tunnel => Command::Edit(Edit::Dig(Brush::Capsule {
+            ),
+            Tool::Tunnel => Edit::Dig(Brush::Capsule {
                 a: hit - dir * 0.5,
                 b: hit + dir * 12.0,
                 radius: 2.5,
-            })),
-            Tool::Crate => Command::Crate(hit + up * 2.0),
-            Tool::Ball => Command::Ball(hit + up * 2.0),
+            }),
+            Tool::Crate => return self.send(Command::Crate(hit + up * 2.0)),
+            Tool::Ball => return self.send(Command::Ball(hit + up * 2.0)),
+            // The server lifts it clear of the ground (on a slope, of its corners too).
+            Tool::Frame => return self.send(Command::Frame(hit)),
         };
-        self.send(command);
+        self.session.edit(edit);
     }
 
     /// A camera far out in space, looking at the sunlit side of the planet.

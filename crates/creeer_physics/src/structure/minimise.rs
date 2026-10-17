@@ -1,5 +1,6 @@
 //! The joint minimisation of a group's incremental potential (see `group.rs`).
 
+use super::coupled::Coupled;
 use super::group::{Coupling, Member, states, trial_states};
 use super::lbfgs::Lbfgs;
 use super::rigid_system::RigidSystem;
@@ -38,6 +39,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
         v.update_turns(s);
     }
     residuals(members, coupling, &mut gradient);
+    // A NaN compares false with everything: the line search would find no decrease and the
+    // step would stop where it began, as if converged (a NaN dashpot did, F5).
+    debug_assert!(objective.is_finite(), "the step's objective is {objective}");
     members[0].1.timings.residual += t.elapsed();
     let rigid: Vec<Option<[[f64; 6]; 6]>> = (0..members.len())
         .map(|m| {
@@ -54,6 +58,8 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
         }
     }
     let mut system = RigidSystem::new(members, coupling, &rigid);
+    // Rigid bodies resting only on structures: solved jointly with them (`coupled.rs`).
+    let coupled = Coupled::new(members, coupling, &rigid, system.as_ref());
     let offsets: Vec<usize> = members
         .iter()
         .scan(0, |offset, (_, v)| {
@@ -62,14 +68,17 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             Some(start)
         })
         .collect();
-    let (tolerance, max_iterations) = (members[0].1.tolerance, members[0].1.max_iterations);
+    let (tolerance, max_iterations) = (
+        members[0].1.tolerance.min(coupling.tolerance()),
+        members[0].1.max_iterations,
+    );
     let mut lbfgs = Lbfgs::default();
     let mut residual: Vec<DVec3> = members
         .iter()
         .flat_map(|(_, v)| v.work.direction.iter().copied())
         .collect();
     let mut direction = residual.clone();
-    let mut previous_move = f64::INFINITY;
+    let (mut previous_move, mut previous_rate) = (f64::INFINITY, None);
     let mut lag_updates = 0;
     let mut refactored = false;
     for _ in 0..max_iterations {
@@ -84,8 +93,11 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
         }
         direction.copy_from_slice(&residual);
         lbfgs.direction(&mut direction, |all| {
+            let kept = coupled.as_ref().map(|c| c.residuals(all, &offsets));
             for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
-                if system.as_ref().is_some_and(|j| j.contains(m)) {
+                if system.as_ref().is_some_and(|j| j.contains(m))
+                    || coupled.as_ref().is_some_and(|c| c.contains(m))
+                {
                     continue;
                 }
                 let range = offsets[m]..offsets[m] + v.work.direction.len();
@@ -93,6 +105,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             }
             if let Some(joint) = system.as_mut() {
                 joint.solve(all, &offsets);
+            }
+            if let (Some(c), Some(kept)) = (coupled.as_ref(), kept.as_ref()) {
+                c.solve(all, kept, &offsets);
             }
         });
         let mut offset = 0;
@@ -128,7 +143,29 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
         }
         members[0].1.timings.objective += t.elapsed();
         let Some((value, members_value, elastic, first_trial)) = accepted else {
-            break; // G is at its minimum to machine precision.
+            // G is at its minimum to machine precision: converged, so the lagged quantities
+            // are refreshed as below. (Stopping here without the refresh left a box starting
+            // exactly on a ramp without friction for its first step, found in F5.)
+            if lag_updates == 3 || !coupling.update_lag(&states(members)) {
+                break;
+            }
+            lag_updates += 1;
+            // Go on from here with the refreshed quantities, as at the start.
+            objective = coupling.energy(&states(members));
+            for (s, v) in members.iter_mut() {
+                let (g, elastic) = v.work.evaluate(s, false, true);
+                objective += g;
+                v.work.current_elastic = elastic;
+                v.work.gather(s);
+            }
+            residuals(members, coupling, &mut gradient);
+            residual = members
+                .iter()
+                .flat_map(|(_, v)| v.work.direction.iter().copied())
+                .collect();
+            (previous_move, previous_rate) = (f64::INFINITY, None);
+            lbfgs.clear();
+            continue;
         };
         objective = value;
         let own = members_value;
@@ -139,15 +176,21 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             std::mem::swap(&mut s.orientation, &mut v.work.trial_q);
         }
         // Remaining error: with convergence at rate ρ (measured from the last two steps)
-        // about step·ρ/(1 − ρ); before a rate is known, the step itself.
+        // about step·ρ/(1 − ρ); before a rate is known, the step itself. A rate after one
+        // that showed no convergence (ρ ≥ 0.5) is not trusted: one sudden small step after
+        // steps that did not shrink says little (a ball rolling over bumps moved 0.23 mm,
+        // 0.23 mm, then 2 µm, and stopped with its force 4 % off, F5). A step the line
+        // search cut short is short for that, not for being near the end: the whole step
+        // proposed is what remains (one cut to 1/32 stopped another step 1 % off).
         let moved = alpha * longest;
-        let rate = moved / previous_move;
-        let remaining = if previous_move.is_finite() && rate < 0.5 {
-            moved * rate / (1.0 - rate)
-        } else {
-            moved
+        let rate = previous_move.is_finite().then(|| moved / previous_move);
+        #[allow(clippy::float_cmp)] // the full step, exactly
+        let remaining = match rate {
+            _ if alpha != 1.0 => longest,
+            Some(r) if r < 0.5 && previous_rate.is_none_or(|p| p < 0.5) => moved * r / (1.0 - r),
+            _ => moved,
         };
-        previous_move = moved;
+        (previous_move, previous_rate) = (moved, rate);
         if remaining < tolerance {
             // Converged with the lagged quantities: refresh them (at most 3 times) and go on
             // if they moved (IPC's lagged friction iterations).
@@ -157,7 +200,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             lag_updates += 1;
             objective = own + coupling.energy(&states(members));
             lag_changed = true;
-            previous_move = f64::INFINITY;
+            (previous_move, previous_rate) = (f64::INFINITY, None);
             lbfgs.clear();
         }
         if alpha < 0.25 && !refactored {

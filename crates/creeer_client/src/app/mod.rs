@@ -10,6 +10,8 @@ pub(crate) mod system;
 pub(crate) struct App {
     running: Option<Running>,
     pub(crate) error: Option<String>,
+    /// A dedicated server to join at once (`--connect`), and the player's name.
+    pub(crate) connect: Option<(std::net::SocketAddr, String)>,
 }
 
 /// User-adjustable sandbox settings.
@@ -62,7 +64,15 @@ impl ApplicationHandler for App {
             return;
         }
         match Running::new(event_loop) {
-            Ok(running) => self.running = Some(running),
+            Ok(mut running) => {
+                if let Some((server, name)) = self.connect.take()
+                    && let Err(e) = running.enter_connected(server, &name)
+                {
+                    self.error = Some(e);
+                    event_loop.exit();
+                }
+                self.running = Some(running);
+            }
             Err(error) => {
                 self.error = Some(error);
                 event_loop.exit();
@@ -85,7 +95,8 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } if !response.consumed => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
-                    if !(pressed && !event.repeat && app.system_key(code)) {
+                    if !(pressed && !event.repeat && (app.system_key(code) || app.planet_key(code)))
+                    {
                         app.fly.key(code, pressed);
                     }
                 }
@@ -105,7 +116,7 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } if !response.consumed && !app.egui_ctx.egui_wants_pointer_input() => {
-                if let Some(planet) = &app.planet {
+                if let Some(planet) = &mut app.planet {
                     planet.use_tool(&app.camera);
                 }
                 if let Some(system) = &app.system
@@ -266,7 +277,7 @@ impl Running {
         self.last_frame = now;
         self.frame_times.push(dt);
         if self.planet.is_some() {
-            self.planet_frame(now, dt);
+            self.planet_frame(dt);
             return;
         }
         if self.system.is_some() {

@@ -17,6 +17,7 @@ const CRATE: Material = Material::dielectric([0.72, 0.52, 0.30], 0.8);
 const BALL: Material = Material::metal([0.30, 0.30, 0.32], 0.5);
 const CONCRETE: Material = Material::dielectric([0.62, 0.61, 0.58], 0.9);
 const BROKEN: Material = Material::dielectric([0.15, 0.15, 0.15], 0.9);
+const GRANITE: Material = Material::dielectric([0.55, 0.52, 0.50], 0.85);
 
 /// The running physics scene.
 pub struct PhysicsView {
@@ -108,8 +109,9 @@ pub fn draw(
 ) {
     // Interpolate when both ticks have the same contents (always, within a scene).
     let lerp = |a: DVec3, b: DVec3| a.lerp(b, alpha);
-    let same =
-        previous.beams.len() == current.beams.len() && previous.boxes.len() == current.boxes.len();
+    let same = previous.beams.len() == current.beams.len()
+        && previous.boxes.len() == current.boxes.len()
+        && previous.hulls.len() == current.hulls.len();
     let utilisation = overlay == Overlay::Utilisation;
     for (k, &(a, b, radius, usage, broken)) in current.beams.iter().enumerate() {
         let (a, b) = if same {
@@ -147,6 +149,25 @@ pub fn draw(
             (c, q)
         };
         add_box(scene, meshes, origin, (c, q, half), CRATE);
+    }
+    for (k, &(c, q, index)) in current.hulls.iter().enumerate() {
+        let (c, q) = if same {
+            (
+                lerp(previous.hulls[k].0, c),
+                previous.hulls[k].1.slerp(q, alpha),
+            )
+        } else {
+            (c, q)
+        };
+        scene.add(
+            meshes.hulls[index],
+            Instance {
+                frame: Frame64::new(origin + c, q),
+                scale: Vec3::ONE,
+                material: GRANITE,
+                heat: None,
+            },
+        );
     }
     for &(c, radius) in &current.spheres {
         #[allow(clippy::cast_possible_truncation)]

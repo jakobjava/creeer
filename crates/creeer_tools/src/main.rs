@@ -1,8 +1,9 @@
 //! Developer tools: data validator, headless scenario runner, benchmarks.
 //!
-//! `creeer_tools bench-spikes [--metrics <file>] [--report-only]` measures the spikes against
-//! their budgets and optionally writes the metrics for `cargo xtask perf`. `--report-only`
-//! (used by CI) reports missed budgets as warnings instead of failing.
+//! `creeer_tools bench-spikes [--metrics <file>] [--report-only] [--only <section>]`
+//! measures the spikes against their budgets and optionally writes the metrics for
+//! `cargo xtask perf`. `--report-only` (used by CI) reports missed budgets as warnings
+//! instead of failing; `--only` runs one section (for comparing two builds quickly).
 
 mod image_diff;
 mod orbit_bench;
@@ -17,7 +18,9 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: creeer_tools <command>
 
 commands:
-  bench-spikes [--metrics <file>] [--report-only]   measure the spikes against their budgets
+  bench-spikes [--metrics <file>] [--report-only] [--only <section>]
+      measure the spikes against their budgets (sections: xpbd, meshing, solvers,
+      structures, world, terrain, orbit)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region";
 
@@ -38,7 +41,7 @@ fn main() -> ExitCode {
             _ => usage(),
         },
         Some("bench-spikes") => {
-            let (mut metrics, mut report_only) = (None, false);
+            let (mut metrics, mut report_only, mut only) = (None, false, None);
             let mut rest = args[1..].iter();
             while let Some(arg) = rest.next() {
                 match arg.as_str() {
@@ -47,10 +50,16 @@ fn main() -> ExitCode {
                         None => return usage(),
                     },
                     "--report-only" => report_only = true,
+                    "--only" => match rest.next() {
+                        Some(name) if spikes::SECTIONS.contains(&name.as_str()) => {
+                            only = Some(name.clone())
+                        }
+                        _ => return usage(),
+                    },
                     _ => return usage(),
                 }
             }
-            spikes::run(metrics.as_deref(), report_only)
+            spikes::run(metrics.as_deref(), report_only, only.as_deref())
         }
         _ => usage(),
     }

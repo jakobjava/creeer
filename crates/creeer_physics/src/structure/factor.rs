@@ -1,0 +1,114 @@
+//! The solver's matrix: built at the shape the structure has (or its rest shape), with the
+//! stiffness of the contacts at its nodes, and factorised; rebuilt when the shape has moved
+//! far from it, or the contacts changed it materially.
+
+use super::Structure;
+use super::solver::ImplicitSolver;
+use creeer_math::glam::{DMat3, DQuat};
+
+impl ImplicitSolver {
+    /// Takes the stiffness that contacts add at nodes into the factorised matrix, if it changed
+    /// materially since the last factorisation: other nodes touched, or a node's block changed
+    /// by more than half. Without it a structure resting on contacts converges slowly (the
+    /// matrix misses their stiffness; 48 iterations instead of 11 for a bridge on its piers).
+    /// Returns whether it refactorised.
+    pub(super) fn use_contact_stiffness(
+        &mut self,
+        structure: &Structure,
+        mut blocks: Vec<(usize, DMat3)>,
+    ) -> bool {
+        blocks.sort_by_key(|b| b.0);
+        let mut merged: Vec<(usize, DMat3)> = Vec::with_capacity(blocks.len());
+        for (node, h) in blocks {
+            match merged.last_mut() {
+                Some(last) if last.0 == node => last.1 += h,
+                _ => merged.push((node, h)),
+            }
+        }
+        let norm = |m: DMat3| m.to_cols_array().iter().map(|v| v * v).sum::<f64>().sqrt();
+        let same = merged.len() == self.contact_blocks.len()
+            && merged
+                .iter()
+                .zip(&self.contact_blocks)
+                .all(|((a, ha), (b, hb))| {
+                    a == b && norm(*ha - *hb) <= 0.5 * norm(*ha).max(norm(*hb))
+                });
+        if same {
+            return false;
+        }
+        self.contact_blocks = merged;
+        self.refactor(structure);
+        true
+    }
+
+    /// Rebuilds the matrix at the structure's current shape, e.g. after member properties
+    /// changed.
+    pub fn refactor(&mut self, structure: &Structure) {
+        self.factor(structure, true);
+    }
+
+    /// Builds and factorises the matrix at the rest shape or the `current` one.
+    ///
+    /// # Panics
+    /// If the matrix is not positive definite.
+    pub(super) fn factor(&mut self, structure: &Structure, current: bool) {
+        assert!(
+            self.try_factor(structure, current),
+            "matrix cannot be made positive definite"
+        );
+    }
+
+    /// As [`Self::factor`]; false if the matrix cannot be made positive definite (negative
+    /// masses or stiffnesses: never in a world that was stepped).
+    pub(super) fn try_factor(&mut self, structure: &Structure, current: bool) -> bool {
+        self.factorisations += 1;
+        if current {
+            self.factor_orientation.clone_from(&structure.orientation);
+        } else {
+            self.factor_orientation.fill(DQuat::IDENTITY);
+        }
+        self.factor_current = current;
+        self.factor_position.clone_from(if current {
+            &structure.position
+        } else {
+            &structure.rest
+        });
+        self.factor_broken.clear();
+        self.factor_broken
+            .extend(structure.elements.iter().map(|e| e.broken));
+        let beta = self.beta();
+        let blocks = 2 * structure.node_count();
+        let mut diag = vec![DMat3::ZERO; blocks];
+        let mut off = vec![DMat3::ZERO; structure.off_block_count()];
+        let damping = |e: usize| beta * beta + beta * structure.elements[e].material.damping;
+        structure.assemble(current, 1.0, damping, &mut diag, &mut off);
+        for &(node, h) in &self.contact_blocks {
+            let p = DMat3::from_diagonal(structure.block_mask(node));
+            diag[node] += p * h * p * (beta * beta);
+        }
+        // In exact arithmetic M + (β² + βc)·K is positive definite. With a mechanism (parts
+        // broken loose) and a huge β (statics) rounding can make it fail; the matrix is only
+        // a preconditioner, so a slightly shifted one is just as good. Never panic.
+        let scale = diag
+            .iter()
+            .map(|d| d.x_axis.x.max(d.y_axis.y).max(d.z_axis.z))
+            .fold(0.0, f64::max);
+        let mut shift = 0.0;
+        while self.chol.factor(&diag, &off).is_err() {
+            let next = if shift > 0.0 {
+                shift * 100.0
+            } else {
+                1e-12 * scale
+            };
+            for d in &mut diag {
+                *d += DMat3::IDENTITY * (next - shift);
+            }
+            // No progress (an empty or non-finite matrix), or past what rounding could need.
+            if !(next.is_finite() && next > shift && next <= scale) {
+                return false;
+            }
+            shift = next;
+        }
+        true
+    }
+}

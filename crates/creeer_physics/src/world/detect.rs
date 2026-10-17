@@ -24,7 +24,8 @@ impl World {
         let mut items = Vec::new();
         for (b, body) in self.bodies.iter().enumerate() {
             let s = &body.structure;
-            for &(node, shape) in &body.shapes {
+            for (node, shape) in &body.shapes {
+                let node = *node;
                 let radius = shape.bounding_radius();
                 let speed = s.velocity[node].length() + s.angular_velocity[node].length() * radius;
                 // Far enough to meet anything this body could reach in this step, twice over.
@@ -32,7 +33,7 @@ impl World {
                 items.push(Item {
                     body: b,
                     node,
-                    shape,
+                    shape: shape.clone(),
                     pose: Pose {
                         position: s.position[node],
                         rotation: s.orientation[node],
@@ -71,7 +72,7 @@ impl World {
                     continue;
                 }
                 let margin = a.margin + b.margin;
-                for raw in narrow::shapes((a.pose, a.shape), (b.pose, b.shape), margin) {
+                for raw in narrow::shapes((a.pose, &a.shape), (b.pose, &b.shape), margin) {
                     found.push((a.body, a.node, Some((b.body, b.node)), raw));
                 }
             }
@@ -79,12 +80,12 @@ impl World {
                 continue;
             }
             for fixed in &self.statics {
-                for raw in narrow::with_static((a.pose, a.shape), fixed, a.margin) {
+                for raw in narrow::with_static((a.pose, &a.shape), fixed, a.margin) {
                     found.push((a.body, a.node, None, raw));
                 }
             }
             if let Some(ground) = &self.ground {
-                for raw in super::ground::contacts(&**ground, a.pose, a.shape, a.margin) {
+                for raw in super::ground::contacts(&**ground, a.pose, &a.shape, a.margin) {
                     found.push((a.body, a.node, None, raw));
                 }
             }

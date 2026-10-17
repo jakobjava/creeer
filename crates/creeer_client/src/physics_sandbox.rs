@@ -19,14 +19,17 @@ pub enum PhysicsScene {
     Crash,
     /// Stacks of crates, hit by a heavy ball.
     Stacks,
+    /// Rocks (convex hulls) dropped onto a ramp, a hexagonal prism and wedges at its foot.
+    Rocks,
 }
 
 impl PhysicsScene {
     /// All scenes with their names.
-    pub const ALL: [(Self, &'static str); 3] = [
+    pub const ALL: [(Self, &'static str); 4] = [
         (Self::Bridge, "bridge under load"),
         (Self::Crash, "crash test"),
         (Self::Stacks, "stacking"),
+        (Self::Rocks, "rock pile"),
     ];
 }
 
@@ -45,6 +48,8 @@ pub struct PhysicsSnapshot {
     pub boxes: Vec<(DVec3, DQuat, DVec3)>,
     /// Balls: centre, radius.
     pub spheres: Vec<(DVec3, f64)>,
+    /// Hulls: centre, orientation, which of the catalogue (`hulls.rs`).
+    pub hulls: Vec<(DVec3, DQuat, usize)>,
     /// Members: ends, radius, utilisation (0 unloaded, 1 yielding), broken.
     pub beams: Vec<(DVec3, DVec3, f64, f32, bool)>,
     /// Fixed boxes (walls, piers): centre, orientation, half extents.
@@ -69,6 +74,7 @@ impl PhysicsSandbox {
             PhysicsScene::Bridge => bridge(&mut world),
             PhysicsScene::Crash => crash(&mut world),
             PhysicsScene::Stacks => stacks(&mut world),
+            PhysicsScene::Rocks => crate::physics_rocks::rocks(&mut world),
         }
         Self {
             world,
@@ -176,16 +182,19 @@ impl Simulation for PhysicsSandbox {
         };
         for body in &self.world.bodies {
             let s = &body.structure;
-            for &(node, shape) in &body.shapes {
+            for (node, shape) in &body.shapes {
+                let at = (s.position[*node], s.orientation[*node]);
                 match shape {
-                    Shape::Box { half } => {
-                        snap.boxes
-                            .push((s.position[node], s.orientation[node], half))
-                    }
+                    Shape::Box { half } => snap.boxes.push((at.0, at.1, *half)),
                     Shape::Sphere { radius } if s.element_count() == 0 => {
-                        snap.spheres.push((s.position[node], radius));
+                        snap.spheres.push((at.0, *radius));
                     }
                     Shape::Sphere { .. } => {}
+                    Shape::Hull(hull) => {
+                        if let Some(k) = crate::hulls::index_of(hull) {
+                            snap.hulls.push((at.0, at.1, k));
+                        }
+                    }
                 }
             }
             let usage = s.utilization();
@@ -225,12 +234,16 @@ mod tests {
                 .beams
                 .iter()
                 .all(|b| b.0.is_finite() && b.1.is_finite())
-                && snap.boxes.iter().all(|b| b.0.is_finite());
+                && snap.boxes.iter().all(|b| b.0.is_finite())
+                && snap.hulls.iter().all(|h| h.0.is_finite());
             assert!(finite, "{name}: non-finite state");
             assert!(
-                snap.boxes.iter().all(|b| b.0.y > -0.1),
+                snap.boxes.iter().all(|b| b.0.y > -0.1) && snap.hulls.iter().all(|h| h.0.y > -0.1),
                 "{name}: something fell through the ground"
             );
+            if scene == PhysicsScene::Rocks {
+                assert_eq!(snap.hulls.len(), 22, "every hull is drawn");
+            }
         }
     }
 }

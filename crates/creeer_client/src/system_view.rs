@@ -238,7 +238,7 @@ impl SystemView {
             near.uploaded.remove(&key.id());
         }
         self.draw
-            .extend(update.draw.iter().map(|(key, skirts)| (key.id(), *skirts)));
+            .extend(update.draw.iter().map(|(key, caps)| (key.id(), *caps)));
         self.terrain_frames.push(TerrainFrame {
             position: pose.point_from_inertial(body.state.0),
             rotation: (pose.rotation.conjugate() * body.rotation).normalize(),
@@ -255,9 +255,9 @@ impl SystemView {
         self.generation = s.generation;
     }
 
-    /// Terrain chunks still queued for building (0 when settled or without terrain).
-    pub fn queued(&self) -> usize {
-        self.near.as_ref().map_or(0, |n| n.streamer.queued)
+    /// Terrain chunks still to come: queued or being built (0 when settled or without terrain).
+    pub fn outstanding(&self) -> usize {
+        self.near.as_ref().map_or(0, |n| n.streamer.outstanding())
     }
 }
 

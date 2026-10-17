@@ -16,13 +16,17 @@ struct VertexIn {
     @location(1) normal: vec4<f32>,
     // rgb: sRGB base colour, a: roughness.
     @location(2) color: vec4<f32>,
+    // xyz: unit normal of the next coarser level of detail.
+    @location(3) coarse_normal: vec4<f32>,
+    // Distance along `normal` to the next coarser level's surface (m).
+    @location(4) morph: f32,
 };
 
 struct InstanceIn {
-    // xyz: camera-relative chunk origin.
-    @location(3) origin: vec4<f32>,
+    // xyz: camera-relative chunk origin, w: chunk size (0: no blending).
+    @location(5) origin: vec4<f32>,
     // The body's rotation (body-fixed → world), a quaternion.
-    @location(4) rotation: vec4<f32>,
+    @location(6) rotation: vec4<f32>,
 };
 
 struct VertexOut {
@@ -50,11 +54,12 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
 
 @vertex
 fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
-    let world = rotate(i.rotation, v.position) + i.origin.xyz;
+    let m = coarseness(v.position, i.origin, i.rotation);
+    let world = rotate(i.rotation, v.position + v.normal.xyz * (v.morph * m)) + i.origin.xyz;
     var out: VertexOut;
     out.clip = globals.view_proj * vec4<f32>(world, 1.0);
     out.world = world;
-    out.normal = rotate(i.rotation, v.normal.xyz);
+    out.normal = rotate(i.rotation, normalize(mix(v.normal.xyz, v.coarse_normal.xyz, m)));
     out.local = v.position;
     out.color = srgb_to_linear(v.color.rgb);
     out.material = vec2<f32>(v.color.a, clamp(v.normal.w, 0.0, 1.0));

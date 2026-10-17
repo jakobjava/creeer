@@ -9,13 +9,22 @@ use creeer_math::glam::{DMat3, DQuat, DVec3};
 use rayon::prelude::*;
 
 mod assemble;
+mod buckling;
+#[cfg(test)]
+mod buckling_tests;
 mod builder;
+mod coupled;
 #[cfg(test)]
 mod dynamics_tests;
 mod element;
 #[cfg(test)]
 mod element_tests;
+mod factor;
+mod flow;
 pub mod group;
+#[cfg(test)]
+mod hardening_tests;
+pub mod history;
 mod lbfgs;
 mod minimise;
 mod objective;
@@ -25,7 +34,9 @@ mod plastic_tests;
 mod rigid_system;
 #[cfg(test)]
 mod rigid_tests;
+mod save;
 pub mod section;
+mod settle;
 pub mod shapes;
 mod solver;
 pub mod statics;
@@ -36,7 +47,8 @@ mod validation_tests;
 pub use builder::StructureBuilder;
 use element::Element;
 pub use plastic::Yielding;
-pub use section::{Material, Section};
+pub(crate) use save::{read_solver, write_solver};
+pub use section::{Material, RateSensitivity, Section};
 pub use solver::{ImplicitSolver, Refactoring, Scheme, Timings};
 
 /// Standard gravity on Earth (m/s²), pointing down (−y).
@@ -109,6 +121,9 @@ pub struct Structure {
     /// Free (1) or fixed (0) rotation axes per node.
     pub(crate) free_rotation: Vec<DVec3>,
     pub(crate) elements: Vec<Element>,
+    /// Whether slender members are split when compressed, so they can buckle
+    /// (`buckling.rs`; default on).
+    pub splits: bool,
 }
 
 impl Structure {

@@ -56,21 +56,48 @@ impl Report {
     }
 }
 
-/// Runs all spikes. `metrics_out`, if given, receives one `name value better` line per metric.
-/// With `report_only` (CI on shared machines), missed budgets become GitHub Actions warnings
-/// and the exit code stays successful; the budgets themselves are unchanged.
-pub fn run(metrics_out: Option<&Path>, report_only: bool) -> ExitCode {
+/// The spike sections, by the names `--only` takes.
+pub const SECTIONS: [&str; 7] = [
+    "xpbd",
+    "meshing",
+    "solvers",
+    "structures",
+    "world",
+    "terrain",
+    "orbit",
+];
+
+/// Runs the spikes (all, or the section `only`). `metrics_out`, if given, receives one
+/// `name value better` line per metric. With `report_only` (CI on shared machines), missed
+/// budgets become GitHub Actions warnings and the exit code stays successful; the budgets
+/// themselves are unchanged.
+pub fn run(metrics_out: Option<&Path>, report_only: bool, only: Option<&str>) -> ExitCode {
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     println!("Creëer F0 spikes  ({threads} hardware threads)\n");
     let mut report = Report::default();
-    spike_a_speed(&mut report);
-    spike_a_accuracy(&mut report);
-    spike_b_meshing(&mut report, threads);
-    crate::solvers::run(&mut report);
-    crate::solvers::run_structures(&mut report);
-    crate::world_bench::run(&mut report);
-    crate::terrain_bench::run(&mut report, threads);
-    crate::orbit_bench::run(&mut report);
+    let section = |name: &str| only.is_none_or(|o| o == name);
+    if section("xpbd") {
+        spike_a_speed(&mut report);
+        spike_a_accuracy(&mut report);
+    }
+    if section("meshing") {
+        spike_b_meshing(&mut report, threads);
+    }
+    if section("solvers") {
+        crate::solvers::run(&mut report);
+    }
+    if section("structures") {
+        crate::solvers::run_structures(&mut report);
+    }
+    if section("world") {
+        crate::world_bench::run(&mut report);
+    }
+    if section("terrain") {
+        crate::terrain_bench::run(&mut report, threads);
+    }
+    if section("orbit") {
+        crate::orbit_bench::run(&mut report);
+    }
 
     if let Some(path) = metrics_out {
         let mut text = String::new();

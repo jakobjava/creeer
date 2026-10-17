@@ -129,6 +129,7 @@ impl StructureBuilder {
             free_translation,
             free_rotation,
             elements: self.elements,
+            splits: true,
         }
     }
 }

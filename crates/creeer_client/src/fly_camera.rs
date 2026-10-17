@@ -81,11 +81,34 @@ impl FlyCamera {
         };
     }
 
-    /// Applies accumulated look input and held keys for a frame lasting `dt` seconds.
-    pub fn update(&mut self, camera: &mut Camera, dt: f64) {
+    /// Applies accumulated look input only (walking: the keys steer an avatar instead).
+    pub fn look(&mut self, camera: &mut Camera) {
         let (dx, dy) = std::mem::take(&mut self.look_delta);
         camera.yaw -= dx * LOOK_SENSITIVITY;
         camera.pitch = (camera.pitch - dy * LOOK_SENSITIVITY).clamp(-MAX_PITCH, MAX_PITCH);
+    }
+
+    /// The held movement keys as (forward, right), each −1, 0 or 1.
+    pub fn walk_axes(&self) -> (f64, f64) {
+        let axis = |positive: bool, negative: bool| {
+            f64::from(u8::from(positive)) - f64::from(u8::from(negative))
+        };
+        (axis(self.forward, self.back), axis(self.right, self.left))
+    }
+
+    /// Whether the up key (Space: jump) is held.
+    pub fn jumping(&self) -> bool {
+        self.up
+    }
+
+    /// Whether the fast key (Shift: run) is held.
+    pub fn running(&self) -> bool {
+        self.fast
+    }
+
+    /// Applies accumulated look input and held keys for a frame lasting `dt` seconds.
+    pub fn update(&mut self, camera: &mut Camera, dt: f64) {
+        self.look(camera);
 
         let axis = |positive: bool, negative: bool| {
             f64::from(u8::from(positive)) - f64::from(u8::from(negative))

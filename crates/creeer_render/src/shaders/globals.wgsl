@@ -46,3 +46,15 @@ fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
     let t = 2.0 * cross(q.xyz, v);
     return v + q.w * t + cross(q.xyz, t);
 }
+
+/// How far a terrain vertex at `position` (chunk-local) blends towards the next coarser level
+/// of detail (0..1): from 4.25 to 5 chunk sizes (`origin.w`) from the camera, where a coarser
+/// neighbour may begin (geomorphing, creeer_terrain::levels and stream_tests).
+fn coarseness(position: vec3<f32>, origin: vec4<f32>, rotation: vec4<f32>) -> f32 {
+    let size = origin.w;
+    if size <= 0.0 {
+        return 0.0;
+    }
+    let distance = length(rotate(rotation, position) + origin.xyz);
+    return smoothstep(4.25 * size, 5.0 * size, distance);
+}

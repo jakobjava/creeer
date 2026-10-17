@@ -35,14 +35,14 @@ pub(crate) type Gradient = [DVec3; 4];
 /// Stiffness of one element against each of its deformation measures.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Stiffness {
-    axial: f64,
-    torsion: f64,
+    pub(super) axial: f64,
+    pub(super) torsion: f64,
     /// (k₁₁, k₁₂) for bending about local y and about local z.
-    bend: [(f64, f64); 2],
+    pub(super) bend: [(f64, f64); 2],
 }
 
 impl Stiffness {
-    fn new(section: &Section, material: &Material, length: f64) -> Self {
+    pub(super) fn new(section: &Section, material: &Material, length: f64) -> Self {
         let (e, g) = (material.youngs_modulus, material.shear_modulus);
         let bend = |i: f64, kappa: f64| {
             let phi = 12.0 * e * i / (kappa * g * section.area * length * length);
@@ -130,6 +130,9 @@ pub(crate) struct Element {
     pub plastic_strain: f64,
     /// Broken members carry nothing.
     pub broken: bool,
+    /// A half of a split member: its share of the member's crookedness is already in its
+    /// rest shape (`buckling.rs`).
+    pub crooked: bool,
 }
 
 impl Element {
@@ -164,6 +167,7 @@ impl Element {
             flow_rate: [0.0; MEASURES],
             plastic_strain: 0.0,
             broken: false,
+            crooked: false,
         }
     }
 
@@ -194,13 +198,14 @@ impl Element {
         let (ta, ya, za) = (ra * self.axis, ra * self.y, ra * self.z);
         let (tb, yb, zb) = (rb * self.axis, rb * self.y, rb * self.z);
         let (pa, pb) = (e.cross(ta), e.cross(tb));
+        let bend = [pa.dot(ya), pb.dot(yb), pa.dot(za), pb.dot(zb)];
         let raw = [
-            l - self.rest_length,
+            l - self.rest_length + self.rest_length * bowing(&bend),
             0.5 * (ya.cross(yb) + za.cross(zb)).dot(e),
-            pa.dot(ya),
-            pb.dot(yb),
-            pa.dot(za),
-            pb.dot(zb),
+            bend[0],
+            bend[1],
+            bend[2],
+            bend[3],
         ];
         std::array::from_fn(|m| raw[m] - self.plastic[m])
     }
@@ -259,9 +264,38 @@ impl Element {
                 [-c, turn, c, DVec3::ZERO]
             };
         }
+        // The bowing of the stretch: L·Σ (2·θa² − θa·θb + 2·θb²)/30 over both planes.
+        let bend = [s[2], s[3], s[4], s[5]];
+        s[0] += self.rest_length * bowing(&bend);
+        for plane in 0..2 {
+            let (a, b) = (bend[2 * plane], bend[2 * plane + 1]);
+            let (wa, wb) = (
+                self.rest_length * (4.0 * a - b) / 30.0,
+                self.rest_length * (4.0 * b - a) / 30.0,
+            );
+            // The bending gradients are [−c, turn, c, 0] at a and [−c, 0, c, turn] at b: their
+            // blend slot by slot (the same sums, half the products).
+            let (ga, gb) = (g[2 * plane + 2], g[2 * plane + 3]);
+            let chord = ga[2] * wa + gb[2] * wb;
+            g[0][0] -= chord;
+            g[0][1] += ga[1] * wa;
+            g[0][2] += chord;
+            g[0][3] += gb[3] * wb;
+        }
         for (s, p) in s.iter_mut().zip(&self.plastic) {
             *s -= p;
         }
         (s, g)
     }
+}
+
+/// How much longer than its chord the member's axis is, per unit of rest length, for end
+/// rotations `bend` = [θa, θb] about y then about z (relative to the chord): ½·∫w′² of the
+/// cubic deflection, Σ (2·θa² − θa·θb + 2·θb²)/30. In the stretch, the axial force times
+/// it is the member's geometric stiffness (P-δ): a bent member under compression bends
+/// further, and a member of a few elements buckles at Euler's load (one element of the
+/// chord alone only had P-Δ between nodes: two elements buckled 24 % late, F5).
+fn bowing(bend: &[f64; 4]) -> f64 {
+    let plane = |a: f64, b: f64| (2.0 * a * a - a * b + 2.0 * b * b) / 30.0;
+    plane(bend[0], bend[1]) + plane(bend[2], bend[3])
 }

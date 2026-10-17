@@ -36,12 +36,46 @@ fn bounce(restitution: f64) -> (World, Vec<f64>) {
     (world, heights)
 }
 
-/// Resting: the ball sinks in by exactly m·g/k (1 µm here) and stays still.
+/// Resting: the ball sinks in by the contact law's depth for m·g and stays still. Steel on
+/// concrete is stiffer than a 60 Hz step resolves (`contact::stiffest`): a few µm.
 #[test]
 fn a_ball_rests_on_the_ground() {
     let (world, heights) = bounce(0.0);
     let sink = 0.2 - heights[149];
-    let want = 10.0 * G / world.contact_stiffness;
+    let modulus = world.bodies[0]
+        .surface
+        .contact_modulus(&world.static_surface);
+    let mut law = contact::law::Hertz::new(modulus, 0.2);
+    law.set_cap(contact::cap(10.0, DT, 10.0 * 9.81));
+    let want = law.depth(10.0 * G);
+    assert!(
+        (sink / want - 1.0).abs() < 0.01,
+        "sank {sink:e} m, expected {want:e}"
+    );
+    assert!(world.bodies[0].structure.velocity[0].length() < 1e-6);
+}
+
+/// A soft ball (hard rubber) is well within what the step resolves: it rests at Hertz's own
+/// depth, δ = (m·g/k)^⅔ with k = 4/3·E*·√R, 0.3 mm for 2 kg of radius 10 cm.
+#[test]
+fn a_rubber_ball_rests_at_hertz_depth() {
+    let mut world = World::new(DT);
+    world.statics.push(ground());
+    let mut ball = Body::rigid(Shape::Sphere { radius: 0.1 }, 2.0, DVec3::Y * 0.1, DT);
+    ball.surface = surface::Surface::RUBBER;
+    ball.restitution = 0.0;
+    world.add(ball);
+    for _ in 0..240 {
+        world.step();
+    }
+    let sink = 0.1 - world.bodies[0].structure.position[0].y;
+    let modulus = surface::Surface::RUBBER.contact_modulus(&world.static_surface);
+    let law = contact::law::Hertz::new(modulus, 0.1);
+    let want = law.depth(2.0 * G);
+    assert!(
+        law.stiffness(want) < 0.1 * contact::stiffest(2.0, DT),
+        "resolved"
+    );
     assert!(
         (sink / want - 1.0).abs() < 0.01,
         "sank {sink:e} m, expected {want:e}"
@@ -262,8 +296,14 @@ fn a_frame_crashing_into_a_wall_stops_without_passing_through() {
         // The wall's face is at x = 5.5; joints are balls of radius 4 cm.
         let section = Section::round_tube(0.08, 0.004);
         let joint = 3.0 * section.area * STEEL_S235.density;
-        let k = world.contact_stiffness;
-        let sink = 15.0 * (joint / k).sqrt() + 3.0 * STEEL_S235.yield_strength * section.area / k;
+        // A joint stopped from 15 m/s by the contact alone (½·m·v² = 2/5·k·δ^(5/2)), plus
+        // what three yielding members press in.
+        let modulus = world.bodies[0]
+            .surface
+            .contact_modulus(&world.static_surface);
+        let law = contact::law::Hertz::new(modulus, 0.04);
+        let impact = det::pow(5.0 * 0.5 * joint * 15.0 * 15.0 / (2.0 * law.k), 0.4);
+        let sink = impact + law.depth(3.0 * STEEL_S235.yield_strength * section.area);
         let front = world.bodies[0]
             .structure
             .position

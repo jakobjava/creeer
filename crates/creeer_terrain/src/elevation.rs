@@ -2,7 +2,7 @@
 //!
 //! The elevation is a sum of noise layers on the sphere (3D noise of the surface point, so
 //! there are no seams or pole artefacts):
-//! - **continents:** low-frequency noise mapped through a piecewise-linear curve, giving
+//! - **continents:** low-frequency noise mapped through a monotone cubic curve, giving
 //!   ocean basins, shelves, plains and highlands;
 //! - **layers:** fractal noise (`Fbm`, ±amplitude) or ridged noise (`Ridged`, 0..amplitude,
 //!   sharp crests), each optionally confined by a low-frequency mask and to land.
@@ -11,6 +11,7 @@
 //! shorter than two samples are left out (they would alias into noise), and the octave
 //! just above that fades in, so changing resolution never makes features pop.
 
+use crate::monotone::Monotone;
 use crate::noise::Perlin;
 use creeer_math::glam::DVec3;
 
@@ -76,6 +77,8 @@ pub struct Elevation {
     pub continents: Octaves,
     /// (surface fraction with lower continent value, height in m), ascending.
     pub curve: Vec<(f64, f64)>,
+    /// The curve as interpolated: monotone cubic, without kinks (`monotone.rs`).
+    height_curve: Monotone,
     /// Relief layers.
     pub layers: Vec<Layer>,
     noises: Vec<Perlin>,
@@ -110,6 +113,7 @@ impl Elevation {
         Self {
             radius,
             continents,
+            height_curve: Monotone::new(curve.iter().copied()),
             curve,
             layers,
             noises,
@@ -121,7 +125,7 @@ impl Elevation {
     /// samples at `spacing` metres.
     pub fn height(&self, dir: DVec3, spacing: f64) -> f64 {
         let p = dir * self.radius;
-        let base = piecewise_linear(&self.curve, self.continent(dir, spacing));
+        let base = self.height_curve.at(self.continent(dir, spacing));
         // Land fades in over the first 50 m above the datum.
         let land = smoothstep(-50.0, 50.0, base);
         let mut h = base;
@@ -178,12 +182,13 @@ const CDF_SAMPLES: u32 = 8192;
 /// samples, so its slope is accurate to about 6 % and the height shows no terraces.
 const CDF_KNOTS: usize = 33;
 
-/// The distribution of a noise over the planet's surface, as a piecewise-linear map from
-/// value to the fraction of the surface below it.
+/// The distribution of a noise over the planet's surface: a monotone cubic map from value to
+/// the fraction of the surface below it, through the measured quantiles (linear segments
+/// kinked the ground along every quantile's contour, `monotone.rs`).
 #[derive(Clone, Debug, Default)]
 struct Cdf {
-    /// Values at quantiles 0, 1/(n−1), ..., 1.
-    knots: Vec<f64>,
+    /// (value, fraction) at quantiles 0, 1/(n−1), ..., 1.
+    map: Monotone,
 }
 
 impl Cdf {
@@ -191,29 +196,19 @@ impl Cdf {
         let mut sorted: Vec<f64> = values.collect();
         sorted.sort_by(f64::total_cmp);
         let last = sorted.len() - 1;
-        let knots = (0..CDF_KNOTS)
-            .map(|k| sorted[k * last / (CDF_KNOTS - 1)])
-            .collect();
-        Self { knots }
+        #[allow(clippy::cast_precision_loss)] // small counts
+        let map = Monotone::new((0..CDF_KNOTS).map(|k| {
+            (
+                sorted[k * last / (CDF_KNOTS - 1)],
+                k as f64 / (CDF_KNOTS - 1) as f64,
+            )
+        }));
+        Self { map }
     }
 
     /// Fraction of the surface with a value below `x` (0..1).
     fn fraction_below(&self, x: f64) -> f64 {
-        let k = &self.knots;
-        if x <= k[0] {
-            return 0.0;
-        }
-        let i = k.partition_point(|&v| v <= x);
-        if i >= k.len() {
-            return 1.0;
-        }
-        let (a, b) = (k[i - 1], k[i]);
-        let t = if b > a { (x - a) / (b - a) } else { 0.0 };
-        #[allow(clippy::cast_precision_loss)] // small counts
-        let n = (k.len() - 1) as f64;
-        #[allow(clippy::cast_precision_loss)]
-        let below = (i - 1) as f64;
-        (below + t) / n
+        self.map.at(x)
     }
 }
 
@@ -263,6 +258,14 @@ pub(crate) fn fractal(noise: &Perlin, p: DVec3, o: Octaves, spacing: f64) -> f64
 
 /// Ridged multifractal at `p` (m), in [0, 1]: crests where the noise crosses zero, each octave
 /// weighted by the previous one so detail gathers on the crests (Musgrave 1994).
+///
+/// A crest is 1 − |n|: a V with a kink, sharper than any sample spacing can hold, so it was
+/// not band-limited by leaving octaves out. Faint crests of a nearly masked-out mountain layer
+/// showed as long straight lines across rolling land (measured in F4: the second difference of
+/// the height 700× its median there). Each crest is rounded over about one sample spacing
+/// instead, |n| → √(n² + ε²) − ε with ε = spacing/wavelength (the noise's gradient is about
+/// 1 per wavelength), and the weight saturates smoothly: at full resolution ridges stay sharp
+/// to a metre, and coarser levels round them as far as they can show.
 fn ridged(noise: &Perlin, p: DVec3, o: Octaves, spacing: f64) -> f64 {
     let (mut sum, mut full, mut amplitude, mut wavelength) = (0.0, 0.0, 1.0, o.wavelength);
     let mut weight = 1.0;
@@ -271,10 +274,12 @@ fn ridged(noise: &Perlin, p: DVec3, o: Octaves, spacing: f64) -> f64 {
         let w = band_weight(wavelength, spacing);
         if w > 0.0 {
             let q = p / wavelength + octave_offset(k);
-            let ridge = 1.0 - noise.sample(q.x, q.y, q.z).abs();
+            let n = noise.sample(q.x, q.y, q.z);
+            let e = spacing / wavelength;
+            let ridge = 1.0 - ((n * n + e * e).sqrt() - e);
             let signal = ridge * ridge * weight;
             sum += w * amplitude * signal;
-            weight = (signal * 2.0).clamp(0.0, 1.0);
+            weight = soft_saturate(signal * 2.0);
         }
         amplitude *= o.gain;
         wavelength *= 0.5;
@@ -282,25 +287,19 @@ fn ridged(noise: &Perlin, p: DVec3, o: Octaves, spacing: f64) -> f64 {
     sum / full
 }
 
-/// Linear interpolation through `(x, y)` points sorted by x; constant beyond the ends.
-fn piecewise_linear(points: &[(f64, f64)], x: f64) -> f64 {
-    let Some(&(x0, y0)) = points.first() else {
-        return 0.0;
-    };
-    if x <= x0 {
-        return y0;
-    }
-    for pair in points.windows(2) {
-        let ((xa, ya), (xb, yb)) = (pair[0], pair[1]);
-        if x <= xb {
-            return ya + (yb - ya) * (x - xa) / (xb - xa);
-        }
-    }
-    points[points.len() - 1].1
-}
-
 /// Smooth step from 0 at `a` to 1 at `b` (C1).
 fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
+}
+
+/// min(x, 1) for x ≥ 0 without its kink: x up to 0.5, 1 from 1.5, a parabola between (C1).
+fn soft_saturate(x: f64) -> f64 {
+    if x <= 0.5 {
+        x
+    } else if x >= 1.5 {
+        1.0
+    } else {
+        x - 0.5 * (x - 0.5) * (x - 0.5)
+    }
 }

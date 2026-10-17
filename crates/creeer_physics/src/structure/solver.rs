@@ -88,9 +88,14 @@ pub struct ImplicitSolver {
     pub refactoring: Refactoring,
     /// Factorisations computed so far.
     pub factorisations: u32,
-    /// Overall rotation of the structure when the matrix was built.
     /// Node orientations when the matrix was built.
     pub(super) factor_orientation: Vec<DQuat>,
+    /// Whether the matrix was built at the current shape (else at the rest shape), the node
+    /// positions then, and which members were broken then: with the orientations and the
+    /// contact blocks, all the matrix was built from (a loaded world builds it again).
+    pub(super) factor_current: bool,
+    pub(super) factor_position: Vec<DVec3>,
+    pub(super) factor_broken: Vec<bool>,
     /// Scratch: each node's rotation since then.
     pub(super) turns: Vec<DMat3>,
     /// Stiffness of the contacts at nodes (3×3 translation blocks, by node) in the
@@ -109,6 +114,8 @@ pub struct ImplicitSolver {
     pub energy_guard: bool,
     /// Steps the energy guard redid with BDF2 so far.
     pub fallbacks: u32,
+    /// Members the last steps found compressed enough to split (`buckling.rs`).
+    pub(super) wanted: Vec<usize>,
     pub(super) snapshot: Snapshot,
     pub(super) work: Work,
 }
@@ -137,8 +144,12 @@ pub(super) struct Work {
     pub frame_torque: Vec<DVec3>,
     /// Element measures at (x̂, q̂), for damping.
     pub s_hat: Vec<[f64; MEASURES]>,
-    /// Plastic capacities of every element during this step.
-    pub caps: Vec<[f64; MEASURES]>,
+    /// How every element flows plastically during this step (`flow.rs`).
+    pub caps: Vec<[super::flow::Flow; MEASURES]>,
+    /// The same with their work divided by 1 + γ, as the member's series damper sees them
+    /// (`plastic.rs`), found once a step (copied anew at every evaluation, the flows cost a
+    /// 5k-member bridge 5 % of its step).
+    pub scaled: Vec<[super::flow::Flow; MEASURES]>,
     pub rotations: Vec<DMat3>,
     /// Newton direction (translation blocks, then rotation blocks).
     pub direction: Vec<DVec3>,
@@ -161,6 +172,18 @@ impl ImplicitSolver {
     /// # Panics
     /// If the matrix is not positive definite (impossible with positive masses).
     pub fn new(structure: &Structure, scheme: Scheme, dt: f64, substeps: u32) -> Self {
+        Self::try_new(structure, scheme, dt, substeps)
+            .expect("matrix cannot be made positive definite")
+    }
+
+    /// As [`Self::new`], or none if the structure's matrix cannot be made positive definite
+    /// (a structure read from a damaged save).
+    pub(crate) fn try_new(
+        structure: &Structure,
+        scheme: Scheme,
+        dt: f64,
+        substeps: u32,
+    ) -> Option<Self> {
         let n = structure.node_count();
         let mut solver = Self {
             scheme,
@@ -174,6 +197,9 @@ impl ImplicitSolver {
             refactoring: Refactoring::WhenSlow,
             factorisations: 0,
             factor_orientation: vec![DQuat::IDENTITY; n],
+            factor_current: false,
+            factor_position: Vec::new(),
+            factor_broken: Vec::new(),
             turns: vec![DMat3::IDENTITY; n],
             contact_blocks: Vec::new(),
             chol: Cholesky::new(structure.symbolic()),
@@ -186,6 +212,7 @@ impl ImplicitSolver {
             energy_guard: true,
             fallbacks: 0,
             snapshot: Snapshot::default(),
+            wanted: Vec::new(),
             work: Work {
                 x_hat: vec![DVec3::ZERO; n],
                 q_hat: vec![DQuat::IDENTITY; n],
@@ -196,7 +223,8 @@ impl ImplicitSolver {
                 coriolis: vec![DVec3::ZERO; n],
                 frame_torque: vec![DVec3::ZERO; n],
                 s_hat: vec![[0.0; MEASURES]; structure.element_count()],
-                caps: vec![[f64::INFINITY; MEASURES]; structure.element_count()],
+                caps: vec![[super::flow::Flow::NEVER; MEASURES]; structure.element_count()],
+                scaled: vec![[super::flow::Flow::NEVER; MEASURES]; structure.element_count()],
                 rotations: vec![DMat3::IDENTITY; n],
                 direction: vec![DVec3::ZERO; 2 * n],
                 trial_x: vec![DVec3::ZERO; n],
@@ -209,13 +237,15 @@ impl ImplicitSolver {
         solver.work.beta = solver.beta();
         (solver.work.incidence_ptr, solver.work.incidence) = structure.incidence();
         // Linearise at the shape the structure starts in (often a deformed equilibrium).
-        solver.refactor(structure);
+        if !solver.try_factor(structure, true) {
+            return None;
+        }
         solver.factorisations = 0;
         solver.initial_accelerations(structure);
-        solver
+        Some(solver)
     }
 
-    fn beta(&self) -> f64 {
+    pub(super) fn beta(&self) -> f64 {
         self.beta_for(self.scheme)
     }
 
@@ -295,89 +325,6 @@ impl ImplicitSolver {
             let back = -s.angular_velocity[i] * h + alpha * (0.5 * h * h);
             self.previous_q[i] = crate::so3::exp(back) * s.orientation[i];
             self.previous_w[i] = s.angular_velocity[i] - alpha * h;
-        }
-    }
-
-    /// Takes the stiffness that contacts add at nodes into the factorised matrix, if it changed
-    /// materially since the last factorisation: other nodes touched, or a node's block changed
-    /// by more than half. Without it a structure resting on contacts converges slowly (the
-    /// matrix misses their stiffness; 48 iterations instead of 11 for a bridge on its piers).
-    /// Returns whether it refactorised.
-    pub(super) fn use_contact_stiffness(
-        &mut self,
-        structure: &Structure,
-        mut blocks: Vec<(usize, DMat3)>,
-    ) -> bool {
-        blocks.sort_by_key(|b| b.0);
-        let mut merged: Vec<(usize, DMat3)> = Vec::with_capacity(blocks.len());
-        for (node, h) in blocks {
-            match merged.last_mut() {
-                Some(last) if last.0 == node => last.1 += h,
-                _ => merged.push((node, h)),
-            }
-        }
-        let norm = |m: DMat3| m.to_cols_array().iter().map(|v| v * v).sum::<f64>().sqrt();
-        let same = merged.len() == self.contact_blocks.len()
-            && merged
-                .iter()
-                .zip(&self.contact_blocks)
-                .all(|((a, ha), (b, hb))| {
-                    a == b && norm(*ha - *hb) <= 0.5 * norm(*ha).max(norm(*hb))
-                });
-        if same {
-            return false;
-        }
-        self.contact_blocks = merged;
-        self.refactor(structure);
-        true
-    }
-
-    /// Rebuilds the matrix at the structure's current shape, e.g. after member properties
-    /// changed.
-    pub fn refactor(&mut self, structure: &Structure) {
-        self.factor(structure, true);
-    }
-
-    /// Builds and factorises the matrix at the rest shape or the `current` one.
-    ///
-    /// # Panics
-    /// If the matrix is not positive definite.
-    pub(super) fn factor(&mut self, structure: &Structure, current: bool) {
-        self.factorisations += 1;
-        if current {
-            self.factor_orientation.clone_from(&structure.orientation);
-        } else {
-            self.factor_orientation.fill(DQuat::IDENTITY);
-        }
-        let beta = self.beta();
-        let blocks = 2 * structure.node_count();
-        let mut diag = vec![DMat3::ZERO; blocks];
-        let mut off = vec![DMat3::ZERO; structure.off_block_count()];
-        let damping = |e: usize| beta * beta + beta * structure.elements[e].material.damping;
-        structure.assemble(current, 1.0, damping, &mut diag, &mut off);
-        for &(node, h) in &self.contact_blocks {
-            let p = DMat3::from_diagonal(structure.block_mask(node));
-            diag[node] += p * h * p * (beta * beta);
-        }
-        // In exact arithmetic M + (β² + βc)·K is positive definite. With a mechanism (parts
-        // broken loose) and a huge β (statics) rounding can make it fail; the matrix is only
-        // a preconditioner, so a slightly shifted one is just as good. Never panic.
-        let scale = diag
-            .iter()
-            .map(|d| d.x_axis.x.max(d.y_axis.y).max(d.z_axis.z))
-            .fold(0.0, f64::max);
-        let mut shift = 0.0;
-        while self.chol.factor(&diag, &off).is_err() {
-            let next = if shift > 0.0 {
-                shift * 100.0
-            } else {
-                1e-12 * scale
-            };
-            for d in &mut diag {
-                *d += DMat3::IDENTITY * (next - shift);
-            }
-            shift = next;
-            assert!(shift <= scale, "matrix cannot be made positive definite");
         }
     }
 }

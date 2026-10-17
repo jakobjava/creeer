@@ -23,9 +23,10 @@ fn plastic_modulus_of_an_i_beam_matches_the_tables() {
 /// 3 s to `peak` (N), held for 1 s and, with `unload`, ramped back to zero over 1 s.
 /// Returns the structure and the load at which the first member yielded.
 fn load_cantilever(peak: f64, unload: bool) -> (Structure, Option<f64>) {
+    // Plastic hinge theory: perfectly plastic steel (hardening: `hardening_tests.rs`).
     let material = Material {
         damping: 0.01,
-        ..STEEL_S235
+        ..STEEL_S235.perfectly_plastic()
     };
     let mut s = cantilever(2.0, 10, Section::solid_round(0.05), material);
     s.gravity = DVec3::ZERO;
@@ -89,12 +90,14 @@ fn unloading_leaves_a_permanent_set() {
     assert!(set > 0.01, "permanent tip set {set} m");
 }
 
-/// A bar pulled with more than its plastic capacity N_p = σ_y·A (a 1 t mass at its end,
-/// pulled with 1.2·N_p) stretches until its plastic strain passes the elongation at break
-/// (26 % for S235), then breaks: at its weakest element (1 % less area, as real bars are
-/// never perfectly uniform), and only there. No member passes more than its capacity, so
-/// the chain carries 0.99·N_p, the weakest element flows and the others stay elastic; the
-/// rest of the load accelerates the mass, and the break releases it.
+/// A perfectly plastic bar pulled with more than its plastic capacity N_p = σ_y·A (a 1 t
+/// mass at its end, pulled with 1.2·N_p) stretches until its plastic strain passes the
+/// elongation at break (26 %), then breaks: at its weakest element (1 % less area, as real
+/// bars are never perfectly uniform), and only there. No member passes more than its
+/// capacity, so the chain carries 0.99·N_p, the weakest element flows and the others stay
+/// elastic; the rest of the load accelerates the mass, and the break releases it. (Real
+/// steel hardens to carry 1.2·N_p, `hardening_tests.rs`; past its ultimate strength it
+/// would neck at its weakest point, which is not modelled: ADR-0005.)
 #[test]
 fn an_overloaded_bar_tears() {
     let section = Section::solid_round(0.02);
@@ -109,7 +112,7 @@ fn an_overloaded_bar_tears() {
             nodes[k],
             nodes[k + 1],
             if k == 2 { thinner } else { section },
-            STEEL_S235,
+            STEEL_S235.perfectly_plastic(),
         );
     }
     b.mass(nodes[4], 1000.0, DMat3::from_diagonal(DVec3::splat(10.0)));

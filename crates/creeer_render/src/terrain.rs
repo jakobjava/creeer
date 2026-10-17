@@ -7,7 +7,12 @@
 use bytemuck::{Pod, Zeroable};
 use creeer_math::glam::Vec3;
 
-/// A terrain vertex as stored on the GPU (20 bytes).
+/// A terrain vertex as stored on the GPU (28 bytes).
+///
+/// Besides its own surface it carries the next coarser level of detail: the normal there and
+/// the distance along its normal to that surface. The shader blends towards them over the
+/// distance band where a coarser neighbour may begin (geomorphing, `creeer_terrain::levels`),
+/// so borders between levels and switches between them do not show.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub struct TerrainVertex {
@@ -17,6 +22,10 @@ pub struct TerrainVertex {
     pub normal: [i8; 4],
     /// Base colour (sRGB) and roughness in `w`.
     pub color: [u8; 4],
+    /// Unit normal of the next coarser level (snorm; `w` unused).
+    pub coarse_normal: [i8; 4],
+    /// Distance along `normal` to the next coarser level's surface (m).
+    pub morph: f32,
 }
 
 fn snorm(x: f32) -> i8 {
@@ -46,7 +55,19 @@ impl TerrainVertex {
             position: position.to_array(),
             normal: [snorm(n.x), snorm(n.y), snorm(n.z), snorm(openness)],
             color: [color[0], color[1], color[2], unorm(roughness)],
+            coarse_normal: [snorm(n.x), snorm(n.y), snorm(n.z), 0],
+            morph: 0.0,
         }
+    }
+
+    /// The same vertex with the next coarser level: its normal and the distance (m) along
+    /// this vertex's normal to its surface.
+    #[must_use]
+    pub fn with_coarser(mut self, normal: Vec3, distance: f32) -> Self {
+        let n = normal.normalize_or(Vec3::Y);
+        self.coarse_normal = [snorm(n.x), snorm(n.y), snorm(n.z), 0];
+        self.morph = distance;
+        self
     }
 }
 
@@ -55,13 +76,16 @@ impl TerrainVertex {
 pub struct TerrainMeshData {
     /// Vertices relative to the chunk origin.
     pub vertices: Vec<TerrainVertex>,
-    /// Triangle list, counter-clockwise seen from the air: the surface first, then the skirts.
+    /// Triangle list, counter-clockwise seen from the air: the surface first, then the caps.
     pub indices: Vec<u32>,
-    /// Number of indices of the surface (the rest are skirts).
+    /// Number of indices of the surface (the rest are caps).
     pub surface_indices: u32,
-    /// Index ranges (start, end) of the skirts of each chunk face (−X, +X, −Y, +Y, −Z, +Z),
+    /// Index ranges (start, end) of the caps of each chunk face (−X, +X, −Y, +Y, −Z, +Z),
     /// drawn only where [`crate::Frame::terrain`] asks for them.
-    pub skirts: [(u32, u32); 6],
+    pub caps: [(u32, u32); 6],
+    /// Edge length of the chunk (m): it blends towards the coarser level between 4.25 and 5
+    /// times this from the camera. 0: no blending.
+    pub chunk_size: f32,
 }
 
 impl TerrainMeshData {
@@ -79,7 +103,13 @@ impl TerrainMeshData {
             return (Vec3::ZERO, 0.0);
         }
         let center = (lo + hi) * 0.5;
-        (center, (hi - lo).length() * 0.5)
+        // Blending moves vertices along their normals by up to their morph distance.
+        let reach = self
+            .vertices
+            .iter()
+            .map(|v| v.morph.abs())
+            .fold(0.0, f32::max);
+        (center, (hi - lo).length() * 0.5 + reach)
     }
 }
 
@@ -88,8 +118,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vertices_pack_into_twenty_bytes() {
-        assert_eq!(std::mem::size_of::<TerrainVertex>(), 20);
+    fn vertices_pack_into_twenty_eight_bytes() {
+        assert_eq!(std::mem::size_of::<TerrainVertex>(), 28);
         let v = TerrainVertex::new(
             Vec3::new(1.0, 2.0, 3.0),
             Vec3::Y * 2.0,
@@ -99,6 +129,13 @@ mod tests {
         );
         assert_eq!(v.normal, [0, 127, 0, 64]);
         assert_eq!(v.color, [10, 20, 30, 255]);
+        // Without a coarser level, it blends to itself.
+        assert_eq!(v.coarse_normal, [0, 127, 0, 0]);
+        let w = v.with_coarser(Vec3::X, -1.5);
+        assert_eq!(
+            (w.coarse_normal, w.morph, w.normal),
+            ([127, 0, 0, 0], -1.5, v.normal)
+        );
     }
 
     #[test]

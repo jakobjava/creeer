@@ -1,20 +1,49 @@
-//! The planet sandbox mode of the app (F3): enter, leave, and draw a frame.
+//! The planet sandbox mode of the app (F3; a client of a server since F5): enter it (a
+//! singleplayer game, or a dedicated server's), leave it, walk or fly, and draw a frame.
 
 use super::*;
 use crate::planet_ui::{self, Request};
-use crate::planet_view::{PlanetView, load_terrain};
+use crate::planet_view::PlanetView;
+
+/// Walking speed (m/s), and running.
+const WALK: f64 = 3.0;
+const RUN: f64 = 6.5;
 
 impl Running {
     /// Opens the planet sandbox, starting in orbit.
     pub(super) fn enter_planet(&mut self) {
-        match load_terrain() {
-            Ok(terrain) => {
-                let view = PlanetView::new(terrain, TICK_RATE_HZ);
+        match PlanetView::singleplayer() {
+            Ok(view) => {
                 self.camera = view.orbit_camera();
                 self.planet = Some(view);
                 self.lighting_key = None;
             }
             Err(e) => eprintln!("could not load the planet: {e}"),
+        }
+    }
+
+    /// Joins the dedicated server at `server` as `name`, walking from the start.
+    pub(super) fn enter_connected(
+        &mut self,
+        server: std::net::SocketAddr,
+        name: &str,
+    ) -> Result<(), String> {
+        let mut view = PlanetView::connect(server, name)?;
+        view.walking = true;
+        self.camera = view.orbit_camera();
+        self.planet = Some(view);
+        self.lighting_key = None;
+        Ok(())
+    }
+
+    /// A key for the planet sandbox: V walks or flies. Returns whether it was one.
+    pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
+        match (&mut self.planet, code) {
+            (Some(planet), winit::keyboard::KeyCode::KeyV) => {
+                planet.walking = !planet.walking;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -26,31 +55,41 @@ impl Running {
     }
 
     /// One frame of the planet sandbox.
-    pub(super) fn planet_frame(&mut self, now: Instant, dt: Duration) {
+    pub(super) fn planet_frame(&mut self, dt: Duration) {
         let dt = dt.as_secs_f64();
         let Some(planet) = &mut self.planet else {
             return;
         };
-        // Flying speed follows the height above the ground: the wheel sets how many heights
-        // per second (10 m/s base speed = one height per second at 10 m).
-        let base = self.fly.speed;
-        self.fly.speed = base * planet.altitude(self.camera.position).max(2.0) / 10.0;
-        self.fly.update(&mut self.camera, dt);
-        self.fly.speed = base;
-        planet.constrain_camera(&mut self.camera);
+        if planet.walking {
+            // The keys steer the avatar; the camera follows it.
+            self.fly.look(&mut self.camera);
+            let speed = if self.fly.running() { RUN } else { WALK };
+            let walk = planet.walk(&self.camera, self.fly.walk_axes(), speed);
+            planet.session.update(dt, (walk, self.fly.jumping()));
+            planet.follow(&mut self.camera);
+        } else {
+            // Flying speed follows the height above the ground: the wheel sets how many
+            // heights per second (10 m/s base speed = one height per second at 10 m).
+            let base = self.fly.speed;
+            self.fly.speed = base * planet.altitude(self.camera.position).max(2.0) / 10.0;
+            self.fly.update(&mut self.camera, dt);
+            self.fly.speed = base;
+            planet.session.update(dt, (DVec3::ZERO, false));
+            planet.constrain_camera(&mut self.camera);
+        }
         planet.advance_day(dt);
         planet.update_terrain(&mut self.renderer, self.camera.position);
 
         let build_start = Instant::now();
         self.scene.clear();
         self.lines.clear();
-        let published = planet.snapshot();
-        let alpha = published.alpha(now);
+        // Drawn where the connection has everything now (it interpolates).
+        let snapshot = planet.snapshot();
         physics_view::draw(
             &mut self.scene,
             &self.meshes,
             DVec3::ZERO,
-            (&published.previous.bodies, &published.current.bodies, alpha),
+            (&snapshot, &snapshot, 1.0),
             Overlay::Off,
         );
         self.scene_build_times.push(build_start.elapsed());
@@ -73,7 +112,14 @@ impl Running {
 
         let raw_input = self.egui_state.take_egui_input(&self.window);
         let ctx = self.egui_ctx.clone();
-        let tick_times = planet.sim.tick_times();
+        // The server's ticks when this process hosts it.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ticks
+        let (tick_times, tick) = planet.session.tick_times().unwrap_or_else(|| {
+            (
+                TimingStats::new(1),
+                planet.session.connection.drawn_at().max(0.0) as u64,
+            )
+        });
         let mut request = Request::None;
         let mut output = ctx.run_ui(raw_input, |ui| {
             perf_window(
@@ -82,7 +128,7 @@ impl Running {
                     frame_times: &self.frame_times,
                     tick_times: &tick_times,
                     tick_rate_hz: TICK_RATE_HZ,
-                    tick: published.tick,
+                    tick,
                     adapter: &self.adapter_label,
                 },
             );

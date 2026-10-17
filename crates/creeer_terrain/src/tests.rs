@@ -100,8 +100,33 @@ pub(crate) fn hash_bits(values: impl Iterator<Item = f64>) -> u64 {
 #[test]
 fn elevation_is_bit_identical_across_platforms() {
     // Golden hash: CI runs this on Windows, Linux and macOS. If it changes on purpose
-    // (new generator or data), update the constant.
+    // (new generator or data), update the constant. F5: the continent curve and its CDF
+    // interpolate monotone cubics instead of straight lines, and ridge crests are rounded to
+    // the sample spacing (both removed creases that showed as lines in low sunlight).
     let p = home();
     let hash = hash_bits(fibonacci_sphere(256).map(|d| p.elevation.height(d, 1.0)));
-    assert_eq!(hash, 0xfb5c_3d9f_bdb8_555e, "elevation hash {hash:#018x}");
+    assert_eq!(hash, 0xc296_11e6_f70a_1ea1, "elevation hash {hash:#018x}");
+}
+
+#[test]
+fn the_planet_centre_is_rock() {
+    // It has no direction to look a height up in: it gave NaN, read as air, and the coarsest
+    // chunks around it meshed a hidden bubble.
+    let terrain = crate::Terrain::new(home());
+    let centre = creeer_math::glam::DVec3::ZERO;
+    assert!(terrain.density(centre) < -400_000.0);
+    let radius = terrain.planet().datum.polar_radius;
+    for x in [-1, 0] {
+        let key = crate::chunk::ChunkKey {
+            level: 15,
+            pos: creeer_math::glam::IVec3::new(x, -1, 0),
+        };
+        let mesh = terrain
+            .mesh_chunk(key)
+            .expect("the coarsest chunks hold the surface");
+        for p in &mesh.positions[..mesh.surface_vertices] {
+            let r = (key.origin() + p.as_dvec3()).length();
+            assert!(r > 0.9 * radius, "a vertex {r} m from the centre");
+        }
+    }
 }

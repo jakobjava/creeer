@@ -2,11 +2,12 @@
 //! Separating Axis Test between Convex Polyhedra", GDC 2013).
 //!
 //! The axis of least penetration among the 15 candidates decides the contact: across a face,
-//! the other box's most opposed face is clipped against the reference face's sides and
-//! every remaining corner is a contact point; across an edge pair, the closest points of
-//! the two edges are.
+//! every face of the other box turned towards it is clipped against the reference face's
+//! sides, a contact patch each (`contact/law.rs`); across an edge pair, the closest points
+//! of the two edges are a point contact of crossed (rounded) edges.
 
-use super::shape::{Pose, RawContact};
+use super::shape::{Domain, Follows, PatchVertex, Pose, RawContact};
+use super::surface::Feature;
 use creeer_math::glam::{DMat3, DVec3};
 
 struct OrientedBox {
@@ -128,13 +129,26 @@ pub fn box_box(
                 normal,
                 radius_a: 0.0,
                 radius_b: 0.0,
+                features: [Feature::Edge, Feature::Edge],
+                patch: None,
+                bend: None,
+                follows: Follows::Edges((qa - pa).normalize(), (qb - pb).normalize()),
+                inset: 0.0,
             }]
         }
     }
 }
 
-/// Clips the incident box's face against the reference box's face (outward normal
-/// `towards`, pointing at the incident box). `reference_is_a` says which is box A.
+/// The incident box's face most opposed to the reference box's face (outward normal
+/// `towards`, pointing at the incident box) is a patch (`contact/law.rs`): its four corners,
+/// and as its domain the face clipped against the reference face's sides.
+///
+/// Only that face: the other faces turned towards the reference face are steep to it, their
+/// depth changes by their whole width as they turn, and the reference face is finite, so
+/// the axis may change by the next step. Taken as well, a crate nearly at right angles to
+/// the one below it ended a step 2 cm 'inside' it with 27 kJ that the next step's contacts did
+/// not have (measured in F5). Edges crossing edges are point contacts.
+/// `reference_is_a` says which is box A.
 fn clip(
     reference: &OrientedBox,
     incident: &OrientedBox,
@@ -143,9 +157,70 @@ fn clip(
     reference_is_a: bool,
 ) -> Vec<RawContact> {
     let (ref_face, ref_normal) = reference.face(towards);
-    let (inc_face, _) = incident.face(-towards);
-    let mut polygon = inc_face.to_vec();
     let middle = (ref_face[0] + ref_face[1] + ref_face[2] + ref_face[3]) * 0.25;
+    let ref_point = ref_face[0];
+    let depth = |p: DVec3| ref_normal.dot(p - ref_point);
+    let (corners, _) = incident.face(-towards);
+    let polygon = clip_to(&ref_face, ref_normal, middle, corners.to_vec());
+    if polygon.len() < 3 || polygon.iter().all(|&p| depth(p) >= margin) {
+        return Vec::new();
+    }
+    // The domain in the face's coordinates: s towards corner 1, t towards corner 3.
+    let (u, v) = (corners[1] - corners[0], corners[3] - corners[0]);
+    let points: Vec<[f64; 2]> = polygon
+        .iter()
+        .map(|&p| {
+            let d = p - corners[0];
+            [
+                (d.dot(u) / u.length_squared()).clamp(0.0, 1.0),
+                (d.dot(v) / v.length_squared()).clamp(0.0, 1.0),
+            ]
+        })
+        .collect();
+    let domain = Domain::part(&points);
+    corners
+        .iter()
+        .enumerate()
+        .map(|(i, &corner)| {
+            let on_reference = corner - ref_normal * depth(corner);
+            let (point_a, point_b, normal) = if reference_is_a {
+                (on_reference, corner, -ref_normal)
+            } else {
+                (corner, on_reference, ref_normal)
+            };
+            RawContact {
+                point_a,
+                point_b,
+                normal,
+                radius_a: 0.0,
+                radius_b: 0.0,
+                features: [Feature::Face, Feature::Face],
+                patch: Some(PatchVertex {
+                    index: u8::try_from(i).expect("four"),
+                    corner_on_a: !reference_is_a,
+                    domain: domain.clone(),
+                    facing: None,
+                }),
+                bend: None,
+                follows: if reference_is_a {
+                    Follows::A
+                } else {
+                    Follows::B
+                },
+                inset: 0.0,
+            }
+        })
+        .collect()
+}
+
+/// `polygon` clipped by the side planes of the face `ref_face` (normal `ref_normal`, centre
+/// `middle`).
+fn clip_to(
+    ref_face: &[DVec3; 4],
+    ref_normal: DVec3,
+    middle: DVec3,
+    mut polygon: Vec<DVec3>,
+) -> Vec<DVec3> {
     for k in 0..4 {
         let (p, q) = (ref_face[k], ref_face[(k + 1) % 4]);
         // Side plane through edge p–q, normal pointing out of the face (the corner order
@@ -173,32 +248,11 @@ fn clip(
     if polygon.len() > 1 && (polygon[0] - polygon[polygon.len() - 1]).length() < 1e-9 {
         polygon.pop();
     }
-    let ref_point = ref_face[0];
     polygon
-        .into_iter()
-        .filter_map(|p| {
-            let depth = ref_normal.dot(p - ref_point);
-            (depth < margin).then(|| {
-                let on_reference = p - ref_normal * depth;
-                let (point_a, point_b, normal) = if reference_is_a {
-                    (on_reference, p, -ref_normal)
-                } else {
-                    (p, on_reference, ref_normal)
-                };
-                RawContact {
-                    point_a,
-                    point_b,
-                    normal,
-                    radius_a: 0.0,
-                    radius_b: 0.0,
-                }
-            })
-        })
-        .collect()
 }
 
 /// Closest points between segments p1–q1 and p2–q2.
-fn closest_points(p1: DVec3, q1: DVec3, p2: DVec3, q2: DVec3) -> (DVec3, DVec3) {
+pub(super) fn closest_points(p1: DVec3, q1: DVec3, p2: DVec3, q2: DVec3) -> (DVec3, DVec3) {
     let (d1, d2, r) = (q1 - p1, q2 - p2, p1 - p2);
     let (a, e, f) = (d1.dot(d1), d2.dot(d2), d2.dot(r));
     let (c, b) = (d1.dot(r), d1.dot(d2));

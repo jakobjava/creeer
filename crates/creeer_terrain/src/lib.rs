@@ -2,9 +2,13 @@
 //!
 //! F0 contains deterministic noise and the meshing spike; the production terrain arrives in F3.
 
+mod caps;
+#[cfg(test)]
+mod caps_tests;
 pub mod chunk;
 #[cfg(test)]
 mod chunk_tests;
+mod clip;
 pub mod cube;
 pub mod datum;
 pub mod edits;
@@ -12,6 +16,10 @@ pub mod edits;
 mod edits_tests;
 pub mod elevation;
 pub mod geology;
+pub mod levels;
+#[cfg(test)]
+mod levels_tests;
+pub mod monotone;
 pub mod noise;
 pub mod occlusion;
 pub mod planet;

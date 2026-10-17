@@ -85,7 +85,7 @@ pub struct Frame<'a> {
     /// Mesh instances.
     pub scene: &'a Scene,
     /// Terrain chunks to draw: ids given to [`Renderer::insert_terrain`], each with the chunk
-    /// faces whose skirts to draw (bit f for face f of `TerrainMeshData::skirts`).
+    /// faces whose caps to draw (bit f for face f of `TerrainMeshData::caps`).
     pub terrain: &'a [(u64, u8)],
     /// Body frames the terrain chunks are drawn in (by the frame index given at upload);
     /// empty: every chunk in simulation space.

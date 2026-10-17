@@ -46,6 +46,23 @@ impl Datum {
         r
     }
 
+    /// Radius of the datum (m) in the direction of point `p`, and its gradient with respect
+    /// to `p` (per metre). The radius solves μ/r + k·r² = μ/R with k = ω²·cos²φ/2, so
+    /// dr/dk = −r² / (−μ/r² + 2·k·r) (implicit function), and cos²φ = 1 − y²/|p|².
+    pub fn radius_gradient(&self, p: DVec3) -> (f64, DVec3) {
+        let r = self.radius(p);
+        let length2 = p.length_squared();
+        if 1.0 - p.y * p.y / length2 <= 0.0 {
+            return (r, DVec3::ZERO); // on the axis cos²φ has its minimum
+        }
+        let cos2 = 1.0 - p.y * p.y / length2;
+        let k = 0.5 * self.omega * self.omega * cos2;
+        let dr_dk = -r * r / (-self.mu / (r * r) + 2.0 * k * r);
+        let d_cos2 =
+            DVec3::Y * (-2.0 * p.y / length2) + p * (2.0 * p.y * p.y / (length2 * length2));
+        (r, d_cos2 * (dr_dk * 0.5 * self.omega * self.omega))
+    }
+
     /// Radius at the equator (m), the largest.
     pub fn equatorial_radius(&self) -> f64 {
         self.radius(DVec3::X)
@@ -125,5 +142,27 @@ mod tests {
         );
         // The sphere's normal is 0.12° off.
         assert!(gravity.angle_between(dir) > 0.1f64.to_radians());
+    }
+
+    #[test]
+    fn radius_gradient_matches_finite_differences() {
+        let d = home();
+        for p in [
+            DVec3::new(3e5, 2e5, -1e5),
+            DVec3::new(-1e5, -4.5e5, 2e5),
+            DVec3::X * 5e5,
+        ] {
+            let (r, g) = d.radius_gradient(p);
+            assert_eq!(r, d.radius(p));
+            let h = 1.0;
+            for axis in [DVec3::X, DVec3::Y, DVec3::Z] {
+                let fd = (d.radius(p + axis * h) - d.radius(p - axis * h)) / (2.0 * h);
+                assert!(
+                    (fd - g.dot(axis)).abs() < 1e-9,
+                    "{p}: {fd} vs {}",
+                    g.dot(axis)
+                );
+            }
+        }
     }
 }

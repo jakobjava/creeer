@@ -54,7 +54,7 @@ fn a_small_sphere_meshes_closed_and_on_its_surface() {
     let samples = ChunkSamples::from_fn(key(0, 0, 0, 0), |p| (p - c).length() - r);
     let m = mesh(&samples, |_, _| 1);
     assert!(!m.is_empty());
-    // Closed: no open edges, so no skirts, and V − E + F = 2 for a sphere.
+    // Closed: no open edges, so no caps, and V − E + F = 2 for a sphere.
     assert!(open_edges(&m.indices).is_empty(), "sphere mesh has holes");
     assert_eq!(m.surface_indices, m.indices.len());
     let faces = m.indices.len() / 3;
@@ -102,46 +102,9 @@ fn neighbouring_chunks_join_without_gaps() {
     for (a, b) in open_edges(&indices) {
         let mid = |i: u32| DVec3::from_array(positions[&i].map(|v| v as f64 / 1000.0));
         let m = (mid(a) + mid(b)) * 0.5;
-        // The rim: within one cell of the block's outer faces (x, z in [-1, 63]).
-        let rim = m.x < 0.0 || m.x > 62.0 || m.z < 0.0 || m.z > 62.0;
+        // The rim: the block's outer faces (x, z at 0 and 64).
+        let rim = m.x < 1e-3 || m.x > 64.0 - 1e-3 || m.z < 1e-3 || m.z > 64.0 - 1e-3;
         assert!(rim, "gap inside the block at {m}");
-    }
-}
-
-#[test]
-fn skirts_hang_into_the_rock() {
-    let ground = |p: DVec3| p.y - 15.5;
-    let k = key(1, 0, 0, 0);
-    let m = mesh(&ChunkSamples::from_fn(k, ground), |_, _| 0);
-    assert!(
-        m.indices.len() > m.surface_indices,
-        "an open chunk has skirts"
-    );
-    let skirt_vertices: HashSet<u32> = m.indices[m.surface_indices..].iter().copied().collect();
-    let surface_vertices: HashSet<u32> = surface(&m).iter().copied().collect();
-    for v in skirt_vertices.difference(&surface_vertices) {
-        let p = m.positions[*v as usize].as_dvec3() + k.origin();
-        // 3 cells of 2 m below the ground.
-        assert!(
-            (ground(p) + 6.0).abs() < 1e-3,
-            "skirt vertex at {}",
-            ground(p)
-        );
-    }
-    // Skirt triangles stand vertical on flat ground, two-sided: per border edge two face
-    // outwards from the chunk and two (the reversed copy) inwards.
-    for (k, t) in m.indices[m.surface_indices..]
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .enumerate()
-    {
-        let [a, b, c] = t.map(|i| m.positions[i as usize]);
-        let n = (b - a).cross(c - a).normalize();
-        assert!(n.y.abs() < 1e-4);
-        let outward = ((a + b + c) / 3.0 - Vec3::splat(32.0)) * Vec3::new(1.0, 0.0, 1.0);
-        let facing_out = k % 4 < 2;
-        assert_eq!(n.dot(outward) > 0.0, facing_out, "skirt triangle {k}");
     }
 }
 
@@ -203,6 +166,15 @@ fn print_chunk_costs() {
             }
         }
         let total = start.elapsed().as_secs_f64() * 1e3;
+        // Again with warm tiles: the meshing alone.
+        let warm_start = Instant::now();
+        for &k in &keys {
+            let _ = terrain.mesh_chunk(k);
+        }
+        println!(
+            "level {level} warm: {:.2} ms per chunk",
+            warm_start.elapsed().as_secs_f64() * 1e3 / 16.0
+        );
         let start = Instant::now();
         for &k in &keys {
             let _ = terrain.sample_chunk(k);
@@ -265,26 +237,154 @@ fn the_surface_rock_does_not_depend_on_the_level_of_detail() {
     );
 }
 
-#[test]
-fn skirts_are_grouped_by_the_face_they_hang_from() {
-    // Flat ground through a chunk: skirts on the four side faces, none on top or bottom.
-    let k = key(0, 0, 0, 0);
-    let m = mesh(&ChunkSamples::from_fn(k, |p| p.y - 15.5), |_, _| 0);
-    let faces = &m.skirt_faces;
-    assert_eq!(faces[0].start, m.surface_indices);
-    assert_eq!(faces[5].end, m.indices.len());
-    for f in [0, 1, 4, 5] {
-        assert!(!faces[f].is_empty(), "face {f} has no skirt");
-        for t in m.indices[faces[f].clone()].as_chunks::<3>().0 {
-            let c = t.iter().map(|&i| m.positions[i as usize]).sum::<Vec3>() / 3.0;
-            let axis = f / 2;
-            let beyond = if f % 2 == 0 {
-                c[axis] < 0.0
-            } else {
-                c[axis] > 31.0
-            };
-            assert!(beyond, "skirt of face {f} at {c}");
+/// Directed edges of the whole mesh, welded by exact position, without a reversed partner:
+/// none for a closed solid.
+fn unmatched(m: &TerrainMesh) -> usize {
+    let key = |i: u32| m.positions[i as usize].to_array().map(f32::to_bits);
+    let mut count: HashMap<([u32; 3], [u32; 3]), i64> = HashMap::new();
+    for t in m.indices.as_chunks::<3>().0 {
+        for k in 0..3 {
+            let (a, b) = (key(t[k]), key(t[(k + 1) % 3]));
+            if a != b {
+                *count.entry((a, b)).or_default() += 1;
+            }
         }
     }
-    assert!(faces[2].is_empty() && faces[3].is_empty());
+    count
+        .iter()
+        .filter(|&(&(a, b), &n)| count.get(&(b, a)).copied().unwrap_or(0) != n)
+        .count()
+}
+
+/// Area of the caps of `face`, checking that each lies on the face and faces out of the box.
+fn cap_area(m: &TerrainMesh, face: usize, size: f32) -> f64 {
+    let (axis, plane) = (face / 2, if face.is_multiple_of(2) { 0.0 } else { size });
+    let mut outward = Vec3::ZERO;
+    outward[axis] = if face.is_multiple_of(2) { -1.0 } else { 1.0 };
+    let mut area = 0.0;
+    for t in m.indices[m.cap_faces[face].clone()].as_chunks::<3>().0 {
+        let [a, b, c] = t.map(|i| m.positions[i as usize]);
+        for p in [a, b, c] {
+            assert!(
+                (p[axis] - plane).abs() < 1e-4,
+                "cap of face {face} off its plane: {p}"
+            );
+        }
+        let n = (b - a).cross(c - a);
+        assert!(
+            n.dot(outward) >= 0.0,
+            "cap of face {face} faces into the box"
+        );
+        area += 0.5 * f64::from(n.length());
+    }
+    area
+}
+
+/// Signed volume enclosed by a closed mesh wound outwards.
+fn volume(m: &TerrainMesh) -> f64 {
+    m.indices
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| m.positions[i as usize].as_dvec3());
+            a.dot(b.cross(c)) / 6.0
+        })
+        .sum()
+}
+
+#[test]
+fn caps_cover_the_rock_each_face_cuts() {
+    // Flat ground 15.5 m up through a chunk 64 m wide: each side face cuts rock 15.5 m high,
+    // the bottom face is all rock, the top one all air.
+    let k = key(1, 0, 0, 0);
+    let m = mesh(&ChunkSamples::from_fn(k, |p| p.y - 15.5), |_, _| 0);
+    for p in &m.positions {
+        assert!(
+            p.cmpge(Vec3::ZERO).all() && p.cmple(Vec3::splat(64.0)).all(),
+            "{p} outside the box"
+        );
+    }
+    for (face, expected) in [992.0, 992.0, 4096.0, 0.0, 992.0, 992.0]
+        .into_iter()
+        .enumerate()
+    {
+        let area = cap_area(&m, face, 64.0);
+        assert!(
+            (area - expected).abs() < 1e-3,
+            "face {face}: cap of {area} m²"
+        );
+    }
+    assert_eq!(unmatched(&m), 0, "surface and caps are not closed");
+    assert!(
+        (volume(&m) - 64.0 * 64.0 * 15.5).abs() < 0.5,
+        "volume {}",
+        volume(&m)
+    );
+    // Cells all in rock are covered by strips: two triangles per row, and one per corner of
+    // the rim (where the side faces' caps meet it), not two per cell.
+    assert_eq!(
+        m.cap_faces[2].len() / 3,
+        2 * 30 + 2 * 33,
+        "triangles on the bottom"
+    );
+}
+
+#[test]
+fn a_sphere_cut_by_a_face_is_closed_by_its_cap() {
+    // A sphere reaching 5.3 m out of the chunk through the lower and through the upper x face
+    // (the upper one needs the samples beyond the box).
+    let r = 9.3;
+    let h = r - 4.0;
+    let inside = 4.0 / 3.0 * std::f64::consts::PI * r * r * r
+        - std::f64::consts::PI * h * h * (3.0 * r - h) / 3.0;
+    let disc = std::f64::consts::PI * (r * r - 16.0);
+    for (x, face) in [(4.0, 0), (28.0, 1)] {
+        let c = DVec3::new(x, 16.0, 16.0);
+        let m = mesh(
+            &ChunkSamples::from_fn(key(0, 0, 0, 0), |p| (p - c).length() - r),
+            |_, _| 0,
+        );
+        assert_eq!(unmatched(&m), 0, "face {face}: not closed");
+        let (v, area) = (volume(&m), cap_area(&m, face, 32.0));
+        println!("face {face}: volume {v:.2} of {inside:.2} m³, cap {area:.2} of {disc:.2} m²");
+        // A Surface Nets sphere of 9 cells is slightly faceted: within 2 %.
+        assert!((v / inside - 1.0).abs() < 0.02, "face {face}: volume {v}");
+        assert!((area / disc - 1.0).abs() < 0.02, "face {face}: cap {area}");
+        for other in (0..6).filter(|&f| f != face) {
+            assert!(
+                m.cap_faces[other].is_empty(),
+                "face {face}: a cap on face {other}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ground_exactly_on_a_chunk_face_stays_closed() {
+    // Level ground at y = 32 m: the vertices fall exactly on the face between two chunks.
+    // Each is moved just into its own cell, so both chunks clip it alike and stay closed.
+    let ground = |p: DVec3| p.y - 32.0;
+    let below = mesh(&ChunkSamples::from_fn(key(0, 0, 0, 0), ground), |_, _| 0);
+    let above = mesh(&ChunkSamples::from_fn(key(0, 0, 1, 0), ground), |_, _| 0);
+    assert_eq!(unmatched(&below), 0, "the chunk below is not closed");
+    assert_eq!(unmatched(&above), 0, "the chunk above is not closed");
+    // The ground belongs to the chunk below: all of its area, none above.
+    let area = |m: &TerrainMesh| -> f64 {
+        m.indices[..m.surface_indices]
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|t| {
+                let [a, b, c] = t.map(|i| m.positions[i as usize]);
+                0.5 * f64::from((b - a).cross(c - a).length())
+            })
+            .sum()
+    };
+    assert!(
+        (area(&below) - 32.0 * 32.0).abs() < 1e-2,
+        "area below {}",
+        area(&below)
+    );
+    assert!(area(&above) < 1e-2, "area above {}", area(&above));
 }

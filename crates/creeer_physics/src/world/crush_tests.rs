@@ -3,8 +3,9 @@
 
 use super::shape::StaticShape;
 use super::*;
-use crate::structure::section::STEEL_S235;
+use crate::structure::section::{Material, STEEL_S235};
 use crate::structure::{Section, StructureBuilder};
+use creeer_math::det::pow;
 use creeer_math::glam::DMat3;
 
 const DT: f64 = 1.0 / 60.0;
@@ -13,23 +14,61 @@ const DT: f64 = 1.0 / 60.0;
 /// `speed`. The tube's front stops at the wall and the mass is braked by the tube's squash
 /// load N_p = σ_y·A, so the tube shortens plastically by
 ///
-///   δ = (½·M·v² − N_p²/2·(1/k + 1/k_c)) / N_p
+///   δ = (½·M·v² − N_p²/2k − U_c(N_p)) / N_p
 ///
 /// with M the mass behind the tube (the lump and the rear half of the tube's own mass): at
-/// the largest crush the tube (k = EA/L) and the contact (k_c) still hold elastic energy
-/// at the load N_p, which springs back.
+/// the largest crush the tube (k = EA/L) and the contact still hold elastic energy at the
+/// load N_p, which springs back; the contact's (Hertz, `contact/law.rs`) is 2/5·N_p·δ_c.
 /// Returns the measured and the expected plastic shortening (m), and the world.
 fn crush(speed: f64) -> (f64, f64, World) {
-    let section = Section::round_tube(0.2, 0.005);
-    let length = 2.0;
-    let lump = 1000.0;
+    // Perfectly plastic, as the formula is (real steel: `a_real_steel_crash_*`).
+    let steel = Material {
+        damping: 0.0,
+        ..STEEL_S235.perfectly_plastic()
+    };
+    let (world, _) = crash(speed, steel);
+    let s = &world.bodies[0].structure;
+    let e = &s.elements[0];
+    let measured = -e.plastic[0];
+    let n_p = STEEL_S235.yield_strength * section().area;
+    let k = STEEL_S235.youngs_modulus * section().area / LENGTH;
+    let behind = LUMP + 0.5 * section().area * LENGTH * STEEL_S235.density;
+    let contact = 0.4 * n_p * front_contact(&world).depth(n_p);
+    let expected = (0.5 * behind * speed * speed - 0.5 * n_p * n_p / k - contact) / n_p;
+    (measured, expected, world)
+}
+
+/// The tube: 200 × 5 mm, 2 m long, a 1 t lump behind it.
+fn section() -> Section {
+    Section::round_tube(0.2, 0.005)
+}
+const LENGTH: f64 = 2.0;
+const LUMP: f64 = 1000.0;
+
+/// The front joint's contact law with the wall.
+fn front_contact(world: &World) -> contact::law::Hertz {
+    let modulus = world.bodies[0]
+        .surface
+        .contact_modulus(&world.static_surface);
+    contact::law::Hertz::new(modulus, 0.1)
+}
+
+/// The lump on the tube hitting the wall at `speed`, the tube of `steel`, for a second;
+/// with the plastic work of every step.
+fn crash(speed: f64, steel: Material) -> (World, f64) {
+    let (section, length, lump) = (section(), LENGTH, LUMP);
     let mut b = StructureBuilder::new();
     let front = b.node(DVec3::ZERO);
     let rear = b.node(DVec3::new(-length, 0.0, 0.0));
     b.mass(rear, lump, DMat3::from_diagonal(DVec3::splat(50.0)));
-    b.beam(front, rear, section, STEEL_S235);
+    // Undamped: steel's stiffness-proportional damping (calibrated at 2 Hz) would also take
+    // the kHz rattle of the front joint against the wall, 5 % of a 5 m/s crash with Hertz's
+    // contact, which the formula leaves out (real steel rings far longer; ADR-0005).
+    b.beam(front, rear, section, steel);
     let mut structure = b.build();
     structure.gravity = DVec3::ZERO;
+    // The tube squashes, as the formulas say; buckling has its own tests (`buckling_tests.rs`).
+    structure.splits = false;
     for v in &mut structure.velocity {
         *v = DVec3::X * speed;
     }
@@ -41,18 +80,12 @@ fn crush(speed: f64) -> (f64, f64, World) {
         half: DVec3::splat(1.0),
     });
     world.add(Body::structure(structure, DT));
+    let start = world.energy();
     for _ in 0..60 {
         world.step();
     }
-    let s = &world.bodies[0].structure;
-    let e = &s.elements[0];
-    let measured = -e.plastic[0];
-    let n_p = STEEL_S235.yield_strength * section.area;
-    let k = STEEL_S235.youngs_modulus * section.area / length;
-    let behind = lump + 0.5 * section.area * length * STEEL_S235.density;
-    let springs = 1.0 / k + 1.0 / world.contact_stiffness;
-    let expected = (0.5 * behind * speed * speed - 0.5 * n_p * n_p * springs) / n_p;
-    (measured, expected, world)
+    let lost = start - world.energy();
+    (world, lost)
 }
 
 /// The crush matches the plastic work it takes to stop the mass, within 2 %, from a light
@@ -84,4 +117,67 @@ fn a_crash_beyond_the_elongation_at_break_tears_the_tube() {
         (measured / at_break - 1.0).abs() < 0.02,
         "tore after {measured:.3} m, the elongation allows {at_break:.3} m"
     );
+}
+
+/// The tube's plastic shortening (m) in real steel, from the same two masses in continuous
+/// time: the lump and the rear half of the tube behind, the front half on the wall (Hertz),
+/// the elastic tube between them, flowing plastically by Cowper–Symonds as an overstress:
+/// ε̇ = D·(N/(A·σ(ε)) − 1 + (ε̇₀/D)^{1/q})^q once N passes A·σ(ε) (`Material::flow_stress`,
+/// `RateSensitivity`). RK4 in steps of 1 µs, far below the flow's relaxation (~90 µs).
+fn continuous(speed: f64, world: &World) -> f64 {
+    let steel = STEEL_S235;
+    let (area, r) = (section().area, steel.rate);
+    let half = 0.5 * area * LENGTH * steel.density;
+    let (behind, front) = (LUMP + half, half);
+    let ea = steel.youngs_modulus * area;
+    let wall = front_contact(world);
+    let offset = pow(r.reference / r.d, 1.0 / r.q);
+    // State: the rear and the front's travel past touching, their speeds, plastic strain.
+    let derivative = |[xr, xf, vr, vf, strain]: [f64; 5]| -> [f64; 5] {
+        let force = ea * ((xr - xf) / LENGTH - strain).max(0.0);
+        let static_force = area * steel.flow_stress(strain);
+        let rate = if force > static_force {
+            r.d * pow(force / static_force - 1.0 + offset, r.q)
+        } else {
+            0.0
+        };
+        [
+            vr,
+            vf,
+            -force / behind,
+            (force - wall.force(xf)) / front,
+            rate,
+        ]
+    };
+    let mut y = [0.0, 0.0, speed, speed, 0.0];
+    let dt = 1e-6;
+    for _ in 0..200_000 {
+        let k1 = derivative(y);
+        let k2 = derivative(std::array::from_fn(|i| y[i] + 0.5 * dt * k1[i]));
+        let k3 = derivative(std::array::from_fn(|i| y[i] + 0.5 * dt * k2[i]));
+        let k4 = derivative(std::array::from_fn(|i| y[i] + dt * k3[i]));
+        y = std::array::from_fn(|i| y[i] + dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]));
+    }
+    y[4] * LENGTH
+}
+
+/// In real steel the tube hardens as it crushes and resists faster crushing more (at
+/// 20 m/s it is strained at 10 s⁻¹, where mild steel flows 1.7 times as hard): it crushes
+/// as the same two masses do in continuous time, within 2 %, and
+/// far less than perfectly plastic steel would (at 20 m/s: 0.16 m against 0.28 m).
+#[test]
+fn a_real_steel_crash_crushes_as_hardening_and_strain_rate_say() {
+    for speed in [5.0, 10.0, 20.0] {
+        let steel = Material {
+            damping: 0.0,
+            ..STEEL_S235
+        };
+        let (world, _) = crash(speed, steel);
+        let measured = -world.bodies[0].structure.elements[0].plastic[0];
+        let expected = continuous(speed, &world);
+        assert!(
+            (measured / expected - 1.0).abs() < 0.02,
+            "{speed} m/s: crushed {measured:.4} m, expected {expected:.4} m"
+        );
+    }
 }

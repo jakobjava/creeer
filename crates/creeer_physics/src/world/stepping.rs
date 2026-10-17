@@ -37,6 +37,18 @@ pub(super) fn group_energy(bodies: &[Body], contacts: &Contacts) -> f64 {
     bodies.iter().map(|b| b.structure.energy()).sum::<f64>() + contacts.elastic_energy(&states)
 }
 
+/// The gaps of a group's contacts as measured (`Contacts::measured_gaps`).
+fn measured_gaps(bodies: &[Body], contacts: &Contacts) -> Vec<f64> {
+    let states: Vec<MemberState<'_>> = bodies
+        .iter()
+        .map(|b| MemberState {
+            position: &b.structure.position,
+            orientation: &b.structure.orientation,
+        })
+        .collect();
+    contacts.measured_gaps(&states)
+}
+
 /// Advances a group by `dt`.
 pub(super) fn step(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
     let impact = contacts.list.iter().any(impact::is_impact);
@@ -49,20 +61,45 @@ pub(super) fn step(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
             body.crushing = false;
         }
     }
+    // Members compressed enough to buckle are split, their new joints colliding as the
+    // others do (`structure/buckling.rs`).
+    for body in bodies.iter_mut() {
+        for (node, radius) in body.solver.split_compressed(&mut body.structure) {
+            body.shapes
+                .push((node, super::shape::Shape::Sphere { radius }));
+        }
+    }
 }
 
 /// One step with the solvers' current time step. `resolved`: the step is short enough to
 /// follow the impact's deceleration (impact substeps).
 fn substep(bodies: &mut [Body], contacts: &mut Contacts, impact: bool, resolved: bool) {
+    // The contacts' laws as this step resolves them, before any energy is measured: no
+    // contact carries more at rest than the weight of the whole group and its loads.
+    let weight: f64 = bodies
+        .iter()
+        .map(|b| {
+            let s = &b.structure;
+            (0..s.node_count())
+                .map(|i| (s.gravity * s.masses()[i] + s.load[i]).length())
+                .sum::<f64>()
+        })
+        .sum();
+    contacts.set_weight(weight);
+    contacts.set_step(bodies[0].solver.time_step());
+    // The bodies' energy only: contacts found pressed into each other at the step's start hold
+    // energy that never existed (a ball found inside a crate held 290 kJ, and the rebound was
+    // allowed to give some of it back, F5).
     let before = if impact {
-        group_energy(bodies, contacts)
+        bodies.iter().map(|b| b.structure.energy()).sum::<f64>()
     } else {
         0.0
     };
     if impact && !resolved {
         let h = bodies[0].solver.time_step();
+        let gaps = measured_gaps(bodies, contacts);
         let mut structures: Vec<_> = bodies.iter_mut().map(|b| &mut b.structure).collect();
-        impact::prestop(&mut structures, &contacts.list, h);
+        impact::prestop(&mut structures, (&contacts.list, &gaps), h);
     }
     let mut members: Vec<_> = bodies
         .iter_mut()
@@ -88,8 +125,9 @@ fn substep(bodies: &mut [Body], contacts: &mut Contacts, impact: bool, resolved:
         let kinetic: f64 = bodies.iter().map(|b| b.structure.node_energy().0).sum();
         let plastic: f64 = bodies.iter().map(|b| b.solver.last_yielding.work).sum();
         let budget = kinetic + before - group_energy(bodies, contacts) - plastic;
+        let gaps = measured_gaps(bodies, contacts);
         let mut structures: Vec<_> = bodies.iter_mut().map(|b| &mut b.structure).collect();
-        let kicked = impact::restitute(&mut structures, &contacts.list, budget);
+        let kicked = impact::restitute(&mut structures, (&contacts.list, &gaps), budget);
         let capped = impact::cap(&mut structures, budget);
         // A 60 Hz step spreads the impact's deceleration over the whole step: carrying it
         // into the next Newmark step would push the body away again. Impact substeps follow
@@ -120,7 +158,7 @@ fn crush(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
         Side::Fixed(_) => false,
     };
     for c in &mut contacts.list {
-        c.damping = 0.0;
+        c.dashpot = false;
         if deformable(c.a) || deformable(c.b) {
             c.restitution = 0.0;
         }

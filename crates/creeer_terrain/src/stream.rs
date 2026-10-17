@@ -53,8 +53,8 @@ pub struct Update<T> {
     pub ready: Vec<(ChunkKey, Arc<T>)>,
     /// Chunks dropped from the cache: free them.
     pub evicted: Vec<ChunkKey>,
-    /// Chunks to draw this frame, each with the faces whose skirts it needs (bit f for face
-    /// f as in `TerrainMesh::skirt_faces`): those bordering a chunk of another level.
+    /// Chunks to draw this frame, each with the faces whose caps it needs (bit f for face
+    /// f as in `TerrainMesh::cap_faces`): those bordering a chunk of another level.
     pub draw: Vec<(ChunkKey, u8)>,
 }
 
@@ -143,6 +143,12 @@ impl<T: Send + Sync + 'static> Streamer<T> {
         self.entries.len()
     }
 
+    /// Chunks still to come as of the last update: queued, and taken by a worker but not yet
+    /// delivered. `queued` alone is 0 while every missing chunk is being built.
+    pub fn outstanding(&self) -> usize {
+        self.queued + self.in_flight.len()
+    }
+
     /// Marks every chunk overlapping the box `lo..hi` (with one cell around it) as stale,
     /// to be rebuilt (after an edit there).
     pub fn invalidate(&mut self, lo: DVec3, hi: DVec3) {
@@ -214,7 +220,7 @@ impl<T: Send + Sync + 'static> Streamer<T> {
         let drawn: KeySet = draw.iter().copied().collect();
         let draw = draw
             .into_iter()
-            .map(|key| (key, skirt_mask(&drawn, key)))
+            .map(|key| (key, cap_mask(&drawn, key)))
             .collect();
         Update {
             ready,
@@ -351,10 +357,10 @@ fn work<T>(
     }
 }
 
-/// The faces of `key` that need skirts: those whose neighbour of the same level is not drawn,
+/// The faces of `key` that need caps: those whose neighbour of the same level is not drawn,
 /// so a coarser or finer chunk meets it there (or nothing does: then no surface crosses that
-/// face and its skirt is empty).
-fn skirt_mask(drawn: &KeySet, key: ChunkKey) -> u8 {
+/// face and its cap is empty or hidden in rock).
+fn cap_mask(drawn: &KeySet, key: ChunkKey) -> u8 {
     let mut mask = 0u8;
     for face in 0..6 {
         let mut step = IVec3::ZERO;
