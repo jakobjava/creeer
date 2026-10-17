@@ -135,6 +135,15 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             let timer = crate::profile::start();
             system = remake(system.take(), members, coupling, &mut rigid);
             timer.stop(crate::profile::Slot::Relinearise);
+            #[cfg(feature = "profile")]
+            if std::env::var_os("CREEER_CHECK_HESSIAN").is_some() {
+                let label = format!("iteration {iteration}");
+                super::hessian_check::check(members, coupling, &label);
+                super::hessian_check::check_own(members, coupling, &label);
+            }
+        }
+        if lag_updates > 0 {
+            crate::profile::add(crate::profile::Slot::LagIterations, 1);
         }
         let t = Instant::now();
         for (s, v) in members.iter_mut() {
@@ -287,6 +296,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             if lag_updates == 3 || !coupling.update_lag(&states(members)) {
                 break;
             }
+            crate::profile::add(crate::profile::Slot::LagUpdates, 1);
             lag_updates += 1;
             objective = own + coupling.energy(&states(members));
             lag_changed = true;

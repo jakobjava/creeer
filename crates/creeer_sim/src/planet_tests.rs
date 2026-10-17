@@ -228,8 +228,11 @@ fn planet_physics_is_bit_identical_across_platforms() {
     // factorisations judged without the joints a joint solve takes exactly): the same
     // converged steps by another path, the bodies within 0.01 mm of the old ones after half
     // a second and 0.6 mm after two (crates settling on terrain), after 0x71ef_08e3_442a_4dc9.
+    // Then for the contacts' lever arms and normals in the matrices measured at each iterate
+    // (not the step's start): the bodies within 0.1 mm after two seconds, after
+    // 0xccbf_8f27_2ce7_305c.
     assert_eq!(
-        hash, 0xccbf_8f27_2ce7_305c,
+        hash, 0x95c9_9d4f_d3cf_d727,
         "planet physics hash {hash:#018x}"
     );
 }

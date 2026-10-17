@@ -62,6 +62,7 @@ impl Coupling for Contacts {
             let c = &mut self.list[i];
             c.arm_a = arm_a;
             c.arm_b = arm_b;
+            c.lever = c.normal;
             c.gap_hat = gaps_hat[i];
             c.tangent = None;
             // Touching or pressed in at the start, or closing within the step (an impact, whose
@@ -237,6 +238,9 @@ impl Coupling for Contacts {
         let gaps = geometry.gaps();
         for i in 0..self.list.len() {
             let (gap, slip) = (geometry.at[i].0, geometry.at[i].3);
+            let at = geometry.at[i];
+            let c = &mut self.list[i];
+            (c.lever, c.arm_a, c.arm_b) = (at.2, at.4, at.5);
             // Its normal stiffness while pressed, none apart: the step's anticipating stiffness
             // kept for a contact come apart made a sliding rock's matrix a hundred times too stiff
             // (and the pile took a third more iterations, F6).

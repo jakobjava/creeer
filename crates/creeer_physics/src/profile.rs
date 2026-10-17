@@ -26,6 +26,9 @@ pub enum Slot {
     Solve,
     /// Line-search trials.
     Trials,
+    /// Friction (lag) refreshes that changed something, and iterations after the first one.
+    LagUpdates,
+    LagIterations,
     /// A minimisation's setup (matrices of rigid bodies, joint systems), its rebuilding of
     /// rigid matrices at each iteration (Newton's method proper).
     Setup,
@@ -126,6 +129,8 @@ pub const NAMES: [(Slot, &str); SLOTS] = [
     (Slot::Objective, "objective"),
     (Slot::Solve, "solve"),
     (Slot::Trials, "trials"),
+    (Slot::LagUpdates, "lag updates"),
+    (Slot::LagIterations, "lag iterations"),
     (Slot::Setup, "setup"),
     (Slot::Relinearise, "relinearise"),
     (Slot::Factorisations, "factorisations"),
@@ -152,6 +157,8 @@ pub fn is_count(slot: Slot) -> bool {
             | Slot::GroupSteps
             | Slot::Iterations
             | Slot::Trials
+            | Slot::LagUpdates
+            | Slot::LagIterations
             | Slot::Factorisations
             | Slot::Splits
             | Slot::Sweeps

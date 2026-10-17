@@ -68,3 +68,25 @@ fn profile_rocks() {
 fn profile_stacks() {
     report(PhysicsScene::Stacks, 900, 3.0);
 }
+
+/// The whole run's counts (`--features creeer_physics/profile`).
+#[test]
+#[ignore = "profile"]
+fn profile_rocks_counts() {
+    let mut sb = PhysicsSandbox::new(PhysicsScene::Rocks, 1.0 / 60.0);
+    let _ = profile::take();
+    let mut sums = [0u64; profile::SLOTS];
+    for _ in 0..900 {
+        sb.step(1.0 / 60.0);
+        for (s, v) in sums.iter_mut().zip(profile::take()) {
+            *s += v;
+        }
+    }
+    let parts: Vec<String> = NAMES
+        .iter()
+        .zip(sums)
+        .filter(|((slot, _), v)| *v > 0 && is_count(*slot))
+        .map(|((_, name), v)| format!("{name} {v}"))
+        .collect();
+    eprintln!("Rocks over 15 s: {}", parts.join(", "));
+}

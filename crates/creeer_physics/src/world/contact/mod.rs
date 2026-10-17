@@ -148,9 +148,13 @@ pub struct Contact {
     pub radius_a: f64,
     /// Radius of side B.
     pub radius_b: f64,
-    /// Lever arms (world) of both points from their nodes at the start of the step.
+    /// Lever arms (world) of both points from their nodes, and the gap's gradient with respect
+    /// to A's point, for the step's matrices: as the step starts, and measured again at each
+    /// iterate a group of rigid bodies relinearises at (`Coupling::relinearise`). Kept from the
+    /// start alone, a tumbling rock's blocks were off by up to a tenth as its normals turned.
     arm_a: DVec3,
     arm_b: DVec3,
+    lever: DVec3,
     /// How its normal turns within the step (`turning.rs`).
     pub turning: turning::Turning,
     /// Contacts with balls between rigid bodies: whether they resist spinning, the orientations
@@ -190,6 +194,7 @@ impl Contact {
             radius_b: 0.0,
             arm_a: DVec3::ZERO,
             arm_b: DVec3::ZERO,
+            lever: DVec3::ZERO,
             turning: turning::Turning::Frozen,
         }
     }

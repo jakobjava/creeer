@@ -20,6 +20,8 @@ mod ground_rise;
 mod ground_sample;
 #[cfg(test)]
 mod ground_tests;
+#[cfg(test)]
+mod hessian_probe_tests;
 pub mod hull;
 mod hull_build;
 #[cfg(test)]
