@@ -14,6 +14,9 @@ mod buckling;
 mod buckling_tests;
 mod builder;
 mod coupled;
+mod dashpot;
+#[cfg(test)]
+mod dashpot_tests;
 #[cfg(test)]
 mod dynamics_tests;
 mod element;
@@ -48,6 +51,7 @@ mod step;
 mod validation_tests;
 
 pub use builder::StructureBuilder;
+pub use dashpot::Dashpot;
 use element::Element;
 pub use heat::BUILT_AT;
 pub use plastic::Yielding;
@@ -112,6 +116,9 @@ pub struct Structure {
     /// coefficient uses the speed at the start of each step, which keeps it implicit
     /// (stable at any speed).
     pub drag: Vec<f64>,
+    /// Loads that depend on the motion, linearised for the coming step ([`Dashpot`]): set
+    /// with the loads they belong to, before each step (not saved).
+    pub dashpots: Vec<Dashpot>,
     /// Uniform gravitational acceleration (m/s²).
     pub gravity: DVec3,
     /// A planet's gravity in its rotating frame (`gravity.rs`), on top of `gravity`.

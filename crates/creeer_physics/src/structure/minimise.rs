@@ -58,7 +58,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
     // Structures take the contacts' stiffness into their matrix (refactorising only when
     // it changed materially).
     for (m, (s, v)) in members.iter_mut().enumerate() {
-        if !s.elements.is_empty() && v.use_contact_stiffness(s, coupling.node_stiffness(m)) {
+        let mut blocks = coupling.node_stiffness(m);
+        blocks.extend(s.dashpot_blocks(v.work.beta, v.work.dashpot_scale));
+        if !s.elements.is_empty() && v.use_contact_stiffness(s, blocks) {
             v.update_turns(s);
         }
     }

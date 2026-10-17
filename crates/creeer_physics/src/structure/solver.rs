@@ -114,6 +114,9 @@ pub struct ImplicitSolver {
     /// with the work of that mean (`group.rs`).
     pub(super) previous_load: Vec<DVec3>,
     pub(super) previous_torque: Vec<DVec3>,
+    /// Each dashpot's force and torque at the end of the last substep (node, N, N·m): in
+    /// the accelerations Newmark carries, so in the work its next step's mean does.
+    pub(super) dashpot_end: Vec<(usize, DVec3, DVec3)>,
     /// Each node's rest inertia inverted (zero where it has none): its angular velocity from
     /// its momentum, R·I⁻¹·Rᵀ·L, without inverting the turned inertia every step.
     pub(super) rest_inverse: Vec<DMat3>,
@@ -150,6 +153,10 @@ pub(super) struct Work {
     pub momentum_star: Vec<DVec3>,
     /// Drag dashpot per node for this step: drag·|v| at its start (N·s/m).
     pub drag_rate: Vec<f64>,
+    /// Where each dashpot's node would end at its reference motion (`dashpot.rs`).
+    pub dashpot_ref: Vec<(DVec3, DQuat)>,
+    /// What the dashpots are taken times this substep (`dashpot.rs`: h/β for Newmark).
+    pub dashpot_scale: f64,
     /// Coriolis force per node for this step (N).
     pub coriolis: Vec<DVec3>,
     /// The rotating frame's fictitious torque per node for this step (N·m).
@@ -223,6 +230,7 @@ impl ImplicitSolver {
             angular_acceleration: vec![DVec3::ZERO; n],
             previous_load: structure.load.clone(),
             previous_torque: structure.torque.clone(),
+            dashpot_end: Vec::new(),
             rest_inverse: structure
                 .inertia
                 .iter()
@@ -246,6 +254,8 @@ impl ImplicitSolver {
                 inertia_star: vec![DMat3::ZERO; n],
                 momentum_star: vec![DVec3::ZERO; n],
                 drag_rate: vec![0.0; n],
+                dashpot_ref: Vec::new(),
+                dashpot_scale: 1.0,
                 coriolis: vec![DVec3::ZERO; n],
                 frame_torque: vec![DVec3::ZERO; n],
                 s_hat: vec![[0.0; MEASURES]; structure.element_count()],
@@ -319,6 +329,8 @@ impl ImplicitSolver {
         }
         w.set_coriolis(s, None);
         // With x = x* the residual is β²·f (no inertia term, no damping).
+        // (Nor dashpots: at the motion they were linearised at they exert nothing.)
+        w.dashpot_ref.clear();
         w.residual(s);
         let scale = 1.0 / (w.beta * w.beta);
         for i in 0..n {

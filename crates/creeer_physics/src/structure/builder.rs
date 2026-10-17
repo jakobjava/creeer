@@ -120,6 +120,7 @@ impl StructureBuilder {
             load: vec![DVec3::ZERO; n],
             torque: vec![DVec3::ZERO; n],
             drag: vec![0.0; n],
+            dashpots: Vec::new(),
             gravity: STANDARD_GRAVITY,
             planet: None,
             rest: self.positions.clone(),

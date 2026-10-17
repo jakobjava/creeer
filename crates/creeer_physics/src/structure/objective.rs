@@ -105,6 +105,7 @@ impl Work {
             });
         self.element_force = element_force;
         self.element_energy = element_energy;
+        let value = value + self.dashpot_energy(s, x, q);
         let total = self.element_energy.iter().fold(value, |sum, e| sum + e[0]);
         let elastic = self.element_energy.iter().fold(0.0, |sum, e| sum + e[1]);
         (total, elastic)
@@ -154,6 +155,9 @@ impl Work {
                 *out = r * s.block_mask(block) * scale;
             });
         self.direction = direction;
+        if !s.dashpots.is_empty() {
+            self.dashpot_forces(s, scale);
+        }
     }
 
     /// The Coriolis force of every node for the coming step (zero without a planet;

@@ -153,6 +153,9 @@ fn group_energy(
     (total.0 + contact, total.1 + contact)
 }
 
+/// Where a member started a substep, and its dashpots' forces then.
+type Start = (Vec<DVec3>, Vec<DQuat>, Vec<(usize, DVec3, DVec3)>);
+
 /// The work the members' external loads and torques did since they were at `start` (J) that
 /// the energy's potential of the loads does not count. A torque has no potential as a load
 /// has (rotations do not add): its work, τ·Δθ for the rotation vector Δθ a node turned by,
@@ -162,9 +165,9 @@ fn group_energy(
 /// or torque that changed did the work of its mean with the last step's, which the potential
 /// (at the load now) misses by ½·(f₋₁ − f)·Δx: unbooked, a thruster or motor switched on or
 /// off took the step for a gain and redid it by backward Euler.
-fn unbooked_work(members: &[Member<'_>], start: &[(Vec<DVec3>, Vec<DQuat>)], newmark: bool) -> f64 {
+fn unbooked_work(members: &[Member<'_>], start: &[Start], newmark: bool) -> f64 {
     let mut work = 0.0;
-    for ((s, v), (x0, q0)) in members.iter().zip(start) {
+    for ((s, v), (x0, q0, dashpots)) in members.iter().zip(start) {
         for i in 0..s.node_count() {
             let (torque, before) = (s.torque[i], v.previous_torque[i]);
             let torque = if newmark {
@@ -178,6 +181,15 @@ fn unbooked_work(members: &[Member<'_>], start: &[(Vec<DVec3>, Vec<DQuat>)], new
             let change = v.previous_load[i] - s.load[i];
             if newmark && change != DVec3::ZERO {
                 work += 0.5 * change.dot(s.position[i] - x0[i]);
+            }
+        }
+        work += s.dashpot_work(x0, q0);
+        // Newmark's mean took the last step's dashpots' forces too (in its accelerations).
+        if newmark {
+            for &(n, force, torque) in dashpots {
+                work += 0.5
+                    * (force.dot(s.position[n] - x0[n])
+                        + torque.dot(crate::so3::log(s.orientation[n] * q0[n].conjugate())));
             }
         }
     }
@@ -230,11 +242,18 @@ pub fn step_group_with(
                     .chain(&v.previous_torque)
                     .any(|t| *t != DVec3::ZERO)
                     || s.load != v.previous_load
+                    || !s.dashpots.is_empty()
             });
-            let start: Vec<(Vec<DVec3>, Vec<DQuat>)> = if acting {
+            let start: Vec<Start> = if acting {
                 members
                     .iter()
-                    .map(|(s, _)| (s.position.clone(), s.orientation.clone()))
+                    .map(|(s, v)| {
+                        (
+                            s.position.clone(),
+                            s.orientation.clone(),
+                            v.dashpot_end.clone(),
+                        )
+                    })
                     .collect()
             } else {
                 Vec::new()
