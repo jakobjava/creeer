@@ -19,6 +19,7 @@ creeer_mech.workspace = true
 creeer_electric.workspace = true
 creeer_math.workspace = true
 creeer_physics.workspace = true
+creeer_rates.workspace = true
 creeer_sim.workspace = true
 creeer_orbit.workspace = true
 creeer_terrain.workspace = true

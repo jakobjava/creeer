@@ -704,6 +704,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "creeer_rates"
+version = "0.0.1"
+dependencies = [
+ "creeer_math",
+ "creeer_network",
+ "proptest",
+ "rayon",
+]
+
+[[package]]
 name = "creeer_render"
 version = "0.0.1"
 dependencies = [
@@ -789,6 +799,7 @@ dependencies = [
  "creeer_net",
  "creeer_orbit",
  "creeer_physics",
+ "creeer_rates",
  "creeer_server",
  "creeer_sim",
  "creeer_terrain",
