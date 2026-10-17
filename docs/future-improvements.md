@@ -19,7 +19,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 
 **Kept up to date:** whenever something is deferred, it is added here as well as in its ADR.
 
-**Not a place for slowness.** Performance and maximum realism together are paramount (plan.md): a scene or system that is too slow is fixed now, not listed here. Only speed-ups beyond the budgets (headroom for larger worlds) belong here.
+**Not a place for slowness.** Performance and maximum realism together are paramount (plan.md): a scene or system that is too slow is fixed now, not listed here. Only speed-ups beyond the budgets (headroom for larger worlds) belong here, and what the user chose to defer after the measurements (the sandbox scenes' 2–3 ms target, 2026-10-18).
 
 ## Physics
 
@@ -34,7 +34,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Lateral-torsional buckling** (a beam bent about its strong axis twisting sideways) | Only compression splits members | R | Medium | ADR-0005 |
 | **Members colliding with each other** (a folded column passes through itself) | Self-contact of a structure is not detected | R | Large | ADR-0005 |
 | **Material damping model**: steel's damping over-damps a joint's kilohertz rattle (crash 5 % short at 5 m/s with it) | The crash test runs undamped; a frequency-dependent model is needed | R | Medium | ADR-0005 |
-| **Impacts on structures cost substeps** (a 10 t block landing on a bridge: 33–36 ms a tick while members flow fast, 34 fixed substeps of 0.5 ms) | In hand, not deferred: substeps of controlled size and their fixed costs (ADR-0017, A1–A2, proposed) | S | Medium | ADR-0005, ADR-0017 |
+| **Impacts on structures cost substeps** (a 10 t block landing on a bridge: about 33 ms a tick while it strikes, 34 substeps of 0.5 ms at about 1 ms each, a third of that fixed costs) | Error-controlled substeps were as accurate but no faster (ADR-0017, A1); the substeps are needed while the block strikes. **Subcycling the struck region** (its joints in short steps, the rest in the tick's, energy exact where they meet) is the method left, weeks of work: deferred by the user (2026-10-18) | S | Large | ADR-0005, ADR-0017 |
 
 ### Gravity and orbits
 
@@ -92,6 +92,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **A stiffer contact model** with all contacts in every structure's matrix before every step | Future work after the F5 contact law | R, S | Large | ADR-0005 |
 | **Newton's method for groups with structures**: only groups of rigid bodies alone take their contacts' stiffness at each iteration's state; rigid bodies on structures keep the step's | The structures' matrices are factorised once a step; factorising them at every iteration was not tried | S | Medium | ADR-0005 (F6, Newton) |
 | **Lagged friction's outer loop**: half the rock pile's iterations come after a friction refresh; the gap's curvature terms (B1) save only 7 % | Coupled Newton for friction (ADR-0017, C) measured on the same inputs: iterations −6 % on the pile, +4 % on the stacks, worse worst steps; not adopted. The closing contacts' cuts (a third of the pile's iterations) are the next lever | S | Medium | ADR-0017 |
+| **The sandbox scenes' 2–3 ms target**: at the end of `lag-fix` (2026-10-18) the worst ticks are the bridge's 32.8 ms (p99 4.9), the rock pile's 18.2 (14.2), the crash's 19.0 (3.0), the stacks' 6.3 (1.8); gated in CI (work) and `cargo xtask perf` (time) | The levers within the design are measured and taken or rejected (ADR-0017): parallel contact evaluation within a group loses on this machine (rayon's wake-ups, cores shared by two threads). What is left is a different method: subcycling struck regions (above), and a large pile's contact solve split into pieces large enough for the cores, coupled by an outer iteration. Weeks of work: deferred by the user | S | Large | ADR-0017 |
 | **The line search at planet scale**: 500 km from the origin the objective rounds at about 10⁻⁷ J, and steps stop short where a decrease that small cannot be seen | Within tolerance where it stops; an objective summed as differences from the step's start would see it | R | Medium | this list (F6) |
 | **Budgets close on a heat-soaked machine**: late in a long `cargo xtask perf` run the 10k-node DC circuit projects to 0.99 ms (0.86 cool), the 20k-node thermal step to 1.51 ms (budget 1.5; 1.28 cool), the 1,000 aero panels to 0.199 ms (0.2) | Each meets its budget measured on its own, as every budget is | S | Small | ADR-0011 (F6.8), ADR-0010, ADR-0014, ADR-0016 |
 | **Settling stacks cost 3–6 % more** since rigid bodies' contacts are relinearised each iteration (piles 4–8 times less) | The pile's gain; the stacks' matrices barely change near convergence and are not made again there | S | Small | ADR-0005 (F6, Newton) |

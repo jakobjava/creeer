@@ -1,6 +1,6 @@
 # ADR-0017: Fast ticks without loss: impacts, Newton and friction redesigned
 
-- **Status:** Accepted (2026-10-17), in progress: the user chose all parts, for the best times with maximum realism and so that later, larger simulations gain too. B1 and C are measured and not adopted (below).
+- **Status:** Accepted (2026-10-17); closed 2026-10-18. Every part was measured; what paid is in (bit for bit), the rest is recorded below, and the 2–3 ms target is deferred by the user (`docs/future-improvements.md`).
 - **Context:** branch `lag-fix`. The sandbox's bridge under a landing block froze for a moment and its rock pile lagged. Performance and maximum realism together are paramount (plan.md): the target is a worst tick of **2–3 ms per scene** on the development machine, with every validation test passing at its present tolerance.
 - **Builds on:** ADR-0004 (the implicit structure solver), ADR-0005 (contacts, impacts, plasticity; its F6 Newton amendment)
 - **Evidence:** `creeer_client --physics-bench` (timing gates), `physics_bench_tests.rs` (work gates), `physics_profile.rs` (`--features creeer_physics/profile`), the Hessian check (`CREEER_CHECK_HESSIAN=1`)
@@ -229,3 +229,18 @@ In the bridge's worst tick (36 ms, 34 substeps): setup 4.3 ms, of which the join
 ### Where this leaves 2–3 ms
 
 A deforming impact in this design costs its substeps × about 1 ms, all of them needed while it strikes, and its fixed costs are a third of that: even without any, the bridge's worst tick would be about 22 ms. A pile's worst tick is its largest group's iterations, about 40 a step at 0.1 ms each, on one core. Reaching 2–3 ms needs a different method for these cases: subcycling the struck region (its few joints in short steps, the rest of the structure in the tick's), or the contact solve of a pile restructured so that its work splits into pieces large enough for the cores.
+
+## Closed (2026-10-18)
+
+The user's decision: keep the performance as it stands and move on, rather than spend weeks on a different method. Where `lag-fix` ends (development machine, best of three):
+
+| scene | worst tick | p99 | worst when the gates came in (f0c4383) |
+|---|---|---|---|
+| bridge | 32.8 ms | 4.9 ms | 38 ms |
+| rocks | 18.2 ms | 14.2 ms | 20.7 ms |
+| crash | 19.0 ms | 3.0 ms | 38 ms |
+| stacks | 6.3 ms | 1.8 ms | 7.0 ms |
+
+At the branch's start the bridge froze for half a second in ticks of about 120 ms, and the rock pile ran slower than real time in ticks of 17–33 ms.
+
+The worst ticks are rare and hard: a 10 t block striking a bridge, a pile tumbling. Gated: the Newton iterations of every scene's worst tick in CI (`physics_bench_tests.rs`), the time of the four scenes' worst and p99 ticks in `cargo xtask perf` (ceilings about a quarter above the measurements). Left for later (`docs/future-improvements.md`): subcycling struck regions; a large pile's contact solve split into pieces large enough for the cores; friction on stale normal forces (a realism limit found here).

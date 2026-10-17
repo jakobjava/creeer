@@ -39,14 +39,14 @@ pub fn run(scene: PhysicsScene, ticks: usize) -> Run {
 }
 
 /// The scenes the bench times, their names in metrics, and their ceilings (ms on the
-/// development machine): the worst tick and the p99 tick, a quarter above what they measured
-/// (best of three) and brought down with every gain on the way to 2–3 ms. 2026-10-18: worst
-/// 38, 20.7, 7.0, 38 ms and p99 6.8, 15.9, 2.0, 2.8 ms; then, with rate-lifted flow's terms kept
-/// and warm-started, the bridge 32 / 4.9 ms and the crash 19 / 2.9 ms.
+/// development machine): the worst tick and the p99 tick, about a quarter above what they
+/// measured (best of three). 2026-10-18, at the end of `lag-fix`: worst 32.8, 18.2, 6.3,
+/// 19.0 ms and p99 4.9, 14.2, 1.8, 3.0 ms. (The 2–3 ms target needs other methods for these
+/// scenes' hardest ticks, `docs/future-improvements.md`.)
 pub const TIMED: [(PhysicsScene, &str, f64, f64); 4] = [
     (PhysicsScene::Bridge, "bridge", 40.0, 6.0),
-    (PhysicsScene::Rocks, "rocks", 26.0, 20.0),
-    (PhysicsScene::Stacks, "stacks", 9.0, 2.6),
+    (PhysicsScene::Rocks, "rocks", 23.0, 18.0),
+    (PhysicsScene::Stacks, "stacks", 8.0, 2.3),
     (PhysicsScene::Crash, "crash", 24.0, 3.6),
 ];
 
