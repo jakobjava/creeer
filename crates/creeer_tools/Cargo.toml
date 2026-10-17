@@ -10,6 +10,7 @@ publish = false
 creeer_core.workspace = true
 creeer_chem.workspace = true
 creeer_fluids.workspace = true
+creeer_logic.workspace = true
 creeer_materials.workspace = true
 creeer_mech.workspace = true
 creeer_electric.workspace = true

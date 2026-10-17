@@ -10,6 +10,9 @@ pub mod aero;
 #[cfg(test)]
 mod aero_tests;
 pub mod avatar;
+pub mod controls;
+#[cfg(test)]
+mod controls_tests;
 pub mod drive;
 #[cfg(test)]
 mod drive_tests;

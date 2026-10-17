@@ -12,6 +12,7 @@ creeer_core.workspace = true
 creeer_render.workspace = true
 creeer_physics.workspace = true
 creeer_fluids.workspace = true
+creeer_logic.workspace = true
 creeer_sim.workspace = true
 creeer_net.workspace = true
 creeer_server.workspace = true

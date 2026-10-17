@@ -146,6 +146,15 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Prediction drifts from the server's by over a centimetre on about 5 % of corrections**, even on a lossless link: the snapshot carries quantised state, and neither the solver's history nor the friction anchors | Measured in F6; the netcode test holds 5 % | G | Medium | this list (F6) |
 | **A second copy of the terrain's caches** in singleplayer (server and client) | Same code for single- and multiplayer | S | Medium | ADR-0008 |
 
+## Logic
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **Tables keyed by tables or functions in `pairs`**: an error, since Lua visits them in the order of their addresses | Creation order would need a stamp on every table inside Lua | G | Medium | ADR-0015 |
+| **Numbers as text** (`tostring`, `string.format`, reading numbers) go through the C library's `snprintf` and `strtod`, correctly rounded on glibc, MSVC since 2015 and macOS but not our own | They agree on every supported platform | R | Medium | ADR-0015 |
+| **Saving a script's functions and coroutines**: only its `memory` data survives a save, and it starts again from its source | A Lua state's insides cannot be saved portably | G | Large | ADR-0015 |
+| **Messages between controllers** other than wires (radio, buses) | Wires first | G | Medium | ADR-0015 |
+
 ## Elsewhere
 
 | What | Why deferred | Improves | Size | Recorded in |

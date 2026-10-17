@@ -1,6 +1,6 @@
 # F6 plan: simulation domains
 
-Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 to F6.5 done (2026-10-17; ADR-0009 to ADR-0013).
+Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 to F6.7 done (2026-10-17; ADR-0009 to ADR-0015).
 
 F6 builds the engines behind everything a player will make: what things are made of and how they react (materials & chemistry), heat, electricity, shafts and gears, fluids and air, and logic. Each one must be **realistic** (validated against analytic or reference results, conserving what nature conserves) and **fast** (each has a budget inside the 10 ms tick of plan.md §5). Each gets a sandbox scene, like F2–F5.
 
@@ -229,6 +229,8 @@ The order follows dependencies: materials first (everything needs their properti
   - buoyancy of 200 bodies ≤ 0.2 ms.
 
 ### F6.7 Logic (`creeer_logic`)
+
+**Done** (2026-10-17, ADR-0015): signals, gates, latches, timers, comparators, PID blocks, sensors and actuators on any domain (`creeer_sim::controls`), evaluated in topological order with loops through a one-tick register and the network's unjoined parts side by side; standard Lua 5.4 through `mlua`, built from our copy of `lua-src` (fixed string hash seed, our own pow, no fused multiply-adds), sandboxed, with instruction and memory budgets no `pcall` can catch and `memory` kept by saves. Validations as listed below (a Lua PI script holds a tank's level within a centimetre and a motor's speed within 0.5 %; a run hashes the same in debug and release). 10,000 gates and 100 scripts in 0.07 ms a tick (0.14 ms projected, ≤ 0.5). Sandbox: the control panel window. Not done: tables keyed by tables in `pairs` (an error), saving scripts' functions.
 
 - **Signals:** booleans and numbers on wires.
 - **Gates and blocks:** gates, latches, timers, comparators, PID blocks.

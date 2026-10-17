@@ -1,0 +1,17 @@
+# Creëer's copy of lua-src 551.0.2 (MIT, github.com/mlua-rs/lua-src-rs), patched in for mlua
+# (root Cargo.toml) so that we build Lua 5.4 with our own configuration: luaconf.h's local
+# section (fixed string hash seed, our pow) and lcreeer.c, no fused multiply-adds (ADR-0015).
+# Only the Lua 5.4 sources are kept.
+[package]
+name = "lua-src"
+version = "551.0.2"
+authors = ["Aleksandr Orlenko <zxteam@protonmail.com>"]
+edition = "2024"
+license = "MIT"
+description = "Sources of Lua 5.4 and logic to build them (Creëer's configuration)."
+
+[features]
+ucid = []
+
+[dependencies]
+cc = "1.2"

@@ -30,6 +30,8 @@
 
 mod app;
 mod circuit_bench;
+mod control_panel;
+mod control_rigs;
 mod demo;
 mod drive_bench;
 mod fly_camera;

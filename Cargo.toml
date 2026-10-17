@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "xtask"]
+# Third-party sources we build ourselves (patched in below).
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.0.1"
@@ -25,6 +27,7 @@ creeer_electric = { path = "crates/creeer_electric" }
 creeer_mech = { path = "crates/creeer_mech" }
 creeer_chem = { path = "crates/creeer_chem" }
 creeer_fluids = { path = "crates/creeer_fluids" }
+creeer_logic = { path = "crates/creeer_logic" }
 creeer_server = { path = "crates/creeer_server" }
 
 # External crates (versions chosen in F0, see docs/adr)
@@ -89,3 +92,7 @@ codegen-units = 1
 panic = "abort"
 debug = false
 strip = true
+
+# Lua 5.4 built with our own configuration (ADR-0015).
+[patch.crates-io]
+lua-src = { path = "vendor/lua-src" }
