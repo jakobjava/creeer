@@ -45,7 +45,11 @@ fn a_planetary_set_reduces_by_willis() {
     d.set_torque(sun, torque);
     run(&mut d, 60_000, 1e-3);
     let (ws, wc) = (d.speed(sun), d.speed(carrier));
-    assert_eq!(d.speed(ring), 0.0);
+    assert!(
+        d.speed(ring).abs() < 1e-15,
+        "the ring is held: {}",
+        d.speed(ring)
+    );
     assert!(
         (ws / wc - (1.0 + teeth)).abs() < 1e-12,
         "reduction {}",

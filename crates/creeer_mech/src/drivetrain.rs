@@ -4,6 +4,7 @@
 //! Node 0 is the housing itself (at rest in the drivetrain's frame: brakes and bearings act
 //! against it). Torques are about each node's axis, positive by its right-hand rule.
 
+use crate::elements::Flow;
 use creeer_math::glam::DVec3;
 use creeer_network::{Ledger, Sum};
 
@@ -110,6 +111,12 @@ pub struct Drivetrain {
     pub(crate) twist: Vec<f64>,
     pub(crate) grip: Vec<Grip>,
     pub(crate) carried: Vec<f64>,
+    /// Which way power flows through each transmission (kept from step to step).
+    pub(crate) flow: Vec<Flow>,
+    /// What its steps work in (buffers kept: no allocation in a step), and how many times it
+    /// was built on (a part or an element added: its matrix is another).
+    pub(crate) work: crate::step::Work,
+    pub(crate) version: u64,
     /// The heat each element gave off since it was last taken (J): a brake's, a clutch's.
     pub(crate) heat: Vec<Sum>,
     pub(crate) ledger: Ledger,
@@ -138,6 +145,9 @@ impl Drivetrain {
             twist: Vec::new(),
             grip: Vec::new(),
             carried: Vec::new(),
+            flow: Vec::new(),
+            work: crate::step::Work::default(),
+            version: 0,
             heat: Vec::new(),
             ledger: Ledger::new(0.0),
             reaction: DVec3::ZERO,
@@ -150,6 +160,7 @@ impl Drivetrain {
     /// If its inertia is not positive.
     pub fn part(&mut self, inertia: f64, axis: DVec3) -> Node {
         assert!(inertia > 0.0, "a part has inertia");
+        self.version += 1;
         self.parts.push(Part {
             inertia,
             axis: axis.normalize(),
@@ -162,6 +173,7 @@ impl Drivetrain {
 
     /// Adds an element.
     pub fn add(&mut self, element: Element) -> usize {
+        self.version += 1;
         self.twist.push(0.0);
         // A gear with backlash starts in the middle of its play, a released clutch slipping.
         self.grip.push(match element {
@@ -171,6 +183,7 @@ impl Drivetrain {
         });
         self.elements.push(element);
         self.carried.push(0.0);
+        self.flow.push(Flow::Forward);
         self.heat.push(Sum::default());
         self.elements.len() - 1
     }
@@ -209,9 +222,14 @@ impl Drivetrain {
     pub fn set_capacity(&mut self, element: usize, newton_metres: f64) {
         if let Element::Clutch { a, b, capacity } = &mut self.elements[element] {
             *capacity = newton_metres;
-            if newton_metres <= 0.0 && self.grip[element] == Grip::Stuck {
-                let slip = self.parts[*a].speed - self.parts[*b].speed;
-                self.grip[element] = Grip::Slipping(if slip >= 0.0 { 1 } else { -1 });
+            // Slipping (or let go), it slips the way it now slips: released, it kept whichever
+            // way it was let go (it carried nothing), applied it must pull against the slip.
+            let slip = self.parts[*a].speed - self.parts[*b].speed;
+            let slipping = Grip::Slipping(if slip >= 0.0 { 1 } else { -1 });
+            match self.grip[element] {
+                Grip::Stuck if newton_metres <= 0.0 => self.grip[element] = slipping,
+                Grip::Slipping(_) if slip != 0.0 => self.grip[element] = slipping,
+                _ => {}
             }
         }
     }

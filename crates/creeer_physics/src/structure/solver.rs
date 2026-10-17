@@ -226,7 +226,13 @@ impl ImplicitSolver {
             rest_inverse: structure
                 .inertia
                 .iter()
-                .map(|m| if m.determinant() > 0.0 { m.inverse() } else { DMat3::ZERO })
+                .map(|m| {
+                    if m.determinant() > 0.0 {
+                        m.inverse()
+                    } else {
+                        DMat3::ZERO
+                    }
+                })
                 .collect(),
             energy_guard: true,
             fallbacks: 0,

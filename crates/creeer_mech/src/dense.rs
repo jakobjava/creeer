@@ -1,67 +1,64 @@
-//! A small dense LU with partial pivoting, for a drivetrain's few unknowns (a few dozen at
-//! most: below the sparse solver's overhead).
+//! Small dense factorisations for a drivetrain's few unknowns (a few dozen at most: below
+//! the sparse solver's overhead), in place in buffers kept from step to step.
 
-/// Factorises the `n`×`n` row-major matrix `a` in place; returns its pivots, or `None` if it
-/// is singular.
-pub fn factor(a: &mut [f64], n: usize) -> Option<Vec<usize>> {
-    let mut pivots: Vec<usize> = (0..n).collect();
+/// Factorises the symmetric positive definite `n`×`n` row-major `a` in place into its
+/// Cholesky factor L (lower triangle; the upper is left as it was). False if it is not
+/// positive definite.
+pub fn cholesky(a: &mut [f64], n: usize) -> bool {
     for j in 0..n {
-        let p = (j..n).max_by(|&x, &y| a[x * n + j].abs().total_cmp(&a[y * n + j].abs()))?;
-        if a[p * n + j] == 0.0 {
-            return None;
+        let mut d = a[j * n + j];
+        for k in 0..j {
+            d -= a[j * n + k] * a[j * n + k];
         }
-        if p != j {
-            for k in 0..n {
-                a.swap(p * n + k, j * n + k);
-            }
-            pivots.swap(p, j);
+        if d <= 0.0 {
+            return false;
         }
-        let d = a[j * n + j];
+        let d = d.sqrt();
+        a[j * n + j] = d;
         for i in j + 1..n {
-            let f = a[i * n + j] / d;
-            a[i * n + j] = f;
-            if f != 0.0 {
-                for k in j + 1..n {
-                    a[i * n + k] -= f * a[j * n + k];
-                }
+            let mut v = a[i * n + j];
+            for k in 0..j {
+                v -= a[i * n + k] * a[j * n + k];
             }
+            a[i * n + j] = v / d;
         }
     }
-    Some(pivots)
+    true
 }
 
-/// Solves with the factors of [`factor`]: `b` in, the solution out.
-pub fn solve(lu: &[f64], pivots: &[usize], b: &[f64]) -> Vec<f64> {
-    let n = pivots.len();
-    let mut x: Vec<f64> = pivots.iter().map(|&p| b[p]).collect();
+/// Solves L·Lᵀ·x = b in place with the factor of [`cholesky`].
+pub fn cholesky_solve(l: &[f64], n: usize, b: &mut [f64]) {
     for i in 0..n {
+        let mut v = b[i];
         for k in 0..i {
-            x[i] -= lu[i * n + k] * x[k];
+            v -= l[i * n + k] * b[k];
         }
+        b[i] = v / l[i * n + i];
     }
     for i in (0..n).rev() {
+        let mut v = b[i];
         for k in i + 1..n {
-            x[i] -= lu[i * n + k] * x[k];
+            v -= l[k * n + i] * b[k];
         }
-        x[i] /= lu[i * n + i];
+        b[i] = v / l[i * n + i];
     }
-    x
 }
 
-/// The factors of [`factor_full`]: rows and columns as pivoted, and how many pivots were
-/// kept before the rest fell below the tolerance (dependent rows).
-pub struct Full {
-    rows: Vec<usize>,
-    cols: Vec<usize>,
-    pub rank: usize,
-}
-
-/// Factorises the `n`×`n` row-major `a` in place with full pivoting, stopping where the
-/// largest remaining pivot is below `tolerance` times the first: what is left is dependent
-/// on what came before (a redundant constraint).
-pub fn factor_full(a: &mut [f64], n: usize, tolerance: f64) -> Full {
-    let mut rows: Vec<usize> = (0..n).collect();
-    let mut cols: Vec<usize> = (0..n).collect();
+/// Factorises the `n`×`n` row-major `a` in place with full pivoting, its row and column
+/// order into `rows` and `cols`, stopping where the largest remaining pivot is below
+/// `tolerance` times the first: what is left depends on what came before (a redundant
+/// constraint). Returns how many pivots were kept.
+pub fn factor_full(
+    a: &mut [f64],
+    n: usize,
+    tolerance: f64,
+    rows: &mut Vec<usize>,
+    cols: &mut Vec<usize>,
+) -> usize {
+    rows.clear();
+    rows.extend(0..n);
+    cols.clear();
+    cols.extend(0..n);
     let mut first = 0.0;
     for j in 0..n {
         let (mut pi, mut pk, mut best) = (j, j, 0.0);
@@ -76,11 +73,7 @@ pub fn factor_full(a: &mut [f64], n: usize, tolerance: f64) -> Full {
             first = best;
         }
         if best == 0.0 || best <= tolerance * first {
-            return Full {
-                rows,
-                cols,
-                rank: j,
-            };
+            return j;
         }
         if pi != j {
             for k in 0..n {
@@ -105,33 +98,35 @@ pub fn factor_full(a: &mut [f64], n: usize, tolerance: f64) -> Full {
             }
         }
     }
-    Full {
-        rows,
-        cols,
-        rank: n,
-    }
+    n
 }
 
-/// Solves with the factors of [`factor_full`]: the unknowns of the dependent part are zero
-/// (their rows are satisfied by the others' when the system is consistent).
-pub fn solve_full(lu: &[f64], full: &Full, b: &[f64]) -> Vec<f64> {
-    let n = full.rows.len();
-    let r = full.rank;
-    let mut z: Vec<f64> = full.rows.iter().map(|&p| b[p]).collect();
-    for i in 0..r {
+/// Solves with the factors of [`factor_full`] (`rank` pivots kept) into `x`, `z` its
+/// scratch: the unknowns of the dependent part are zero (their rows are satisfied by the
+/// others' when the system is consistent).
+pub fn solve_full(
+    lu: &[f64],
+    (rows, cols, rank): (&[usize], &[usize], usize),
+    b: &[f64],
+    x: &mut [f64],
+    z: &mut Vec<f64>,
+) {
+    let n = rows.len();
+    z.clear();
+    z.extend(rows.iter().map(|&p| b[p]));
+    for i in 0..rank {
         for k in 0..i {
             z[i] -= lu[i * n + k] * z[k];
         }
     }
-    for i in (0..r).rev() {
-        for k in i + 1..r {
+    for i in (0..rank).rev() {
+        for k in i + 1..rank {
             z[i] -= lu[i * n + k] * z[k];
         }
         z[i] /= lu[i * n + i];
     }
-    let mut x = vec![0.0; n];
-    for j in 0..r {
-        x[full.cols[j]] = z[j];
+    x.fill(0.0);
+    for j in 0..rank {
+        x[cols[j]] = z[j];
     }
-    x
 }

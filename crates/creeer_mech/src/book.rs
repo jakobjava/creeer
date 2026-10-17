@@ -2,7 +2,7 @@
 //! their play, what each element carried, the energy, and the torque on the housing.
 
 use crate::drivetrain::{Drivetrain, Element, Grip, HOUSING};
-use crate::elements::{self, Terms};
+use crate::elements::{self, Flow, Terms};
 use crate::step::speed;
 use creeer_math::glam::DVec3;
 use creeer_network::Sum;
@@ -14,7 +14,7 @@ fn torques(
     x: &[f64],
     column: &[Option<usize>],
     grip: &[Grip],
-    forward: &[bool],
+    forward: &[Flow],
     h: f64,
 ) -> Terms {
     let e = &d.elements[k];
@@ -52,7 +52,7 @@ pub(crate) fn finish(
     x: &[f64],
     column: &[Option<usize>],
     grip: &[Grip],
-    forward: &[bool],
+    forward: &[Flow],
 ) {
     let mut reaction = DVec3::ZERO;
     let mut dissipated = Sum::default();

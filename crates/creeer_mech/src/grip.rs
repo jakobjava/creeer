@@ -4,11 +4,33 @@
 //! transmissions' power changed direction (their efficiency applies the other way).
 
 use crate::drivetrain::{Drivetrain, Element, Grip, HOUSING};
-use crate::elements;
+use crate::elements::{self, Flow};
 use crate::step::speed;
 
 fn sign(v: f64) -> i8 {
     if v >= 0.0 { 1 } else { -1 }
+}
+
+/// The drivetrain's torque scale (N·m): the largest of the torques on its parts and of
+/// `carried`, what its elements carry.
+pub(crate) fn scale(d: &Drivetrain, carried: &[f64]) -> f64 {
+    let parts = d.parts.iter().map(|p| p.torque.abs() + p.load.abs());
+    carried
+        .iter()
+        .map(|c| c.abs())
+        .chain(parts)
+        .fold(0.0, f64::max)
+}
+
+/// The power through a transmission that is rounding (W, `elements::NOISE`): against the
+/// drivetrain's torques and its speeds, the fastest part's or what a step's torque makes of
+/// the lightest (at rest, a speed's rounding is of that).
+pub(crate) fn noise(d: &Drivetrain, carried: &[f64], h: f64) -> f64 {
+    let torques = scale(d, carried);
+    let parts = d.parts.iter().skip(1);
+    let fastest = parts.clone().map(|p| p.speed.abs()).fold(0.0, f64::max);
+    let lightest = parts.map(|p| p.inertia).fold(f64::INFINITY, f64::min);
+    elements::NOISE * torques * (fastest + h * torques / lightest)
 }
 
 /// Whether a slip `slip` of a friction element slipping in direction `s` reversed: by more than
@@ -34,9 +56,19 @@ pub(crate) fn update(
     x: &[f64],
     column: &[Option<usize>],
     grip: &mut [Grip],
-    forward: &mut [bool],
+    forward: &mut [Flow],
+    flips: &mut [u8],
 ) -> bool {
     let mut changed = false;
+    let noise = noise(d, &x[d.parts.len() - 1..], h);
+    // Power is judged at the step's midpoint, where its loss is booked.
+    let mid = |node: usize| {
+        if node == HOUSING {
+            0.0
+        } else {
+            0.5 * (x[node - 1] + d.parts[node].speed)
+        }
+    };
     for (k, e) in d.elements.iter().enumerate() {
         let lambda = column[k].map(|c| x[c]);
         let next = match *e {
@@ -91,7 +123,10 @@ pub(crate) fn update(
             Element::Clutch { a, b, capacity } => {
                 let slip = speed(x, a) - speed(x, b);
                 match (grip[k], lambda) {
-                    // Released: it slips whatever the speeds, carrying nothing.
+                    // Released: it slips whatever the speeds, carrying nothing (which way does not
+                    // matter: switching that every round as a slip near zero changes sign would
+                    // never settle).
+                    (Grip::Slipping(s), _) if capacity <= 0.0 => Grip::Slipping(s),
                     _ if capacity <= 0.0 => Grip::Slipping(sign(slip)),
                     (Grip::Stuck, Some(l)) if l.abs() > capacity => Grip::Slipping(sign(l)),
                     (Grip::Slipping(s), _) if reversed(d, slip, s, h, capacity, [a, b]) => {
@@ -116,19 +151,37 @@ pub(crate) fn update(
                 }
             }
         };
-        // What it carries from its first node at this solution, and so where power flows.
-        let carried = match (lambda, elements::sliding(e, next, forward[k])) {
+        if next != grip[k] {
+            changed = true;
+            grip[k] = next;
+        }
+    }
+    if changed {
+        // A round whose grips were wrong (a brake slipping the wrong way) is no evidence of
+        // where power flows: taken as such, a stalling motor's gear flipped and went neutral.
+        return true;
+    }
+    for (k, e) in d.elements.iter().enumerate() {
+        // What it carries from its first node at this solution, and so where power flows
+        // (kept as it was once neutral, and where its power is rounding).
+        let carried = match (
+            column[k].map(|c| x[c]),
+            elements::sliding(e, grip[k], forward[k]),
+        ) {
             (Some(l), _) => l,
             (None, terms) => -terms[0].1,
         };
-        let flows = if next == grip[k] {
-            elements::flows_forward(e, carried, |node| speed(x, node))
-        } else {
-            forward[k]
+        let mut flows = match elements::flow(e, carried, mid, noise) {
+            Some(f) if forward[k] != Flow::Neutral => f,
+            _ => forward[k],
         };
-        if next != grip[k] || flows != forward[k] {
+        if flows != forward[k] {
+            // Twice reversed within the step: it carries about nothing either way (`Flow`).
+            flips[k] += 1;
+            if flips[k] >= 2 {
+                flows = Flow::Neutral;
+            }
             changed = true;
-            grip[k] = next;
             forward[k] = flows;
         }
     }

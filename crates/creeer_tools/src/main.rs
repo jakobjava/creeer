@@ -7,6 +7,7 @@
 
 mod electric_bench;
 mod image_diff;
+mod mech_bench;
 mod network_bench;
 mod orbit_bench;
 mod solvers;
@@ -23,7 +24,7 @@ const USAGE: &str = "usage: creeer_tools <command>
 commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
-      structures, world, terrain, orbit, networks, electric, thermal)
+      structures, world, terrain, orbit, networks, electric, thermal, mech)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region";
 
