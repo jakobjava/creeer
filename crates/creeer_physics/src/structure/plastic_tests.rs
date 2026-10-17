@@ -139,8 +139,8 @@ fn an_overloaded_bar_tears() {
 
 /// A strain-rate-lifted increment balances k·(|x| − u) = D′(u), the capacity at its increment,
 /// to the rounding of those forces: for hinges and bars, at rates from a creep to a crash's,
-/// with and without hardening. (Bisecting the balance gives no more: u is often ten thousand
-/// times smaller than x, and both are known to the rounding of x.)
+/// with and without hardening, however its Newton is started. (Bisecting the balance gives no
+/// more: u is often ten thousand times smaller than x, and both are known to the rounding of x.)
 #[test]
 fn a_rate_lifted_increment_balances_its_forces_to_rounding() {
     use super::flow::Flow;
@@ -154,12 +154,27 @@ fn a_rate_lifted_increment_balances_its_forces_to_rounding() {
         for strain in [0.0, 0.05] {
             for h in [1.0 / 60.0, 0.5e-3] {
                 let flow = Flow::new(capacity, &STEEL_S235, strain, per, h);
-                for step in 1..400 {
-                    let x = capacity / k * (1.0 + 1e-4 * f64::from(step * step));
+                // Just past the capacity, and far past it (a hinge whose capacity its axial force
+                // has all but taken, `capacities`: a Newton started too far above the root ran out
+                // of iterations there).
+                let near = (1..400).map(|step| 1.0 + 1e-4 * f64::from(step * step));
+                let far = (1..70).map(|j| creeer_math::det::pow(10.0, f64::from(j) / 10.0));
+                for over in near.chain(far) {
+                    let x = capacity / k * over;
                     let u = flow.increment(x, k).abs();
                     assert!(u > 0.0 && u < x, "{u} of {x}");
                     let balance = k * (x - u) - flow.slope(u);
                     worst = worst.max(balance.abs() / (k * x));
+                    // Started from anywhere (`Flow::increment_from`'s warm start), the same root:
+                    // far below it, near it, far above it.
+                    for scale in [1e-6, 0.5, 0.999, 1.001, 2.0, 1e3, 1e9] {
+                        let mut guess = scale * creeer_math::det::pow(u, 1.0 / STEEL_S235.rate.q);
+                        let from = flow.increment_from(x, k, &mut guess).abs();
+                        assert!(
+                            (from / u - 1.0).abs() < 1e-12,
+                            "from {scale}: {from} against {u}"
+                        );
+                    }
                 }
             }
         }

@@ -177,6 +177,11 @@ pub(super) struct Work {
     /// (`plastic.rs`), found once a step (copied anew at every evaluation, the flows cost a
     /// 5k-member bridge 5 % of its step).
     pub scaled: Vec<[super::flow::Flow; MEASURES]>,
+    /// Each element's rate-lifted flows as its last evaluation in this step found them (w per
+    /// measure, `Flow::increment_from`): where the next one's Newton starts. Emptied as each
+    /// substep begins, so a step does not depend on the steps before it (a loaded world goes on
+    /// bit for bit).
+    pub flow_guess: Vec<[f64; MEASURES]>,
     pub rotations: Vec<DMat3>,
     /// Newton direction (translation blocks, then rotation blocks).
     pub direction: Vec<DVec3>,

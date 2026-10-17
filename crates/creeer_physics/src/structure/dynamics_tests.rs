@@ -128,4 +128,6 @@ fn state_hash_is_identical_on_every_platform() {
 // quadratic backtracking): rounding and the iterations' path only, every node within
 // 0.2 µm after the 120 steps (the solver's tolerance is 0.3 µm); the previous value was
 // 0x300d_52cf_aa59_26ad.
-const GOLDEN_STRUCTURE_HASH: u64 = 0xcba9_cb79_18fa_1347;
+// And for rate-lifted flow's rate terms kept for a step and its Newton started from where it
+// last ended (rounding only: every node within 1e-15 m), after 0xcba9_cb79_18fa_1347.
+const GOLDEN_STRUCTURE_HASH: u64 = 0x2e18_685c_2719_049e;

@@ -148,3 +148,9 @@ fn profile_rock_turns() {
         "ticks that substep: {fast}; of them the largest group slow: {largest_slow}; body-steps saved by per-group substeps: {saved} of {total}"
     );
 }
+
+#[test]
+#[ignore = "profile"]
+fn profile_crash() {
+    report(PhysicsScene::Crash, 300, 3.0);
+}

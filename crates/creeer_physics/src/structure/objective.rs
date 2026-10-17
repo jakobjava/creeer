@@ -22,6 +22,7 @@ fn element_terms(
     s: &Structure,
     index: usize,
     measures: &[f64; MEASURES],
+    guess: &mut [f64; MEASURES],
 ) -> ([f64; MEASURES], f64, f64) {
     let e = &s.elements[index];
     let gamma = e.material.damping / work.beta;
@@ -30,6 +31,7 @@ fn element_terms(
         &work.s_hat[index],
         gamma,
         (&work.caps[index], &work.scaled[index]),
+        guess,
     );
     (force, energy, stored)
 }
@@ -81,30 +83,34 @@ impl Work {
         self.rotations = rotations;
         let mut element_force = std::mem::take(&mut self.element_force);
         let mut element_energy = std::mem::take(&mut self.element_energy);
+        let mut guesses = std::mem::take(&mut self.flow_guess);
+        guesses.resize(s.elements.len(), [0.0; MEASURES]);
         let this = &*self;
         element_energy
             .par_iter_mut()
             .zip(&mut element_force)
+            .zip(guesses.par_iter_mut())
             .enumerate()
             .with_min_len(CHUNK)
-            .for_each(|(index, (energy, force))| {
+            .for_each(|(index, ((energy, force), guess))| {
                 let e = &s.elements[index];
                 let (ra, rb) = (this.rotations[e.a], this.rotations[e.b]);
                 if forces {
                     let (m, g) = e.kinematics(x[e.a], ra, x[e.b], rb);
-                    let (sigma, total, stored) = element_terms(this, s, index, &m);
+                    let (sigma, total, stored) = element_terms(this, s, index, &m, guess);
                     *force = std::array::from_fn(|group| {
                         (0..MEASURES).map(|k| g[k][group] * sigma[k]).sum()
                     });
                     *energy = [total, stored];
                 } else {
                     let m = e.measures(x[e.a], ra, x[e.b], rb);
-                    let (_, total, stored) = element_terms(this, s, index, &m);
+                    let (_, total, stored) = element_terms(this, s, index, &m, guess);
                     *energy = [total, stored];
                 }
             });
         self.element_force = element_force;
         self.element_energy = element_energy;
+        self.flow_guess = guesses;
         let value = value + self.dashpot_energy(s, x, q) + self.added_energy(s, x);
         let total = self.element_energy.iter().fold(value, |sum, e| sum + e[0]);
         let elastic = self.element_energy.iter().fold(0.0, |sum, e| sum + e[1]);

@@ -76,6 +76,7 @@ impl ImplicitSolver {
     pub(super) fn begin_substep(&mut self, s: &mut Structure, scheme: Scheme) {
         self.work.beta = self.beta_for(scheme);
         self.work.h = self.h;
+        self.work.flow_guess.clear();
         self.work.tau = match scheme {
             Scheme::BackwardEuler => 0.0,
             Scheme::Bdf2 => self.h / 3.0,

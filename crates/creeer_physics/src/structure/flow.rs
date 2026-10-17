@@ -24,12 +24,15 @@ pub struct Flow {
     h: f64,
     /// Cowper–Symonds: D (1/s; 0: rate-insensitive), 1/q, and the reference rate (1/s).
     sensitivity: (f64, f64, f64),
+    /// The rate's terms, worked out once for the step where the measure is likely to flow
+    /// ([`Flow::with_rate`]).
+    kept: Option<Rate>,
 }
 
 /// The rate's terms of a flow, worked out only for a measure that flows: two powers for
 /// every measure of every member at every step, where almost none flows, were a cost
 /// structures did not need to pay.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Rate {
     /// (g/(h·D))^{1/q}: the lift per increment^{1/q}.
     scale: f64,
@@ -71,6 +74,7 @@ impl Flow {
         per: 0.0,
         h: 0.0,
         sensitivity: (0.0, 1.0, 0.0),
+        kept: None,
     };
 
     /// The flow of a measure with capacity `capacity` at plastic strain `strain` of
@@ -95,6 +99,17 @@ impl Flow {
             per,
             h,
             sensitivity,
+            kept: None,
+        }
+    }
+
+    /// The same flow with its rate's terms worked out now, for the step: for a measure near its
+    /// capacity or flowing, which a step's every evaluation asks again (a crash's hinges asked
+    /// for them 200,000 times a tick, two powers each).
+    pub fn with_rate(self) -> Self {
+        Self {
+            kept: self.rate_now(),
+            ..self
         }
     }
 
@@ -109,6 +124,11 @@ impl Flow {
 
     /// The rate's terms, if the flow stress depends on the rate.
     fn rate(&self) -> Option<Rate> {
+        self.kept.or_else(|| self.rate_now())
+    }
+
+    /// The rate's terms, worked out.
+    fn rate_now(&self) -> Option<Rate> {
         let (d, exponent, reference) = self.sensitivity;
         (d > 0.0).then(|| Rate {
             scale: pow(self.per / (self.h * d), exponent),
@@ -132,7 +152,15 @@ impl Flow {
     }
 
     /// The increment p that minimises ½·k·(x − p)² + D(|p|).
+    #[cfg(test)]
     pub fn increment(&self, x: f64, k: f64) -> f64 {
+        self.increment_from(x, k, &mut 0.0)
+    }
+
+    /// [`Self::increment`], a rate-lifted one's Newton started from `guess` (its w = u^(1/q) last
+    /// time, nought for none) and leaving its own w there: within a step a measure is solved
+    /// again and again (every trial, iteration and sweep) at nearly the same input.
+    pub fn increment_from(&self, x: f64, k: f64, guess: &mut f64) -> f64 {
         let threshold = self.capacity / k;
         let size = x.abs();
         if size <= threshold {
@@ -175,26 +203,52 @@ impl Flow {
             Some(n) => (1..n).fold(w, |p, _| p * w),
             None => pow(w, q),
         };
-        // Two bounds above the root: the increment without the rate, and the root of f's
-        // linear part (f there is −(k + H)·w^q < 0); from the nearer one Newton needs fewest
-        // steps.
-        let mut w = pow(plain, rate.exponent).min(constant / lift);
-        let mut wq = power(w);
-        for _ in 0..60 {
-            crate::profile::add(crate::profile::Slot::FlowIterations, 1);
-            let f = constant - lift * w - stiff * wq;
-            let slope = -lift - stiff * q * wq / w;
-            let next = (w - f / slope).max(low);
-            // From the right it only falls; once it stops falling it is there.
-            if next.partial_cmp(&w) != Some(std::cmp::Ordering::Less) {
-                break;
+        let bound = constant / lift;
+        // Newton on f from `w` above the root: it only falls, quadratically once near. Whether it
+        // got there (from far above, where (k + H)·w^q rules, it falls only a fifth an
+        // iteration: a start at the bound `constant / lift` could run out of iterations, and
+        // a crash's members broke 40 % less for it).
+        let fall = |mut w: f64| -> Option<f64> {
+            let mut wq = power(w);
+            for _ in 0..60 {
+                crate::profile::add(crate::profile::Slot::FlowIterations, 1);
+                let f = constant - lift * w - stiff * wq;
+                let slope = -lift - stiff * q * wq / w;
+                let next = (w - f / slope).max(low);
+                // From the right it only falls; once it stops falling it is there.
+                if next.partial_cmp(&w) != Some(std::cmp::Ordering::Less) {
+                    return Some(w);
+                }
+                let done = w - next <= 1e-15 * w;
+                (w, wq) = (next, power(next));
+                if done {
+                    return Some(w);
+                }
             }
-            let done = w - next <= 1e-15 * w;
-            (w, wq) = (next, power(next));
-            if done {
-                break;
+            None
+        };
+        // From where it was last, if that is between: right of the root it falls from there;
+        // left of it, f's tangent there meets nought right of the root (f is concave), near it.
+        let g = *guess;
+        let warm = (g > low && g < bound).then(|| {
+            let gq = power(g);
+            let f = constant - lift * g - stiff * gq;
+            if f <= 0.0 {
+                g
+            } else {
+                g - f / (-lift - stiff * q * gq / g)
             }
-        }
-        wq.min(plain).copysign(x)
+        });
+        let found = warm
+            .filter(|w| w.is_finite() && *w > low)
+            .and_then(|w| fall(w.min(bound)))
+            // Else from the tighter bound above the root: the increment without the rate.
+            .or_else(|| fall(pow(plain, rate.exponent).min(bound)));
+        let w = found.unwrap_or_else(|| {
+            debug_assert!(false, "rate-lifted flow did not converge");
+            pow(plain, rate.exponent).min(bound)
+        });
+        *guess = w;
+        power(w).min(plain).copysign(x)
     }
 }
