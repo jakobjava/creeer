@@ -2,7 +2,7 @@
 //! in parallel, then every component finished in order and its energy booked.
 
 use crate::circuit::Circuit;
-use crate::component::{Component, GROUND};
+use crate::component::{Component, GROUND, Kind};
 use crate::finish::{Flow, finish};
 use crate::mna::{GMIN, Place};
 use crate::solve::IslandSolver;
@@ -62,6 +62,16 @@ impl Circuit {
                 for (k, &n) in solver.nodes.iter().enumerate() {
                     solver.x[k] = self.voltage[n];
                 }
+                // An electrolyser's cells at rest (its internal node at cells·E above its minus):
+                // from nought they would start a volt and more from it, at 10¹³ A, and Newton
+                // walk back one b (26 mV) an iteration.
+                for (&k, place) in solver.components.iter().zip(&solver.places) {
+                    if let Kind::Electrolyzer(cell) = &self.components[k].kind {
+                        let below = place.b.map_or(0.0, |i| solver.x[i]);
+                        solver.x[place.extra] =
+                            below + cell.cells * self.components[k].state.extra[0];
+                    }
+                }
                 solver
             })
             .collect()
@@ -85,6 +95,10 @@ impl Circuit {
                 for (&k, flow) in island.components.iter().zip(&island.flows) {
                     totals.book(flow);
                     self.components[k].state.heat.add(flow.heat);
+                    self.components[k]
+                        .state
+                        .work
+                        .add(flow.exported - flow.imported);
                 }
                 continue;
             };
@@ -112,6 +126,7 @@ impl Circuit {
             let one = |c: &mut Component, place: Place, slot: &mut Flow| {
                 let (flow, s) = finish(c, place, x, rule);
                 c.state.heat.add(flow.heat);
+                c.state.work.add(flow.exported - flow.imported);
                 *slot = flow;
                 (usize::from(s), usize::from(crate::finish::drifting(c)))
             };

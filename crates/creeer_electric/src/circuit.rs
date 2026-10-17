@@ -109,6 +109,20 @@ impl Circuit {
         id
     }
 
+    /// An electrolysis cell stack, positive at `plus`, at 298.15 K and the reversible voltage of
+    /// water's splitting there (1.229 V a cell) until told otherwise.
+    pub fn electrolyzer(
+        &mut self,
+        plus: Node,
+        minus: Node,
+        model: crate::cell::Electrolyzer,
+    ) -> ComponentId {
+        let id = self.add(Kind::Electrolyzer(model), plus, minus);
+        let s = &mut self.components[id].state;
+        (s.temperature, s.extra[0]) = (298.15, 1.229);
+        id
+    }
+
     /// A DC machine, its rotor at rest.
     pub fn machine(&mut self, a: Node, b: Node, model: DcMachine) -> ComponentId {
         self.add(Kind::Machine(model), a, b)
@@ -147,6 +161,13 @@ impl Circuit {
     pub fn set_irradiance(&mut self, id: ComponentId, watts: f64) {
         self.components[id].state.extra[0] = watts;
         self.wake(id);
+    }
+
+    /// An electrolyser's reversible voltage per cell (V): its reaction's ΔG/zF at its
+    /// temperature and its gases' pressures, from the chemistry.
+    pub fn set_emf(&mut self, id: ComponentId, volts: f64) {
+        self.components[id].state.extra[0] = volts;
+        self.stir(id);
     }
 
     /// The torque braking a machine's rotor (N·m; negative drives it: a generator).
@@ -228,6 +249,12 @@ impl Circuit {
     /// The heat a component gave off since this was last called (J): for the thermal network.
     pub fn take_heat(&mut self, id: ComponentId) -> f64 {
         std::mem::take(&mut self.components[id].state.heat).value()
+    }
+
+    /// The work a component passed on since this was last called (J; negative: taken in): a
+    /// machine's on its shaft, an electrolyser's to its reaction.
+    pub fn take_work(&mut self, id: ComponentId) -> f64 {
+        std::mem::take(&mut self.components[id].state.work).value()
     }
 
     /// The energy it holds (J): capacitors', inductors', machines' rotors and armatures',

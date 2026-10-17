@@ -39,6 +39,9 @@ pub struct Reactor {
     pub ua: f64,
     pub surroundings: f64,
     pub power: f64,
+    /// Reactions run at a rate set from outside (mol of reaction/s): an electrolysis's, by
+    /// Faraday's law from its current (its electrical power comes in as `power`).
+    pub driven: Vec<(Reaction, f64)>,
     /// A feed (mol/s of each species) at a temperature, and the residence time (s) the
     /// outflow n/τ follows: a CSTR.
     pub feed: Option<(Vec<f64>, f64)>,
@@ -67,6 +70,7 @@ impl Reactor {
             ua: 0.0,
             surroundings: t,
             power: 0.0,
+            driven: Vec::new(),
             feed: None,
             residence: None,
             ledger: Ledger::new(0.0),
@@ -128,6 +132,13 @@ impl Reactor {
                     for j in 0..n {
                         jac[i * n + j] += sign * nu * d[j] * volume;
                     }
+                }
+            }
+        }
+        for (reaction, extent) in &self.driven {
+            for (list, sign) in [(&reaction.reactants, -1.0), (&reaction.products, 1.0)] {
+                for &(i, nu) in list {
+                    rate[i] += sign * nu * extent;
                 }
             }
         }

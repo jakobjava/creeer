@@ -26,6 +26,9 @@ pub mod shrinking;
 #[cfg(test)]
 mod shrinking_tests;
 mod system;
+pub mod transport;
+#[cfg(test)]
+mod transport_tests;
 pub mod vle;
 #[cfg(test)]
 mod vle_tests;

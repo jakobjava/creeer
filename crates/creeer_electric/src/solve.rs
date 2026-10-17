@@ -299,25 +299,32 @@ impl IslandSolver {
         let mut limited = false;
         for &j in &self.dynamic_list {
             let (c, place) = (&all[self.components[j]], self.places[j]);
-            let as_diode = match &c.kind {
-                Kind::Diode(d) if d.series > 0.0 => *d,
-                Kind::Solar(m) => {
-                    let (_, i0) = m.sources(c.state.extra[0], c.state.temperature);
-                    crate::devices::Diode {
-                        saturation: i0,
-                        emission: m.ideality * m.cells,
-                        series: 0.0,
-                        light: 0.0,
-                    }
-                }
-                _ => continue,
-            };
+            if !matches!(c.kind, Kind::Diode(d) if d.series > 0.0)
+                && !matches!(c.kind, Kind::Solar(_) | Kind::Electrolyzer(_))
+            {
+                continue;
+            }
             let below = |x: &[f64]| place.b.map_or(0.0, |i| x[i]);
             let (new, old) = (
                 y[place.extra] - below(y),
                 self.x[place.extra] - below(&self.x),
             );
-            let held = as_diode.limit(new, old, c.state.temperature);
+            let t = c.state.temperature;
+            let held = match &c.kind {
+                Kind::Diode(d) => d.limit(new, old, t),
+                Kind::Solar(m) => {
+                    let (_, i0) = m.sources(c.state.extra[0], t);
+                    let diode = crate::devices::Diode {
+                        saturation: i0,
+                        emission: m.ideality * m.cells,
+                        series: 0.0,
+                        light: 0.0,
+                    };
+                    diode.limit(new, old, t)
+                }
+                Kind::Electrolyzer(cell) => cell.limit(new, old, c.state.extra[0], t),
+                _ => continue,
+            };
             #[allow(clippy::float_cmp)] // whether it was moved at all
             let moved = held != new;
             limited |= moved;

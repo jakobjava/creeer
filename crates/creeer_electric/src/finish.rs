@@ -49,6 +49,7 @@ fn current(c: &Component, place: Place, x: &[f64], rule: Rule) -> f64 {
         Kind::Diode(d) if d.series > 0.0 => (top(x) - x[place.extra]) / d.series,
         Kind::Diode(d) => d.junction(v, s.temperature).0,
         Kind::Solar(m) => (top(x) - x[place.extra]) / m.series,
+        Kind::Electrolyzer(cell) => (top(x) - x[place.extra]) / cell.ohmic,
         Kind::VoltageSource(_) | Kind::Battery(_) | Kind::Machine(_) => x[place.extra],
     }
 }
@@ -134,6 +135,23 @@ pub(crate) fn finish(c: &mut Component, place: Place, x: &[f64], rule: Rule) -> 
             flow.exported = d.light * absorbed.max(0.0);
             flow.dissipated -= flow.exported;
             flow.heat = flow.dissipated;
+        }
+        Kind::Electrolyzer(cell) => {
+            // The reaction's work, cells·E·i, at the step's ends as the absorbed power is
+            // (averaged during BDF2); the rest heat. Below E (a fuel cell) the work comes in.
+            let e = cell.cells * c.state.extra[0];
+            let work = if average {
+                0.5 * e * (c.state.i[1] + i) * h
+            } else {
+                e * i * h
+            };
+            if work >= 0.0 {
+                flow.exported = work;
+            } else {
+                flow.imported = -work;
+            }
+            let heat = absorbed - work;
+            (flow.dissipated, flow.heat) = (heat, heat);
         }
         Kind::Solar(_) => {
             if absorbed > 0.0 {

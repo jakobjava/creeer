@@ -31,7 +31,7 @@ pub fn extras(c: &Component) -> usize {
         Kind::VoltageSource(_) | Kind::Battery(_) => 1,
         Kind::Machine(_) => 1,
         Kind::Diode(d) if d.series > 0.0 => 1,
-        Kind::Solar(_) => 1,
+        Kind::Solar(_) | Kind::Electrolyzer(_) => 1,
         _ => 0,
     }
 }
@@ -221,7 +221,7 @@ pub fn stamp<S: Sink>(s: &mut S, c: &Component, place: Place, x: &[f64], rule: R
             s.b(Some(e), *volts);
         }
         Kind::CurrentSource(amps) => branch(s, a, b, 0.0, *amps),
-        Kind::Diode(_) | Kind::Solar(_) => {
+        Kind::Diode(_) | Kind::Solar(_) | Kind::Electrolyzer(_) => {
             nonlinear::stamp(s, c, place, nonlinear::linearise(c, place, x))
         }
         Kind::Battery(bat) => {
@@ -271,7 +271,10 @@ pub fn stamp<S: Sink>(s: &mut S, c: &Component, place: Place, x: &[f64], rule: R
 
 /// Whether `c` makes its island nonlinear (Newton must iterate).
 pub fn nonlinear(c: &Component) -> bool {
-    matches!(c.kind, Kind::Diode(_) | Kind::Solar(_))
+    matches!(
+        c.kind,
+        Kind::Diode(_) | Kind::Solar(_) | Kind::Electrolyzer(_)
+    )
 }
 
 /// The global terminal nodes as local unknowns.

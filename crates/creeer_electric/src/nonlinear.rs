@@ -38,6 +38,7 @@ pub fn law(c: &Component, v: f64) -> Option<(f64, f64)> {
             let e = creeer_math::det::exp(v / m.thermal_voltage(t));
             Some((i0 * (e - 1.0), i0 * e / m.thermal_voltage(t)))
         }
+        Kind::Electrolyzer(cell) => Some(cell.junction(v, c.state.extra[0], t)),
         _ => None,
     }
 }
@@ -72,6 +73,10 @@ pub fn stamp<S: Sink>(s: &mut S, c: &Component, place: Place, lin: Lin) {
             let (ipv, _) = m.sources(c.state.extra[0], c.state.temperature);
             put(place.a, top, 1.0 / m.series, 0.0);
             put(top, below, lin.g + 1.0 / m.parallel, linear - ipv);
+        }
+        Kind::Electrolyzer(cell) => {
+            put(place.a, top, 1.0 / cell.ohmic, 0.0);
+            put(top, below, lin.g, linear);
         }
         _ => unreachable!("a nonlinear device"),
     }

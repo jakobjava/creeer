@@ -10,6 +10,9 @@ pub mod avatar;
 pub mod drive;
 #[cfg(test)]
 mod drive_tests;
+pub mod electrochem;
+#[cfg(test)]
+mod electrochem_tests;
 pub mod heat;
 #[cfg(test)]
 mod heat_tests;

@@ -63,6 +63,9 @@ pub enum Kind {
     Battery(Battery),
     /// A solar module, positive at `a`.
     Solar(SolarModule),
+    /// An electrolysis cell stack, positive at `a`; its reversible voltage per cell set from
+    /// outside (`Circuit::set_emf`, the chemistry's ΔG/zF).
+    Electrolyzer(crate::cell::Electrolyzer),
     /// A DC machine (motor or generator), its armature from `a` to `b`, its rotor on a
     /// shaft: load torque set from outside (positive: braking it).
     Machine(DcMachine),
@@ -83,10 +86,14 @@ pub struct State {
     /// well's level (0–1), a machine's rotor speed (rad/s).
     pub level: f64,
     /// A battery's RC pair voltage now and a step before, and its bound well's level; a
-    /// machine's rotor speed a step before; a solar module's irradiance (W/m²).
+    /// machine's rotor speed a step before; a solar module's irradiance (W/m²); an
+    /// electrolyser's reversible voltage per cell (V).
     pub extra: [f64; 3],
     /// Heat it gave off since that was last taken (J).
     pub heat: creeer_network::Sum,
+    /// Work it passed on since that was last taken (J; negative: taken in): a machine's on
+    /// its shaft, an electrolyser's to its reaction.
+    pub work: creeer_network::Sum,
     /// A wire's, a module's or a battery's temperature (K), set from outside.
     pub temperature: f64,
     /// Load torque on a machine's rotor (N·m), set from outside.

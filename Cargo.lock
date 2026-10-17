@@ -697,6 +697,7 @@ dependencies = [
 name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
+ "creeer_chem",
  "creeer_electric",
  "creeer_materials",
  "creeer_math",

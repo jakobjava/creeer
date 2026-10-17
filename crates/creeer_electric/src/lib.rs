@@ -11,6 +11,9 @@
 //! What a 60 Hz tick cannot resolve is not pretended: PWM switching is an average, an AC
 //! waveform a phasor, a transient faster than the tick settles where it settles.
 
+pub mod cell;
+#[cfg(test)]
+mod cell_tests;
 mod circuit;
 mod component;
 pub mod devices;
@@ -29,6 +32,7 @@ mod tests;
 #[cfg(test)]
 mod validation;
 
+pub use cell::Electrolyzer;
 pub use circuit::{Circuit, ComponentId};
 pub use component::{CONTACT, GROUND, Kind, Node, Shaft};
 pub use devices::{Battery, DcMachine, Diode, SolarModule};

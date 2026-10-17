@@ -23,6 +23,7 @@ creeer_network = { path = "crates/creeer_network" }
 creeer_thermal = { path = "crates/creeer_thermal" }
 creeer_electric = { path = "crates/creeer_electric" }
 creeer_mech = { path = "crates/creeer_mech" }
+creeer_chem = { path = "crates/creeer_chem" }
 creeer_server = { path = "crates/creeer_server" }
 
 # External crates (versions chosen in F0, see docs/adr)
