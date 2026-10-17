@@ -146,3 +146,11 @@ impl Contacts {
             .unwrap_or(gap)
     }
 }
+
+impl FaceDashpot {
+    /// Its form in the corners' rates (N·s/m): exact on a plane; over curved ground, where its
+    /// points damp their own rates, their rates taken as the corners' blend.
+    pub(super) fn form(&self) -> [[f64; 4]; 4] {
+        self.form
+    }
+}

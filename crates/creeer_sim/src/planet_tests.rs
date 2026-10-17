@@ -218,9 +218,13 @@ fn planet_physics_is_bit_identical_across_platforms() {
     // of their pressed area, faces counted by any part within the margin), after
     // 0x0b2b_3e03_525c_b032 (made together, not reverted one by one). Then for rotations
     // carried as momentum through the torques' share of a step (F6.4, `structure/step.rs`),
-    // after 0x0949_6c57_efc7_e0f5 (which the old predictor and end velocity gave back).
+    // after 0x0949_6c57_efc7_e0f5 (which the old predictor and end velocity gave back). Then for
+    // rigid bodies' contacts solved by Newton's method proper (their stiffness at each
+    // iteration's state), the step's tolerance no finer than the positions resolve, the energy
+    // contacts held carried to the next step's guard, and drilling friction (F6, the rock pile's
+    // lag), after 0xc08c_b8e6_5929_d6c3 (made together, not reverted one by one).
     assert_eq!(
-        hash, 0xc08c_b8e6_5929_d6c3,
+        hash, 0x71ef_08e3_442a_4dc9,
         "planet physics hash {hash:#018x}"
     );
 }

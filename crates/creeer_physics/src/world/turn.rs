@@ -54,10 +54,10 @@ impl World {
         let n = substeps(turn);
         let saved = (!spinning.is_empty() && n < MAX_SUBSTEPS).then(|| {
             let bodies: Vec<Saved> = self.bodies.iter().map(Saved::of).collect();
-            (bodies, self.anchors.clone())
+            (bodies, self.anchors.clone(), self.left.clone())
         });
         self.step_in(n);
-        let Some((bodies, anchors)) = saved else {
+        let Some((bodies, anchors, left)) = saved else {
             return;
         };
         // Every box awake at the start or woken in the step.
@@ -75,6 +75,7 @@ impl World {
                 saved.restore(body);
             }
             self.anchors = anchors;
+            self.left = left;
             self.step_in(substeps(turned));
         }
     }

@@ -251,9 +251,13 @@ impl Patch {
     /// corner of the face (how the load is shared out to them), and the face's minimising
     /// motion σ, from which the forces at its measured points follow (`Self::point_forces`).
     pub fn evaluate_on(&self, depths: [f64; 4], measured: &[f64]) -> (f64, [f64; 4], DVec3) {
+        self.evaluate_from(depths, measured, self.guess(depths))
+    }
+
+    /// σ at corner depths `depths` predicted from the step's start.
+    pub fn guess(&self, depths: [f64; 4]) -> DVec3 {
         let (sigma, at, slope) = &self.start;
-        let guess = (0..4).fold(*sigma, |g, k| g + slope[k] * (depths[k] - at[k]));
-        self.evaluate_from(depths, measured, guess)
+        (0..4).fold(*sigma, |g, k| g + slope[k] * (depths[k] - at[k]))
     }
 
     /// Finds the face's rigid motion σ at the corner depths of the step's start, and how it

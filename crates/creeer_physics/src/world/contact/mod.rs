@@ -40,12 +40,13 @@ pub mod patch;
 #[cfg(test)]
 mod patch_tests;
 pub mod turning;
+mod twist;
 
 use super::friction::Carried;
 use super::ground::Ground;
 use super::shape::Shape;
 use crate::structure::group::MemberState;
-use creeer_math::glam::DVec3;
+use creeer_math::glam::{DMat3, DQuat, DVec3};
 use law::Hertz;
 use normal::Memo;
 use patch::Patch;
@@ -59,6 +60,7 @@ pub const STICK_DISTANCE: f64 = 1.0e-4;
 
 pub use cap::{cap, reach, stiffest};
 pub use measure::Measure;
+pub use normal::Sides;
 
 /// How accurate (relative) the deepest contact's force is when a step stops.
 const CONVERGED: f64 = 0.01;
@@ -133,6 +135,9 @@ pub struct Contact {
     /// Tangential speed of A relative to B at the start of the step (m/s): whether it
     /// slides, for the Newton matrix.
     pub sliding: f64,
+    /// Its friction's stiffness at the iteration's slip, once relinearised (`Coupling::
+    /// relinearise`); until then the secant of the sliding at the start.
+    tangent: Option<DMat3>,
     gap_hat: f64,
     lambda: f64,
     /// The material point of B that A's point sticks to (friction measures slip from it).
@@ -147,6 +152,12 @@ pub struct Contact {
     arm_b: DVec3,
     /// How its normal turns within the step (`turning.rs`).
     pub turning: turning::Turning,
+    /// Contacts with balls between rigid bodies: whether they resist spinning, the orientations
+    /// of both sides' nodes at the start of the step, and the stiffness of their drilling
+    /// friction for the matrices (`twist.rs`).
+    drills: bool,
+    spin_start: [DQuat; 2],
+    twist_stiffness: f64,
 }
 
 impl Contact {
@@ -167,9 +178,13 @@ impl Contact {
             restitution: 0.0,
             approach: 0.0,
             sliding: 0.0,
+            tangent: None,
             gap_hat: 0.0,
             lambda: 0.0,
             anchor: b,
+            drills: false,
+            spin_start: [DQuat::IDENTITY; 2],
+            twist_stiffness: 0.0,
             radius_a: 0.0,
             radius_b: 0.0,
             arm_a: DVec3::ZERO,
@@ -241,6 +256,10 @@ pub struct Contacts {
     memo: Memo,
     /// The most any contact carries at rest (N; `Self::set_weight`).
     weight: f64,
+    /// The elastic energy the last step left in these contacts, if known (`Self::set_left`).
+    left: Option<f64>,
+    /// The twist (rad) within which drilling friction sticks in this step (`twist.rs`).
+    twist_smoothing: f64,
 }
 
 impl Contacts {
@@ -269,6 +288,8 @@ impl Contacts {
             smoothing: 1.0,
             memo: Memo::default(),
             weight: 0.0,
+            left: None,
+            twist_smoothing: 1.0,
         }
     }
 

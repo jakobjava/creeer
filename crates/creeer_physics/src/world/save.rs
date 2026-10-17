@@ -1,13 +1,15 @@
 //! The physics world as a save holds it: its settings, fixed geometry, every body (its
-//! structure, solver history, shapes, surface and sleep), and the friction anchors the next
-//! step continues from. The ground is not in it: it is the terrain's, which a save holds
-//! as its edits (`creeer_sim::save`); whoever loads a world gives it its ground again.
+//! structure, solver history, shapes, surface and sleep), and what the next step continues
+//! from: the friction anchors, and the energy the contacts held (from version 5). The ground
+//! is not in it: it is the terrain's, which a save holds as its edits (`creeer_sim::save`);
+//! whoever loads a world gives it its ground again.
 //!
 //! What a step finds again from the state (its contacts and groups) is left out, and what a
 //! solver caches (its factorised matrix) is rebuilt; so a loaded world goes on as the saved
 //! one would have, within the solver's tolerance, and saving it again gives the same bytes.
 
 use super::anchor::{Anchor, Kept};
+use super::left::Left;
 use super::shape::{Shape, StaticShape};
 use super::sleep::Sleep;
 use super::surface::Surface;
@@ -215,6 +217,16 @@ impl World {
         for a in &self.anchors {
             write_anchor(a, &mut w);
         }
+        // (Version 5 on.)
+        w.varint(self.left.energies.len() as u64);
+        for &((a, b), energy) in &self.left.energies {
+            for side in [a, b] {
+                w.put(&side.map(|s| s.0));
+                w.put(&side.map(|s| s.1));
+            }
+            w.f64(energy);
+        }
+        w.put(&self.left.stepped);
         w.finish()
     }
 
@@ -257,6 +269,9 @@ impl World {
             return Err(r.error("an anchor on a body the world lacks"));
         }
         world.anchors = anchors;
+        if r.version() >= 5 {
+            world.left = read_left(&mut r, &world)?;
+        }
         r.end()?;
         Ok(world)
     }
@@ -264,3 +279,24 @@ impl World {
 
 #[cfg(test)]
 mod tests;
+
+/// What the last step left in its contacts (`left.rs`), its bodies checked against `world`'s.
+fn read_left(r: &mut Reader<'_>, world: &World) -> Result<Left, DecodeError> {
+    let side = |r: &mut Reader<'_>| match (r.get::<Option<usize>>()?, r.get::<Option<usize>>()?) {
+        (Some(body), Some(node)) => Ok(Some((body, node))),
+        (None, None) => Ok(None),
+        _ => Err(r.error("half a side")),
+    };
+    let energies = (0..r.count(8)?)
+        .map(|_| Ok(((side(r)?, side(r)?), r.finite()?)))
+        .collect::<Result<Vec<_>, DecodeError>>()?;
+    let stepped: Vec<usize> = r.get()?;
+    let n = world.bodies.len();
+    let fits = |s: Option<(usize, usize)>| {
+        s.is_none_or(|(body, node)| body < n && node < world.bodies[body].structure.node_count())
+    };
+    if !energies.iter().all(|((a, b), _)| fits(*a) && fits(*b)) || stepped.iter().any(|&b| b >= n) {
+        return Err(r.error("energy left on a body the world lacks"));
+    }
+    Ok(Left { energies, stepped })
+}

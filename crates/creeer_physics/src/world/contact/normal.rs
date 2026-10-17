@@ -1,7 +1,8 @@
 //! The contacts' normal forces: each contact's law at its penetration (`law.rs`, `patch.rs`).
 
-use super::{Contacts, Law, MATRIX_DEPTH};
+use super::{Contacts, Law, MATRIX_DEPTH, Side};
 use crate::structure::group::MemberState;
+use creeer_math::glam::DVec3;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 impl Contacts {
@@ -122,3 +123,58 @@ impl Memo {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+impl Contacts {
+    /// Patch `p`'s motion σ at corner depths `depths` (and `measured`) if its law was last
+    /// evaluated there (true), else a guess from where it was (false).
+    pub(super) fn sigma_at(&self, p: usize, depths: [f64; 4], measured: &[f64]) -> (DVec3, bool) {
+        let memo = self.memo.lock();
+        let patch = &self.patches[p];
+        match memo.get(p).and_then(Option::as_ref) {
+            #[allow(clippy::float_cmp)] // the very same depths
+            Some(r) if r.depths == depths && r.measured == measured => (r.sigma, true),
+            Some(r) => (patch.predict((r.sigma, r.depths), depths), false),
+            None => (patch.guess(depths), false),
+        }
+    }
+}
+
+impl Contacts {
+    /// The elastic energy of each point contact and each face at `states` (J), with the
+    /// (member, node) of its sides (none for fixed geometry): what the step leaves in them.
+    pub fn energies(&self, states: &[MemberState<'_>]) -> Vec<(Sides, f64)> {
+        let node = |side: Side| match side {
+            Side::Node { member, node, .. } => Some((member, node)),
+            Side::Fixed(_) => None,
+        };
+        let (gaps, measured) = (self.gaps(states), self.measured_depths(states));
+        let mut out = Vec::new();
+        for (i, c) in self.list.iter().enumerate() {
+            if let Law::Hertz(h) = c.law {
+                out.push(((node(c.a), node(c.b)), h.energy(-gaps[i])));
+            }
+        }
+        // A face's as its law was last evaluated, where that was at these depths (the step's
+        // last trial: its end), else evaluated again.
+        let memo = self.memo.lock();
+        for (k, (p, measured)) in self.patches.iter().zip(&measured).enumerate() {
+            let depths: [f64; 4] = std::array::from_fn(|k| -gaps[p.first + k]);
+            #[allow(clippy::float_cmp)] // the very same depths
+            let energy = match memo.get(k).and_then(Option::as_ref) {
+                Some(r) if r.depths == depths && r.measured == *measured => r.energy,
+                _ => p.evaluate_on(depths, measured).0,
+            };
+            let c = &self.list[p.first];
+            out.push(((node(c.a), node(c.b)), energy));
+        }
+        out
+    }
+
+    /// Sets the elastic energy the last step left in these contacts, found anew (`energies`).
+    pub fn set_left(&mut self, energy: Option<f64>) {
+        self.left = energy;
+    }
+}
+
+/// The (member, node) of a contact's two sides, none for fixed geometry.
+pub type Sides = (Option<(usize, usize)>, Option<(usize, usize)>);

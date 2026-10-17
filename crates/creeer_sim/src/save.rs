@@ -1,6 +1,10 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 5** (F6): as version 4, the world keeping the elastic energy each contact held
+//! at the end of the last step (what the next step's energy guard holds its contacts, found anew,
+//! to: `creeer_physics::world::left`).
+//!
 //! **Version 4** (F6): as version 3, a structure's solver keeping the last step's external
 //! loads and torques (what its next Newmark step carries on, for the energy guard).
 //!
@@ -32,7 +36,7 @@ use creeer_physics::world::World;
 use creeer_terrain::edits::Edits;
 
 /// The version this game writes.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).

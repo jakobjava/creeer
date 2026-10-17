@@ -15,6 +15,7 @@ mod buckling;
 mod buckling_tests;
 mod builder;
 mod coupled;
+mod coupling;
 mod dashpot;
 #[cfg(test)]
 mod dashpot_tests;

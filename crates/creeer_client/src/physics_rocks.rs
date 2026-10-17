@@ -68,3 +68,32 @@ pub fn rocks(world: &mut World) {
         ));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pile's first four seconds, its busiest (the rocks landing and sliding down the ramp
+    /// into each other), take a bounded number of Newton iterations: about 80,000 summed over
+    /// the bodies, where the contacts' stiffness frozen at each step's start took 1.1 million
+    /// (30–90 ms a step, F6).
+    #[test]
+    fn the_rock_pile_converges_in_few_iterations() {
+        let mut world = World::new(1.0 / 60.0);
+        world.statics.push(StaticShape::Plane {
+            normal: DVec3::Y,
+            offset: 0.0,
+        });
+        rocks(&mut world);
+        let mut iterations = 0;
+        for _ in 0..240 {
+            world.step();
+            iterations += world
+                .bodies
+                .iter()
+                .map(|b| u64::from(b.solver.last_iterations))
+                .sum::<u64>();
+        }
+        assert!(iterations < 120_000, "{iterations} iterations");
+    }
+}

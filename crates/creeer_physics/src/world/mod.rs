@@ -33,6 +33,7 @@ mod hull_sat;
 #[cfg(test)]
 mod hull_tests;
 mod impact;
+mod left;
 #[cfg(test)]
 mod load_tests;
 pub mod narrow;
@@ -57,6 +58,7 @@ use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuild
 use contact::{Contact, Contacts};
 use creeer_math::glam::{DQuat, DVec3};
 use ground::Ground;
+use left::Left;
 pub use query::{Support, Touch};
 use shape::{Shape, StaticShape};
 use std::sync::Arc;
@@ -159,6 +161,10 @@ pub struct World {
     groups: Vec<(Vec<usize>, Contacts)>,
     /// Friction anchors of the last step.
     anchors: Vec<anchor::Anchor>,
+    /// The elastic energy each point contact and face held at the end of the last step, by
+    /// the bodies (and nodes) it joined, and the bodies stepped then (the energy guard's,
+    /// `structure/group.rs`).
+    left: Left,
     dt: f64,
 }
 
@@ -175,6 +181,7 @@ impl World {
             static_surface: Surface::CONCRETE,
             contacts: Vec::new(),
             groups: Vec::new(),
+            left: Left::default(),
             anchors: Vec::new(),
             dt,
         }
@@ -236,8 +243,10 @@ impl World {
         let stepped = self.pass(&found, &anchors);
         self.contacts.clear();
         self.groups.clear();
+        self.left = Left::default();
         let mut groups = Vec::with_capacity(stepped.len());
         for (group, contacts, anchors) in stepped {
+            self.leave(&group, &contacts);
             self.anchors.extend(anchors);
             self.contacts.extend(contacts.list.iter().copied());
             groups.push(group.clone());
@@ -291,6 +300,7 @@ impl World {
     }
 
     fn renumber(&mut self, map: &[Option<usize>]) {
+        self.left = Left::default();
         self.anchors = self
             .anchors
             .iter()

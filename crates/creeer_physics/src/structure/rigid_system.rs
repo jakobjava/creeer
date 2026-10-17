@@ -23,6 +23,8 @@ fn block(m: &[[f64; 6]; 6], bi: usize, bj: usize) -> DMat3 {
 pub(super) struct RigidSystem {
     /// Group member index of each rigid body in the system.
     members: Vec<usize>,
+    /// The blocks the matrix couples (its pattern).
+    edges: Vec<(usize, usize)>,
     chol: Cholesky,
 }
 
@@ -31,6 +33,18 @@ impl RigidSystem {
     /// (`rigid[m]`) and the coupling's cross terms. `None` when fewer than two rigid bodies
     /// touch each other (the separate matrices are then exact).
     pub(super) fn new(
+        members: &[Member<'_>],
+        coupling: &dyn Coupling,
+        rigid: &[Option<[[f64; 6]; 6]>],
+    ) -> Option<Self> {
+        Self::again(None, members, coupling, rigid)
+    }
+
+    /// As [`Self::new`], factorising with `old`'s analysis where the matrix couples the same
+    /// blocks (each Newton iteration of a pile analysed its pattern anew, a fifth of the
+    /// iteration's cost, F6).
+    pub(super) fn again(
+        old: Option<Self>,
         members: &[Member<'_>],
         coupling: &dyn Coupling,
         rigid: &[Option<[[f64; 6]; 6]>],
@@ -85,10 +99,14 @@ impl RigidSystem {
                 off.push(masks[*a][bi] * block(cross, bi, bj) * masks[*b][bj] * b2);
             }
         }
-        let mut chol = Cholesky::new(SymbolicCholesky::new(&positions, &edges));
+        let mut chol = match old {
+            Some(old) if old.members == list && old.edges == edges => old.chol,
+            _ => Cholesky::new(SymbolicCholesky::new(&positions, &edges)),
+        };
         chol.factor(&diag, &off).ok()?;
         Some(Self {
             members: list,
+            edges,
             chol,
         })
     }

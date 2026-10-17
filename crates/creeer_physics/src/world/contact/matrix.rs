@@ -23,21 +23,26 @@ impl Contacts {
         } else {
             c.stiffness
         };
-        let normal = if self.touching(c) {
-            own + c.damping / self.beta
-        } else {
+        // (A face's dashpot, once relinearised, is its exact form in the patch's blocks.)
+        let damped = if matches!(c.law, Law::Patch { .. }) && c.tangent.is_some() {
             0.0
+        } else {
+            c.damping / self.beta
         };
+        let normal = if self.touching(c) { own + damped } else { 0.0 };
         // Sticking: the stiff spring of the anchor. Sliding: Coulomb's force μ·λ is constant,
         // its secant over the slip of the step is the stiffness the step sees.
+        let n = c.normal;
+        let outer = DMat3::from_cols(n * n.x, n * n.y, n * n.z);
+        if let Some(tangent) = c.tangent {
+            return (outer * normal, tangent);
+        }
         let slip = c.sliding * self.beta;
         let tangent = if slip > self.smoothing {
             c.friction * c.lambda / slip
         } else {
             c.friction * c.lambda * 2.0 / self.smoothing
         };
-        let n = c.normal;
-        let outer = DMat3::from_cols(n * n.x, n * n.y, n * n.z);
         (outer * normal, (DMat3::IDENTITY - outer) * tangent)
     }
 
@@ -72,6 +77,11 @@ impl Contacts {
                 if let Some(m6) = merged(&mut out, c.a, c.b) {
                     add_block(m6, arm_a, arm_b, h, -1.0);
                 }
+            }
+            if c.twist_stiffness > 0.0
+                && let Some(m6) = merged(&mut out, c.a, c.b)
+            {
+                add_turns(m6, c.normal, -c.twist_stiffness);
             }
             // A patch couples every corner on A with every corner's point on B.
             if let Law::Patch { patch, vertex: 3 } = c.law
@@ -142,6 +152,14 @@ impl Contacts {
                     if let Some(m) = on_rigid(side) {
                         add_block(&mut h6[m], arm, arm, h, 1.0);
                     }
+                }
+            }
+        }
+        // Drilling friction (`twist.rs`): k·n·nᵀ on the turns of both sides.
+        for c in self.list.iter().filter(|c| c.twist_stiffness > 0.0) {
+            for side in [c.a, c.b] {
+                if let Some(m) = on_rigid(side) {
+                    add_turns(&mut h6[m], c.normal, c.twist_stiffness);
                 }
             }
         }
@@ -262,6 +280,15 @@ fn merged(out: &mut Vec<NodeCoupling>, a: Side, b: Side) -> Option<&mut [[f64; 6
         out.push((key.0, key.1, [[0.0; 6]; 6]));
     }
     out.last_mut().map(|last| &mut last.2)
+}
+
+/// Adds k·n·nᵀ to the turns' part of a 6×6 block.
+fn add_turns(m6: &mut [[f64; 6]; 6], n: DVec3, k: f64) {
+    for r in 0..3 {
+        for c in 0..3 {
+            m6[3 + r][3 + c] += k * n[r] * n[c];
+        }
+    }
 }
 
 /// Adds s·u·vᵀ to a 6×6 block.

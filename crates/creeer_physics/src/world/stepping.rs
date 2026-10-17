@@ -52,6 +52,10 @@ fn measured_gaps(bodies: &[Body], contacts: &Contacts) -> Vec<f64> {
 /// Advances a group by `dt`.
 pub(super) fn step(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
     let impact = contacts.list.iter().any(impact::is_impact);
+    // An impact's own books leave out the contacts found pressed in at its start (`substep`).
+    if impact {
+        contacts.set_left(None);
+    }
     let deformable = bodies.iter().any(|b| b.structure.element_count() > 0);
     if deformable && (impact || bodies.iter().any(|b| b.crushing)) {
         crush(bodies, contacts, dt);

@@ -22,6 +22,22 @@ fn residuals(members: &mut [Member<'_>], coupling: &dyn Coupling, gradient: &mut
     }
 }
 
+/// The rigid bodies' matrices made again with the coupling's stiffness, and their joint system
+/// (`old` its last).
+fn remake(
+    old: Option<RigidSystem>,
+    members: &[Member<'_>],
+    coupling: &dyn Coupling,
+    rigid: &mut [Option<[[f64; 6]; 6]>],
+) -> Option<RigidSystem> {
+    for (m, slot) in rigid.iter_mut().enumerate() {
+        *slot = members[m]
+            .1
+            .rigid_matrix(members[m].0, coupling.rigid_stiffness(m));
+    }
+    RigidSystem::again(old, members, coupling, rigid)
+}
+
 /// How far `direction` goes down the objective: the residual (the negative gradient) along it.
 fn downhill(residual: &[DVec3], direction: &[DVec3]) -> f64 {
     residual.iter().zip(direction).map(|(r, d)| r.dot(*d)).sum()
@@ -48,7 +64,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
     // step would stop where it began, as if converged (a NaN dashpot did, F5).
     debug_assert!(objective.is_finite(), "the step's objective is {objective}");
     members[0].1.timings.residual += t.elapsed();
-    let rigid: Vec<Option<[[f64; 6]; 6]>> = (0..members.len())
+    let mut rigid: Vec<Option<[[f64; 6]; 6]>> = (0..members.len())
         .map(|m| {
             members[m]
                 .1
@@ -76,8 +92,18 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
             Some(start)
         })
         .collect();
+    // Not below what the positions can resolve: a few roundings of the farthest coordinate (a
+    // contact barely touching asked for 10⁻¹⁹ m, and the step went on to its 500th iteration).
+    let far = members
+        .iter()
+        .flat_map(|(s, _)| s.position.iter())
+        .fold(1.0, |far: f64, p| far.max(p.abs().max_element()));
     let (tolerance, max_iterations) = (
-        members[0].1.tolerance.min(coupling.tolerance()),
+        members[0]
+            .1
+            .tolerance
+            .min(coupling.tolerance())
+            .max(4.0 * f64::EPSILON * far),
         members[0].1.max_iterations,
     );
     let mut lbfgs = Lbfgs::default();
@@ -88,8 +114,22 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
     let mut direction = residual.clone();
     let (mut previous_move, mut previous_rate) = (f64::INFINITY, None);
     let mut lag_updates = 0;
+    // A group of rigid bodies alone (no structure) takes its contacts' stiffness at each
+    // iteration's state into its matrices: Newton's method proper. Their friction's stiffness
+    // turns with the slip (`Coupling::relinearise`), and frozen at the step's start it left
+    // piles of sliding rocks creeping, 50–400 iterations a step (F6).
+    let relinear = coupled.is_none() && rigid.iter().all(Option::is_some);
     let mut refactored = false;
-    for _ in 0..max_iterations {
+    for iteration in 0..max_iterations {
+        // (Not at the very end: within ten tolerances the last iterate's matrix serves as well,
+        // and making it again cost a stack of crates a tenth of its step.)
+        if relinear
+            && iteration > 0
+            && previous_move > 10.0 * tolerance
+            && coupling.relinearise(&states(members))
+        {
+            system = remake(system.take(), members, coupling, &mut rigid);
+        }
         let t = Instant::now();
         for (s, v) in members.iter_mut() {
             v.last_iterations += 1;
@@ -156,7 +196,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
                 elastic.push(e);
             }
             let value = members_value + coupling.energy(&trial_states(members));
-            if value <= objective {
+            // (A shorter step no lower is rounding's: taken, it moved nothing, again and again.)
+            #[allow(clippy::float_cmp)] // the full step, no higher
+            if value < objective || (value == objective && halving == 0) {
                 accepted = Some((value, members_value, elastic, halving == 0));
                 break;
             }

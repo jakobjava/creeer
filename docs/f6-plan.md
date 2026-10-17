@@ -267,6 +267,7 @@ The order follows dependencies: materials first (everything needs their properti
 - **The reference load of plan.md §5:**
   - 1,000 machines across all domains, 20,000 beams, 8 players;
   - measured against the 10 ms tick on min-spec, with every F6 budget in `cargo xtask perf`.
+- **Budgets with margin.** The 10k-node DC circuit measured 0.93–1.00 ms projected against its 1 ms budget (F6.3: 0.93–0.97): give it margin before the perf baseline is saved again.
 - **ADRs:**
   - ADR-0009: network kit;
   - ADR-0010: thermal networks;

@@ -147,3 +147,49 @@ fn removing_a_body_leaves_the_others_anchored() {
     let moved = (world.bodies[0].structure.position[0] - at).length();
     assert!(moved < 1e-6, "moved {moved} m");
 }
+
+/// A ball of 50 kg set spinning at 0.2 rad/s about the vertical on the ground slows at a
+/// steady rate, as sliding friction over its contact circle does (torque μ·N·3πa/16, a the
+/// circle's radius, `contact/twist.rs`): the torque it takes is that of a lever of a
+/// fraction of a millimetre to a few millimetres. Then it stops, and sleeps. (A point
+/// contact's friction has no lever about its normal: it spun on for good, F6.)
+#[test]
+fn a_ball_spinning_on_the_ground_stops() {
+    let mut world = World::new(DT);
+    world.statics.push(StaticShape::Plane {
+        normal: DVec3::Y,
+        offset: 0.0,
+    });
+    world.static_friction = 0.6;
+    let (radius, mass) = (0.3, 50.0);
+    let mut ball = Body::rigid(Shape::Sphere { radius }, mass, DVec3::Y * radius, DT);
+    ball.friction = 0.6;
+    world.add(ball);
+    for _ in 0..60 {
+        world.step();
+    }
+    world.bodies[0].structure.angular_velocity[0] = DVec3::Y * 0.2;
+    world.bodies[0].wake();
+    let spin = |w: &World| w.bodies[0].structure.angular_velocity[0].y;
+    let mut rates = Vec::new();
+    for _ in 0..3 {
+        let before = spin(&world);
+        for _ in 0..15 {
+            world.step();
+        }
+        rates.push((before - spin(&world)) / 0.25);
+    }
+    // Steady: Coulomb's law, not a dashpot's exponential.
+    let (first, last) = (rates[0], rates[2]);
+    assert!(
+        first > 0.0 && (last / first - 1.0).abs() < 0.05,
+        "{rates:?}"
+    );
+    let inertia = 0.4 * mass * radius * radius;
+    let lever = first * inertia / (0.6 * mass * G);
+    assert!(lever > 1e-4 && lever < 5e-3, "lever {lever} m");
+    for _ in 0..1200 {
+        world.step();
+    }
+    assert!(world.bodies[0].sleep.asleep, "spins at {}", spin(&world));
+}

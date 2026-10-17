@@ -218,7 +218,7 @@ A hull is built from points by incremental construction: a tetrahedron of extrem
 - A hull made from a box's corners touches exactly as the box (pressing polygon, area, normal, edge contacts, ball contacts and their features, to 10⁻⁹) in 2,000 random poses against a box, a plane and a ball, and 500 on flat ground; over a 1 cm bump it finds the bump as the box does.
 - A triangular face presses as a punch of its area: 2·E*·√(A/π) to 10⁻¹².
 - A wedge on a ramp sticks below the friction angle and slides with g·(sin θ − μ·cos θ) within 2 %; a hexagonal prism on a 35° ramp tips over its lower edge, which holds to 0.5 mm along the ramp (pressed in 0.1 mm, it rolls on the ramp as it turns); twelve rocks dropped in a heap, and one on bumpy ground, come to rest without gaining energy.
-- The client's rock pile (`--physics rock`, view `rocks`): eighteen rocks, a hexagonal prism and three wedges on a 35° ramp; 0.4–5.5 ms a step with up to 300 contacts.
+- The client's rock pile (`--physics rock`, view `rocks`): eighteen rocks, a hexagonal prism and three wedges on a 35° ramp, up to 300 contacts. (Recorded here as 0.4–5.5 ms a step; measured again in F6, its busiest seconds took 35–65 ms a step and its worst 351 ms: see the F6 amendment on Newton's method.)
 
 ### Consequences and limits
 Three limits of the contact model showed with hulls (boxes behaved identically, measured side by side). Two are fixed in the revision below; one remains:
@@ -277,3 +277,53 @@ Found while building F6.2's fire scene (a 9 t block on a 4 m steel frame on two 
 - **A failed line search read as convergence** (`structure/minimise.rs`). An uphill direction fails every line search; the minimiser then stops as if at the minimum. It now checks that each direction goes downhill (r·d > 0, one dot product) and, should one not, takes each member's own positive definite matrix for it and restarts L-BFGS.
 
 **Consequences.** Bodies resting on structures settle where their forces balance (the frame's piers now carry 95.2 kN of the frame's and the block's 95.3 kN, the block's contacts its 88.2 kN). A structure rings as its damping says: the 40 m bridge under its 10 t block swings at 1.3 Hz, down 4 % a cycle (ζ = 0.6 %), where the false convergences had stopped it within a second; its steps take about 4 iterations while it swings (12 without the joint solve), the test now measuring that (F5's "about two" was the false convergence's). The structures benchmark (supported structures, no joint solve) is unchanged (A/B against F5's commit: bridge p50 2.13 vs 2.12 ms, heat-soaked machine).
+
+## Amended in F6 (2026-10-17): Newton's method for piles of rigid bodies
+
+The sandbox's rock pile and stacks lagged: the physics ran slower than real time while the frame rate stayed at 180. Measured again, F5's rock pile took 35–65 ms a step in its busiest seconds and 351 ms at worst, the stacks 145 ms at worst. Its groups needed 50–500 iterations a step.
+
+### The contacts' stiffness at each iteration's state (`Coupling::relinearise`, `contact/coupling.rs`)
+- A group of rigid bodies alone takes its contacts' stiffness at every iteration's state into its matrices and its joint system: Newton's method proper. Groups with structures keep the step's stiffness.
+- **Friction:** its exact Hessian at the slip, μλ·[f₁·(P − ŝŝᵀ) + f₂·ŝŝᵀ]. A sliding contact has no stiffness along its slip; the secant μλ/|slip| in every direction made a sliding rock's matrix far too stiff along its motion. Without the exact Hessian the pile took 380,000 iterations in its first four seconds; with it about 80,000.
+- **Points:** Hertz's stiffness at the depth now; none apart. The step's anticipating stiffness kept for a contact come apart made a rock's matrix a hundred times too stiff (a third more iterations).
+- **Faces:** the patch energy's Hessian at the corner depths now (`Patch::tangent`: the material as pressed there, in series with the limit as loaded there), and the face dashpot's exact form. The dashpot damps for the whole step, lifted or not: left out of a lifted face's matrix, Newton missed most of a rock's stiffness against the ramp.
+- **Cost:** the joint system keeps its symbolic analysis while it couples the same blocks, and the matrices are not made again within ten tolerances of the end. A face's motion σ comes from the last evaluation of its law.
+
+### The stop (`structure/minimise.rs`)
+- The tolerance is no finer than the positions resolve, 4ε times the farthest coordinate. A barely touching contact asked for 10⁻¹⁹ m, and the step ran to its 500th iteration.
+- A shorter line-search trial that is not lower than the start is rounding's. Taken as before (≤), it moved nothing, again and again.
+
+### Energy found anew (`world/left.rs`)
+- Contacts are found anew every step, and found anew they may hold more energy than they did: a crate's faces fitted again to the curved ground under them gained a millijoule a step. The exact solve turned it into motion, and the crate rocked on a hillside at 3 mm/s for good. The old inexact stop, 3·10⁻⁷ m short of the solution each step, had damped it.
+- The world now keeps the energy each contact held at the end of a step (saved from version 5). The next step's guard takes any surplus of the contacts found anew from the kinetic energy, without redoing the step. Impacts keep their own books (their contacts at the start never counted).
+
+### Drilling friction (`contact/twist.rs`)
+- A ball's contact between rigid bodies resists spinning about its normal: Coulomb's torque μ·N·3πa/16 over Hertz's circle of radius a (Lubkin, 1951), smoothed over the twist a spin of 10⁻³ rad/s makes in the step. A point contact's friction has no lever about its normal: a ball or an avatar left spinning about the vertical spun on.
+
+### Tried and rejected
+- **The contacts the full step would press, taken into the matrix (an active set).** It cut fewer line searches at first, but took 60 % more iterations once separated contacts left the matrix, and the client's prediction of its avatar parted from the server's more often.
+- **Faces and edges** (`sat.rs`, `hull_sat.rs`). An edge pair's axis is taken over a face's only when better by 0.1 mm. A rock rattled every step between an edge contact carrying 800 N and the patch of a steeply inclined face, a sliver carrying 1 N.
+  - An edge bias of at most half the face's penetration stopped that, but let crates knocked edge-on switch to their edges where their patches carried, and a ball smashing stacks gained 47 J. A hull and a box of one shape must touch alike, so it could not be for hulls alone.
+  - Keeping the last step's choice unless the other was clearly better (hysteresis) held rocks on an edge where faces lay flush, and the pile crept for good.
+  - Both reverted (see the limits).
+- **L-BFGS** cleared on every new matrix, or pure Newton without its pairs: three to four times slower.
+- **Faces evaluated in parallel** within a group: slower. The patches are cheap, and the groups already run in parallel.
+
+### Measured (development machine)
+| | before | now |
+|---|---|---|
+| rock pile, busiest second | 35–93 ms a step | 14–15 ms |
+| rock pile, worst step | 351 ms | 44 ms |
+| rock pile, settled (20 s) | 2–3 ms, 15–20 of 22 awake | 1–1.2 ms, 9 awake |
+| stacks scene, worst step | 145 ms | 10 ms |
+| ten stacks of ten crates settling (spikes, A/B) | 0.97–1.02 ms | 1.03–1.04 ms (+3–6 %) |
+
+### Validation added
+- `physics_rocks.rs` (client): the pile's first four seconds within 120,000 Newton iterations (about 80,000; 1.1 million before).
+- `friction_tests.rs`: a ball spinning on the ground slows at a steady rate (Coulomb's, not a dashpot's), its torque that of a lever of 0.1–5 mm (0.9 mm), then stops and sleeps.
+- `creeer_sim`: the avatar sleeps after rolling, a crate on the hills rests through time warp, and the version 5 save fixture. The golden hash is regenerated.
+
+### Limits (`docs/future-improvements.md`)
+- Edge contacts and face patches give different forces for the same overlap: nine rocks of the pile stay awake, about 1 ms a step.
+- Drilling friction keeps no anchor: under a torque below its limit a ball creeps at up to 10⁻³ rad/s. Only between rigid bodies.
+- Contacts found anew still differ from step to step; only their surplus is taken back.

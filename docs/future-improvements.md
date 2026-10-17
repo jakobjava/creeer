@@ -71,6 +71,9 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Settling is overdamped**: a box dropped on bumps rocks to rest over 2 s instead of a fraction of one | Contacts are critically damped at their resolvable stiffness | R | Medium | ADR-0005 |
 | **Faces over curved ground cost points**: 50 crates landing on terrain take about twice as long a step as in F4 | Correctness first; each face measures 5–40 ground points | S | Medium | ADR-0005 |
 | **Contacts resolve only what the step can**: beyond that they sink a reach per e-fold of their load (micrometres to a fraction of a millimetre) | The step's stiffness limit | R | Large | ADR-0005 |
+| **Edge contacts and face patches disagree**: for the same overlap an edge pair's point and a steeply inclined face's patch give very different forces (800 N against 1 N), so a rock can rattle between them; nine rocks of the sandbox pile stay awake at about 1 ms a step | A relative edge bias broke the stacks' energy (+47 J), and keeping the last step's choice held rocks on edges where faces lay flush; a consistent contact for both needs the patch built from the true overlap | R, S | Large | ADR-0005 (F6, Newton) |
+| **Drilling friction keeps no anchor**: under a torque below its limit a ball creeps at up to 10⁻³ rad/s, and only rigid bodies have it (a structure's nodes take no turning stiffness from contacts) | A rate-smoothed torque stops spins without saved state; an anchor would need saving like sliding friction's | R | Small | ADR-0005 (F6, Newton) |
+| **Contacts found anew differ from step to step** (a face fitted again to curved ground): only the energy surplus is taken back, from the motion | Consistent geometry across steps is a larger change to detection | R | Medium | ADR-0005 (F6, Newton) |
 
 ## Solvers and performance
 
@@ -82,6 +85,10 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **A slow pipe network's step spread over its interval** (or run beside the tick), not one tick's spike | Belongs to F6.8's scheduler | S | Medium | ADR-0014; `docs/f6-plan.md` (F6.8) |
 | **PGO**, **GPU compute** for soft bodies | Later optimisation options in the plan | S | Medium | plan.md |
 | **A stiffer contact model** with all contacts in every structure's matrix before every step | Future work after the F5 contact law | R, S | Large | ADR-0005 |
+| **Newton's method for groups with structures**: only groups of rigid bodies alone take their contacts' stiffness at each iteration's state; rigid bodies on structures keep the step's | The structures' matrices are factorised once a step; factorising them at every iteration was not tried | S | Medium | ADR-0005 (F6, Newton) |
+| **The line search at planet scale**: 500 km from the origin the objective rounds at about 10⁻⁷ J, and steps stop short where a decrease that small cannot be seen | Within tolerance where it stops; an objective summed as differences from the step's start would see it | R | Medium | this list (F6) |
+| **The 10k-node DC circuit has 0–7 % margin** to its 1 ms budget (0.47–0.50 ms on the development machine, 0.93–1.00 ms projected) | Met when measured in F6.3; to be given margin in F6.8 | S | Small | ADR-0011; `docs/f6-plan.md` (F6.8) |
+| **Settling stacks cost 3–6 % more** since rigid bodies' contacts are relinearised each iteration (piles 4–8 times less) | The pile's gain; the stacks' matrices barely change near convergence and are not made again there | S | Small | ADR-0005 (F6, Newton) |
 
 ## Fluids
 
@@ -136,6 +143,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Secure connections** (connect tokens) for public servers | Unsecured netcode first | G | Medium | ADR-0008 |
 | **Structures' elastic vibration on clients** (only lasting shape changes over a centimetre are sent) | Bandwidth | R | Medium | ADR-0008 |
 | **Predicting bumps into things**: the prediction world holds only the avatar and the terrain (bumps are corrected, not predicted) | Cost and complexity | G | Large | ADR-0008 |
+| **Prediction drifts from the server's by over a centimetre on about 5 % of corrections**, even on a lossless link: the snapshot carries quantised state, and neither the solver's history nor the friction anchors | Measured in F6; the netcode test holds 5 % | G | Medium | this list (F6) |
 | **A second copy of the terrain's caches** in singleplayer (server and client) | Same code for single- and multiplayer | S | Medium | ADR-0008 |
 
 ## Elsewhere

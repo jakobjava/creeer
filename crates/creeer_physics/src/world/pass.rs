@@ -49,6 +49,7 @@ impl World {
         #[allow(clippy::type_complexity)] // one group's parts, built side by side
         let mut contacts: Vec<(Vec<Contact>, Vec<Patch>, Vec<Measure>, Vec<Shape>)> =
             vec![(Vec::new(), Vec::new(), Vec::new(), Vec::new()); groups.len()];
+        let left = self.left_by_group(&groups, &group_of);
         let anchors = anchor::Index::new(anchors);
         let mut corners = [DVec3::ZERO; 4];
         for (a, na, b, raw) in found {
@@ -128,10 +129,13 @@ impl World {
         let mut work: Vec<stepping::GroupWork<'_>> = groups
             .iter()
             .zip(contacts)
-            .map(|(g, (c, p, measures, shapes))| {
+            .zip(left)
+            .map(|((g, (c, p, measures, shapes)), left)| {
+                let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
+                contacts.set_left(left);
                 (
                     g.iter().map(|&b| slots[b].take().expect("once")).collect(),
-                    Contacts::new(c, p, measures, (ground.clone(), shapes)),
+                    contacts,
                     Vec::new(),
                     g,
                 )
