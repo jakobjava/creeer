@@ -18,7 +18,9 @@
 //! them, but at least 50 segments' (10 µs): a step's fixed cost (about 2 µs on the minimum-spec
 //! CPU) is not paid per link, and small networks, which a world has many of, run every tick.
 
-use super::{Network, PipeReport};
+use super::{Network, NodeKind, PipeReport};
+use creeer_network::Ledger;
+use std::sync::mpsc;
 
 /// The pipes' budget a tick on the minimum-spec CPU (ns), and the segments it is for.
 pub const BUDGET_NS: f64 = 1.0e6;
@@ -70,7 +72,7 @@ impl Network {
     /// Ticks a step takes: the fewest of [`RATES`] whose cost a tick fits its share (the most,
     /// 10 Hz, if none does).
     pub fn ticks_per_step(&mut self) -> u32 {
-        if let Some(every) = self.solver.as_ref().and_then(|s| s.every) {
+        if let Some(every) = self.held.or(self.rate) {
             return every;
         }
         let (cost, share) = (self.estimated_cost(), self.budget_share());
@@ -78,20 +80,100 @@ impl Network {
             .into_iter()
             .find(|&k| cost / f64::from(k) <= share)
             .unwrap_or(RATES[RATES.len() - 1]);
-        self.solver.as_mut().expect("estimated").every = Some(every);
+        self.rate = Some(every);
         every
+    }
+
+    /// Holds the network at a step every `every` ticks (of [`RATES`]) whatever its cost, or
+    /// (`None`) lets it pick again: for tests and benches of slow networks.
+    pub fn hold_rate(&mut self, every: Option<u32>) {
+        self.held = every;
     }
 
     /// One tick of `dt` seconds: the network steps on the ticks its rate falls on (the first
     /// one included), by its rate's whole interval. Returns the step's outcome and length, on
-    /// the ticks it stepped.
+    /// the ticks a step ends.
+    ///
+    /// A network stepping every tick steps at once. A slower one (ADR-0016) begins its step on
+    /// a worker from its state on the tick its rate falls on, and ends it on the next such tick
+    /// (the step's heads and flows are those of its interval's end, taken at its end): the
+    /// step runs beside the ticks between, not as one tick's spike. What it is begun from and
+    /// ended on are fixed ticks: no thread's timing can change what it finds. Settings changed
+    /// in between (a valve, a turbine's speed) count from the next step.
     pub fn tick(&mut self, dt: f64) -> Option<(PipeReport, f64)> {
         let every = self.ticks_per_step();
         let due = self.ticks.is_multiple_of(u64::from(every));
         self.ticks += 1;
-        due.then(|| {
-            let h = dt * f64::from(every);
-            (self.step(h), h)
-        })
+        if !due {
+            return None;
+        }
+        let h = dt * f64::from(every);
+        if every == 1 {
+            return Some((self.step(h), h));
+        }
+        let done = self.take_pending();
+        self.begin(h);
+        done
+    }
+
+    /// Begins a step of `h` on a worker, from the network as it is.
+    fn begin(&mut self, h: f64) {
+        let mut job = Network {
+            nodes: self.nodes.clone(),
+            links: self.links.clone(),
+            liquid: self.liquid,
+            gravity: self.gravity,
+            ledger: Ledger::new(0.0),
+            solver: self.solver.take(),
+            ticks: self.ticks,
+            rate: self.rate,
+            held: self.held,
+            pending: Pending::default(),
+        };
+        let (send, receive) = mpsc::channel();
+        rayon::spawn(move || {
+            let report = job.step(h);
+            // (Taken on the tick the step ends; a network dropped before then never takes it.)
+            let _ = send.send((job, report, h));
+        });
+        self.pending = Pending(Some(receive));
+    }
+
+    /// Ends the step under way, if any: what it found (the heads it solved for, the flows,
+    /// which links are open), its solver back, its books added. Returns its outcome and length.
+    pub(crate) fn take_pending(&mut self) -> Option<(PipeReport, f64)> {
+        let receive = self.pending.0.take()?;
+        let (job, report, h) = receive.recv().expect("a step under way ends");
+        for (node, solved) in self.nodes.iter_mut().zip(&job.nodes) {
+            if !matches!(node.kind, NodeKind::Reservoir) {
+                node.head = solved.head;
+            }
+        }
+        for (link, solved) in self.links.iter_mut().zip(&job.links) {
+            (link.flow, link.open) = (solved.flow, solved.open);
+        }
+        self.solver = job.solver;
+        let (supplied, dissipated, exported, imported) = job.ledger.totals();
+        self.ledger.supply(supplied);
+        self.ledger.dissipate(dissipated);
+        self.ledger.export(exported);
+        self.ledger.import(imported);
+        Some((report, h))
+    }
+}
+
+/// A slow network's step under way on a worker (`Network::tick`).
+#[derive(Debug, Default)]
+pub(crate) struct Pending(Option<mpsc::Receiver<(Network, PipeReport, f64)>>);
+
+impl Clone for Pending {
+    /// # Panics
+    /// If a step is under way: a copy would lack its outcome.
+    fn clone(&self) -> Self {
+        assert!(
+            self.0.is_none(),
+            "a network cannot be copied while its step is under way"
+        );
+        Self(None)
     }
 }

@@ -26,6 +26,7 @@ mod schedule_tests;
 mod solve;
 #[cfg(test)]
 mod tests;
+mod turbine;
 
 use creeer_network::Ledger;
 
@@ -92,6 +93,16 @@ pub enum LinkKind {
         open: f64,
         opening: f64,
     },
+    /// A reaction turbine by Euler's equation (`turbine.rs`): its runner turning at `speed`
+    /// (rad/s, its shaft's, set every tick) takes the head ω·(a·Q − r²·ω)/g as work and
+    /// `loss`·Q|Q| as friction; `swirl` a (1/m) from its guide vanes' and blades' angles,
+    /// `radius` r its runner's outlet (m). Its torque on the shaft is ρ·Q·(a·Q − r²·ω).
+    Turbine {
+        swirl: f64,
+        radius: f64,
+        loss: f64,
+        speed: f64,
+    },
 }
 
 /// A link from node `a` to node `b`, its flow (m³/s), and whether it is open (a check valve
@@ -123,6 +134,11 @@ pub struct Network {
     pub(crate) solver: Option<liquid::Solver>,
     /// Ticks gone by (`schedule.rs`: its rate falls on some).
     pub(crate) ticks: u64,
+    /// Ticks a step (`schedule.rs`): once worked out from its structure, or held.
+    pub(crate) rate: Option<u32>,
+    pub(crate) held: Option<u32>,
+    /// A slow network's step under way beside the ticks.
+    pub(crate) pending: schedule::Pending,
 }
 
 impl Network {
@@ -136,11 +152,15 @@ impl Network {
             ledger: Ledger::new(0.0),
             solver: None,
             ticks: 0,
+            rate: None,
+            held: None,
+            pending: schedule::Pending::default(),
         }
     }
 
     /// Adds a node at `elevation` with head `head` (a reservoir's level, a tank's water).
     pub fn node(&mut self, elevation: f64, kind: NodeKind, head: f64) -> usize {
+        self.take_pending();
         let held = self.stored();
         self.nodes.push(Node {
             elevation,
@@ -148,12 +168,13 @@ impl Network {
             head,
         });
         self.ledger.joined(self.stored() - held);
-        self.solver = None;
+        (self.solver, self.rate) = (None, None);
         self.nodes.len() - 1
     }
 
     /// Adds a link from `a` to `b`.
     pub fn link(&mut self, a: usize, b: usize, kind: LinkKind) -> usize {
+        self.take_pending();
         self.links.push(Link {
             a,
             b,
@@ -161,7 +182,7 @@ impl Network {
             flow: 0.0,
             open: true,
         });
-        self.solver = None;
+        (self.solver, self.rate) = (None, None);
         self.links.len() - 1
     }
 

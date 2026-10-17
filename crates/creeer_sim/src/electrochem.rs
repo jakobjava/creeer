@@ -43,6 +43,19 @@ pub fn step(
     links: &[CellLink],
     h: f64,
 ) {
+    let emf = prepare(circuit, reactor, sys, links);
+    circuit.step(h);
+    finish(circuit, reactor, sys, links, &emf, h);
+}
+
+/// [`step`]'s first half: each cell's reversible voltage and temperature handed to the circuit,
+/// for a circuit other couplings step too; the voltages, for [`finish`].
+pub fn prepare(
+    circuit: &mut Circuit,
+    reactor: &Reactor,
+    sys: &System,
+    links: &[CellLink],
+) -> Vec<f64> {
     let mut emf = Vec::with_capacity(links.len());
     for link in links {
         let e = reversible_voltage(link, reactor, sys);
@@ -50,10 +63,22 @@ pub fn step(
         circuit.set_emf(link.cell, e);
         emf.push(e);
     }
-    circuit.step(h);
+    emf
+}
+
+/// [`step`]'s second half, after the circuit's step: the reactions its cells drove, and the
+/// reactor's step.
+pub fn finish(
+    circuit: &mut Circuit,
+    reactor: &mut Reactor,
+    sys: &System,
+    links: &[CellLink],
+    emf: &[f64],
+    h: f64,
+) {
     reactor.driven.clear();
     let mut power = 0.0;
-    for (link, e) in links.iter().zip(emf) {
+    for (link, &e) in links.iter().zip(emf) {
         // The work the circuit booked is cells·E·(the charge, as its rule took it).
         let work = circuit.take_work(link.cell);
         let heat = circuit.take_heat(link.cell);

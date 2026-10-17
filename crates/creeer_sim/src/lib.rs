@@ -5,6 +5,7 @@
 //! between frames (ADR-0007).
 //! F6: heat in structures (`heat`): members lengthening and weakening as they warm.
 //! F6: electric machines on drivetrains (`drive`): circuit and shaft solved as one.
+//! F6: turbines on drivetrains (`hydro`): the water's torque on a runner every tick.
 
 pub mod aero;
 #[cfg(test)]
@@ -22,12 +23,16 @@ mod electrochem_tests;
 pub mod heat;
 #[cfg(test)]
 mod heat_tests;
+pub mod hydro;
+#[cfg(test)]
+mod hydro_tests;
 #[cfg(test)]
 mod joule_tests;
 pub mod mount;
 pub mod planet;
 #[cfg(test)]
 mod planet_tests;
+pub mod powerhouse;
 pub mod save;
 pub mod sea;
 #[cfg(test)]

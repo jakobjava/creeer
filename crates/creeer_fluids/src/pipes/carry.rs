@@ -29,7 +29,7 @@ impl Network {
                 LinkKind::Pipe {
                     length, diameter, ..
                 } => rho * 0.25 * std::f64::consts::PI * diameter * diameter * length,
-                LinkKind::Pump { .. } | LinkKind::Valve { .. } => 0.0,
+                LinkKind::Pump { .. } | LinkKind::Valve { .. } | LinkKind::Turbine { .. } => 0.0,
             };
             tracer.link(link.a, link.b, holdup, content);
         }

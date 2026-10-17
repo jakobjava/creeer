@@ -123,3 +123,21 @@ fn apply(plant: &mut Plant<'_>, setting: Setting, value: f64) {
         }
     }
 }
+
+/// A PI controller as a microcontroller's script: input 1 the measurement, input 2 the
+/// setpoint, output 1 the setting within [low, high]; its integral (from `start`, the setting
+/// expected to hold the plant) in `memory`, kept by a save, and held while the setting is at a
+/// bound and the error would push it further.
+pub fn pi_script(kp: f64, ki: f64, (low, high): (f64, f64), start: f64) -> String {
+    format!(
+        "memory.integral = memory.integral or {start}
+function tick(dt)
+  local err = input[2] - input[1]
+  local u = {kp} * err + memory.integral
+  if (u < {high} or err < 0) and (u > {low} or err > 0) then
+    memory.integral = memory.integral + {ki} * err * dt
+  end
+  output[1] = math.max({low}, math.min({high}, {kp} * err + memory.integral))
+end"
+    )
+}

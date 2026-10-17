@@ -118,7 +118,8 @@ fn a_small_network_steps_every_tick() {
 
 /// The 4,900-pipe grid's step does not fit its share every tick; it picks a slower rate (20 or
 /// 10 Hz) whose cost a tick is within its share of the 1 ms budget, and steps on every third
-/// or sixth tick by that interval.
+/// or sixth tick by that interval: each step begins on one of them and ends on the next (its
+/// outcome taken there, the end of its interval), running beside the ticks between.
 #[test]
 fn a_large_meshed_grid_picks_a_slower_rate_within_its_budget() {
     let mut net = town();
@@ -133,10 +134,32 @@ fn a_large_meshed_grid_picks_a_slower_rate_within_its_budget() {
         cost / f64::from(every) <= share && share <= BUDGET_NS,
         "{cost} ns every {every} ticks, share {share} ns"
     );
-    let stepped: Vec<bool> = (0..2 * every).map(|_| net.tick(DT).is_some()).collect();
-    for (k, &s) in stepped.iter().enumerate() {
-        assert_eq!(s, k % every as usize == 0, "tick {k}");
+    let ended: Vec<bool> = (0..3 * every).map(|_| net.tick(DT).is_some()).collect();
+    for (k, &s) in ended.iter().enumerate() {
+        assert_eq!(s, k > 0 && k % every as usize == 0, "tick {k}");
     }
+}
+
+/// A step run beside the ticks finds what the same step run at once finds, bit for bit, and
+/// books the same joules.
+#[test]
+fn a_step_beside_the_ticks_is_the_step_itself() {
+    let (mut beside, mut at_once) = (town(), town());
+    let every = beside.ticks_per_step();
+    let h = DT * f64::from(every);
+    for _ in 0..2 {
+        at_once.step(h);
+    }
+    for _ in 0..=2 * every {
+        beside.tick(DT);
+    }
+    for (a, b) in beside.nodes.iter().zip(&at_once.nodes) {
+        assert_eq!(a.head.to_bits(), b.head.to_bits());
+    }
+    for (a, b) in beside.links.iter().zip(&at_once.links) {
+        assert_eq!(a.flow.to_bits(), b.flow.to_bits());
+    }
+    assert_eq!(beside.ledger().totals(), at_once.ledger().totals());
 }
 
 /// The rate is the structure's: the same network built again picks the same; a link added

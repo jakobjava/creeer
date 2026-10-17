@@ -60,6 +60,15 @@ fn loss(kind: &LinkKind, liquid: &Liquid, g: f64, q: f64, hint: &mut Hint) -> (f
             -(speed * speed * shutoff - resistance * q * q.abs()),
             2.0 * resistance * q.abs(),
         ),
+        LinkKind::Turbine {
+            swirl,
+            radius,
+            loss,
+            speed,
+        } => (
+            speed * (swirl * q - radius * radius * speed) / g + loss * q * q.abs(),
+            speed * swirl / g + 2.0 * loss * q.abs(),
+        ),
     }
 }
 

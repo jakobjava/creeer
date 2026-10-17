@@ -53,6 +53,7 @@ mod planet_net;
 mod planet_shot;
 mod planet_ui;
 mod planet_view;
+mod powerhouse_panel;
 mod sandbox;
 mod system_bench;
 mod system_cmd;

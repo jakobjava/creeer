@@ -45,6 +45,8 @@ struct Running {
     water: crate::water_bench::WaterBench,
     /// The control panel (F6.7).
     controls: crate::control_panel::ControlPanel,
+    /// The powerhouse (F6.8).
+    powerhouse: crate::powerhouse_panel::PowerhousePanel,
     /// The planet sandbox, when it is open (instead of the tech demo).
     planet: Option<crate::planet_view::PlanetView>,
     /// The solar-system sandbox, when it is open.
@@ -221,6 +223,7 @@ impl Running {
             lab: crate::lab::Lab::new(),
             water: crate::water_bench::WaterBench::new(),
             controls: crate::control_panel::ControlPanel::new(),
+            powerhouse: crate::powerhouse_panel::PowerhousePanel::new(),
             planet: None,
             system: None,
             meshes,
@@ -294,6 +297,7 @@ impl Running {
         self.lab.advance(dt.as_secs_f64());
         self.water.advance(dt.as_secs_f64());
         self.controls.advance(dt.as_secs_f64());
+        self.powerhouse.advance(dt.as_secs_f64());
         self.frame_times.push(dt);
         if self.planet.is_some() {
             self.planet_frame(dt);
@@ -354,6 +358,7 @@ impl Running {
             self.lab.window(ui.ctx());
             self.water.window(ui.ctx());
             self.controls.window(ui.ctx());
+            self.powerhouse.window(ui.ctx());
             if let Some(heatmap) = self.settings.overlay.heatmap() {
                 let (title, unit) = self.settings.overlay.label();
                 heatmap_legend(ui.ctx(), &heatmap, title, unit);

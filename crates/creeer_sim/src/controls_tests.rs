@@ -1,7 +1,7 @@
 //! Lua controllers on machines: a PI script holds a tank's level with its pump while the taps
 //! open wider, and a motor's speed with its supply's voltage while a load comes on.
 
-use crate::controls::{Controls, Plant, Probe, Setting};
+use crate::controls::{Controls, Plant, Probe, Setting, pi_script as pi};
 use crate::drive::{self, MachineLink};
 use creeer_electric::{Circuit, DcMachine, GROUND};
 use creeer_fluids::pipes::{LinkKind, Liquid, Network as Pipes, NodeKind};
@@ -10,24 +10,6 @@ use creeer_math::glam::DVec3;
 use creeer_mech::{Drivetrain, Element};
 
 const DT: f64 = 1.0 / 60.0;
-
-/// A PI controller as a microcontroller's script: input 1 the measurement, input 2 the
-/// setpoint, output 1 the setting within [low, high]; its integral (from `start`, the setting
-/// expected to hold the plant) in `memory`, kept by a save, and held while the setting is at a
-/// bound and the error would push it further.
-fn pi(kp: f64, ki: f64, (low, high): (f64, f64), start: f64) -> String {
-    format!(
-        "memory.integral = memory.integral or {start}
-function tick(dt)
-  local err = input[2] - input[1]
-  local u = {kp} * err + memory.integral
-  if (u < {high} or err < 0) and (u > {low} or err > 0) then
-    memory.integral = memory.integral + {ki} * err * dt
-  end
-  output[1] = math.max({low}, math.min({high}, {kp} * err + memory.integral))
-end"
-    )
-}
 
 /// A network of a microcontroller running `source` on a measurement and a setpoint, and an
 /// actuator on its output: (network, measurement's sensor, actuator).

@@ -44,6 +44,19 @@ pub fn step(
     spin: &[DVec3],
 ) -> Vec<MechReport> {
     assert_eq!(spin.len(), drivetrains.len(), "a spin for each drivetrain");
+    prepare(circuit, drivetrains, links, h);
+    circuit.step(h);
+    finish(circuit, drivetrains, links, h, spin)
+}
+
+/// [`step`]'s first half: each machine's rotor's response handed to the circuit, for a circuit
+/// that other couplings step too (its own step between this and [`finish`]).
+pub fn prepare(
+    circuit: &mut Circuit,
+    drivetrains: &mut [Drivetrain],
+    links: &[MachineLink],
+    h: f64,
+) {
     for link in links {
         let d = &mut drivetrains[link.drivetrain];
         // The response without the machine's own torque (the circuit adds it), the others'
@@ -61,7 +74,17 @@ pub fn step(
         );
         d.set_torque(link.node, own);
     }
-    circuit.step(h);
+}
+
+/// [`step`]'s second half, after the circuit's step: the machines' torques on their rotors, and
+/// the drivetrains' steps.
+pub fn finish(
+    circuit: &Circuit,
+    drivetrains: &mut [Drivetrain],
+    links: &[MachineLink],
+    h: f64,
+    spin: &[DVec3],
+) -> Vec<MechReport> {
     for link in links {
         drivetrains[link.drivetrain].set_torque(link.node, circuit.torque(link.machine));
     }

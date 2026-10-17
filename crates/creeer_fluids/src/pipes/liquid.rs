@@ -30,8 +30,6 @@ pub(crate) struct Solver {
     hints: Vec<Hint>,
     /// Newton's contraction: its next move is about this times its last squared (1/(m³/s)).
     rate: f64,
-    /// Ticks a step (`schedule.rs`), once worked out.
-    pub(crate) every: Option<u32>,
     /// A step's buffers, kept.
     old: Vec<f64>,
     contributions: Vec<f64>,
@@ -68,7 +66,6 @@ impl Solver {
             cholesky: None,
             hints: Vec::new(),
             rate: f64::INFINITY,
-            every: None,
             old: Vec::new(),
             contributions: Vec::new(),
             rhs: Vec::new(),
