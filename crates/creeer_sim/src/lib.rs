@@ -31,6 +31,9 @@ pub mod hydro;
 mod hydro_tests;
 #[cfg(test)]
 mod joule_tests;
+pub mod lod;
+#[cfg(test)]
+mod lod_tests;
 pub mod mount;
 pub mod planet;
 #[cfg(test)]

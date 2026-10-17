@@ -36,6 +36,8 @@ plan.md's exit criteria for F7: simulation LOD (active / abstract / on rails), t
 
 ### F7.2 Simulation LOD for bodies: active, parked, on rails (ADR-0019)
 
+**Done** (2026-10-18, ADR-0019): resting islands farther than 3 km from every player are parked and put back bit for bit within 2.5 km (over several ticks, nearest first); awake bodies are simulated until they rest; an offline player's avatar is parked and back when they return; save version 6 (`PARK`); removing bodies keeps the contacts' energies (ADR-0005 amended); idle avatars no longer creep downhill (found on the way, ADR-0008 amended). The pass 0.025 ms worst with 100,000 parked; the tick +0.3 %; a 1,000-crate yard woken +0.43 ms worst.
+
 - **Active regions.** Each player's avatar is the centre of an active region: bodies within 2.5 km of any player are simulated in full, as today (plan.md §1.6). The universe's bubble already does this for one focus (ADR-0007: `RANGE_IN` 2.5 km, `RANGE_OUT` 3 km); the server's planet world gets the same rule for many players.
 - **Parked.** A body (with everything it touches: its contact island) that is asleep and farther than 3 km from every player is **parked**: taken out of the physics world, stored in the planet's frame exactly as it was. It costs nothing per tick. When a player comes within 2.5 km it is put back, bit for bit, still asleep. A body that is awake stays in full physics wherever it is, until it comes to rest (a far landslide of crates finishes falling, then parks): realism first, and an awake lone body is a small island.
 - **Region checks are cheap.** A spatial grid of parked islands (like the interest grid of ADR-0008), so checking which to wake is proportional to what is near the players, not to everything parked.

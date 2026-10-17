@@ -8,6 +8,8 @@ publish = false
 
 [dependencies]
 creeer_core.workspace = true
+creeer_net.workspace = true
+creeer_server.workspace = true
 creeer_data.workspace = true
 creeer_chem.workspace = true
 creeer_fluids.workspace = true

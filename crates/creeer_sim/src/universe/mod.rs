@@ -39,10 +39,11 @@ use vessels::{Vessel, Where};
 pub const MAX_PHYSICS_WARP: f64 = 4.0;
 /// Fastest warp.
 pub const MAX_WARP: f64 = 1e7;
-/// Vessels nearer than this to the focus join the bubble (m).
-pub const RANGE_IN: f64 = 2_500.0;
-/// Vessels farther than this from the focus leave it (m).
-pub const RANGE_OUT: f64 = 3_000.0;
+/// Vessels nearer than this to the focus join the bubble (m): simulation LOD's active
+/// range (`crate::lod`, the same for bodies on a planet's server).
+pub const RANGE_IN: f64 = crate::lod::ACTIVE;
+/// Vessels farther than this from the focus leave it (m): LOD's parking range.
+pub const RANGE_OUT: f64 = crate::lod::PARK;
 /// In an orbit frame, the origin moves to the focus once it is this far from it (m) ...
 pub const REBASE_DISTANCE: f64 = 1_000.0;
 /// ... or moving this fast relative to it (m/s).

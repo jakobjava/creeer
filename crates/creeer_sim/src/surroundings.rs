@@ -29,6 +29,9 @@ pub struct Surroundings {
     known: usize,
     /// The water a save said moved with the floaters, for when they are met again.
     restored: Vec<f64>,
+    /// The water bodies put back into the world had moving with them, by body index, for
+    /// when they are met (parked bodies, `crate::lod`).
+    expected: Vec<(usize, Vec<f64>)>,
 }
 
 impl Surroundings {
@@ -64,6 +67,7 @@ impl Surroundings {
             floaters: Vec::new(),
             known: 0,
             restored: Vec::new(),
+            expected: Vec::new(),
         })
     }
 
@@ -109,6 +113,13 @@ impl Surroundings {
                 self.floaters
                     .push(Floater::new(index, *node, shape.clone(), BLUFF));
             }
+            if let Some(k) = self.expected.iter().position(|(b, _)| *b == index) {
+                let (_, water) = self.expected.swap_remove(k);
+                let mine = self.floaters.iter_mut().filter(|f| f.body == index);
+                for (f, m) in mine.zip(water) {
+                    f.added = m;
+                }
+            }
         }
         if !self.restored.is_empty() {
             for (f, m) in self
@@ -128,6 +139,22 @@ impl Surroundings {
             return self.restored.clone();
         }
         self.floaters.iter().map(|f| f.added).collect()
+    }
+
+    /// The water moving with body `index`'s floating shapes (none if they are not met yet).
+    pub fn water_of(&self, index: usize) -> Vec<f64> {
+        (self.floaters.iter())
+            .filter(|f| f.body == index)
+            .map(|f| f.added)
+            .collect()
+    }
+
+    /// Body `index`, put back into the world, had `water` moving with it: given back to its
+    /// floaters when they are met.
+    pub fn expect(&mut self, index: usize, water: Vec<f64>) {
+        if !water.is_empty() {
+            self.expected.push((index, water));
+        }
     }
 
     /// The water a save holds, given back to the floaters as they are met (in the same order).

@@ -11,6 +11,7 @@ mod chem_bench;
 mod electric_bench;
 mod fluids_bench;
 mod image_diff;
+mod lod_bench;
 mod logic_bench;
 mod mech_bench;
 mod nasa_import;
@@ -33,7 +34,7 @@ commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech, chem,
-      fluids, logic, reference)
+      fluids, logic, reference, lod)
   validate [--data <dir>] [--mods <dir>]
       load and check every data pack as the game merges them
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images

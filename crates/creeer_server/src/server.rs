@@ -149,6 +149,11 @@ impl Server {
                     .steer(id, &creeer_net::message::AvatarInput::default());
             }
         }
+        let centres: Vec<_> = (self.sessions.values())
+            .filter_map(|s| s.avatar.and_then(|id| self.world.index(id)))
+            .map(|i| self.world.world.bodies[i].structure.position[0])
+            .collect();
+        self.world.regions(&centres);
         self.world.step();
         self.net_tick += 1;
         if self.net_tick.is_multiple_of(SEND_EVERY) {

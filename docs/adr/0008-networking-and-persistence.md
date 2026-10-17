@@ -79,3 +79,9 @@
 - Unsecured connections: a public server needs connect tokens first.
 - Structures' elastic vibration is not drawn on clients (only lasting changes of shape over a centimetre); a structure's deformation shows within 0.1 s.
 - The prediction world holds the avatar and the terrain only: bumping into things is corrected, not predicted.
+
+## Amended in F7 (2026-10-18): the avatar stands on slopes; saves of version 6
+
+- **The test avatar holds itself on slopes.** Braked by a push proportional to its velocity, an idle avatar settled where that push equalled gravity's pull along the ground: it crept downhill for ever (0.13 m/s on 7°) and never slept. Standing, its legs now cancel gravity's pull along the ground (`avatar::steer`); it rests and sleeps on 7°, 15° and 30° (ADR-0019, where parking idle avatars found it).
+- **Clients send the hash of their data packs** in their hello; a server with other data refuses them, naming its packs (protocol version 2, ADR-0018).
+- **Save version 6** adds the parked islands (`PARK`, ADR-0019).

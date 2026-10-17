@@ -2,6 +2,7 @@
 //! avatars, and saves and loads as it was.
 
 use super::*;
+use creeer_sim::save::Save;
 use creeer_terrain::edits::Brush;
 
 /// The reference planet's terrain, loaded anew (each side of a game has its own, as on two
@@ -15,7 +16,7 @@ pub(crate) fn world() -> ServerWorld {
     ServerWorld::new(creeer_data::Data::base(), terrain(), "planets/home.ron")
 }
 
-fn above(world: &ServerWorld, east: f64, height: f64) -> DVec3 {
+pub(crate) fn above(world: &ServerWorld, east: f64, height: f64) -> DVec3 {
     let up = world.spawn().normalize();
     let (e, _) = creeer_terrain::geology::deposits::tangent_frame(up);
     let at = world.ground_under(world.spawn() + e * east);

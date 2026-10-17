@@ -14,7 +14,6 @@ use creeer_net::entity::EntityId;
 use creeer_net::message::{AvatarInput, Command};
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::{Body, World};
-use creeer_sim::save::Save;
 use creeer_sim::surroundings::Surroundings;
 use creeer_sim::{TerrainGround, avatar, planet_gravity};
 use creeer_terrain::edits::{Brush, Edit, Edits};
@@ -63,6 +62,10 @@ pub struct ServerWorld {
     /// The planet's air and sea on its bodies (F6.6; avatars spared: their players'
     /// machines predict them without).
     surroundings: Surroundings,
+    /// Resting islands far from every player (F7.2, `creeer_sim::lod`).
+    parked: creeer_sim::lod::Parked<regions::Tag>,
+    /// Parked bodies found near a player, on their way back (a few each tick).
+    returning: std::collections::VecDeque<(Body, regions::Tag)>,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -124,52 +127,8 @@ impl ServerWorld {
             next_id: 1,
             spawn,
             surroundings,
-        }
-    }
-
-    /// The world a save holds, on `terrain` (its planet's; the save's edits replace its own).
-    pub fn from_save(data: Arc<Data>, save: Save, terrain: Arc<Terrain>) -> Self {
-        let water = save.water.clone();
-        terrain.set_edits(save.edits);
-        let mut world = save.world;
-        if world.planet.is_none() {
-            // A version 1 save: no world was saved with it.
-            world = World::new(DT);
-            world.planet = Some(planet_gravity(terrain.planet()));
-            world.static_friction = 0.7;
-        }
-        let mut this = Self::with(data, terrain, world, save.planet, save.tick);
-        this.next_id = save.next_id;
-        (this.ids, this.players) = save
-            .entities
-            .into_iter()
-            .map(|(id, p)| (EntityId(id), p))
-            .unzip();
-        for (index, player) in this.players.iter().enumerate() {
-            if player.is_some() {
-                this.surroundings.spare(index);
-            }
-        }
-        this.surroundings.restore(water);
-        this.reindex();
-        this
-    }
-
-    /// The world as a save.
-    pub fn to_save(&self) -> Save {
-        Save {
-            planet: self.planet.clone(),
-            tick: self.tick,
-            next_id: self.next_id,
-            edits: self.terrain.edits().clone(),
-            world: self.world.clone(),
-            entities: self
-                .ids
-                .iter()
-                .map(|id| id.0)
-                .zip(self.players.iter().cloned())
-                .collect(),
-            water: self.surroundings.water(),
+            parked: creeer_sim::lod::Parked::default(),
+            returning: std::collections::VecDeque::new(),
         }
     }
 
@@ -260,6 +219,11 @@ impl ServerWorld {
 
     /// `player`'s avatar: the one they left, or a new one at the spawn point.
     pub fn avatar_of(&mut self, player: &str) -> EntityId {
+        // Parked far away while its player was gone: back with its island.
+        self.flush();
+        if let Some(key) = self.parked.find(|t| t.player.as_deref() == Some(player)) {
+            self.unpark(key);
+        }
         if let Some(i) = self
             .players
             .iter()
@@ -341,6 +305,10 @@ impl ServerWorld {
                     .wake_near((lo + hi) * 0.5, (hi - lo).length() * 0.5 + 1.0);
             }
             Command::Clear => {
+                self.flush();
+                while let Some(key) = self.parked.find(|_| true) {
+                    self.unpark(key);
+                }
                 let players = &self.players;
                 let map = self.world.retain_bodies(|i, _| players[i].is_some());
                 self.surroundings.retain(&map);
@@ -387,5 +355,10 @@ fn check(edit: &Edit) -> Result<(), String> {
     }
 }
 
+#[cfg(test)]
+mod lod_tests;
+mod persist;
+mod regions;
+pub use regions::Tag;
 #[cfg(test)]
 pub(crate) mod tests;

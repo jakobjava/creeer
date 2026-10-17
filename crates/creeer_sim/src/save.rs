@@ -1,6 +1,11 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 6** (F7): as version 5, with an optional section `PARK`: the islands of bodies
+//! parked far from every player (`crate::lod`), as a physics world of their bodies in island
+//! order, then for each island its number of bodies, and for each body its entity id, whose
+//! avatar it is, and the water moving with its floating shapes.
+//!
 //! **Version 5** (F6): as version 4, the world keeping the elastic energy each contact held
 //! at the end of the last step (what the next step's energy guard holds its contacts, found anew,
 //! to: `creeer_physics::world::left`).
@@ -32,11 +37,11 @@
 //! the reference planet with those edits and nothing standing on it.
 
 use creeer_math::codec::{DecodeError, Reader, Writer};
-use creeer_physics::world::World;
+use creeer_physics::world::{Body, World};
 use creeer_terrain::edits::Edits;
 
 /// The version this game writes.
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -60,6 +65,17 @@ pub struct Save {
     /// For each body of `world`: its entity id, and the player whose avatar it is.
     pub entities: Vec<(u32, Option<String>)>,
     /// The water moving with each floating shape (`creeer_sim::surroundings`; none: still).
+    pub water: Vec<f64>,
+    /// The islands parked far from every player (`crate::lod`).
+    pub parked: Vec<Vec<ParkedBody>>,
+}
+
+/// A body parked far from every player, with what the world keeps of it.
+#[derive(Clone, Debug)]
+pub struct ParkedBody {
+    pub id: u32,
+    pub player: Option<String>,
+    pub body: Body,
     pub water: Vec<f64>,
 }
 
@@ -106,7 +122,8 @@ impl Save {
         let mut w = Writer::new();
         w.raw(MAGIC);
         w.u32(VERSION);
-        w.varint(if self.water.is_empty() { 4 } else { 5 });
+        let sections = 4 + u64::from(!self.water.is_empty()) + u64::from(!self.parked.is_empty());
+        w.varint(sections);
         let mut meta = Writer::new();
         meta.put(&self.planet);
         meta.u64(self.tick);
@@ -128,6 +145,9 @@ impl Save {
                 surr.f64(m);
             }
             section(&mut w, b"SURR", surr.bytes());
+        }
+        if !self.parked.is_empty() {
+            section(&mut w, b"PARK", &park_bytes(&self.parked, self.world.dt()));
         }
         w.finish()
     }
@@ -155,6 +175,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         world: World::new(1.0 / 60.0),
         entities: Vec::new(),
         water: Vec::new(),
+        parked: Vec::new(),
     })
 }
 
@@ -165,7 +186,8 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     if version > VERSION {
         return Err(SaveError::Newer(version));
     }
-    let (mut meta, mut edits, mut world, mut ents, mut surr) = (None, None, None, None, None);
+    let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
+    let (mut surr, mut park) = (None, None);
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -175,6 +197,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"WRLD" => world = Some(body),
             b"ENTS" => ents = Some(body),
             b"SURR" => surr = Some(body),
+            b"PARK" => park = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -198,7 +221,12 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     if entities.len() != world.bodies.len() {
         return Err(SaveError::Damaged("entities and bodies disagree".into()));
     }
-    let mut ids: Vec<u32> = entities.iter().map(|e| e.0).collect();
+    let parked = match park {
+        Some(bytes) => park_from(bytes, version)?,
+        None => Vec::new(),
+    };
+    let parked_ids = parked.iter().flatten().map(|p| p.id);
+    let mut ids: Vec<u32> = entities.iter().map(|e| e.0).chain(parked_ids).collect();
     ids.sort_unstable();
     if ids.windows(2).any(|w| w[0] == w[1]) || ids.last().is_some_and(|&last| last >= next_id) {
         return Err(SaveError::Damaged(
@@ -221,7 +249,64 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         world,
         entities,
         water,
+        parked,
     })
+}
+
+/// The parked islands as the `PARK` section holds them (`dt`: the world's step).
+fn park_bytes(parked: &[Vec<ParkedBody>], dt: f64) -> Vec<u8> {
+    let mut world = World::new(dt);
+    world.bodies = parked.iter().flatten().map(|p| p.body.clone()).collect();
+    let mut w = Writer::new();
+    w.bytes_with_length(&world.to_bytes());
+    w.varint(parked.len() as u64);
+    for island in parked {
+        w.varint(island.len() as u64);
+        for p in island {
+            w.u32(p.id);
+            w.put(&p.player);
+            w.varint(p.water.len() as u64);
+            for &m in &p.water {
+                w.f64(m);
+            }
+        }
+    }
+    w.finish()
+}
+
+fn park_from(bytes: &[u8], version: u32) -> Result<Vec<Vec<ParkedBody>>, SaveError> {
+    let mut r = Reader::new(bytes);
+    let mut bodies = World::from_bytes_of(r.bytes_with_length()?, version)?
+        .bodies
+        .into_iter();
+    let mut parked = Vec::new();
+    for _ in 0..r.count(1)? {
+        let mut island = Vec::new();
+        for _ in 0..r.count(5)? {
+            let id = r.u32()?;
+            let player = r.get::<Option<String>>()?;
+            let water = (0..r.count(8)?)
+                .map(|_| r.f64())
+                .collect::<Result<_, _>>()?;
+            let body = bodies
+                .next()
+                .ok_or_else(|| SaveError::Damaged("fewer parked bodies than entities".into()))?;
+            island.push(ParkedBody {
+                id,
+                player,
+                body,
+                water,
+            });
+        }
+        parked.push(island);
+    }
+    r.end()?;
+    if bodies.next().is_some() {
+        return Err(SaveError::Damaged(
+            "more parked bodies than entities".into(),
+        ));
+    }
+    Ok(parked)
 }
 
 #[cfg(test)]

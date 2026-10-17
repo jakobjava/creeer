@@ -64,3 +64,26 @@ impl World {
         left
     }
 }
+
+impl Left {
+    /// What is left for the bodies a world kept (`map`: each old body's new index, if
+    /// kept): contacts that joined a body taken out go (no step will find them again), the
+    /// rest follow their bodies' new indices. Kept, the energy a resting stack's contacts
+    /// hold is not found anew as a surplus when bodies elsewhere come and go.
+    pub(super) fn renumbered(&self, map: &[Option<usize>]) -> Self {
+        let side = |s: Option<(usize, NodeId)>| -> Option<Option<(usize, NodeId)>> {
+            match s {
+                Some((b, n)) => Some(Some((map.get(b).copied().flatten()?, n))),
+                None => Some(None),
+            }
+        };
+        Self {
+            energies: (self.energies.iter())
+                .filter_map(|&((a, b), e)| Some(((side(a)?, side(b)?), e)))
+                .collect(),
+            stepped: (self.stepped.iter())
+                .filter_map(|&b| map.get(b).copied().flatten())
+                .collect(),
+        }
+    }
+}

@@ -171,6 +171,13 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **A running server reloading its packs**: a server's data is fixed for its run (its world and its clients must agree) | Changing a running world's planet under its players' edits has no right answer; a restart applies changes | G | Medium | ADR-0018 |
 | **Signed or checksummed packs** for public servers: the content hash identifies data, it does not authenticate it | Not needed while servers are authoritative and private | G | Medium | ADR-0018 |
 
+## Simulation LOD
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **Far awake bodies that never rest** stay simulated in full (parking needs rest) | None in the sandbox does; freezing or railing moving bodies on a planet would be unrealistic | S | Small | ADR-0019 |
+| **Terrain edits far from players under parked islands**: edits need a player within 500 m, inside the active range; a future long-range edit (an explosion, a landslide) must wake what stands there first | No such edit exists yet | R, G | Small | ADR-0019 |
+
 ## Elsewhere
 
 | What | Why deferred | Improves | Size | Recorded in |
