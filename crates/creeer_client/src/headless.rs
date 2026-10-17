@@ -74,7 +74,7 @@ impl ScreenshotOptions {
                         .iter()
                         .find(|(_, n)| n.starts_with(name))
                         .ok_or(format!(
-                            "--physics expects bridge/crash/stacking/rock/cooling/radiator/frame, got `{name}`"
+                            "--physics expects bridge/crash/stacking/rock/cooling/radiator/frame/flywheel, got `{name}`"
                         ))?
                         .0;
                     let seconds = match value_of("--physics-time") {
@@ -226,6 +226,9 @@ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std:
             println!("physics: {heat}");
             let most = snap.beams.iter().map(|b| b.3).fold(0.0f32, f32::max);
             println!("physics: most used member {:.0} %", most * 100.0);
+        }
+        if let Some(drive) = &snap.drive {
+            println!("physics: {drive}");
         }
         let at = origin + physics_view::PHYSICS_OFFSET;
         physics_view::draw(

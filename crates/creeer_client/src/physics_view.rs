@@ -67,8 +67,8 @@ impl PhysicsView {
                     ui.radio_value(overlay, Overlay::Utilisation, "show member utilisation");
                     ui.radio_value(overlay, Overlay::PartTemperature, "show temperatures");
                 });
-                if let Some(heat) = &snapshot.heat {
-                    ui.label(heat);
+                for note in [&snapshot.heat, &snapshot.drive].into_iter().flatten() {
+                    ui.label(note);
                 }
                 let (bodies, asleep, contacts) = snapshot.counts;
                 ui.label(format!(

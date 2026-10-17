@@ -554,6 +554,7 @@ dependencies = [
  "creeer_electric",
  "creeer_materials",
  "creeer_math",
+ "creeer_mech",
  "creeer_net",
  "creeer_orbit",
  "creeer_physics",

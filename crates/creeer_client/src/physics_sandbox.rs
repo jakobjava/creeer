@@ -1,6 +1,7 @@
 //! F2 physics sandbox: scenes that exercise the physics core (structures, rigid bodies,
 //! contacts, plasticity) on the simulation thread.
 
+use crate::physics_drive::{self, SceneDrive};
 use crate::physics_heat::{self, SceneHeat};
 use creeer_core::Simulation;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
@@ -28,11 +29,13 @@ pub enum PhysicsScene {
     Radiator,
     /// A loaded steel frame in a fire, sagging as it weakens (F6.2).
     Fire,
+    /// A frame floating in space turned by the flywheel it spins up (F6.4).
+    Station,
 }
 
 impl PhysicsScene {
     /// All scenes with their names.
-    pub const ALL: [(Self, &'static str); 7] = [
+    pub const ALL: [(Self, &'static str); 8] = [
         (Self::Bridge, "bridge under load"),
         (Self::Crash, "crash test"),
         (Self::Stacks, "stacking"),
@@ -40,6 +43,7 @@ impl PhysicsScene {
         (Self::Cooling, "cooling blocks"),
         (Self::Radiator, "radiator in orbit"),
         (Self::Fire, "frame in a fire"),
+        (Self::Station, "flywheel station"),
     ];
 }
 
@@ -51,9 +55,9 @@ pub struct PhysicsSandbox {
     step_ms: f64,
     scene: PhysicsScene,
     heat: Option<SceneHeat>,
+    drive: Option<SceneDrive>,
 }
 
-/// How a box is drawn.#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]pub enum Look {    /// A wooden crate.    #[default]    Crate,    /// Bare steel (glowing when hot).    Steel,    /// A white-painted radiator panel.    Radiator,}
 /// How a box is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Look {
@@ -92,8 +96,9 @@ pub struct PhysicsSnapshot {
     pub beam_heat: Vec<f32>,
     /// A fire's bed (centre, half extents) and its gas temperature (°C).
     pub fire: Option<(DVec3, DVec3, f32)>,
-    /// What heat is doing, for the window.
+    /// What heat is doing, and a drivetrain, for the window.
     pub heat: Option<String>,
+    pub drive: Option<String>,
     /// Cost of the last physics step (ms).
     pub step_ms: f64,
 }
@@ -123,12 +128,14 @@ impl PhysicsSandbox {
             PhysicsScene::Fire => Some(physics_heat::fire(&mut world)),
             _ => None,
         };
+        let drive = (scene == PhysicsScene::Station).then(|| physics_drive::station(&mut world));
         Self {
             world,
             time: 0.0,
             step_ms: 0.0,
             scene,
             heat,
+            drive,
         }
     }
 }
@@ -213,7 +220,13 @@ impl Simulation for PhysicsSandbox {
 
     fn step(&mut self, dt: f64) {
         let start = Instant::now();
+        if let Some(drive) = &mut self.drive {
+            drive.before(&mut self.world, dt);
+        }
         self.world.step();
+        if let Some(drive) = &mut self.drive {
+            drive.after(&mut self.world, dt);
+        }
         if let Some(heat) = &mut self.heat {
             heat.tick(&mut self.world, dt);
         }
@@ -248,6 +261,7 @@ impl Simulation for PhysicsSandbox {
                             (PhysicsScene::Cooling, Some(_)) => Look::Steel,
                             (PhysicsScene::Radiator, Some(_)) => Look::Radiator,
                             (PhysicsScene::Fire, _) => Look::Concrete,
+                            (PhysicsScene::Station, _) => Look::Radiator,
                             _ => Look::Crate,
                         });
                     }
@@ -280,6 +294,12 @@ impl Simulation for PhysicsSandbox {
             ));
         }
         snap.heat = heat.map(SceneHeat::label);
+        if let Some(drive) = &self.drive {
+            snap.boxes.push(drive.wheel(&self.world));
+            snap.box_heat.push(f32::NAN);
+            snap.box_look.push(Look::Steel);
+            snap.drive = Some(drive.label(&self.world));
+        }
         for fixed in &self.world.statics {
             if let StaticShape::Box {
                 center,

@@ -31,9 +31,11 @@
 mod app;
 mod circuit_bench;
 mod demo;
+mod drive_bench;
 mod fly_camera;
 mod headless;
 mod hulls;
+mod physics_drive;
 mod physics_heat;
 mod physics_rocks;
 mod physics_sandbox;

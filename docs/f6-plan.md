@@ -1,6 +1,6 @@
 # F6 plan: simulation domains
 
-Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1, F6.2 and F6.3 done (2026-10-17; ADR-0009, ADR-0010, ADR-0011).
+Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 to F6.4 done (2026-10-17; ADR-0009 to ADR-0012).
 
 F6 builds the engines behind everything a player will make: what things are made of and how they react (materials & chemistry), heat, electricity, shafts and gears, fluids and air, and logic. Each one must be **realistic** (validated against analytic or reference results, conserving what nature conserves) and **fast** (each has a budget inside the 10 ms tick of plan.md §5). Each gets a sandbox scene, like F2–F5.
 
@@ -119,6 +119,8 @@ The order follows dependencies: materials first (everything needs their properti
 - **Budget:** 10,000-node DC/transient network ≤ 1 ms per tick, 2,000-bus AC grid ≤ 1 ms (min-spec).
 
 ### F6.4 Mechanical drivetrains (`creeer_mech`)
+
+**Done** (2026-10-17, ADR-0012): parts, shafts, gears with backlash, planetary sets and differentials, belts (capstan limit), clutches, brakes and bearings; backward Euler with exact constraints (Schur complement, redundant ones dropped), friction by an active set that settles (stick, slip, saturated), losses in the direction power flows; energy booked at midpoint speeds (the ledger closes to rounding); housing reactions with the gyroscopic term, mounts on bodies keeping angular momentum exact; DC machines solved jointly with their drivetrains (one system). Validations as listed below and more; 1,000 drivetrains in 0.17–0.21 ms projected (≤ 0.3). Sandbox: drivetrain bench window, flywheel station scene. Found and fixed in the structure solver (ADR-0004 amended): torques' work and changing loads in the energy guard, momentum under torque first order in h. Not modelled: mesh and belt compliance, belt creep, Stribeck friction, gearboxes' no-load losses.
 
 - A 1D rotational network:
   - **Inertias and shafts:** flywheels and rotors, compliant shafts (torsional stiffness from G·J/L of the material).
