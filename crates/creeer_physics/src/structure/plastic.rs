@@ -163,7 +163,7 @@ impl Element {
     }
 
     /// Plastic strain represented by plastic increments `p`.
-    fn strain_of(&self, p: &[f64; MEASURES]) -> f64 {
+    pub(crate) fn strain_of(&self, p: &[f64; MEASURES]) -> f64 {
         p.iter()
             .zip(self.per_unit())
             .map(|(p, g)| (p * g).abs())

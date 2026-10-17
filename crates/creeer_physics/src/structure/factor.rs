@@ -4,7 +4,7 @@
 
 use super::Structure;
 use super::solver::ImplicitSolver;
-use creeer_math::glam::{DMat3, DQuat};
+use creeer_math::glam::{DMat3, DQuat, DVec3};
 
 impl ImplicitSolver {
     /// Takes the stiffness that contacts add at nodes into the factorised matrix, if it changed
@@ -62,6 +62,7 @@ impl ImplicitSolver {
     /// masses or stiffnesses: never in a world that was stepped).
     pub(super) fn try_factor(&mut self, structure: &Structure, current: bool) -> bool {
         self.factorisations += 1;
+        self.unit_columns.clear();
         if current {
             self.factor_orientation.clone_from(&structure.orientation);
         } else {
@@ -110,5 +111,41 @@ impl ImplicitSolver {
             shift = next;
         }
         true
+    }
+}
+
+impl ImplicitSolver {
+    /// The preconditioner applied to the three unit translations at `node`, as
+    /// [`Self::precondition`] gives them: R·A₀⁻¹·Rᵀ·e_k with each node's turn R since the
+    /// factorisation. A₀⁻¹ of the unit vectors is solved once per factorisation and node;
+    /// only the turns are applied anew (the same columns but for rounding, at a fraction of a
+    /// solve: a block landing on a bridge rebuilt 27 of them in each of its 34 impact
+    /// substeps a tick).
+    pub(super) fn unit_columns(&mut self, s: &Structure, node: usize) -> [Vec<DVec3>; 3] {
+        let n = s.node_count();
+        let at = match self.unit_columns.iter().position(|c| c.0 == node) {
+            Some(at) => at,
+            None => {
+                let solved = std::array::from_fn(|j| {
+                    let mut column = vec![DVec3::ZERO; 2 * n];
+                    column[node][j] = 1.0;
+                    self.chol.solve(&mut column);
+                    column
+                });
+                self.unit_columns.push((node, solved));
+                self.unit_columns.len() - 1
+            }
+        };
+        let (turns, columns) = (&self.turns, &self.unit_columns[at].1);
+        let back = turns[node].transpose();
+        std::array::from_fn(|k| {
+            // Rᵀ·e_k is column k of Rᵀ.
+            let w = back.col(k);
+            (0..2 * n)
+                .map(|b| {
+                    turns[b % n] * (columns[0][b] * w.x + columns[1][b] * w.y + columns[2][b] * w.z)
+                })
+                .collect()
+        })
     }
 }

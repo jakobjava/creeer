@@ -21,6 +21,13 @@ use crate::structure::group::{Coupling, MemberState, step_group_with};
 /// Longest time step of a deforming impact (s).
 pub const IMPACT_STEP: f64 = 0.5e-3;
 
+/// The plastic strain rate (1/s) above which a structure struck in an impact goes on being
+/// stepped in impact substeps. A crash makes its members flow at 3–10 /s (a tube crushed at
+/// 5–20 m/s); a structure sagging under a load, as the sandbox bridge under the 10 t block
+/// that landed on it, at 0.4 /s at most, which 60 Hz steps follow: its final sag and plastic
+/// strain within 1 % of 0.5 ms substeps throughout (`crush_tests.rs`), at half the cost.
+pub const FAST_FLOW: f64 = 1.0;
+
 /// One group's share of a step: its bodies (borrowed from the world), its contacts, its
 /// friction anchors afterwards, and the global indices of its bodies.
 pub(super) type GroupWork<'a> = (
@@ -154,7 +161,8 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
 /// would take work from a joint pressed into the wall that a rigid wall never takes.
 /// Contacts with a deforming structure get no restitution impulses: at this step its elastic rebound is resolved, and kicking
 /// its light joints off the wall would only make them chatter. Contacts between rigid
-/// bodies keep the impact law. The group keeps crushing while members flow.
+/// bodies keep the impact law. The group keeps crushing while members flow faster than
+/// [`FAST_FLOW`].
 fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small count
     let n = (dt / IMPACT_STEP).ceil().max(1.0) as u32;
@@ -186,9 +194,16 @@ fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
         substep(bodies, contacts, impact, true);
         flowing |= bodies.iter().any(|b| b.solver.last_yielding.flowing > 0);
     }
+    // The crush goes on while a member flows as fast as a crash makes it: slower flow (a
+    // structure sagging under the load that struck it) is followed by the 60 Hz step.
+    let fast = bodies
+        .iter()
+        .flat_map(|b| &b.structure.elements)
+        .map(|e| e.strain_of(&e.flow_rate))
+        .fold(0.0, f64::max);
     for body in bodies.iter_mut() {
         body.solver.set_time_step(&body.structure, dt);
-        body.crushing = flowing;
+        body.crushing = flowing && fast > FAST_FLOW;
     }
 }
 

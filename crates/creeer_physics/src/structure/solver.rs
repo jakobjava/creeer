@@ -102,6 +102,9 @@ pub struct ImplicitSolver {
     /// factorised matrix.
     pub(super) contact_blocks: Vec<(usize, DMat3)>,
     pub(super) chol: Cholesky,
+    /// The factor applied to the unit translations at nodes a coupled solve asked for (node,
+    /// its three columns), solved once per factorisation (`coupled.rs`).
+    pub(super) unit_columns: Vec<(usize, [Vec<DVec3>; 3])>,
     pub(super) previous_x: Vec<DVec3>,
     pub(super) previous_v: Vec<DVec3>,
     pub(super) previous_q: Vec<DQuat>,
@@ -224,6 +227,7 @@ impl ImplicitSolver {
             turns: vec![DMat3::IDENTITY; n],
             contact_blocks: Vec::new(),
             chol: Cholesky::new(structure.symbolic()),
+            unit_columns: Vec::new(),
             previous_x: structure.position.clone(),
             previous_v: structure.velocity.clone(),
             previous_q: structure.orientation.clone(),

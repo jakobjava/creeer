@@ -143,12 +143,7 @@ impl Coupled {
             .iter()
             .map(|&(s, node)| {
                 let (st, v) = &mut members[s];
-                std::array::from_fn(|k| {
-                    let mut column = vec![DVec3::ZERO; 2 * st.node_count()];
-                    column[node][k] = 1.0;
-                    v.precondition(st, &mut column, None);
-                    column
-                })
+                v.unit_columns(st, node)
             })
             .collect();
         let matrix = dense(&joints, &cross, &change, &columns, &bodies, rigid);
