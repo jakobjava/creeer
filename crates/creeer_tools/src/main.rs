@@ -14,6 +14,7 @@ mod mech_bench;
 mod nasa_import;
 mod network_bench;
 mod orbit_bench;
+mod reference_bench;
 mod solvers;
 mod spikes;
 mod terrain_bench;
@@ -29,7 +30,7 @@ commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech, chem,
-      fluids, logic)
+      fluids, logic, reference)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region
   import-nasa9 <thermo.inp> <out.ron>   NASA Glenn species data (the CEA program's thermo.inp)

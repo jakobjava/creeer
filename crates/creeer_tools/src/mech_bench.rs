@@ -11,7 +11,7 @@ use rayon::prelude::*;
 const BUDGET_MS: f64 = 0.3;
 
 /// A car's powertrain, its wheels on the road (their loads), the `k`-th of a fleet.
-struct Car {
+pub(crate) struct Car {
     d: Drivetrain,
     engine: Node,
     wheels: [Node; 2],
@@ -19,7 +19,7 @@ struct Car {
     k: usize,
 }
 
-fn car(k: usize) -> Car {
+pub(crate) fn car(k: usize) -> Car {
     let mut d = Drivetrain::new();
     let engine = d.part(0.25, DVec3::X);
     let input = d.part(0.01, DVec3::X);
@@ -93,7 +93,7 @@ fn car(k: usize) -> Car {
 
 impl Car {
     /// One tick of driving: the throttle and the road's drag; every few seconds a brake.
-    fn drive(&mut self, tick: u32) {
+    pub(crate) fn drive(&mut self, tick: u32) {
         let phase = (tick as usize + 37 * self.k) % 600;
         let braking = phase > 480;
         self.d

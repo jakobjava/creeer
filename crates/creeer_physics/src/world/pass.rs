@@ -121,24 +121,27 @@ impl World {
             };
             list.push(self.contact(&groups, &group_of, &anchors, (a, na, b, raw.clone()), law));
         }
-        // Step every group, in parallel. Bodies are moved out and back so that each group
-        // owns its members.
-        let mut slots: Vec<Option<Body>> = self.bodies.drain(..).map(Some).collect();
+        // Step every group, in parallel, each borrowing its own bodies (in their order, as
+        // its contacts number them): moving them out and back cost more than stepping 200
+        // free bodies.
         let dt = self.dt;
         let ground = self.ground.clone();
+        let mut members: Vec<Vec<&mut Body>> =
+            groups.iter().map(|g| Vec::with_capacity(g.len())).collect();
+        for (b, body) in self.bodies.iter_mut().enumerate() {
+            if let Some(g) = members.get_mut(group_of[b]) {
+                g.push(body);
+            }
+        }
         let mut work: Vec<stepping::GroupWork<'_>> = groups
             .iter()
             .zip(contacts)
             .zip(left)
-            .map(|((g, (c, p, measures, shapes)), left)| {
+            .zip(members)
+            .map(|(((g, (c, p, measures, shapes)), left), bodies)| {
                 let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
                 contacts.set_left(left);
-                (
-                    g.iter().map(|&b| slots[b].take().expect("once")).collect(),
-                    contacts,
-                    Vec::new(),
-                    g,
-                )
+                (bodies, contacts, Vec::new(), g)
             })
             .collect();
         work.par_iter_mut()
@@ -146,15 +149,9 @@ impl World {
                 stepping::step(bodies, contacts, dt);
                 *anchors = anchor::after_step(bodies, group, contacts);
             });
-        let mut stepped = Vec::with_capacity(groups.len());
-        for ((bodies, contacts, anchors, _), g) in work.into_iter().zip(&groups) {
-            for (body, &index) in bodies.into_iter().zip(g) {
-                slots[index] = Some(body);
-            }
-            stepped.push((g.clone(), contacts, anchors));
-        }
-        self.bodies = slots.into_iter().map(|b| b.expect("returned")).collect();
-        stepped
+        work.into_iter()
+            .map(|(_, contacts, anchors, g)| (g.clone(), contacts, anchors))
+            .collect()
     }
 
     /// The surface of body `b`, or of the fixed world.

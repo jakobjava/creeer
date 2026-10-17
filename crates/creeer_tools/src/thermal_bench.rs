@@ -14,7 +14,7 @@ const ATMOSPHERE: f64 = 101_325.0;
 /// floor (one island), and `carts` loose aluminium carts of `cart_parts` parts (an island
 /// each). Every part convects to the air, frames and carts radiate to the walls, the floor
 /// conducts to the ground; motors and lamps heat a part in four.
-fn hall(machines: usize, parts: usize, carts: usize, cart_parts: usize) -> Network {
+pub(crate) fn hall(machines: usize, parts: usize, carts: usize, cart_parts: usize) -> Network {
     let table = MaterialTable::reference();
     let material = |id: &str| table.get(id).expect("in the reference table");
     let (steel, concrete, aluminium) = (

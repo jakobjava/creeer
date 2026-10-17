@@ -30,13 +30,12 @@ struct Furnace {
     k: usize,
 }
 
-/// Runs the chemistry benchmark.
-pub fn run(report: &mut Report) {
-    println!("F6.5 chemistry: 500 furnaces' equilibria at 10 Hz (ms per 60 Hz tick, p50 / p99)");
+/// The furnaces' species and the 500 furnaces: hematite and CO among nitrogen.
+fn furnaces() -> (System, Vec<Furnace>) {
     let table = SpeciesTable::reference();
     let sys = System::new(&table, &NAMES).expect("the furnace's species");
     let at = |name: &str| sys.index(name).expect("a furnace species");
-    let mut furnaces: Vec<Furnace> = (0..500)
+    let furnaces = (0..500)
         .map(|k| {
             let mut moles = vec![0.0; sys.species.len()];
             moles[at("Fe2O3(cr)")] = 1.0;
@@ -49,34 +48,61 @@ pub fn run(report: &mut Report) {
             }
         })
         .collect();
-    let (co, step) = (at("CO"), 0u32);
-    let mut tick = step;
+    (sys, furnaces)
+}
+
+/// The equilibria of `furnaces` at step `tick` (10 Hz); the most Newton iterations one took.
+fn solve(sys: &System, furnaces: &mut [Furnace], tick: u32) -> usize {
+    let co = sys.index("CO").expect("CO");
+    furnaces
+        .par_iter_mut()
+        .map(|f| {
+            // The furnace heats and cools between 800 and 1400 K; fresh CO is blown in.
+            let phase = (f.k + tick as usize) % 1200;
+            f.t = 800.0 + if phase < 600 { phase } else { 1200 - phase } as f64;
+            let mut feed = f.moles.clone();
+            feed[co] += 0.005;
+            let eq = equilibrate(
+                sys,
+                &feed,
+                Fixed::Tp {
+                    t: f.t,
+                    p: 101_325.0,
+                },
+                Some((&feed, f.t)),
+            )
+            .expect("a furnace's equilibrium");
+            f.moles = eq.moles;
+            eq.iterations
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// The reference load's chemistry (F6.8): each furnace at 10 Hz, a sixth of them a tick.
+pub fn load() -> impl FnMut() {
+    let (sys, mut furnaces) = furnaces();
+    let mut tick = 0u32;
+    move || {
+        let sixth = furnaces.len() / 6;
+        let k = (tick % 6) as usize;
+        let end = if k == 5 {
+            furnaces.len()
+        } else {
+            (k + 1) * sixth
+        };
+        solve(&sys, &mut furnaces[k * sixth..end], tick / 6);
+        tick += 1;
+    }
+}
+
+/// Runs the chemistry benchmark.
+pub fn run(report: &mut Report) {
+    println!("F6.5 chemistry: 500 furnaces' equilibria at 10 Hz (ms per 60 Hz tick, p50 / p99)");
+    let (sys, mut furnaces) = furnaces();
+    let mut tick = 0u32;
     let mut most = 0usize;
-    let solve = |furnaces: &mut [Furnace], tick: u32| -> usize {
-        furnaces
-            .par_iter_mut()
-            .map(|f| {
-                // The furnace heats and cools between 800 and 1400 K; fresh CO is blown in.
-                let phase = (f.k + tick as usize) % 1200;
-                f.t = 800.0 + if phase < 600 { phase } else { 1200 - phase } as f64;
-                let mut feed = f.moles.clone();
-                feed[co] += 0.005;
-                let eq = equilibrate(
-                    &sys,
-                    &feed,
-                    Fixed::Tp {
-                        t: f.t,
-                        p: 101_325.0,
-                    },
-                    Some((&feed, f.t)),
-                )
-                .expect("a furnace's equilibrium");
-                f.moles = eq.moles;
-                eq.iterations
-            })
-            .max()
-            .unwrap_or(0)
-    };
+    let solve = |furnaces: &mut [Furnace], tick: u32| solve(&sys, furnaces, tick);
     // Settled first (the hematite reduced as far as the gas allows).
     for _ in 0..30 {
         most = solve(&mut furnaces, tick);

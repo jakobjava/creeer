@@ -65,6 +65,14 @@ The DC margin is slim and was measured on a heat-soaked machine (structures run 
 - **Parallel linearisation and checking of devices**: slower. A few thousand exponentials cost less than waking the threads.
 - **Peukert's law as a capacity derating**: it destroys charge (the ledger would leak). The two-well model gives the effect and conserves charge.
 
+### Amended in F6.8 (2026-10-17): margin for the DC circuit
+
+- **The right-hand sides side by side** (`IslandSolver::stamp_rhs`): in an island of 2,048 components with one or more, each component's entries are worked out in parallel and added in order. The sums are the same bits as one after another.
+- **Measured:** the 10k-node step went from 0.50 to 0.43 ms (0.86–0.87 ms projected against 1 ms) on a cool machine. Late in a long `cargo xtask perf` run, heat-soaked, it measures 0.50 ms (0.99 ms projected).
+- **Measured again and rejected:**
+  - linearising and checking the devices in parallel (0.43 → 0.48 ms);
+  - reusing each device's law from the last convergence check (no measurable gain).
+
 ## Consequences
 
 - Couplings are explicit and booked: `take_heat` per component for the thermal network, `set_temperature` back. A machine's `set_load` and `level` (its speed) are what F6.4's shafts will drive.

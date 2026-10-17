@@ -21,6 +21,7 @@ use crate::finish::Flow;
 use crate::mna::{self, GMIN, Pattern, Place, Rule, Values};
 use crate::nonlinear::{self, Lin};
 use creeer_math::sparse::{Assembly, Csc, Lu};
+use rayon::prelude::*;
 
 /// Newton stops when no unknown changes by more than this plus [`RELATIVE`] of itself
 /// (V, A, rad/s).
@@ -34,6 +35,8 @@ const MAX_ITERATIONS: usize = 60;
 /// Steps an island's unknowns must hardly change for (by [`STILL`]) before it sleeps.
 const STILL_STEPS: u32 = 30;
 const STILL: f64 = 1e-7;
+/// Components with a right-hand side from which an island works theirs out side by side.
+const PARALLEL_RHS: usize = 2048;
 
 /// An island of a circuit and its solver.
 #[derive(Debug)]
@@ -62,6 +65,8 @@ pub(crate) struct IslandSolver {
     /// a right-hand side.
     dynamic_list: Vec<usize>,
     lins: Vec<Lin>,
+    /// The right-hand sides of the components with one, worked out side by side.
+    recorded: Vec<mna::Recorded>,
     with_rhs: Vec<usize>,
     /// Steps since it last restarted, and the step those were made with.
     steps: u32,
@@ -129,6 +134,7 @@ impl IslandSolver {
                     .filter(|&&k| mna::nonlinear(&all[k]))
                     .count()
             ],
+            recorded: Vec::new(),
             with_rhs: (0..components.len())
                 .filter(|&j| mna::has_rhs(&all[components[j]]))
                 .collect(),
@@ -249,15 +255,7 @@ impl IslandSolver {
         self.rhs.fill(0.0);
         if self.stamped == Some(rule) {
             let mut changed = false;
-            for &j in &self.with_rhs {
-                mna::stamp(
-                    &mut mna::RhsOnly(&mut self.rhs),
-                    &all[self.components[j]],
-                    self.places[j],
-                    &self.x,
-                    rule,
-                );
-            }
+            self.stamp_rhs(all, rule);
             self.linearise(all);
             for (d, &j) in self.dynamic_list.iter().enumerate() {
                 let (c, place, lin) = (&all[self.components[j]], self.places[j], self.lins[d]);
@@ -291,6 +289,34 @@ impl IslandSolver {
         }
         self.stamped = Some(rule);
         true
+    }
+
+    /// The right-hand sides of the components with one (their matrix entries unchanged): in a
+    /// large island worked out side by side and added in order (the same sums, bit for bit).
+    fn stamp_rhs(&mut self, all: &[Component], rule: Rule) {
+        if self.with_rhs.len() < PARALLEL_RHS {
+            for &j in &self.with_rhs {
+                let (c, place) = (&all[self.components[j]], self.places[j]);
+                mna::stamp(&mut mna::RhsOnly(&mut self.rhs), c, place, &self.x, rule);
+            }
+            return;
+        }
+        let (x, places, components) = (&self.x, &self.places, &self.components);
+        self.recorded
+            .resize(self.with_rhs.len(), mna::Recorded::default());
+        self.recorded
+            .par_iter_mut()
+            .zip(&self.with_rhs)
+            .with_min_len(512)
+            .for_each(|(record, &j)| {
+                *record = mna::Recorded::default();
+                mna::stamp(record, &all[components[j]], places[j], x, rule);
+            });
+        for record in &self.recorded {
+            for &(r, v) in &record.entries[..record.len] {
+                self.rhs[r] += v;
+            }
+        }
     }
 
     /// Newton's junction voltages limited (`Diode::limit`): each nonlinear device's internal

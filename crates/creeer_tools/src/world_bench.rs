@@ -6,7 +6,7 @@ use creeer_physics::world::shape::{Shape, StaticShape};
 use creeer_physics::world::{Body, World};
 
 /// Ten stacks of ten 1 m boxes (100 bodies, 400+ contacts) on the ground.
-fn stacks() -> World {
+pub(crate) fn stacks() -> World {
     let mut world = World::new(DT);
     world.statics.push(StaticShape::Plane {
         normal: DVec3::Y,

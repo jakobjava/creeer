@@ -34,7 +34,7 @@ pub fn run(report: &mut Report) {
     println!();
 }
 
-fn mains() -> (Network, Vec<usize>) {
+pub(crate) fn mains() -> (Network, Vec<usize>) {
     let mut net = Network::new(Liquid::WATER_20C, 9.806_65);
     let n = 50;
     let junctions: Vec<usize> = (0..n * n)
@@ -108,20 +108,8 @@ fn pipes(report: &mut Report) {
     let t = time_ticks(
         || {
             for _ in 0..every {
-                // The demand swings ±50 % over ten minutes (a day's swing 144 times as fast).
-                let swing = 1.0
-                    + 0.5
-                        * creeer_math::det::sin(
-                            f64::from(tick) * DT * std::f64::consts::TAU / 600.0,
-                        );
-                for &j in &junctions {
-                    net.nodes[j].kind = NodeKind::Junction {
-                        demand: 2e-4 * swing,
-                    };
-                }
-                if let Some((r, h)) = net.tick(DT) {
+                if let Some(r) = mains_tick(&mut net, &mut tracer, &junctions, tick) {
                     iterations = iterations.max(r.iterations);
-                    net.carry(&mut tracer, h);
                 }
                 tick += 1;
             }
@@ -138,6 +126,26 @@ fn pipes(report: &mut Report) {
     report.metric("fluids_5000_pipes_p50_ms", p(&t, 50.0), Better::Lower);
     let projected = per_tick / MIN_SPEC_CORE_FACTOR;
     report.budget(projected <= PIPES_MS, format!("{pipes} pipes at their rate projected to min-spec: {projected:.2} ms a tick <= {PIPES_MS} ms"));
+}
+
+/// One tick of the mains at `tick`: the demand swings ±50 % over ten minutes (a day's swing
+/// 144 times as fast). The step's outcome, on the ticks one ends.
+pub(crate) fn mains_tick(
+    net: &mut Network,
+    tracer: &mut creeer_fluids::pipes::content::Tracer,
+    junctions: &[usize],
+    tick: u32,
+) -> Option<creeer_fluids::pipes::PipeReport> {
+    let swing =
+        1.0 + 0.5 * creeer_math::det::sin(f64::from(tick) * DT * std::f64::consts::TAU / 600.0);
+    for &j in junctions {
+        net.nodes[j].kind = NodeKind::Junction {
+            demand: 2e-4 * swing,
+        };
+    }
+    let (r, h) = net.tick(DT)?;
+    net.carry(tracer, h);
+    Some(r)
 }
 
 fn standard_sky() -> Sky {
@@ -162,7 +170,8 @@ fn standard_sky() -> Sky {
     }
 }
 
-fn panels(report: &mut Report) {
+/// 100 bodies tumbling through the air, ten panels each.
+pub(crate) fn aero() -> (Sky, World, Vec<Airframe>) {
     let sky = standard_sky();
     let mut world = World::new(DT);
     let mut frames = Vec::new();
@@ -197,6 +206,11 @@ fn panels(report: &mut Report) {
             ));
         }
     }
+    (sky, world, frames)
+}
+
+fn panels(report: &mut Report) {
+    let (sky, mut world, mut frames) = aero();
     let t = time_ticks(
         || {
             creeer_sim::aero::push(&sky, None, &mut world, &mut frames);
@@ -218,7 +232,8 @@ fn panels(report: &mut Report) {
     );
 }
 
-fn floating(report: &mut Report) {
+/// 200 boxes and hulls in a sea.
+pub(crate) fn sea() -> (Sea, World, Vec<Floater>) {
     let water = OceanData {
         density: 1025.97,
         viscosity: 1.22e-3,
@@ -250,6 +265,11 @@ fn floating(report: &mut Report) {
         world.bodies[body].structure.velocity[0] = DVec3::new(1.0, -0.3, 0.0);
         floaters.push(Floater::new(body, 0, shape, 1.0));
     }
+    (sea, world, floaters)
+}
+
+fn floating(report: &mut Report) {
+    let (sea, mut world, mut floaters) = sea();
     let t = time_ticks(
         || {
             creeer_sim::sea::push(&sea, &mut world, &mut floaters);

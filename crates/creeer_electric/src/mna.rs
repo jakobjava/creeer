@@ -125,6 +125,24 @@ impl Sink for RhsOnly<'_> {
     }
 }
 
+/// Records a component's right-hand side (its few entries), to be added later in order: the
+/// components' stamps worked out side by side, their sums the same bits as one after another.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Recorded {
+    pub entries: [(usize, f64); 4],
+    pub len: usize,
+}
+
+impl Sink for Recorded {
+    fn m(&mut self, _: Option<usize>, _: Option<usize>, _: f64) {}
+    fn b(&mut self, r: Option<usize>, v: f64) {
+        if let Some(r) = r {
+            self.entries[self.len] = (r, v);
+            self.len += 1;
+        }
+    }
+}
+
 /// Overwrites one component's matrix entries in place from `at` (their offset in the
 /// pattern), noting whether any changed, and adds its right-hand side.
 pub struct At<'a> {

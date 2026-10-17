@@ -63,9 +63,8 @@ fn machine(net: &mut Network) -> BlockId {
     sensor
 }
 
-/// Runs the logic benchmark.
-pub fn run(report: &mut Report) {
-    println!("F6.7 logic: 10,000 gates and 100 scripts of ~1,000 instructions (ms, p50 / p99)");
+/// The hundred machines' controls and their scripts: (network, sensors, scripts).
+pub(crate) fn controls() -> (Network, Vec<BlockId>, Vec<BlockId>) {
     let mut net = Network::new();
     let sensors: Vec<BlockId> = (0..100).map(|_| machine(&mut net)).collect();
     let limits = Limits {
@@ -81,15 +80,27 @@ pub fn run(report: &mut Report) {
             b
         })
         .collect();
+    (net, sensors, scripts)
+}
+
+/// One tick of the controls at `tick`: their sensors swinging.
+pub(crate) fn tick(net: &mut Network, sensors: &[BlockId], tick: u32) {
+    for (k, &s) in sensors.iter().enumerate() {
+        let phase = f64::from(tick) / 60.0 + k as f64;
+        net.set_sensor(s, creeer_math::det::sin(phase) * 10.0);
+    }
+    net.tick(1.0 / 60.0);
+}
+
+/// Runs the logic benchmark.
+pub fn run(report: &mut Report) {
+    println!("F6.7 logic: 10,000 gates and 100 scripts of ~1,000 instructions (ms, p50 / p99)");
+    let (mut net, sensors, scripts) = controls();
     let gates = net.len() - scripts.len();
-    let mut tick = 0u32;
+    let mut ticks = 0u32;
     let mut step = || {
-        for (k, &s) in sensors.iter().enumerate() {
-            let phase = f64::from(tick) / 60.0 + k as f64;
-            net.set_sensor(s, creeer_math::det::sin(phase) * 10.0);
-        }
-        net.tick(1.0 / 60.0);
-        tick += 1;
+        tick(&mut net, &sensors, ticks);
+        ticks += 1;
     };
     for _ in 0..120 {
         step();

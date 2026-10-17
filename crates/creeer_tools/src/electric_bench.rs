@@ -15,7 +15,7 @@ const AC_BUDGET_MS: f64 = 1.0;
 /// A factory's 48 V DC wiring: a battery bank, `feeders` feeders of `machines` stations each
 /// along a cable (a wire segment between stations), every station a breaker, a motor with a
 /// capacitor across it, and an indicator LED behind its resistor.
-fn factory(feeders: usize, machines: usize) -> (Circuit, usize) {
+pub(crate) fn factory(feeders: usize, machines: usize) -> (Circuit, usize) {
     let mut c = Circuit::new();
     let bus = c.node();
     for _ in 0..4 {
@@ -56,7 +56,7 @@ fn factory(feeders: usize, machines: usize) -> (Circuit, usize) {
 /// A town's grid: a 33 kV source feeding `feeders` 11 kV feeders through a substation
 /// transformer, each a line of `buses` buses, every fifth with a distribution transformer to
 /// a 400 V bus with a constant-power load and an induction motor.
-fn town(feeders: usize, buses: usize) -> (Grid, usize) {
+pub(crate) fn town(feeders: usize, buses: usize) -> (Grid, usize) {
     let mut g = Grid::new(50.0);
     let source = g.bus();
     g.add(Branch::Source {

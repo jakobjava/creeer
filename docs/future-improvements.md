@@ -54,7 +54,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Radiation between many surfaces**: pairwise only, no radiosity network | Pairwise was enough for the sandbox scenes | R | Medium | ADR-0010 |
 | **Temperature gradients within a part**: a member is one node | Splitting parts into nodes is the builder's job for now | R | Medium | ADR-0010 |
 | **Two-phase heat transfer** (boiling, condensing on surfaces) | Waits for the integration of F6.5's equilibria into heat transfer | R | Medium | ADR-0010 |
-| **Mixed AC/DC** (rectifiers, inverters): a grid and a circuit are separate networks | An average converter model belongs to the integration | R, G | Medium | ADR-0011 (F6.8 or later) |
+| **Mixed AC/DC** (rectifiers, inverters): a grid and a circuit are separate networks | The integration needed none (its generator feeds the stack through a diode); an average converter model is a design of its own | R, G | Medium | ADR-0011, ADR-0016 |
 | **Unbalanced three-phase grids** | The per-phase equivalent assumes balance | R | Medium | ADR-0011 |
 | **Transistors** | Plan: components come in order, transistors later | G | Medium | plan.md |
 | **Gear-mesh and belt compliance**: rigid while they grip; **belt creep** below the slip limit | Rigid constraints keep the drivetrain solve small | R | Medium | ADR-0012 |
@@ -62,6 +62,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Gearboxes' no-load churning losses** | Only the mesh's loss under load is booked | R | Small | ADR-0012 |
 | **Two machines on one drivetrain coupled within a step** | Each machine–drivetrain pair is solved as one; pairs are not | R | Medium | ADR-0012 |
 | **A drivetrain feeling its body's linear acceleration** (only its turning enters) | The mount passes the spin only | R | Small | ADR-0012 |
+| **A shaft's twist damping as heat**: its loss and backward Euler's go either way within a cycle, so they stay the drivetrain's (0.1–0.2 J in the powerhouse's ten minutes) | Not heat any thermal node could take as it comes | R | Small | ADR-0016; `creeer_mech::book` |
 
 ## Contacts
 
@@ -80,14 +81,14 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
 | **Supernodal (or multifrontal) Cholesky**: the up-looking one runs at about 1 GFlop/s (0.45 ms for a 2,500-junction grid) | The per-network rate meets the budget now; measured without SIMD kernels, supernodal storage was slower for the structures (ADR-0004) | S: large meshed pipe networks at 60 Hz instead of 20/10 Hz; thermal and electrical meshed islands faster | Large | ADR-0014, ADR-0009, ADR-0004; `docs/f6-plan.md` (Deferred) |
-| **A cheaper structure solve** (SIMD kernels, runtime AVX2 dispatch): the 5k-beam bridge holds its 4 ms budget only on a cool machine | The user accepted the budget as met; speed-ups can come later | S | Large | ADR-0004 (Addendum 3); memory |
+| **A cheaper structure solve** (SIMD kernels, runtime AVX2 dispatch, fewer passes over the elements): the 5k-beam bridge holds its 4 ms budget only on a cool machine; **the reference tick (plan.md §5) needs it**: 20,000 active beams take 22.6 ms of one thread's work a tick (1.1 µs a beam), three quarters of the tick, and the whole tick projects to 10.3–10.5 ms against 10 ms | The user accepted the bridge's budget as met; the F6 domains take only 1.75–1.88 ms of the tick projected | S | Large | ADR-0004 (Addendum 3), ADR-0016; memory |
+| **Islands on their own thread groups**: four bridges stepped on four pools of four threads took 3.3 ms against 4.2 ms on the shared pool | A world's islands share one pool with every domain; a scheduler that keeps an island on a few threads is a design of its own | S | Medium | ADR-0016 |
 | **Iterative solvers (PCG) for large meshed islands** (thermal, electrical) | No domain meshes yet; pipes now precondition with their own factor | S | Medium | ADR-0009 |
-| **A slow pipe network's step spread over its interval** (or run beside the tick), not one tick's spike | Belongs to F6.8's scheduler | S | Medium | ADR-0014; `docs/f6-plan.md` (F6.8) |
 | **PGO**, **GPU compute** for soft bodies | Later optimisation options in the plan | S | Medium | plan.md |
 | **A stiffer contact model** with all contacts in every structure's matrix before every step | Future work after the F5 contact law | R, S | Large | ADR-0005 |
 | **Newton's method for groups with structures**: only groups of rigid bodies alone take their contacts' stiffness at each iteration's state; rigid bodies on structures keep the step's | The structures' matrices are factorised once a step; factorising them at every iteration was not tried | S | Medium | ADR-0005 (F6, Newton) |
 | **The line search at planet scale**: 500 km from the origin the objective rounds at about 10⁻⁷ J, and steps stop short where a decrease that small cannot be seen | Within tolerance where it stops; an objective summed as differences from the step's start would see it | R | Medium | this list (F6) |
-| **The 10k-node DC circuit has 0–7 % margin** to its 1 ms budget (0.47–0.50 ms on the development machine, 0.93–1.00 ms projected) | Met when measured in F6.3; to be given margin in F6.8 | S | Small | ADR-0011; `docs/f6-plan.md` (F6.8) |
+| **Budgets close on a heat-soaked machine**: late in a long `cargo xtask perf` run the 10k-node DC circuit projects to 0.99 ms (0.86 cool), the 20k-node thermal step to 1.51 ms (budget 1.5; 1.28 cool), the 1,000 aero panels to 0.199 ms (0.2) | Each meets its budget measured on its own, as every budget is | S | Small | ADR-0011 (F6.8), ADR-0010, ADR-0014, ADR-0016 |
 | **Settling stacks cost 3–6 % more** since rigid bodies' contacts are relinearised each iteration (piles 4–8 times less) | The pile's gain; the stacks' matrices barely change near convergence and are not made again there | S | Small | ADR-0005 (F6, Newton) |
 
 ## Fluids
@@ -104,7 +105,8 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **The transonic gap** (Mach 0.7–1.3) bridged linearly | No simple theory spans it | R | Medium | ADR-0014; `aero/coefficients.rs` |
 | **Water hammer and cavitation** (liquid networks are incompressible and quasi-steady) | Not needed by the reference scenes | R, G | Large | ADR-0014 |
 | **Compressors in gas networks**; gas networks' hydraulics take one fixed gas (a stream's own composition is passive in them) | Isothermal pipelines first | R, G | Medium | ADR-0014; `carry_tests.rs` |
-| **Heat exchange of pipes with their surroundings**, and friction heat into the fluid (content is carried adiabatically) | The thermal coupling belongs to the integration | R | Medium | ADR-0014 |
+| **Heat exchange of pipes with their surroundings**, and friction heat into the fluid (content is carried adiabatically; a valve's and a turbine's losses stay the water's, unrouted to any thermal node) | Not needed by the integration's books, which count them as the water's friction | R | Medium | ADR-0014, ADR-0016 |
+| **Swirl carried out of a turbine** into its tailrace: the casing takes the runner's reaction, as if the water left without swirl | The water's angular momentum is not a state of a pipe network | R | Small | ADR-0016 |
 | **Two-phase pipe flow** (steam lines) | Planned for G4/G5 | R, G | Large | `docs/f6-plan.md` (Decisions) |
 | **Avatars in water**: players' avatars are spared the air and the sea (they walk on the seabed) | Their players' machines predict them without fluids | G | Medium | ADR-0014; `creeer_sim::surroundings` |
 | **The sea in the solar-system view** (only the planet view draws it) | The system view's body frames need its axis | G | Small | `system_view.rs` |

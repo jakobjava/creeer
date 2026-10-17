@@ -1,6 +1,6 @@
 # F6 plan: simulation domains
 
-Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 to F6.7 done (2026-10-17; ADR-0009 to ADR-0015).
+Status: **done** (2026-10-17), with Lua 5.4 instead of Luau: F6.1 to F6.8 (ADR-0009 to ADR-0016; validation report `docs/physics/f6-validation.md`).
 
 F6 builds the engines behind everything a player will make: what things are made of and how they react (materials & chemistry), heat, electricity, shafts and gears, fluids and air, and logic. Each one must be **realistic** (validated against analytic or reference results, conserving what nature conserves) and **fast** (each has a budget inside the 10 ms tick of plan.md §5). Each gets a sandbox scene, like F2–F5.
 
@@ -255,6 +255,8 @@ The order follows dependencies: materials first (everything needs their properti
 - **Budget:** 10,000 gates and 100 scripts at 1,000 instructions each ≤ 0.5 ms per tick.
 
 ### F6.8 Integration: one machine through every domain
+
+**Done** (2026-10-17, ADR-0016): Euler turbines in pipe networks, their torque on a drivetrain every tick at the step's midpoint speed (the water's work the shaft's, joule for joule, however seldom the network steps); slow networks' steps run beside the ticks, from one due tick to the next (deterministic, bit for bit the step itself); the couplings split in two so several share a circuit or drivetrain. The powerhouse (tank, turbine, generator, rectifier, twelve electrolysis cells, reactor, heat to the air, a Lua PI on the valve, a free platform): over ten minutes the shaft holds 150 rad/s within 0.1 %, the water's 1.96 MJ are accounted for to 10⁻⁹, the water and the reactor's mass to 10⁻¹², hydrogen by Faraday to 10⁻³, angular momentum to 10⁻⁷, with the pipes every tick and at 10 Hz. Sandbox: the Powerhouse window. The reference load is measured (`bench-spikes --only reference`): the F6 domains side by side 0.88–0.94 ms (1.75–1.88 ms projected, their share ≈ 5 ms); everything with 20,000 active beams and 8 players 5.1–5.3 ms, 10.3–10.5 ms projected against plan.md's 10 ms: **not met**, three quarters of the tick's work being the beams' solver (a cheaper structure solve is the first item of `docs/future-improvements.md`, Solvers). Found on the way: a world's step moved every body out and back (200 floating bodies 0.53 → 0.26 ms); the DC circuit's right-hand sides side by side (0.50 → 0.43 ms, 0.86 ms projected ≤ 1).
 
 - **A scene coupling everything:**
   1. a water tank drains through a turbine (fluids → shaft);
