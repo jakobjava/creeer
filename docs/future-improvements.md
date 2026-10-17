@@ -34,7 +34,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Lateral-torsional buckling** (a beam bent about its strong axis twisting sideways) | Only compression splits members | R | Medium | ADR-0005 |
 | **Members colliding with each other** (a folded column passes through itself) | Self-contact of a structure is not detected | R | Large | ADR-0005 |
 | **Material damping model**: steel's damping over-damps a joint's kilohertz rattle (crash 5 % short at 5 m/s with it) | The crash test runs undamped; a frequency-dependent model is needed | R | Medium | ADR-0005 |
-| **Impacts on structures cost substeps** (a 10 t block landing on a bridge: about 19 ms a tick while members yield) | Correctness first; impacts are rare | S | Medium | ADR-0005 |
+| **Impacts on structures cost substeps** (a 10 t block landing on a bridge: 33–36 ms a tick while members flow fast, 34 fixed substeps of 0.5 ms) | In hand, not deferred: substeps of controlled size and their fixed costs (ADR-0017, A1–A2, proposed) | S | Medium | ADR-0005, ADR-0017 |
 
 ### Gravity and orbits
 
@@ -90,6 +90,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **PGO**, **GPU compute** for soft bodies | Later optimisation options in the plan | S | Medium | plan.md |
 | **A stiffer contact model** with all contacts in every structure's matrix before every step | Future work after the F5 contact law | R, S | Large | ADR-0005 |
 | **Newton's method for groups with structures**: only groups of rigid bodies alone take their contacts' stiffness at each iteration's state; rigid bodies on structures keep the step's | The structures' matrices are factorised once a step; factorising them at every iteration was not tried | S | Medium | ADR-0005 (F6, Newton) |
+| **Gauss–Newton contact matrices and lagged friction**: the gap's curvature terms are left out of the matrix and friction's λ is refreshed in an outer loop; the rock pile takes 15–18 iterations a group step, 35–50 % of them after a refresh | In hand, not deferred: per-contact Hessians projected to positive semi-definite, friction coupled without the outer loop (ADR-0017, B1 and C, proposed) | S | Medium | ADR-0017 |
 | **The line search at planet scale**: 500 km from the origin the objective rounds at about 10⁻⁷ J, and steps stop short where a decrease that small cannot be seen | Within tolerance where it stops; an objective summed as differences from the step's start would see it | R | Medium | this list (F6) |
 | **Budgets close on a heat-soaked machine**: late in a long `cargo xtask perf` run the 10k-node DC circuit projects to 0.99 ms (0.86 cool), the 20k-node thermal step to 1.51 ms (budget 1.5; 1.28 cool), the 1,000 aero panels to 0.199 ms (0.2) | Each meets its budget measured on its own, as every budget is | S | Small | ADR-0011 (F6.8), ADR-0010, ADR-0014, ADR-0016 |
 | **Settling stacks cost 3–6 % more** since rigid bodies' contacts are relinearised each iteration (piles 4–8 times less) | The pile's gain; the stacks' matrices barely change near convergence and are not made again there | S | Small | ADR-0005 (F6, Newton) |
