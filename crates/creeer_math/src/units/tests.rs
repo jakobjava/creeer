@@ -108,6 +108,17 @@ fn electrical_units_are_consistent() {
     assert_eq!(si("1 C").1, si("1 A·s").1);
     assert!(close(si("1 eV").0, 1.602_176_634e-19));
     assert!(close(si("1 keV").0, 1.602_176_634e-16));
+    // F = C/V, H = V·s/A, S = 1/Ω, T = Wb/m²; Wh and Ah for batteries.
+    assert_eq!(si("1 F").1, si("1 C/V").1);
+    assert_eq!(si("1 H").1, si("1 V·s/A").1);
+    assert_eq!(si("1 S").1, si("1 A/V").1);
+    assert_eq!(si("1 T").1, si("1 Wb/m^2").1);
+    assert!(close(si("470 µF").0, 4.7e-4) && close(si("10 mH").0, 0.01));
+    assert!(close(si("2.5 Ah").0, 9000.0) && close(si("3200 mAh").0, 11_520.0));
+    assert!(close(si("1 kWh").0, 3.6e6) && si("1 kWh").1 == Dimension::ENERGY);
+    // Whole symbols win: T is tesla, TW terawatt, ms a millisecond, mS a millisiemens.
+    assert!(close(si("1 TW").0, 1e12) && si("1 TW").1 == Dimension::POWER);
+    assert!(close(si("2 ms").0, 2e-3) && si("2 mS").1 == Dimension::CONDUCTANCE);
 }
 
 #[test]

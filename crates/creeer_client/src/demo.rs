@@ -220,6 +220,8 @@ pub enum Overlay {
     AxialStress,
     /// How much of its plastic capacity each member of the physics scenes uses (%).
     Utilisation,
+    /// The physics scenes' parts' temperatures (°C), from their thermal networks (F6.2).
+    PartTemperature,
 }
 
 impl Overlay {
@@ -237,6 +239,11 @@ impl Overlay {
                 max: 120.0,
                 palette: Palette::Diverging,
             }),
+            Self::PartTemperature => Some(Heatmap {
+                min: 20.0,
+                max: 1000.0,
+                palette: Palette::Sequential,
+            }),
             Self::Utilisation => Some(Heatmap {
                 min: 0.0,
                 max: 100.0,
@@ -252,6 +259,7 @@ impl Overlay {
             Self::Temperature => ("Temperature", "°C"),
             Self::AxialStress => ("Axial stress", "MPa"),
             Self::Utilisation => ("Utilisation", "% of plastic capacity"),
+            Self::PartTemperature => ("Temperature", "°C"),
         }
     }
 }
@@ -282,6 +290,7 @@ pub fn sky(origin: DVec3) -> Sky {
         planet_center: origin - DVec3::Y * PLANET_RADIUS,
         sun_irradiance: [3.6, 3.4, 3.1],
         star_brightness: 1.0,
+        sea: None,
     }
 }
 
@@ -311,6 +320,12 @@ pub fn camera_preset(name: &str, origin: DVec3) -> Option<Camera> {
         "crash" => (DVec3::new(-82.0, 3.0, 7.0), -0.4, -0.26),
         "stacks" => (DVec3::new(-76.0, 4.0, 9.0), 0.42, -0.25),
         "rocks" => (DVec3::new(-75.5, 3.2, 6.5), 0.5, -0.3),
+        "cooling" => (DVec3::new(-79.0, 1.05, 2.1), 0.44, -0.18),
+        "radiator" => (DVec3::new(-76.0, 5.0, 5.0), 0.675, -0.155),
+        "fire" => (DVec3::new(-80.0, 2.4, 6.5), 0.0, -0.04),
+        "station" => (DVec3::new(-80.0, 4.5, 6.5), 0.0, -0.2),
+        "air" => (DVec3::new(-82.0, 30.0, 70.0), 0.05, -0.12),
+        "harbour" => (DVec3::new(-80.0, 9.0, 22.0), 0.0, -0.3),
         _ => return None,
     };
     let mut camera = Camera::new(origin + position);
@@ -368,7 +383,7 @@ mod tests {
     fn presets_exist() {
         for name in [
             "overview", "factory", "closeup", "top", "far", "orbit", "horizon", "physics", "crash",
-            "stacks", "rocks",
+            "stacks", "rocks", "cooling", "radiator", "fire", "station", "air", "harbour",
         ] {
             assert!(camera_preset(name, DVec3::ZERO).is_some(), "{name}");
         }

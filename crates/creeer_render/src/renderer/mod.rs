@@ -17,6 +17,7 @@ use encode::Globals;
 use exposure_pass::ExposurePass;
 use line_pass::LinePass;
 use mesh_pass::MeshPass;
+use sea_pass::SeaPass;
 use shadow_pass::ShadowPass;
 use sky_pass::SkyPass;
 use targets::{Targets, scene_depth_state, scene_multisample, shader};
@@ -28,6 +29,7 @@ mod exposure_pass;
 mod line_pass;
 mod mesh_pass;
 mod readback;
+mod sea_pass;
 mod setup;
 mod shadow_pass;
 mod sky_pass;
@@ -145,6 +147,7 @@ pub struct Renderer {
     /// When the last windowed frame was drawn (for exposure adaptation).
     last_frame: Option<std::time::Instant>,
     sky_pipeline: SkyPass,
+    sea: SeaPass,
     egui: egui_wgpu::Renderer,
     line_vertices: Vec<LineVertex>,
     stats: RenderStats,

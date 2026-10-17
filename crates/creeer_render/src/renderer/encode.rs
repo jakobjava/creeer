@@ -25,6 +25,10 @@ pub(super) struct Globals {
     ground_albedo: [f32; 4],
     heatmap: [f32; 4],
     sky_irradiance: [[f32; 4]; SKY_TABLE],
+    sea: [f32; 4],
+    sea_axis: [f32; 4],
+    sea_center: [f32; 4],
+    sea_color: [f32; 4],
 }
 
 impl Renderer {
@@ -193,6 +197,9 @@ impl Renderer {
                 &self.shadows.sample_bind_group,
                 self.sky_pipeline.luts().1,
             );
+            if frame.sky.is_some_and(|s| s.sea.is_some()) {
+                self.sea.draw(&mut pass, self.sky_pipeline.luts().1);
+            }
             if frame.sky.is_some() {
                 self.sky_pipeline.draw(&mut pass);
             }
@@ -278,6 +285,20 @@ fn sky_globals(sky: Option<&Sky>, camera: &Camera) -> Globals {
     globals.sun_irradiance = [r, g, b, sky.star_brightness];
     let [r, g, b] = a.ground_albedo.map(f);
     globals.ground_albedo = [r, g, b, 0.0];
+    if let Some(sea) = &sky.sea {
+        // The camera's height over the sea's ellipsoid, stretched to a sphere (f64: `sea.wgsl`).
+        let k = sea.axis.normalize();
+        let stretch = sea.equatorial_radius / sea.polar_radius - 1.0;
+        let q = camera.position - sky.planet_center;
+        let stretched = q + k * (stretch * q.dot(k));
+        let over = stretched.length() - sea.equatorial_radius;
+        globals.sea = [1.0, f(sea.polar_radius), f(sea.equatorial_radius), f(over)];
+        globals.sea_axis = [f(k.x), f(k.y), f(k.z), 0.0];
+        let c = sky.planet_center - camera.position;
+        globals.sea_center = [f(c.x), f(c.y), f(c.z), 0.0];
+        let [r, g, b] = sea.color;
+        globals.sea_color = [r, g, b, 0.0];
+    }
     globals
 }
 

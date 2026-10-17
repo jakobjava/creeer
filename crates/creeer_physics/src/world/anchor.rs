@@ -80,7 +80,7 @@ fn find<'a>(candidates: impl Iterator<Item = &'a Anchor>, local_a: DVec3) -> Opt
 
 /// The anchors after a group's step (moved where the contacts slid). `group` lists the
 /// global indices of the group's bodies.
-pub fn after_step(bodies: &[Body], group: &[usize], contacts: &Contacts) -> Vec<Anchor> {
+pub fn after_step(bodies: &[&mut Body], group: &[usize], contacts: &Contacts) -> Vec<Anchor> {
     let states: Vec<MemberState<'_>> = bodies
         .iter()
         .map(|b| MemberState {

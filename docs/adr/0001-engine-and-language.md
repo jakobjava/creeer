@@ -19,7 +19,7 @@ Creëer needs a realistic simulation core: node-beam soft bodies, orbital mechan
 
 ## Decision
 
-A custom engine in Rust, assembled from libraries: `winit`, `wgpu`, `glam` (f64), our own XPBD solver plus `parry3d-f64`, `bevy_ecs`, `rayon`, `egui`, `renet`, `kira` and `mlua` (Luau).
+A custom engine in Rust, assembled from libraries: `winit`, `wgpu`, `glam` (f64), our own XPBD solver plus `parry3d-f64`, `bevy_ecs`, `rayon`, `egui`, `renet`, `kira` and `mlua` (Luau; changed in F6 to standard Lua 5.4, ADR-0015).
 
 The simulation crates have no rendering dependency, so the same code runs in the client, the dedicated server and the headless tests.
 

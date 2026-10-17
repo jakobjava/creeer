@@ -14,6 +14,7 @@ pub struct NodeState {
     angular_velocity: DVec3,
     previous: (DVec3, DVec3, DQuat, DVec3),
     acceleration: (DVec3, DVec3),
+    loads: (DVec3, DVec3),
 }
 
 impl NodeState {
@@ -31,6 +32,7 @@ impl NodeState {
                 solver.previous_w[0],
             ),
             acceleration: (solver.acceleration[0], solver.angular_acceleration[0]),
+            loads: (solver.previous_load[0], solver.previous_torque[0]),
         })
     }
 
@@ -52,5 +54,6 @@ impl NodeState {
             solver.previous_w[0],
         ) = self.previous;
         (solver.acceleration[0], solver.angular_acceleration[0]) = self.acceleration;
+        (solver.previous_load[0], solver.previous_torque[0]) = self.loads;
     }
 }

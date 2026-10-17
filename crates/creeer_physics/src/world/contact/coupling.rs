@@ -62,6 +62,7 @@ impl Coupling for Contacts {
             c.arm_a = arm_a;
             c.arm_b = arm_b;
             c.gap_hat = gaps_hat[i];
+            c.tangent = None;
             // Touching or pressed in at the start, or closing within the step (an impact, whose
             // stiffness is the coupling that matters most). Not the prediction alone: over a
             // crest it lifts off the curved ground, and the matrix lost a sliding ball's contact
@@ -93,6 +94,8 @@ impl Coupling for Contacts {
             .map_or(f64::INFINITY, |i| {
                 CONVERGED * forces[i] / self.list[i].stiffness
             });
+        self.start_twist(info.start, info.h);
+        self.set_twist_stiffness(info.start);
         self.pairs = self.patch_pairs();
         self.rigid = self.rigid_blocks();
     }
@@ -115,7 +118,7 @@ impl Coupling for Contacts {
             .zip(&at)
             .map(|(c, &(_, _, _, slip, _, _))| c.friction * c.lambda * self.smooth(slip.length()).0)
             .sum();
-        elastic + damping + friction
+        elastic + damping + friction + self.twist_energy(states)
     }
 
     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
@@ -173,6 +176,7 @@ impl Coupling for Contacts {
                 }
             }
         }
+        self.add_twist_gradient(states, gradient);
         // The measured points of faces over curved ground: each pressed in by the ground under
         // it, its force along the slope of its own gap (`measure.rs`).
         for ((p, forces), damping) in self.patches.iter().zip(&points).zip(&point_dashpots) {
@@ -206,6 +210,54 @@ impl Coupling for Contacts {
         changed
     }
 
+    /// Each contact's stiffness at the iteration's state: friction's exact Hessian at its slip
+    /// (a sliding contact's Coulomb force is constant along its slip: no stiffness there, only
+    /// across it; the secant μλ/slip in every direction made the matrix far too stiff along
+    /// the motion and a sliding rock's Newton crept, 50–400 iterations a step, F6), a Hertz
+    /// contact's at its depth now, a face's as it presses now. The rigid bodies' matrices are
+    /// made again from them.
+    fn relinearise(&mut self, states: &[MemberState<'_>]) -> bool {
+        let e = self.smoothing;
+        let mut gaps = Vec::with_capacity(self.list.len());
+        for i in 0..self.list.len() {
+            let (gap, _, _, slip, _, _) = self.gap_and_slip(i, states);
+            gaps.push(gap);
+            // Its normal stiffness while pressed, none apart: the step's anticipating stiffness
+            // kept for a contact come apart made a sliding rock's matrix a hundred times too stiff
+            // (and the pile took a third more iterations, F6).
+            self.list[i].touching = gap < 0.0;
+            if gap < 0.0 && matches!(self.list[i].law, Law::Hertz(_)) {
+                let k = self.matrix_stiffness(i, gap, 0.0);
+                self.list[i].stiffness = k;
+            }
+            let c = &mut self.list[i];
+            let n = c.normal;
+            let plane = DMat3::IDENTITY - DMat3::from_cols(n * n.x, n * n.y, n * n.z);
+            let r = slip.length();
+            // f₀ (`smooth`): |u| beyond e, a cubic within; f₁ = f₀'/|u|, f₂ = f₀''.
+            let (f1, f2) = if r >= e {
+                (1.0 / r, 0.0)
+            } else {
+                (2.0 / e - r / (e * e), 2.0 / e - 2.0 * r / (e * e))
+            };
+            let along = if r > 0.0 { slip / r } else { DVec3::ZERO };
+            let outer = DMat3::from_cols(along * along.x, along * along.y, along * along.z);
+            c.tangent = Some(((plane - outer) * f1 + outer * f2) * (c.friction * c.lambda));
+        }
+        self.set_twist_stiffness(states);
+        // Each pressed face's stiffness as it presses now (`Patch::tangent`).
+        let measured = self.measured_depths(states);
+        let faces: Vec<_> = (0..self.patches.len())
+            .map(|p| {
+                let depths = std::array::from_fn(|k| -gaps[self.patches[p].first + k]);
+                self.face_pair(p, depths, &measured[p])
+            })
+            .collect();
+        self.pairs = faces;
+        self.rigid = self.rigid_blocks();
+        true
+    }
+
     fn rigid_coupling(&self) -> Vec<NodeCoupling> {
         self.coupling_blocks()
     }
@@ -216,5 +268,38 @@ impl Coupling for Contacts {
 
     fn rigid_stiffness(&self, member: usize) -> [[f64; 6]; 6] {
         self.rigid.get(member).copied().unwrap_or([[0.0; 6]; 6])
+    }
+
+    fn carried(&mut self) -> Option<f64> {
+        self.left.take()
+    }
+}
+
+impl Contacts {
+    /// A face's stiffness between its corners where it presses at `depths` (its points at
+    /// `measured` over curved ground), with its dashpot's exact form (on a plane: Σ c·w·wᵀ
+    /// over the points pressed at the step's start, which damp for the whole step, lifted or
+    /// not: left out of a lifted face's matrix, Newton missed most of a rock's stiffness against
+    /// the ramp, F6); `None` for neither.
+    fn face_pair(&self, p: usize, depths: [f64; 4], measured: &[f64]) -> Option<[[f64; 4]; 4]> {
+        let pressed = depths.iter().chain(measured).any(|d| *d > 0.0);
+        let form = self
+            .face_dashpots
+            .get(p)
+            .map(super::dashpot::FaceDashpot::form)
+            .filter(|f| f.iter().flatten().any(|x| *x != 0.0));
+        let mut pair = match (pressed, form) {
+            (true, _) => {
+                self.patches[p].tangent(depths, measured, self.sigma_at(p, depths, measured))
+            }
+            (false, Some(_)) => [[0.0; 4]; 4],
+            (false, None) => return None,
+        };
+        for (row, add) in pair.iter_mut().zip(form.unwrap_or_default()) {
+            row.iter_mut()
+                .zip(add)
+                .for_each(|(a, b)| *a += b / self.beta);
+        }
+        Some(pair)
     }
 }

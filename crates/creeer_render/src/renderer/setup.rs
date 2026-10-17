@@ -144,6 +144,7 @@ impl Renderer {
             sky_pipeline.luts().0,
             &shadows.cascade_layout,
         );
+        let sea = SeaPass::new(&device, &globals_layout, sky_pipeline.luts().0);
         let exposure = ExposurePass::new(&device, &globals_layout, &targets);
         let tonemap = TonemapPass::new(
             &device,
@@ -175,6 +176,7 @@ impl Renderer {
             exposure,
             last_frame: None,
             sky_pipeline,
+            sea,
             egui,
             line_vertices: Vec::new(),
             stats: RenderStats::default(),

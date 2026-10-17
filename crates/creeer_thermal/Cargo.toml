@@ -1,12 +1,16 @@
 [package]
 name = "creeer_thermal"
-description = "Lumped thermal network: conduction, convection, radiation."
+description = "Thermal networks: conduction, convection, radiation, melting, with exact energy accounting."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_materials.workspace = true
+creeer_math.workspace = true
+creeer_network.workspace = true
+rayon.workspace = true
 
 [lints]
 workspace = true

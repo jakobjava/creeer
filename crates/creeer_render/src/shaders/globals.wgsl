@@ -35,6 +35,12 @@ struct Globals {
     heatmap: vec4<f32>,
     // Cosine-weighted sky radiance at the ground for sun cosines from −0.2 to 1 (16 steps).
     sky_irradiance: array<vec4<f32>, 16>,
+    // The sea (`sea.wgsl`): x on (1/0), y polar and z equatorial radius (m), w the camera's
+    // height over it (m); its axis; the planet's centre (camera-relative); its water's colour.
+    sea: vec4<f32>,
+    sea_axis: vec4<f32>,
+    sea_center: vec4<f32>,
+    sea_color: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;

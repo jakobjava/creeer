@@ -82,6 +82,7 @@ impl ImplicitSolver {
             Scheme::Newmark => self.work.beta,
         };
         self.predict(s, scheme);
+        self.work.refer_dashpots(s);
         // Where Newton starts (the minimum it finds does not depend on it): a Taylor step
         // x + h·v + h²/2·a with the last acceleration, off by O(h³) for smooth motion. For
         // a truck crossing a bridge this saves 8 % of the iterations against x + h·v.
@@ -111,6 +112,7 @@ impl ImplicitSolver {
     pub(super) fn finish_substep(&mut self, s: &mut Structure) {
         let beta = self.work.beta;
         let w = &self.work;
+        let rest = &self.rest_inverse;
         // Every node on its own (in parallel: the same arithmetic per node, so the same bits).
         (
             s.velocity.par_iter_mut(),
@@ -124,11 +126,28 @@ impl ImplicitSolver {
             .for_each(|(i, (v, omega, a, alpha))| {
                 let (x, q) = (s.position[i], s.orientation[i]);
                 *v = (x - w.x_hat[i]) / beta;
-                *omega = so3::log(q * w.q_hat[i].conjugate()) / beta;
                 // At the minimum M·(x − x*)/β² = f: this is the new acceleration.
                 *a = (x - w.x_star[i]) / (beta * beta);
-                *alpha = so3::log(q * w.q_star[i].conjugate()) / (beta * beta);
+                let turn = so3::log(q * w.q_star[i].conjugate());
+                *alpha = turn / (beta * beta);
+                // The new angular velocity is the momentum's: what the prediction carried plus
+                // the torques' share the minimum balanced, I*·turn/β (= β·τ), at the inertia it
+                // ends with. Taken from the rotation itself, log(q·q̂⁻¹)/β, the turn and the
+                // prediction's rotation combine (BCH) and the end inertia differs from I*: a
+                // tumbling body under a torque gained momentum across it, first order in h.
+                // (A node with fixed rotation axes keeps the rotation's: its constraint's
+                // torques are not in the momentum.)
+                #[allow(clippy::float_cmp)] // Newmark's own τ = β
+                let newmark = w.tau == beta;
+                *omega = if newmark && s.free_rotation[i] == DVec3::ONE && rest[i] != DMat3::ZERO {
+                    let r = DMat3::from_quat(q);
+                    let momentum = w.momentum_star[i] + w.inertia_star[i] * turn / beta;
+                    r * (rest[i] * (r.transpose() * momentum))
+                } else {
+                    so3::log(q * w.q_hat[i].conjugate()) / beta
+                };
             });
+        self.unscale_dashpots(s);
     }
 
     /// For a rigid body (one node, no members): the dense 6×6 Newton matrix
@@ -143,6 +162,7 @@ impl ImplicitSolver {
         }
         let b2 = self.work.beta * self.work.beta;
         let inertia = self.work.inertia_star[0];
+        let dashpot = s.rigid_dashpot(self.work.beta, self.work.dashpot_scale);
         let free: [f64; 6] = std::array::from_fn(|k| {
             if k < 3 {
                 s.free_translation[0][k]
@@ -160,7 +180,7 @@ impl ImplicitSolver {
                     (false, false) => inertia.col(c - 3)[r - 3],
                     _ => 0.0,
                 };
-                mass + b2 * coupling[r][c]
+                mass + b2 * coupling[r][c] + dashpot[r][c]
             })
         }))
     }
@@ -229,6 +249,7 @@ impl ImplicitSolver {
             w.inertia_star.par_iter_mut(),
             w.rotations.par_iter_mut(),
             w.drag_rate.par_iter_mut(),
+            w.momentum_star.par_iter_mut(),
         )
             .into_par_iter()
             .enumerate()
@@ -245,40 +266,58 @@ impl ImplicitSolver {
                 };
                 let inertia_q = world_inertia(q);
                 let momentum = inertia_q * omega;
-                let transport = |q_hat: DQuat, w: DVec3| {
-                    if q_hat == q {
-                        w
-                    } else {
-                        world_inertia(q_hat).inverse() * (momentum + inertia_q * (w - omega))
-                    }
-                };
                 // x* = x̂ + β·v̂, and the new velocity will be (x − x̂)/β.
-                let (x_hat, v_hat, q_hat, w_hat) = match scheme {
-                    Scheme::BackwardEuler => (x, v, q, omega),
+                let (x_hat, v_hat, q_hat, w_hat, carried) = match scheme {
+                    Scheme::BackwardEuler => (x, v, q, omega, momentum),
                     // x_{n+1} = x + h·v + h²/4·(a + a_{n+1}), v_{n+1} = v + h/2·(a + a_{n+1}).
                     Scheme::Newmark => {
                         let q_hat = so3::exp(omega * beta) * q;
                         // Carry L to the predicted end orientation q* = exp(β·w)·q̂, which itself
                         // depends on w: a small fixed point (3 iterations reach ~1e-9 at 0.1 rad
-                        // per step). Without it L drifts 1.8 % per step for a tumbling box.
-                        let alpha = angular[i] * beta;
-                        let mut w = transport(q_hat, omega) + alpha;
+                        // per step). Without it L drifts 1.8 % per step for a tumbling box. The
+                        // last step's torques add their share as momentum, I·α·β, turned to the
+                        // end inertia with the rest: added as α·β they were taken with the last
+                        // step's inertia, and a tumbling body under a torque gained momentum
+                        // across it, first order in h (F6: 3e-4 of a flywheel's in 5 s).
+                        let rate = inertia_q * angular[i] * beta;
+                        let carry =
+                            |q_end: DQuat| world_inertia(q_end).inverse() * (momentum + rate);
+                        let mut w = if q_hat == q {
+                            omega + angular[i] * beta
+                        } else {
+                            carry(q_hat)
+                        };
                         if q_hat != q {
                             for _ in 0..3 {
                                 let q_end = so3::exp(w * beta) * q_hat;
-                                w = transport(q_end, omega) + alpha;
+                                w = carry(q_end);
                             }
                         }
-                        (x + v * beta, v + acceleration[i] * beta, q_hat, w)
+                        (
+                            x + v * beta,
+                            v + acceleration[i] * beta,
+                            q_hat,
+                            w,
+                            momentum + rate,
+                        )
                     }
                     Scheme::Bdf2 => {
                         let q_hat = so3::exp(so3::log(q * previous_q[i].conjugate()) / 3.0) * q;
-                        let w = transport(q_hat, (4.0 * omega - previous_w[i]) / 3.0);
+                        // (4·L − L₋₁)/3 in momentum, each with its own inertia (ω₋₁ was at
+                        // the previous orientation: combined as velocities a tumbling body's
+                        // momentum drifted first order in h).
+                        let before = world_inertia(previous_q[i]) * previous_w[i];
+                        let w = if q_hat == q {
+                            (4.0 * omega - previous_w[i]) / 3.0
+                        } else {
+                            world_inertia(q_hat).inverse() * ((4.0 * momentum - before) / 3.0)
+                        };
                         (
                             x + (x - previous_x[i]) / 3.0,
                             (4.0 * v - previous_v[i]) / 3.0,
                             q_hat,
                             w,
+                            (4.0 * momentum - before) / 3.0,
                         )
                     }
                 };
@@ -289,6 +328,7 @@ impl ImplicitSolver {
                 (*out.0, *out.1, *out.2, *out.3) = (x_hat, q_hat, x_star, q_star);
                 *out.5 = DMat3::from_quat(q_hat);
                 *out.6 = s.drag[i] * v.length();
+                *out.7 = carried;
             });
         self.previous_x.clone_from(&s.position);
         self.previous_v.clone_from(&s.velocity);

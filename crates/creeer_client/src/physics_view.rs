@@ -1,7 +1,7 @@
 //! The physics sandbox in the client: its simulation thread, its window and its drawing.
 
 use crate::demo::{DemoMeshes, Overlay};
-use crate::physics_sandbox::{PhysicsSandbox, PhysicsScene, PhysicsSnapshot};
+use crate::physics_sandbox::{Look, PhysicsSandbox, PhysicsScene, PhysicsSnapshot};
 use creeer_core::SimThread;
 use creeer_math::Frame64;
 use creeer_math::glam::{DQuat, DVec3, Vec3};
@@ -18,6 +18,10 @@ const BALL: Material = Material::metal([0.30, 0.30, 0.32], 0.5);
 const CONCRETE: Material = Material::dielectric([0.62, 0.61, 0.58], 0.9);
 const BROKEN: Material = Material::dielectric([0.15, 0.15, 0.15], 0.9);
 const GRANITE: Material = Material::dielectric([0.55, 0.52, 0.50], 0.85);
+const WHITE_PAINT: Material = Material::dielectric([0.9, 0.9, 0.88], 0.6);
+const CANVAS: Material = Material::dielectric([0.85, 0.35, 0.12], 0.8);
+/// Sea water seen from above: dark, smooth (its colour from within, as the sea pass has it).
+const WATER: Material = Material::dielectric([0.02, 0.07, 0.11], 0.08);
 
 /// The running physics scene.
 pub struct PhysicsView {
@@ -62,7 +66,13 @@ impl PhysicsView {
                 if ui.button("restart").clicked() {
                     self.sim = spawn(self.scene, self.tick_rate_hz);
                 }
-                ui.radio_value(overlay, Overlay::Utilisation, "show member utilisation");
+                ui.horizontal(|ui| {
+                    ui.radio_value(overlay, Overlay::Utilisation, "show member utilisation");
+                    ui.radio_value(overlay, Overlay::PartTemperature, "show temperatures");
+                });
+                for note in [&snapshot.heat, &snapshot.drive, &snapshot.fluids].into_iter().flatten() {
+                    ui.label(note);
+                }
                 let (bodies, asleep, contacts) = snapshot.counts;
                 ui.label(format!(
                     "t = {:.1} s · {bodies} bodies ({asleep} asleep) · {contacts} contacts · step {:.2} ms",
@@ -113,6 +123,8 @@ pub fn draw(
         && previous.boxes.len() == current.boxes.len()
         && previous.hulls.len() == current.hulls.len();
     let utilisation = overlay == Overlay::Utilisation;
+    let temperatures = overlay == Overlay::PartTemperature;
+    let shown = |t: f32| (temperatures && t.is_finite()).then_some(t);
     for (k, &(a, b, radius, usage, broken)) in current.beams.iter().enumerate() {
         let (a, b) = if same {
             (lerp(previous.beams[k].0, a), lerp(previous.beams[k].1, b))
@@ -134,8 +146,14 @@ pub fn draw(
                     DQuat::from_rotation_arc(DVec3::Y, along / length),
                 ),
                 scale,
-                material: if broken { BROKEN } else { STEEL },
-                heat: utilisation.then_some(usage * 100.0),
+                material: if broken {
+                    BROKEN
+                } else {
+                    incandescent(STEEL, current.beam_heat[k])
+                },
+                heat: utilisation
+                    .then_some(usage * 100.0)
+                    .or(shown(current.beam_heat[k])),
             },
         );
     }
@@ -148,7 +166,16 @@ pub fn draw(
         } else {
             (c, q)
         };
-        add_box(scene, meshes, origin, (c, q, half), CRATE);
+        let t = current.box_heat[k];
+        let material = match current.box_look[k] {
+            Look::Crate => CRATE,
+            Look::Steel => incandescent(STEEL, t),
+            Look::Concrete => CONCRETE,
+            Look::Radiator => WHITE_PAINT,
+            Look::Canvas => CANVAS,
+            Look::Water => WATER,
+        };
+        add_box(scene, meshes, origin, (c, q, half), material, shown(t));
     }
     for (k, &(c, q, index)) in current.hulls.iter().enumerate() {
         let (c, q) = if same {
@@ -182,8 +209,11 @@ pub fn draw(
             },
         );
     }
+    if let Some(fire) = current.fire {
+        fire_bed(scene, meshes, origin, fire);
+    }
     for &wall in &current.walls {
-        add_box(scene, meshes, origin, wall, CONCRETE);
+        add_box(scene, meshes, origin, wall, CONCRETE, None);
     }
 }
 
@@ -193,6 +223,7 @@ fn add_box(
     origin: DVec3,
     (c, q, half): (DVec3, DQuat, DVec3),
     material: Material,
+    heat: Option<f32>,
 ) {
     scene.add(
         meshes.cube,
@@ -200,7 +231,44 @@ fn add_box(
             frame: Frame64::new(origin + c, q),
             scale: (half * 2.0).as_vec3(),
             material,
-            heat: None,
+            heat,
         },
+    );
+}
+
+/// `base` glowing at `celsius`: steel shows a dull red from the Draper point (798 K), orange
+/// by 900 °C, yellow-white past 1300 °C (blackbody colours, Charity's table); the
+/// brightness rises steeply with temperature, as visible radiance does.
+fn incandescent(base: Material, celsius: f32) -> Material {
+    let t = celsius + 273.15;
+    // Below the Draper point, or no temperature at all (NaN).
+    if t.is_nan() || t <= 798.0 {
+        return base;
+    }
+    let colour = |k: f32| {
+        // Charity's blackbody sRGB: 1000 K #ff3800, 1500 K #ff6d00, 2000 K #ff8912.
+        let f = ((k - 1000.0) / 1000.0).clamp(0.0, 1.0);
+        [1.0, 0.22 + 0.32 * f, 0.07 * f * f]
+    };
+    let glow = ((t - 798.0) / 800.0).clamp(0.0, 1.0);
+    Material::emissive(colour(t), 8.0 * glow * glow * glow.sqrt())
+}
+
+/// A fire's bed: its glow follows its gas temperature.
+fn fire_bed(
+    scene: &mut Scene,
+    meshes: &DemoMeshes,
+    origin: DVec3,
+    (c, half, celsius): (DVec3, DVec3, f32),
+) {
+    let strength = (celsius / 900.0).clamp(0.0, 1.5) * 3.0;
+    let material = Material::emissive([1.0, 0.42, 0.08], strength);
+    add_box(
+        scene,
+        meshes,
+        origin,
+        (c, DQuat::IDENTITY, half),
+        material,
+        None,
     );
 }

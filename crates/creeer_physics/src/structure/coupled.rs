@@ -126,8 +126,16 @@ impl Coupled {
                     .filter(|b| b.0 == node)
                     .map(|b| b.1)
                     .sum();
+                // What the factorisation holds of the old stiffness: scaled by the β of the
+                // solver's own scheme it was made with (Newmark's h/2), not this step's (BDF2's
+                // 2h/3 for resting contacts, backward Euler's h for impacts), and applied turned
+                // with the node (`precondition`). Taken as β_now²·(old) instead, D took away
+                // more than the matrix ever had (78 % more under BDF2): the joint matrix was not
+                // positive definite and its solve went uphill, which ended steps as converged
+                // where they began: a frame froze 3 mm above its piers under a block (F6).
+                let (turn, factored) = (v.turns[node], v.beta() * v.beta());
                 let p = DMat3::from_diagonal(st.block_mask(node));
-                p * (now - then) * p * b2
+                p * (now * b2 - turn * then * turn.transpose() * factored) * p
             })
             .collect();
         // A_s⁻¹·E.

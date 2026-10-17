@@ -2,6 +2,7 @@
 //!
 //! F0 contains deterministic noise and the meshing spike; the production terrain arrives in F3.
 
+mod air;
 mod caps;
 #[cfg(test)]
 mod caps_tests;
@@ -23,6 +24,7 @@ pub mod monotone;
 pub mod noise;
 pub mod occlusion;
 pub mod planet;
+mod sea;
 pub mod spike;
 pub mod stream;
 #[cfg(test)]
@@ -35,7 +37,9 @@ pub mod tiles;
 #[cfg(test)]
 mod tiles_tests;
 
+pub use air::AtmosphereData;
 pub use planet::{DataError, Overrides, Planet};
+pub use sea::OceanData;
 pub use terrain::Terrain;
 
 /// Path of a file in the repository's `data/` directory (for tools and tests).

@@ -7,96 +7,11 @@
 //! coupling's stiffness on that body.
 
 use super::Structure;
+pub use super::coupling::{Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo};
 use super::minimise::minimise;
 use super::solver::{ImplicitSolver, Scheme, Timings};
-use creeer_math::glam::{DMat3, DQuat, DVec3};
+use creeer_math::glam::{DQuat, DVec3};
 use std::time::Instant;
-
-/// Positions and orientations of one member, as a coupling sees them.
-#[derive(Clone, Copy, Debug)]
-pub struct MemberState<'a> {
-    /// Node positions.
-    pub position: &'a [DVec3],
-    /// Node orientations.
-    pub orientation: &'a [DQuat],
-}
-
-/// What a coupling learns at the start of a step.
-#[derive(Clone, Copy, Debug)]
-pub struct StepInfo<'a> {
-    /// β of the integration scheme (velocity = (x − x̂)/β).
-    pub beta: f64,
-    /// Time step (s).
-    pub h: f64,
-    /// Members at the start of the step.
-    pub start: &'a [MemberState<'a>],
-    /// Members at x̂, q̂ (the velocity reference: damping acts on the change from here).
-    pub hat: &'a [MemberState<'a>],
-    /// Members one step before the start (the history the schemes extrapolate from).
-    pub previous: &'a [MemberState<'a>],
-    /// How far ahead of the start x̂ lies (s): 0 for backward Euler, h/3 for BDF2, h/2 for
-    /// Newmark.
-    pub tau: f64,
-}
-
-/// Stiffness coupling two nodes of different members: (member, node) of each side and the
-/// 6×6 block over (translation, rotation), rows of the first.
-pub type NodeCoupling = ((usize, usize), (usize, usize), [[f64; 6]; 6]);
-
-/// Energy terms coupling the members of a group.
-pub trait Coupling: Sync {
-    /// Called before every minimisation.
-    fn begin(&mut self, info: &StepInfo<'_>);
-    /// The largest remaining error of positions (m) the step may stop at, as far as the
-    /// coupling's forces need it (the solver's own tolerance applies too).
-    fn tolerance(&self) -> f64 {
-        f64::INFINITY
-    }
-    /// Contribution to the incremental potential (elastic, damping, friction).
-    fn energy(&self, states: &[MemberState<'_>]) -> f64;
-    /// Stored elastic energy only (for the energy guard).
-    fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64;
-    /// Adds the gradient of [`Self::energy`] to `gradient[member][block]` (translation
-    /// blocks, then rotation blocks).
-    fn add_gradient(&self, states: &[MemberState<'_>], gradient: &mut [Vec<DVec3>]);
-    /// Gauss-Newton stiffness the coupling adds to node 0 of a rigid-body member, as a 6×6
-    /// matrix over (translation, rotation), already including the factor of its damping.
-    fn rigid_stiffness(&self, member: usize) -> [[f64; 6]; 6];
-    /// Gauss-Newton stiffness coupling two nodes of different members, per contact: the
-    /// 6×6 block over (translation, rotation) of `(member a, node a)` (rows) and `(member b,
-    /// node b)` (columns), with the same factors as [`Self::rigid_stiffness`].
-    fn rigid_coupling(&self) -> Vec<NodeCoupling> {
-        Vec::new()
-    }
-    /// Translation stiffness the coupling adds at nodes of a structure member (3×3 blocks,
-    /// possibly several per node), for its factorised matrix.
-    fn node_stiffness(&self, _member: usize) -> Vec<(usize, DMat3)> {
-        Vec::new()
-    }
-    /// Updates lagged quantities (friction's normal force) to `states`; returns whether any
-    /// changed enough that the minimisation should continue with the new values.
-    fn update_lag(&mut self, _states: &[MemberState<'_>]) -> bool {
-        false
-    }
-}
-
-/// No coupling: a single structure on its own.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoCoupling;
-
-impl Coupling for NoCoupling {
-    fn begin(&mut self, _: &StepInfo<'_>) {}
-    fn energy(&self, _: &[MemberState<'_>]) -> f64 {
-        0.0
-    }
-    fn elastic_energy(&self, _: &[MemberState<'_>]) -> f64 {
-        0.0
-    }
-    fn add_gradient(&self, _: &[MemberState<'_>], _: &mut [Vec<DVec3>]) {}
-    fn rigid_stiffness(&self, _: usize) -> [[f64; 6]; 6] {
-        [[0.0; 6]; 6]
-    }
-}
 
 /// One structure and its solver.
 pub type Member<'a> = (&'a mut Structure, &'a mut ImplicitSolver);
@@ -153,6 +68,49 @@ fn group_energy(
     (total.0 + contact, total.1 + contact)
 }
 
+/// Where a member started a substep, and its dashpots' forces then.
+type Start = (Vec<DVec3>, Vec<DQuat>, Vec<(usize, DVec3, DVec3)>);
+
+/// The work the members' external loads and torques did since they were at `start` (J) that
+/// the energy's potential of the loads does not count. A torque has no potential as a load
+/// has (rotations do not add): its work, τ·Δθ for the rotation vector Δθ a node turned by,
+/// is credited instead; without that every joule a torque gave was taken for the
+/// integration's gain and removed (a motor in a free-floating station turned it for a
+/// second, then no more: F6). Newmark's forces are the mean of the step's two ends: a load
+/// or torque that changed did the work of its mean with the last step's, which the potential
+/// (at the load now) misses by ½·(f₋₁ − f)·Δx: unbooked, a thruster or motor switched on or
+/// off took the step for a gain and redid it by backward Euler.
+fn unbooked_work(members: &[Member<'_>], start: &[Start], newmark: bool) -> f64 {
+    let mut work = 0.0;
+    for ((s, v), (x0, q0, dashpots)) in members.iter().zip(start) {
+        for i in 0..s.node_count() {
+            let (torque, before) = (s.torque[i], v.previous_torque[i]);
+            let torque = if newmark {
+                0.5 * (torque + before)
+            } else {
+                torque
+            };
+            if torque != DVec3::ZERO {
+                work += torque.dot(crate::so3::log(s.orientation[i] * q0[i].conjugate()));
+            }
+            let change = v.previous_load[i] - s.load[i];
+            if newmark && change != DVec3::ZERO {
+                work += 0.5 * change.dot(s.position[i] - x0[i]);
+            }
+        }
+        work += s.dashpot_work(x0, q0) + s.added_work(x0, v.h);
+        // Newmark's mean took the last step's dashpots' forces too (in its accelerations).
+        if newmark {
+            for &(n, force, torque) in dashpots {
+                work += 0.5
+                    * (force.dot(s.position[n] - x0[n])
+                        + torque.dot(crate::so3::log(s.orientation[n] * q0[n].conjugate())));
+            }
+        }
+    }
+    work
+}
+
 /// Advances every member by one step of its solver, solving them jointly with `coupling`.
 /// All members must use the same scheme, time step and substeps.
 ///
@@ -189,23 +147,70 @@ pub fn step_group_with(
         if guard {
             let t = Instant::now();
             let (before, active) = group_energy(members, coupling, false);
+            // What the coupling, found anew, holds beyond what the last step left in it (a
+            // crate's faces fitted again to the curved ground under them: a millijoule a step
+            // that kept it rocking for good, F6) is no one's. It may not become motion, and no
+            // scheme undoes it: it is taken from the kinetic energy without redoing the step.
+            // (Only for bodies where the last step left them: one set down elsewhere since has
+            // contacts the last step never had.)
+            let left = coupling.carried().filter(|_| {
+                members.iter().all(|(s, v)| {
+                    s.position == v.snapshot.end_x && s.orientation == v.snapshot.end_q
+                })
+            });
+            let surplus = left.map_or(0.0, |left| {
+                (coupling.elastic_energy(&states(members)) - left).max(0.0)
+            });
             for (s, v) in members.iter_mut() {
                 v.save(s);
             }
+            // Whether any load or torque does work the loads' potential misses.
+            let acting = members.iter().any(|(s, v)| {
+                s.torque
+                    .iter()
+                    .chain(&v.previous_torque)
+                    .any(|t| *t != DVec3::ZERO)
+                    || s.load != v.previous_load
+                    || !s.dashpots.is_empty()
+                    || !s.added_mass.is_empty()
+            });
+            let start: Vec<Start> = if acting {
+                members
+                    .iter()
+                    .map(|(s, v)| {
+                        (
+                            s.position.clone(),
+                            s.orientation.clone(),
+                            v.dashpot_end.clone(),
+                        )
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            // The energy after a substep by `scheme`, less the work the loads' potential misses.
+            let net = |members: &[Member<'_>], energy: f64, scheme: Scheme| {
+                if acting {
+                    energy - unbooked_work(members, &start, scheme == Scheme::Newmark)
+                } else {
+                    energy
+                }
+            };
             members[0].1.timings.guard += t.elapsed();
             substep(members, coupling, scheme);
             let t = Instant::now();
             let (after, active_after) = group_energy(members, coupling, true);
+            let after = net(members, after, scheme);
             members[0].1.timings.guard += t.elapsed();
             // The slack scales with the energy in motion before or after the step, whichever
             // is larger: a body starting from rest in a varying field (planet gravity) makes
             // a genuine second-order energy error that the 1 nJ floor alone would reject.
             let limit = before + ENERGY_SLACK * active.max(active_after) + 1e-9;
+            let mut after = after;
             if after > limit {
                 // Fall back to ever more dissipative schemes; in non-convex contact situations
                 // even BDF2 can gain a little. As a last resort the excess is taken from the
                 // kinetic energy.
-                let mut after = after;
                 let fallbacks: &[Scheme] = match scheme {
                     Scheme::Newmark => &[Scheme::Bdf2, Scheme::BackwardEuler],
                     Scheme::Bdf2 => &[Scheme::BackwardEuler],
@@ -217,14 +222,18 @@ pub fn step_group_with(
                         v.fallbacks += 1;
                     }
                     substep(members, coupling, fallback);
-                    after = group_energy(members, coupling, true).0;
+                    after = net(members, group_energy(members, coupling, true).0, fallback);
                     if after <= limit {
                         break;
                     }
                 }
                 if after > limit {
                     remove_kinetic(members, after - before);
+                    after = before;
                 }
+            }
+            if after > limit - surplus {
+                remove_kinetic(members, after - (before - surplus));
             }
             for (s, v) in members.iter_mut() {
                 v.snapshot.end_x.clone_from(&s.position);
@@ -232,6 +241,11 @@ pub fn step_group_with(
             }
         } else {
             substep(members, coupling, scheme);
+        }
+        // What the next substep's prediction carries: these loads.
+        for (s, v) in members.iter_mut() {
+            v.previous_load.clone_from(&s.load);
+            v.previous_torque.clone_from(&s.torque);
         }
     }
     // Plastic flow and fracture, on the converged state.

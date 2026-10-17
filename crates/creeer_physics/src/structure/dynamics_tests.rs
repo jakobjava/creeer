@@ -120,4 +120,8 @@ fn state_hash_is_identical_on_every_platform() {
 // perfectly plastic the previous value (0xdb38_6119_4e85_05be) came back exactly.
 // And for the members' bowing (their geometric stiffness, `element.rs`): without it the
 // previous value (0x60ba_75d4_768b_c786) came back exactly.
-const GOLDEN_STRUCTURE_HASH: u64 = 0xeac4_63cf_00dd_3832;
+// And for rotations carried as momentum through the torques' share of a step (F6, `step.rs`:
+// predictor and end velocity; a tumbling body under a torque had gained momentum across it,
+// first order in h): with the old ones the previous value (0xeac4_63cf_00dd_3832) came back
+// exactly.
+const GOLDEN_STRUCTURE_HASH: u64 = 0x300d_52cf_aa59_26ad;

@@ -247,7 +247,7 @@ pub fn run_structures(report: &mut Report) {
 
 /// Top-layer nodes along the structure's longest horizontal axis, at the middle of the
 /// other one: where a vehicle would drive (nodes 2 m apart in these lattices).
-fn lane(s: &creeer_physics::structure::Structure) -> Vec<usize> {
+pub(crate) fn lane(s: &creeer_physics::structure::Structure) -> Vec<usize> {
     let top = s
         .position
         .iter()

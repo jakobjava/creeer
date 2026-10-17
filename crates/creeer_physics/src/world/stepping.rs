@@ -21,12 +21,17 @@ use crate::structure::group::{Coupling, MemberState, step_group_with};
 /// Longest time step of a deforming impact (s).
 pub const IMPACT_STEP: f64 = 0.5e-3;
 
-/// One group's share of a step: its bodies (moved out of the world), its contacts, its
+/// One group's share of a step: its bodies (borrowed from the world), its contacts, its
 /// friction anchors afterwards, and the global indices of its bodies.
-pub(super) type GroupWork<'a> = (Vec<Body>, Contacts, Vec<anchor::Anchor>, &'a Vec<usize>);
+pub(super) type GroupWork<'a> = (
+    Vec<&'a mut Body>,
+    Contacts,
+    Vec<anchor::Anchor>,
+    &'a Vec<usize>,
+);
 
 /// Total energy of a group: its bodies' plus the contacts' elastic energy (J).
-pub(super) fn group_energy(bodies: &[Body], contacts: &Contacts) -> f64 {
+pub(super) fn group_energy(bodies: &[&mut Body], contacts: &Contacts) -> f64 {
     let states: Vec<MemberState<'_>> = bodies
         .iter()
         .map(|b| MemberState {
@@ -38,7 +43,7 @@ pub(super) fn group_energy(bodies: &[Body], contacts: &Contacts) -> f64 {
 }
 
 /// The gaps of a group's contacts as measured (`Contacts::measured_gaps`).
-fn measured_gaps(bodies: &[Body], contacts: &Contacts) -> Vec<f64> {
+fn measured_gaps(bodies: &[&mut Body], contacts: &Contacts) -> Vec<f64> {
     let states: Vec<MemberState<'_>> = bodies
         .iter()
         .map(|b| MemberState {
@@ -50,8 +55,12 @@ fn measured_gaps(bodies: &[Body], contacts: &Contacts) -> Vec<f64> {
 }
 
 /// Advances a group by `dt`.
-pub(super) fn step(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
+pub(super) fn step(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
     let impact = contacts.list.iter().any(impact::is_impact);
+    // An impact's own books leave out the contacts found pressed in at its start (`substep`).
+    if impact {
+        contacts.set_left(None);
+    }
     let deformable = bodies.iter().any(|b| b.structure.element_count() > 0);
     if deformable && (impact || bodies.iter().any(|b| b.crushing)) {
         crush(bodies, contacts, dt);
@@ -73,7 +82,7 @@ pub(super) fn step(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
 
 /// One step with the solvers' current time step. `resolved`: the step is short enough to
 /// follow the impact's deceleration (impact substeps).
-fn substep(bodies: &mut [Body], contacts: &mut Contacts, impact: bool, resolved: bool) {
+fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, resolved: bool) {
     // The contacts' laws as this step resolves them, before any energy is measured: no
     // contact carries more at rest than the weight of the whole group and its loads.
     let weight: f64 = bodies
@@ -146,7 +155,7 @@ fn substep(bodies: &mut [Body], contacts: &mut Contacts, impact: bool, resolved:
 /// Contacts with a deforming structure get no restitution impulses: at this step its elastic rebound is resolved, and kicking
 /// its light joints off the wall would only make them chatter. Contacts between rigid
 /// bodies keep the impact law. The group keeps crushing while members flow.
-fn crush(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
+fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small count
     let n = (dt / IMPACT_STEP).ceil().max(1.0) as u32;
     let h = dt / f64::from(n);
@@ -184,7 +193,7 @@ fn crush(bodies: &mut [Body], contacts: &mut Contacts, dt: f64) {
 }
 
 /// Sets every contact's approach speed from the current velocities.
-fn refresh_approach(bodies: &[Body], contacts: &mut Contacts) {
+fn refresh_approach(bodies: &[&mut Body], contacts: &mut Contacts) {
     let velocity = |side: Side| match side {
         Side::Node {
             member,

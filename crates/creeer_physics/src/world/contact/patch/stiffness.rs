@@ -25,6 +25,12 @@ impl Patch {
     /// times the limit) would only give its corners' dashpots a stiffness no motion has.
     pub(super) fn effective(&self, layer: DMat3) -> [[f64; 4]; 4] {
         let k: [[f64; 4]; 4] = self.mass.map(|row| row.map(|m| m * self.modulus));
+        self.in_series(k, layer)
+    }
+
+    /// The material's stiffness `k` between the corners in series with the limit `layer`
+    /// (when capped), seen through the face's rigid motions.
+    fn in_series(&self, k: [[f64; 4]; 4], layer: DMat3) -> [[f64; 4]; 4] {
         let b = |c: usize| DVec3::from(self.rigid[c]);
         // Kᵦ = K·B (4 × 3), Bᵀ·K·B (3 × 3).
         let kb: [DVec3; 4] = std::array::from_fn(|r| (0..4).map(|c| b(c) * k[r][c]).sum());
@@ -48,6 +54,33 @@ impl Patch {
             std::array::from_fn(|c| (0..4).map(|m| p[r][m] * series[m][c]).sum())
         });
         std::array::from_fn(|r| std::array::from_fn(|c| (0..4).map(|m| ps[r][m] * p[m][c]).sum()))
+    }
+
+    /// The patch energy's stiffness between the corners at corner depths `depths` (and the
+    /// depths `measured` over curved ground): the material pressed there, in series with the
+    /// limit as loaded there. Where `effective` takes the whole face as pressed, this is the
+    /// exact Hessian: a face pressed along an edge is far softer against tilting than a whole
+    /// one, and the whole face's stiffness in the matrix made Newton creep (F6).
+    /// `sigma`: the face's motion there if `found`, else where its search starts.
+    pub fn tangent(
+        &self,
+        depths: [f64; 4],
+        measured: &[f64],
+        (sigma, found): (DVec3, bool),
+    ) -> [[f64; 4]; 4] {
+        let offsets = self.offsets(depths, measured);
+        if !self.capped() {
+            return self.in_series(self.material(depths, &offsets).2, DMat3::ZERO);
+        }
+        let sigma = if found {
+            sigma
+        } else {
+            self.minimise(depths, &offsets, sigma).2
+        };
+        let layer = self.layer.at(sigma).2;
+        let shifted: [f64; 4] =
+            std::array::from_fn(|k| depths[k] - DVec3::from(self.rigid[k]).dot(sigma));
+        self.in_series(self.material(shifted, &offsets).2, layer)
     }
 
     /// The material's stiffness between the corners at corner depths `depths` (N/m; κ·∫NₖNₗ

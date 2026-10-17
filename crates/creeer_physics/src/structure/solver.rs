@@ -109,6 +109,17 @@ pub struct ImplicitSolver {
     /// Accelerations at the end of the last step (Newmark).
     pub(super) acceleration: Vec<DVec3>,
     pub(super) angular_acceleration: Vec<DVec3>,
+    /// The external loads and torques of the last step: Newmark carries them into the next
+    /// (its forces are the step's two ends' mean), so the energy guard credits a step
+    /// with the work of that mean (`group.rs`).
+    pub(super) previous_load: Vec<DVec3>,
+    pub(super) previous_torque: Vec<DVec3>,
+    /// Each dashpot's force and torque at the end of the last substep (node, N, N·m): in
+    /// the accelerations Newmark carries, so in the work its next step's mean does.
+    pub(super) dashpot_end: Vec<(usize, DVec3, DVec3)>,
+    /// Each node's rest inertia inverted (zero where it has none): its angular velocity from
+    /// its momentum, R·I⁻¹·Rᵀ·L, without inverting the turned inertia every step.
+    pub(super) rest_inverse: Vec<DMat3>,
     /// Check every Newmark step for energy gain and redo it with BDF2 if it gained (default
     /// on; see `step.rs`).
     pub energy_guard: bool,
@@ -136,8 +147,18 @@ pub(super) struct Work {
     pub q_star: Vec<DQuat>,
     /// World-frame nodal inertia at q*.
     pub inertia_star: Vec<DMat3>,
+    /// The angular momentum the prediction carries to the step's end (world frame); the
+    /// minimum adds the step's torques' share, I*·turn/β, and the end velocity is the
+    /// momentum's (`finish_substep`).
+    pub momentum_star: Vec<DVec3>,
     /// Drag dashpot per node for this step: drag·|v| at its start (N·s/m).
     pub drag_rate: Vec<f64>,
+    /// Where each dashpot's node would end at its reference motion (`dashpot.rs`).
+    pub dashpot_ref: Vec<(DVec3, DQuat)>,
+    /// What the dashpots are taken times this substep (`dashpot.rs`: h/β for Newmark).
+    pub dashpot_scale: f64,
+    /// Whether the dashpots and added masses were referred to this substep's prediction.
+    pub referred: bool,
     /// Coriolis force per node for this step (N).
     pub coriolis: Vec<DVec3>,
     /// The rotating frame's fictitious torque per node for this step (N·m).
@@ -209,6 +230,20 @@ impl ImplicitSolver {
             previous_w: structure.angular_velocity.clone(),
             acceleration: vec![DVec3::ZERO; n],
             angular_acceleration: vec![DVec3::ZERO; n],
+            previous_load: structure.load.clone(),
+            previous_torque: structure.torque.clone(),
+            dashpot_end: Vec::new(),
+            rest_inverse: structure
+                .inertia
+                .iter()
+                .map(|m| {
+                    if m.determinant() > 0.0 {
+                        m.inverse()
+                    } else {
+                        DMat3::ZERO
+                    }
+                })
+                .collect(),
             energy_guard: true,
             fallbacks: 0,
             snapshot: Snapshot::default(),
@@ -219,7 +254,11 @@ impl ImplicitSolver {
                 x_star: vec![DVec3::ZERO; n],
                 q_star: vec![DQuat::IDENTITY; n],
                 inertia_star: vec![DMat3::ZERO; n],
+                momentum_star: vec![DVec3::ZERO; n],
                 drag_rate: vec![0.0; n],
+                dashpot_ref: Vec::new(),
+                dashpot_scale: 1.0,
+                referred: false,
                 coriolis: vec![DVec3::ZERO; n],
                 frame_torque: vec![DVec3::ZERO; n],
                 s_hat: vec![[0.0; MEASURES]; structure.element_count()],
@@ -276,6 +315,9 @@ impl ImplicitSolver {
     /// structure released under gravity starts with a = g, not 0).
     pub(crate) fn initial_accelerations(&mut self, s: &Structure) {
         let n = s.node_count();
+        // The accelerations now are of the loads now.
+        self.previous_load.clone_from(&s.load);
+        self.previous_torque.clone_from(&s.torque);
         let w = &mut self.work;
         w.x_star.clone_from(&s.position);
         w.q_star.clone_from(&s.orientation);
@@ -290,6 +332,9 @@ impl ImplicitSolver {
         }
         w.set_coriolis(s, None);
         // With x = x* the residual is β²·f (no inertia term, no damping).
+        // (Nor dashpots: at the motion they were linearised at they exert nothing.)
+        w.dashpot_ref.clear();
+        w.referred = false;
         w.residual(s);
         let scale = 1.0 / (w.beta * w.beta);
         for i in 0..n {

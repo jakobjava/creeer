@@ -46,9 +46,10 @@ impl ScreenshotOptions {
                 Some("temperature") => Overlay::Temperature,
                 Some("stress") => Overlay::AxialStress,
                 Some("utilisation") => Overlay::Utilisation,
+                Some("heat") => Overlay::PartTemperature,
                 Some(other) => {
                     return Err(format!(
-                        "--overlay expects off/temperature/stress/utilisation, got `{other}`"
+                        "--overlay expects off/temperature/stress/utilisation/heat, got `{other}`"
                     ));
                 }
             },
@@ -73,7 +74,7 @@ impl ScreenshotOptions {
                         .iter()
                         .find(|(_, n)| n.starts_with(name))
                         .ok_or(format!(
-                            "--physics expects bridge/crash/stacking/rock, got `{name}`"
+                            "--physics expects bridge/crash/stacking/rock/cooling/radiator/frame/flywheel/air/harbour, got `{name}`"
                         ))?
                         .0;
                     let seconds = match value_of("--physics-time") {
@@ -221,6 +222,14 @@ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std:
             "physics: t = {:.2} s, {:?} (bodies, asleep, contacts), last step {:.2} ms",
             snap.time, snap.counts, snap.step_ms
         );
+        if let Some(heat) = &snap.heat {
+            println!("physics: {heat}");
+            let most = snap.beams.iter().map(|b| b.3).fold(0.0f32, f32::max);
+            println!("physics: most used member {:.0} %", most * 100.0);
+        }
+        if let Some(drive) = &snap.drive {
+            println!("physics: {drive}");
+        }
         let at = origin + physics_view::PHYSICS_OFFSET;
         physics_view::draw(
             &mut scene,

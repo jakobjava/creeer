@@ -1,12 +1,17 @@
 [package]
 name = "creeer_logic"
-description = "Signals, logic gates, sensors and sandboxed Luau controllers."
+description = "Signals, logic gates, sensors and actuators, and sandboxed Lua 5.4 controllers."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_math.workspace = true
+libm.workspace = true
+rayon.workspace = true
+# Standard Lua 5.4 (lua.org's), built from our copy of lua-src (vendor/lua-src, ADR-0015).
+mlua = { version = "0.12.2", features = ["lua54", "vendored", "send"] }
 
 [lints]
 workspace = true

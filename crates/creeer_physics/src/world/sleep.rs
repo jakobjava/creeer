@@ -31,6 +31,19 @@ impl Body {
         }
     }
 
+    /// Takes off node `node`'s force `force` that a coupling put on for one step (air, water,
+    /// a mount): from its load, and, if the body fell asleep in that step, from the loads it
+    /// fell asleep under too. Later loads are compared with those: left in, the coupling's own
+    /// force (a drag that stopped with the body) would wake it at once, every time.
+    pub fn take_load(&mut self, node: usize, force: DVec3) {
+        self.structure.load[node] -= force;
+        if self.sleep.asleep
+            && let Some(load) = self.sleep.load.get_mut(node)
+        {
+            *load -= force;
+        }
+    }
+
     fn is_still(&self) -> bool {
         let s = &self.structure;
         s.velocity.iter().all(|v| v.length() < STILL_SPEED)

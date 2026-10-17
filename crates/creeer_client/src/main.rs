@@ -16,7 +16,7 @@
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
-//! `creeer_client --planet <orbit|high|low|surface|tunnel|night> <file.png> [--sun <deg>]`, and
+//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`, and
 //! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
 //!
 //! The F4 solar-system sandbox (button in the Sandbox window): a generated solar system with
@@ -29,10 +29,23 @@
 //! (`creeer_server`), joined at once, walking.
 
 mod app;
+mod circuit_bench;
+mod control_panel;
+mod control_rigs;
 mod demo;
+mod drive_bench;
 mod fly_camera;
 mod headless;
 mod hulls;
+mod lab;
+mod lab_ellingham;
+mod lab_plots;
+mod lab_runs;
+#[cfg(test)]
+mod lab_tests;
+mod physics_drive;
+mod physics_fluids;
+mod physics_heat;
 mod physics_rocks;
 mod physics_sandbox;
 mod physics_view;
@@ -40,6 +53,7 @@ mod planet_net;
 mod planet_shot;
 mod planet_ui;
 mod planet_view;
+mod powerhouse_panel;
 mod sandbox;
 mod system_bench;
 mod system_cmd;
@@ -49,6 +63,7 @@ mod system_shot;
 mod system_sim;
 mod system_ui;
 mod system_view;
+mod water_bench;
 
 use app::App;
 use headless::{ScreenshotOptions, bench, screenshot};

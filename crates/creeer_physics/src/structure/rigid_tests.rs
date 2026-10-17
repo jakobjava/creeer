@@ -45,7 +45,8 @@ fn free_fall_is_exact() {
 }
 
 /// Torque-free tumbling about a general axis: angular momentum (not angular velocity) is
-/// conserved, and so is the energy (measured over 10 s: 0.012 % and 0.03 %).
+/// conserved, and so is the energy (measured over 10 s: 2e-8 and 3e-5; 1.2e-4 and 3e-4 before
+/// the end velocity was taken from the momentum, F6).
 #[test]
 fn tumbling_conserves_angular_momentum_and_energy() {
     let mut s = tumbling_box(DVec3::new(1.0, 2.0, 3.0));
@@ -54,10 +55,10 @@ fn tumbling_conserves_angular_momentum_and_energy() {
     for tick in 0..600 {
         solver.step(&mut s);
         let drift = (momentum(&s) - l0).length() / l0.length();
-        assert!(drift < 1e-3, "tick {tick}: momentum drift {drift}");
+        assert!(drift < 1e-6, "tick {tick}: momentum drift {drift}");
     }
     let energy_drift = (s.energy() / e0 - 1.0).abs();
-    assert!(energy_drift < 1e-3, "energy drift {energy_drift}");
+    assert!(energy_drift < 1e-4, "energy drift {energy_drift}");
 }
 
 /// The tennis-racket (Dzhanibekov) effect: spin about the intermediate axis is unstable and
@@ -153,5 +154,31 @@ fn projectile_with_drag_matches_a_fine_reference() {
     assert!(
         (landed_t / flight - 1.0).abs() < 0.005,
         "flight {landed_t} vs {flight}"
+    );
+}
+
+/// A tumbling box under a constant torque gains exactly its impulse, τ·t, whatever its
+/// tumble: the torques' share of each step is carried as momentum. (Carried as angular
+/// velocity, through the inertia of the step before or the rotation's own end velocity, it
+/// was 6.7 % of the impulse off it in 5 s, first order in h: a reaction wheel would
+/// have spun its station up.)
+#[test]
+fn a_torque_gives_a_tumbling_body_exactly_its_impulse() {
+    let mut s = tumbling_box(DVec3::new(1.0, 2.0, 3.0));
+    let torque = DVec3::new(0.03, -0.02, 0.05);
+    s.torque[0] = torque;
+    let l0 = momentum(&s);
+    let mut solver = ImplicitSolver::new(&s, Scheme::Newmark, DT, 1);
+    let mut worst = 0.0f64;
+    for tick in 1..=300 {
+        solver.step(&mut s);
+        let impulse = torque * (f64::from(tick) * DT);
+        worst = worst.max((momentum(&s) - l0 - impulse).length());
+    }
+    let total = (torque * 5.0).length();
+    assert!(
+        worst < 1e-6 * total,
+        "momentum off its impulse by {} of it",
+        worst / total
     );
 }

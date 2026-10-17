@@ -2,9 +2,13 @@
 //! what is no save, a later version's or damaged is refused.
 //!
 //! The fixtures are saves as each version wrote them: `v1_f3_edits.bin` byte by byte from
-//! the F3 edit log's format (two edits), `v2_f5_world.bin` by this version (the scene below
-//! after half a second; `cargo test -p creeer_sim -- --ignored write_v2_fixture` writes it
-//! again, which only a new version may need). A change to how a version is written that
+//! the F3 edit log's format (two edits), `v2_f5_world.bin` by F5, `v3_f6_world.bin` by F6.2,
+//! `v4_f6_world.bin` by F6.4 and `v5_f6_world.bin` by this version (the scene below after half
+//! a second; `cargo test -p creeer_sim -- --ignored write_v5_fixture` writes it again, which
+//! only a new version may need). The scene's motion is the physics' of the version that wrote
+//! it: v2 and v3 hold the same one (nothing in it is heated), v4 the one after F6.4 carried
+//! rotations as momentum (`creeer_physics::structure::step`), v5 the one after F6 solved
+//! rigid bodies' contacts by Newton's method proper and kept the energy they held. A change to how a version is written that
 //! would not read its fixture fails here: such a change is a new version, with a migration.
 
 use super::*;
@@ -19,6 +23,9 @@ use creeer_terrain::edits::{Brush, Edit};
 
 const V1: &[u8] = include_bytes!("fixtures/v1_f3_edits.bin");
 const V2: &[u8] = include_bytes!("fixtures/v2_f5_world.bin");
+const V3: &[u8] = include_bytes!("fixtures/v3_f6_world.bin");
+const V4: &[u8] = include_bytes!("fixtures/v4_f6_world.bin");
+const V5: &[u8] = include_bytes!("fixtures/v5_f6_world.bin");
 const DT: f64 = 1.0 / 60.0;
 
 /// A crate, a ball, a player's avatar and a steel frame on level ground, half a second in,
@@ -73,15 +80,16 @@ fn scene() -> Save {
         edits,
         world,
         entities: vec![(1, None), (2, None), (5, Some("ada".into())), (8, None)],
+        water: Vec::new(),
     }
 }
 
 #[test]
-#[ignore = "writes the version 2 fixture"]
-fn write_v2_fixture() {
+#[ignore = "writes the version 5 fixture"]
+fn write_v5_fixture() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/save/fixtures/v2_f5_world.bin"
+        "/src/save/fixtures/v5_f6_world.bin"
     );
     std::fs::write(path, scene().to_bytes()).unwrap();
 }
@@ -129,10 +137,39 @@ fn the_version_2_fixture_reads_as_it_was_saved() {
     assert_eq!(save.entities, scene().entities);
     assert_eq!(save.world.bodies.len(), 4);
     assert_eq!(save.edits.len(), 1);
-    // The world in it is the scene's, bit for bit (the scene is deterministic), and saving
-    // it again gives the fixture's bytes.
+    // The world in it is version 3's, bit for bit (the same motion: nothing in it is heated,
+    // so version 3 adds nothing to it), and both are written as this version alike.
+    let v3 = Save::from_bytes(V3).unwrap();
+    assert_eq!(save.world.to_bytes(), v3.world.to_bytes());
+    assert_eq!(save.to_bytes(), v3.to_bytes());
+}
+
+#[test]
+fn the_version_3_fixture_reads_as_it_was_saved() {
+    let save = Save::from_bytes(V3).unwrap();
+    assert_eq!(save.entities, scene().entities);
+    assert_eq!(save.world.bodies.len(), 4);
+    // Written again as this version, it reads back the same.
+    let again = Save::from_bytes(&save.to_bytes()).unwrap();
+    assert_eq!(again.to_bytes(), save.to_bytes());
+}
+
+#[test]
+fn the_version_4_fixture_reads_as_it_was_saved() {
+    let save = Save::from_bytes(V4).unwrap();
+    assert_eq!(save.entities, scene().entities);
+    assert_eq!(save.world.bodies.len(), 4);
+    // Written again as this version (no energy left in its contacts: the step after it
+    // finds them anew), it reads back the same.
+    let again = Save::from_bytes(&save.to_bytes()).unwrap();
+    assert_eq!(again.to_bytes(), save.to_bytes());
+}
+
+#[test]
+fn the_version_5_fixture_reads_as_it_was_saved() {
+    let save = Save::from_bytes(V5).unwrap();
     assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
-    assert_eq!(save.to_bytes(), V2);
+    assert_eq!(save.to_bytes(), V5);
 }
 
 #[test]
@@ -172,4 +209,21 @@ fn a_section_of_a_later_version_is_skipped() {
     w.raw(&bytes[12 + (bytes.len() - 12 - r.remaining())..]);
     let read = Save::from_bytes(&w.finish()).unwrap();
     assert_eq!(read.to_bytes(), bytes);
+}
+
+/// The water moving with floating shapes comes back as it went (an optional section: a save
+/// without it reads as before, the water still).
+#[test]
+fn the_water_moving_with_floaters_is_kept() {
+    let mut save = scene();
+    save.water = vec![0.0, 128.25, 3.5e-7];
+    let back = Save::from_bytes(&save.to_bytes()).expect("reads");
+    assert_eq!(back.water, save.water);
+    let plain = scene();
+    assert!(
+        Save::from_bytes(&plain.to_bytes())
+            .expect("reads")
+            .water
+            .is_empty()
+    );
 }

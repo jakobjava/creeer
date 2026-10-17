@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 glam.workspace = true
 libm.workspace = true
+rayon.workspace = true
 
 [dev-dependencies]
 approx.workspace = true

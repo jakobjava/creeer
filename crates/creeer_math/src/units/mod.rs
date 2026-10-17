@@ -62,6 +62,22 @@ impl Dimension {
     pub const ENERGY: Self = Self::FORCE.mul(Self::LENGTH);
     /// W = J/s.
     pub const POWER: Self = Self::ENERGY.div(Self::TIME);
+    /// C = A·s.
+    pub const CHARGE: Self = Self::CURRENT.mul(Self::TIME);
+    /// V = W/A.
+    pub const VOLTAGE: Self = Self::POWER.div(Self::CURRENT);
+    /// Ω = V/A.
+    pub const RESISTANCE: Self = Self::VOLTAGE.div(Self::CURRENT);
+    /// S = A/V.
+    pub const CONDUCTANCE: Self = Self::CURRENT.div(Self::VOLTAGE);
+    /// F = C/V.
+    pub const CAPACITANCE: Self = Self::CHARGE.div(Self::VOLTAGE);
+    /// Wb = V·s.
+    pub const MAGNETIC_FLUX: Self = Self::VOLTAGE.mul(Self::TIME);
+    /// H = Wb/A.
+    pub const INDUCTANCE: Self = Self::MAGNETIC_FLUX.div(Self::CURRENT);
+    /// T = Wb/m².
+    pub const FLUX_DENSITY: Self = Self::MAGNETIC_FLUX.div(Self::AREA);
     /// Hz = 1/s.
     pub const FREQUENCY: Self = Self::NONE.div(Self::TIME);
 

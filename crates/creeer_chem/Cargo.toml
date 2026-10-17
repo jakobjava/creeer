@@ -1,12 +1,15 @@
 [package]
 name = "creeer_chem"
-description = "Chemical reactions, kinetics, equilibrium and unit operations."
+description = "Chemistry: mixtures, equilibrium, kinetics and reactors, from the species data."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_materials.workspace = true
+creeer_math.workspace = true
+creeer_network.workspace = true
 
 [lints]
 workspace = true

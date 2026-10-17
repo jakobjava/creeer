@@ -49,6 +49,9 @@ pub(crate) fn write_solver(solver: &ImplicitSolver, w: &mut Writer) {
         w.put(node);
         w.put(block);
     }
+    // Version 4: the last step's loads (what Newmark carries on).
+    w.put(&solver.previous_load);
+    w.put(&solver.previous_torque);
 }
 
 /// Reads a solver written by [`write_solver`] for `structure`.
@@ -168,6 +171,20 @@ pub(crate) fn read_solver(
         }
     }
     solver.contact_blocks = blocks;
+    // Before version 4 the last step's loads were not kept: taken as the loads now (as if
+    // they had not changed in the step before the save).
+    if r.version() >= 4 {
+        solver.previous_load = r.get()?;
+        solver.previous_torque = r.get()?;
+        let finite =
+            |v: &[DVec3]| v.len() == n && v.iter().all(|x| x.abs().max_element() <= LARGEST);
+        if !finite(&solver.previous_load) || !finite(&solver.previous_torque) {
+            return Err(r.error("a solver's loads of another structure"));
+        }
+    } else {
+        solver.previous_load.clone_from(&structure.load);
+        solver.previous_torque.clone_from(&structure.torque);
+    }
     if !solver.try_factor(&then, current) {
         return Err(r.error("a matrix that is not positive definite"));
     }

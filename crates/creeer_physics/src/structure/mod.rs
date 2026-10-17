@@ -8,12 +8,17 @@ use crate::gravity::PlanetGravity;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 use rayon::prelude::*;
 
+mod added;
 mod assemble;
 mod buckling;
 #[cfg(test)]
 mod buckling_tests;
 mod builder;
 mod coupled;
+mod coupling;
+mod dashpot;
+#[cfg(test)]
+mod dashpot_tests;
 #[cfg(test)]
 mod dynamics_tests;
 mod element;
@@ -24,6 +29,9 @@ mod flow;
 pub mod group;
 #[cfg(test)]
 mod hardening_tests;
+mod heat;
+#[cfg(test)]
+mod heat_tests;
 pub mod history;
 mod lbfgs;
 mod minimise;
@@ -44,8 +52,11 @@ mod step;
 #[cfg(test)]
 mod validation_tests;
 
+pub use added::AddedMass;
 pub use builder::StructureBuilder;
+pub use dashpot::Dashpot;
 use element::Element;
+pub use heat::BUILT_AT;
 pub use plastic::Yielding;
 pub(crate) use save::{read_solver, write_solver};
 pub use section::{Material, RateSensitivity, Section};
@@ -108,6 +119,12 @@ pub struct Structure {
     /// coefficient uses the speed at the start of each step, which keeps it implicit
     /// (stable at any speed).
     pub drag: Vec<f64>,
+    /// Loads that depend on the motion, linearised for the coming step ([`Dashpot`]): set
+    /// with the loads they belong to, before each step (not saved).
+    pub dashpots: Vec<Dashpot>,
+    /// Water moving with nodes, for the coming step ([`AddedMass`]): set before each step
+    /// (not saved).
+    pub added_mass: Vec<AddedMass>,
     /// Uniform gravitational acceleration (m/s²).
     pub gravity: DVec3,
     /// A planet's gravity in its rotating frame (`gravity.rs`), on top of `gravity`.

@@ -26,6 +26,8 @@ use creeer_math::det::{cbrt, exp, ln};
 pub struct Hertz {
     /// k = 4/3·E*·√R (N/m^{3/2}).
     pub k: f64,
+    /// The effective radius R (m): the circle it touches over has radius √(R·δ).
+    pub radius: f64,
     /// The cap.
     pub cap: Cap,
     /// From the force where each segment starts: (force, depth, ∫δ dF up to it, law).
@@ -50,6 +52,7 @@ impl Hertz {
     pub fn new(modulus: f64, radius: f64) -> Self {
         Self {
             k: 4.0 / 3.0 * modulus * radius.sqrt(),
+            radius,
             cap: Cap::NONE,
             segments: [(0.0, 0.0, 0.0, Piece::Hertz); 5],
             count: 1,

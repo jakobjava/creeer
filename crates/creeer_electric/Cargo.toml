@@ -1,12 +1,16 @@
 [package]
 name = "creeer_electric"
-description = "Modified Nodal Analysis circuit solver (DC, transient, AC phasors)."
+description = "Electrical networks: modified nodal analysis, transient and AC, with exact energy accounting."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_materials.workspace = true
+creeer_math.workspace = true
+creeer_network.workspace = true
+rayon.workspace = true
 
 [lints]
 workspace = true

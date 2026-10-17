@@ -15,7 +15,7 @@ pub mod scene;
 mod shadow;
 pub mod terrain;
 
-pub use atmosphere::{Atmosphere, Sky};
+pub use atmosphere::{Atmosphere, SeaSurface, Sky};
 pub use camera::Camera;
 pub use capture::Image;
 pub use debug_lines::{Color, DebugLines, LineVertex};

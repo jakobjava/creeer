@@ -1,0 +1,300 @@
+// Engineering materials (creeer_materials::engineering). Temperatures in °C, tables are
+// straight lines between their points and constant beyond. Every material cites its sources;
+// where a standard tabulates a property against temperature, the table follows it.
+//
+// Shorthand for the sources:
+// - EN 1993-1-2: Eurocode 3, steel structures, structural fire design (reduction factors
+//   Table 3.1; thermal conductivity 3.4.1.3; specific heat 3.4.1.2; elongation 3.4.1.1).
+// - EN 1999-1-2: Eurocode 9, aluminium structures, fire design (Table 1, Fig. 1).
+// - EN 1992-1-2: Eurocode 2, concrete structures, fire design (3.3.3 conductivity upper
+//   limit, 3.3.2 specific heat of dry concrete, Table 3.1 siliceous aggregate).
+// - ASM: ASM Handbook vol. 2 (non-ferrous) and the ASM Metals Handbook desk edition.
+[
+    (
+        id: "steel_s235",
+        name: "S235 structural steel",
+        kind: Metal,
+        density: "7850 kg/m^3",
+        // EN 1993-1-2 Table 3.1: k_E,θ × 210 GPa.
+        youngs_modulus: [
+            ("20 °C", "210 GPa"), ("100 °C", "210 GPa"), ("200 °C", "189 GPa"),
+            ("300 °C", "168 GPa"), ("400 °C", "147 GPa"), ("500 °C", "126 GPa"),
+            ("600 °C", "65.1 GPa"), ("700 °C", "27.3 GPa"), ("800 °C", "18.9 GPa"),
+            ("900 °C", "14.175 GPa"), ("1000 °C", "9.45 GPa"), ("1100 °C", "4.725 GPa"),
+        ],
+        // The same reduction, with G = 80.8 GPa at room temperature (ν = 0.3).
+        shear_modulus: [
+            ("20 °C", "80.8 GPa"), ("100 °C", "80.8 GPa"), ("200 °C", "72.72 GPa"),
+            ("300 °C", "64.64 GPa"), ("400 °C", "56.56 GPa"), ("500 °C", "48.48 GPa"),
+            ("600 °C", "25.048 GPa"), ("700 °C", "10.504 GPa"), ("800 °C", "7.272 GPa"),
+            ("900 °C", "5.454 GPa"), ("1000 °C", "3.636 GPa"), ("1100 °C", "1.818 GPa"),
+        ],
+        // EN 1993-1-2 Table 3.1: k_y,θ × 235 MPa.
+        yield_strength: [
+            ("20 °C", "235 MPa"), ("400 °C", "235 MPa"), ("500 °C", "183.3 MPa"),
+            ("600 °C", "110.45 MPa"), ("700 °C", "54.05 MPa"), ("800 °C", "25.85 MPa"),
+            ("900 °C", "14.1 MPa"), ("1000 °C", "9.4 MPa"), ("1100 °C", "4.7 MPa"),
+        ],
+        // EN 10025-2 (360 MPa minimum), reduced with the yield strength above 400 °C.
+        ultimate_strength: [
+            ("20 °C", "360 MPa"), ("400 °C", "360 MPa"), ("500 °C", "280.8 MPa"),
+            ("600 °C", "169.2 MPa"), ("700 °C", "82.8 MPa"), ("800 °C", "39.6 MPa"),
+            ("900 °C", "21.6 MPa"), ("1000 °C", "14.4 MPa"), ("1100 °C", "7.2 MPa"),
+        ],
+        // EN 10025-2: A = 26 %; plateau to 1.5 %, ultimate at 18 % (ADR-0005); Cowper–Symonds
+        // for mild steel (D = 40.4 /s, q = 5), static strengths at 2.5e-4 /s.
+        elongation: 0.26,
+        hardening_start: 0.015,
+        uniform_elongation: 0.18,
+        rate: Some(("40.4 s^-1", 5.0, "2.5e-4 s^-1")),
+        damping: 0.001,
+        // EN 1993-1-2 3.4.1.3: λ = 54 − 0.0333·θ, 27.3 above 800 °C.
+        conductivity: [("20 °C", "53.33 W/(m·K)"), ("800 °C", "27.36 W/(m·K)"), ("1200 °C", "27.3 W/(m·K)")],
+        // EN 1993-1-2 3.4.1.2, with its peak at the austenite transition (735 °C).
+        specific_heat: [
+            ("20 °C", "439.8 J/(kg·K)"), ("100 °C", "487.6 J/(kg·K)"), ("200 °C", "529.8 J/(kg·K)"),
+            ("300 °C", "564.7 J/(kg·K)"), ("400 °C", "605.9 J/(kg·K)"), ("500 °C", "666.5 J/(kg·K)"),
+            ("600 °C", "759.9 J/(kg·K)"), ("700 °C", "1008.2 J/(kg·K)"), ("730 °C", "2291 J/(kg·K)"),
+            ("735 °C", "5000 J/(kg·K)"), ("740 °C", "2525 J/(kg·K)"), ("760 °C", "1159.5 J/(kg·K)"),
+            ("800 °C", "803.3 J/(kg·K)"), ("900 °C", "650.4 J/(kg·K)"), ("1200 °C", "650 J/(kg·K)"),
+        ],
+        // EN 1993-1-2 3.4.1.1, the derivative of its thermal elongation: none while it
+        // transforms (750–860 °C).
+        expansion: [
+            ("20 °C", "1.216e-5 K^-1"), ("750 °C", "1.8e-5 K^-1"), ("751 °C", "0 K^-1"),
+            ("859 °C", "0 K^-1"), ("860 °C", "2e-5 K^-1"), ("1200 °C", "2e-5 K^-1"),
+        ],
+        // ASM, low-carbon steel (1008).
+        resistivity: [
+            ("20 °C", "1.42e-7 Ω·m"), ("100 °C", "1.90e-7 Ω·m"), ("200 °C", "2.63e-7 Ω·m"),
+            ("400 °C", "4.50e-7 Ω·m"), ("600 °C", "7.28e-7 Ω·m"), ("800 °C", "10.73e-7 Ω·m"),
+            ("1000 °C", "11.6e-7 Ω·m"),
+        ],
+        // EN 1993-1-2 2.2(2): ε = 0.7 for carbon steel; oxidised or painted, it absorbs
+        // sunlight about as well.
+        emissivity: 0.7,
+        absorptivity: 0.7,
+        // Low-carbon steel: solidus ≈ 1495 °C, liquidus ≈ 1525 °C, heat of fusion ≈ 270 kJ/kg.
+        melting: Some(("1495 °C", "1525 °C", "270 kJ/kg")),
+        sources: "EN 1993-1-1, EN 1993-1-2, EN 10025-2, ASM (resistivity, melting)",
+    ),
+    (
+        id: "aluminium_6061_t6",
+        name: "Aluminium 6061-T6",
+        kind: Metal,
+        density: "2700 kg/m^3",
+        // EN 1999-1-2 Fig. 1 (modulus against temperature).
+        youngs_modulus: [
+            ("20 °C", "68.9 GPa"), ("100 °C", "68.2 GPa"), ("150 °C", "66.8 GPa"),
+            ("200 °C", "64.1 GPa"), ("250 °C", "59.3 GPa"), ("300 °C", "53.7 GPa"),
+            ("350 °C", "46.9 GPa"), ("400 °C", "37.2 GPa"),
+        ],
+        shear_modulus: [
+            ("20 °C", "26 GPa"), ("100 °C", "25.7 GPa"), ("150 °C", "25.2 GPa"),
+            ("200 °C", "24.2 GPa"), ("250 °C", "22.4 GPa"), ("300 °C", "20.3 GPa"),
+            ("350 °C", "17.7 GPa"), ("400 °C", "14.0 GPa"),
+        ],
+        // EN 1999-1-2 Table 1, 6061-T6: k_0,θ × 276 MPa (5 % kept at 400 °C).
+        yield_strength: [
+            ("20 °C", "276 MPa"), ("100 °C", "262.2 MPa"), ("150 °C", "251.2 MPa"),
+            ("200 °C", "218 MPa"), ("250 °C", "151.8 MPa"), ("300 °C", "85.6 MPa"),
+            ("350 °C", "27.6 MPa"), ("400 °C", "13.8 MPa"),
+        ],
+        ultimate_strength: [
+            ("20 °C", "310 MPa"), ("100 °C", "294.5 MPa"), ("150 °C", "282.1 MPa"),
+            ("200 °C", "244.9 MPa"), ("250 °C", "170.5 MPa"), ("300 °C", "96.1 MPa"),
+            ("350 °C", "31 MPa"), ("400 °C", "15.5 MPa"),
+        ],
+        // ASM: A = 12 %; it hardens from yield on, ultimate near 8 %.
+        elongation: 0.12,
+        hardening_start: 0.0,
+        uniform_elongation: 0.08,
+        damping: 0.001,
+        conductivity: "167 W/(m·K)",
+        specific_heat: [("20 °C", "896 J/(kg·K)"), ("300 °C", "1010 J/(kg·K)"), ("550 °C", "1100 J/(kg·K)")],
+        expansion: [("20 °C", "2.36e-5 K^-1"), ("300 °C", "2.6e-5 K^-1"), ("550 °C", "2.9e-5 K^-1")],
+        // ASM: 3.99e-8 Ω·m at 20 °C, about +0.33 %/K.
+        resistivity: [("20 °C", "3.99e-8 Ω·m"), ("300 °C", "7.68e-8 Ω·m"), ("550 °C", "10.97e-8 Ω·m")],
+        // Mill finish (oxide film).
+        emissivity: 0.1,
+        absorptivity: 0.2,
+        melting: Some(("582 °C", "652 °C", "390 kJ/kg")),
+        sources: "ASM Handbook vol. 2, EN 1999-1-2",
+    ),
+    (
+        id: "copper_c11000",
+        name: "Copper C11000 (annealed)",
+        kind: Metal,
+        density: "8940 kg/m^3",
+        youngs_modulus: "117 GPa",
+        shear_modulus: "44 GPa",
+        yield_strength: "69 MPa",
+        ultimate_strength: "220 MPa",
+        elongation: 0.45,
+        hardening_start: 0.0,
+        uniform_elongation: 0.35,
+        damping: 0.001,
+        conductivity: [("20 °C", "391 W/(m·K)"), ("300 °C", "380 W/(m·K)"), ("600 °C", "366 W/(m·K)"), ("900 °C", "352 W/(m·K)")],
+        specific_heat: [("20 °C", "385 J/(kg·K)"), ("200 °C", "397 J/(kg·K)"), ("400 °C", "417 J/(kg·K)"), ("600 °C", "432 J/(kg·K)"), ("900 °C", "460 J/(kg·K)")],
+        expansion: [("20 °C", "1.65e-5 K^-1"), ("300 °C", "1.77e-5 K^-1"), ("600 °C", "1.93e-5 K^-1"), ("900 °C", "2.1e-5 K^-1")],
+        // CRC Handbook (pure copper), the reference for conductor sizing.
+        resistivity: [
+            ("20 °C", "1.69e-8 Ω·m"), ("100 °C", "2.23e-8 Ω·m"), ("200 °C", "2.89e-8 Ω·m"),
+            ("400 °C", "4.22e-8 Ω·m"), ("600 °C", "5.61e-8 Ω·m"), ("800 °C", "7.07e-8 Ω·m"),
+            ("1000 °C", "8.62e-8 Ω·m"),
+        ],
+        // Polished.
+        emissivity: 0.05,
+        absorptivity: 0.3,
+        melting: Some(("1084.6 °C", "1084.6 °C", "205 kJ/kg")),
+        sources: "ASM Handbook vol. 2, CRC Handbook of Chemistry and Physics (resistivity)",
+    ),
+    (
+        id: "titanium_6al4v",
+        name: "Titanium Ti-6Al-4V (annealed)",
+        kind: Metal,
+        density: "4430 kg/m^3",
+        youngs_modulus: [("20 °C", "113.8 GPa"), ("300 °C", "100 GPa"), ("500 °C", "90 GPa")],
+        shear_modulus: [("20 °C", "44 GPa"), ("300 °C", "38.7 GPa"), ("500 °C", "34.8 GPa")],
+        yield_strength: [("20 °C", "880 MPa"), ("200 °C", "700 MPa"), ("400 °C", "590 MPa"), ("540 °C", "490 MPa")],
+        ultimate_strength: [("20 °C", "950 MPa"), ("200 °C", "790 MPa"), ("400 °C", "680 MPa"), ("540 °C", "590 MPa")],
+        elongation: 0.14,
+        hardening_start: 0.0,
+        uniform_elongation: 0.08,
+        damping: 0.001,
+        conductivity: [("20 °C", "6.7 W/(m·K)"), ("200 °C", "9.0 W/(m·K)"), ("500 °C", "12.6 W/(m·K)")],
+        specific_heat: [("20 °C", "526 J/(kg·K)"), ("500 °C", "670 J/(kg·K)")],
+        expansion: [("20 °C", "8.6e-6 K^-1"), ("500 °C", "9.7e-6 K^-1")],
+        resistivity: [("20 °C", "1.78e-6 Ω·m"), ("500 °C", "2.0e-6 Ω·m")],
+        emissivity: 0.3,
+        absorptivity: 0.6,
+        melting: Some(("1604 °C", "1660 °C", "290 kJ/kg")),
+        sources: "ASM Materials Properties Handbook: Titanium Alloys",
+    ),
+    (
+        id: "spruce_c24",
+        name: "Spruce timber C24 (along the grain)",
+        kind: Wood,
+        // EN 338, C24: ρ_mean 420 kg/m³, E_0,mean 11 GPa, G_mean 0.69 GPa, f_m,k 24 MPa.
+        // Brittle in the beam model: it breaks at its bending strength.
+        density: "420 kg/m^3",
+        youngs_modulus: "11 GPa",
+        shear_modulus: "0.69 GPa",
+        yield_strength: "24 MPa",
+        ultimate_strength: "24 MPa",
+        compressive_strength: Some("21 MPa"),
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.01,
+        conductivity: "0.13 W/(m·K)",
+        specific_heat: "1600 J/(kg·K)",
+        expansion: "4e-6 K^-1",
+        // Air-dry timber (12 % moisture); far higher when oven-dry.
+        resistivity: "1e11 Ω·m",
+        emissivity: 0.9,
+        absorptivity: 0.6,
+        // Pyrolysis and ignition near 300 °C.
+        decomposes: Some("300 °C"),
+        sources: "EN 338 (C24), EN 1995-1-2 (charring), Forest Products Laboratory Wood Handbook",
+    ),
+    (
+        id: "concrete_c30",
+        name: "Concrete C30/37 (plain)",
+        kind: Concrete,
+        // EN 1992-1-1 Table 3.1: E_cm 33 GPa, f_ctm 2.9 MPa, f_cm 38 MPa; ν = 0.2. Unreinforced it
+        // cracks at its tensile strength (the beam model's strength is symmetric).
+        density: "2400 kg/m^3",
+        youngs_modulus: "33 GPa",
+        shear_modulus: "13.75 GPa",
+        // EN 1992-1-2 3.2.2.2: tensile strength falls linearly to nothing at 600 °C (10 % kept).
+        yield_strength: [("20 °C", "2.9 MPa"), ("100 °C", "2.9 MPa"), ("600 °C", "0.29 MPa")],
+        ultimate_strength: [("20 °C", "2.9 MPa"), ("100 °C", "2.9 MPa"), ("600 °C", "0.29 MPa")],
+        compressive_strength: Some("38 MPa"),
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.005,
+        // EN 1992-1-2 3.3.3, upper limit.
+        conductivity: [("20 °C", "1.95 W/(m·K)"), ("200 °C", "1.55 W/(m·K)"), ("400 °C", "1.19 W/(m·K)"), ("600 °C", "0.92 W/(m·K)"), ("800 °C", "0.72 W/(m·K)"), ("1200 °C", "0.60 W/(m·K)")],
+        // EN 1992-1-2 3.3.2, dry.
+        specific_heat: [("20 °C", "900 J/(kg·K)"), ("100 °C", "900 J/(kg·K)"), ("200 °C", "1000 J/(kg·K)"), ("400 °C", "1100 J/(kg·K)"), ("1200 °C", "1100 J/(kg·K)")],
+        expansion: "1e-5 K^-1",
+        // Dry concrete; moist concrete conducts far better.
+        resistivity: "1e7 Ω·m",
+        emissivity: 0.7,
+        absorptivity: 0.65,
+        sources: "EN 1992-1-1, EN 1992-1-2",
+    ),
+    (
+        id: "glass_soda_lime",
+        name: "Soda-lime glass (annealed)",
+        kind: Glass,
+        // EN 572-1: characteristic bending strength 45 MPa; brittle.
+        density: "2500 kg/m^3",
+        youngs_modulus: "70 GPa",
+        shear_modulus: "29 GPa",
+        yield_strength: "45 MPa",
+        ultimate_strength: "45 MPa",
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.001,
+        conductivity: "1.0 W/(m·K)",
+        specific_heat: "840 J/(kg·K)",
+        expansion: "9e-6 K^-1",
+        resistivity: "1e10 Ω·m",
+        emissivity: 0.92,
+        absorptivity: 0.1,
+        // Softening point.
+        decomposes: Some("720 °C"),
+        sources: "EN 572-1, EN 16612",
+    ),
+    (
+        id: "ice",
+        name: "Water ice (Ih)",
+        kind: Ice,
+        density: "917 kg/m^3",
+        youngs_modulus: "9.3 GPa",
+        shear_modulus: "3.5 GPa",
+        yield_strength: "1.0 MPa",
+        ultimate_strength: "1.0 MPa",
+        compressive_strength: Some("5 MPa"),
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.005,
+        // Above its melting it is liquid water: IAPWS-95 at 1 atm (Wagner & Pruß 2002).
+        conductivity: [("-50 °C", "2.76 W/(m·K)"), ("-20 °C", "2.39 W/(m·K)"), ("0 °C", "2.22 W/(m·K)"), ("1 °C", "0.563 W/(m·K)"), ("25 °C", "0.607 W/(m·K)"), ("100 °C", "0.679 W/(m·K)")],
+        specific_heat: [("-50 °C", "1740 J/(kg·K)"), ("-20 °C", "1950 J/(kg·K)"), ("0 °C", "2050 J/(kg·K)"), ("1 °C", "4217 J/(kg·K)"), ("25 °C", "4181 J/(kg·K)"), ("50 °C", "4181 J/(kg·K)"), ("100 °C", "4216 J/(kg·K)")],
+        expansion: "5.1e-5 K^-1",
+        resistivity: "1e8 Ω·m",
+        emissivity: 0.97,
+        absorptivity: 0.4,
+        melting: Some(("0 °C", "0 °C", "333.55 kJ/kg")),
+        sources: "Petrenko & Whitworth, Physics of Ice (1999); CRC Handbook; IAPWS-95 (liquid)",
+    ),
+    (
+        id: "granite",
+        name: "Granite",
+        kind: Rock,
+        density: "2650 kg/m^3",
+        youngs_modulus: "50 GPa",
+        shear_modulus: "20 GPa",
+        yield_strength: "10 MPa",
+        ultimate_strength: "10 MPa",
+        compressive_strength: Some("200 MPa"),
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.005,
+        conductivity: [("20 °C", "2.9 W/(m·K)"), ("300 °C", "2.2 W/(m·K)"), ("600 °C", "1.9 W/(m·K)")],
+        specific_heat: [("20 °C", "790 J/(kg·K)"), ("500 °C", "1000 J/(kg·K)")],
+        expansion: "8e-6 K^-1",
+        resistivity: "1e9 Ω·m",
+        emissivity: 0.9,
+        absorptivity: 0.55,
+        melting: Some(("1215 °C", "1260 °C", "400 kJ/kg")),
+        sources: "Robertson (1988), USGS Open-File Report 88-441; Goodman, Rock Mechanics",
+    ),
+]

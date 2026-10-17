@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
 //!
-//! `creeer_client --planet <orbit|high|low|surface|tunnel|night> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -79,6 +79,27 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "night" => crate::planet_view::place(up * terrain.planet().radius * 3.2, -up),
         "high" => view.ground_camera(up, 20_000.0, east, 25f64.to_radians()),
         "low" => view.ground_camera(up, 300.0, east, 12f64.to_radians()),
+        // A coast (F6.6): low land with the sea 3 km on, looked at from 200 m up towards it.
+        "coast" => {
+            let (at, seaward) = fibonacci_sphere(20_000)
+                .filter(|&d| (5.0..60.0).contains(&terrain.surface_height(d)))
+                .find_map(|d| {
+                    let (e, _) = creeer_terrain::geology::deposits::tangent_frame(d);
+                    let n = d.cross(e);
+                    (0..8)
+                        .map(|k| {
+                            let (s, c) = creeer_math::det::sin_cos(
+                                f64::from(k) * std::f64::consts::FRAC_PI_4,
+                            );
+                            e * c + n * s
+                        })
+                        .find(|&t| terrain.surface_height((d + t * 6e-3).normalize()) < -20.0)
+                        .map(|t| (d, t))
+                })
+                .ok_or("no coast found")?;
+            view.day_fraction = day_for_sun(&view, at, sun_elevation);
+            view.ground_camera(at, 200.0, seaward, 6f64.to_radians())
+        }
         "surface" => {
             // Drop a few crates and balls in front of the camera and let them land.
             let ahead = view.ground_camera(up, 2.0, east, 0.0);

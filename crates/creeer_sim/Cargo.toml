@@ -7,10 +7,17 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_chem.workspace = true
+creeer_electric.workspace = true
+creeer_fluids.workspace = true
+creeer_logic.workspace = true
+creeer_materials.workspace = true
 creeer_math.workspace = true
+creeer_mech.workspace = true
 creeer_orbit.workspace = true
 creeer_physics.workspace = true
 creeer_terrain.workspace = true
+creeer_thermal.workspace = true
 rayon.workspace = true
 
 [lints]
