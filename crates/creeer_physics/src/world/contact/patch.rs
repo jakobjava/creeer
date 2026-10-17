@@ -302,6 +302,7 @@ impl Patch {
         offsets: &[[f64; 3]],
         start: DVec3,
     ) -> (f64, [f64; 4], DVec3) {
+        crate::profile::add(crate::profile::Slot::FaceSearches, 1);
         // Pressed nowhere: on a plane, the depth across the face is a blend of the corners'.
         let nowhere = if offsets.is_empty() {
             depths.iter().all(|&d| d <= 0.0)

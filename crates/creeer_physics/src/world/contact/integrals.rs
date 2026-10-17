@@ -6,16 +6,26 @@
 //! less the corner where f < 0, a thin pressed strip along an edge was the difference of two
 //! nearly equal numbers: its energy and forces were noise in their leading digits, F5.)
 
-/// The polygon where f > 0, its corners in the triangle's weights (in order around it),
-/// with f there.
-fn positive_part(f: [f64; 3]) -> Vec<([f64; 3], f64)> {
-    let mut polygon = Vec::with_capacity(4);
+/// A corner of the part where f > 0: its weights in the triangle, and f there.
+type Corner = ([f64; 3], f64);
+
+/// The polygon where f > 0 (at most four corners: a triangle cut by a line), its corners in
+/// order around it, and how many there are. On the stack: a rock pile's faces integrate a
+/// hundred thousand partly pressed triangles a tick, and allocating their polygons cost a
+/// fifth of the faces' laws.
+fn positive_part(f: [f64; 3]) -> ([Corner; 4], usize) {
+    let mut polygon = [([0.0; 3], 0.0); 4];
+    let mut len = 0;
+    let mut push = |c: Corner| {
+        polygon[len] = c;
+        len += 1;
+    };
     for i in 0..3 {
         let j = (i + 1) % 3;
         let mut corner = [0.0; 3];
         corner[i] = 1.0;
         if f[i] > 0.0 {
-            polygon.push((corner, f[i]));
+            push((corner, f[i]));
         }
         if (f[i] > 0.0) != (f[j] > 0.0) {
             // Where the edge from i to j crosses f = 0: s from i, 1 − s = f[j]/(f[j] − f[i]).
@@ -23,15 +33,15 @@ fn positive_part(f: [f64; 3]) -> Vec<([f64; 3], f64)> {
             let mut cut = [0.0; 3];
             cut[i] = f[j] / (f[j] - f[i]);
             cut[j] = s;
-            polygon.push((cut, 0.0));
+            push((cut, 0.0));
         }
     }
-    polygon
+    (polygon, len)
 }
 
 /// The fan of triangles of `polygon`: each sub-triangle's area per the triangle's area, and
 /// its corners.
-fn fan(polygon: &[([f64; 3], f64)]) -> impl Iterator<Item = (f64, [([f64; 3], f64); 3])> + '_ {
+fn fan(polygon: &[Corner]) -> impl Iterator<Item = (f64, [Corner; 3])> + '_ {
     (1..polygon.len().saturating_sub(1)).map(move |k| {
         let corners = [polygon[0], polygon[k], polygon[k + 1]];
         let [a, b, c] = corners.map(|p| p.0);
@@ -56,8 +66,14 @@ pub fn square_integral(f: [f64; 3], area: f64) -> (f64, [f64; 3]) {
         ];
         return (integral, gradient);
     }
+    let (polygon, len) = positive_part(f);
+    cut_square(&polygon[..len], area)
+}
+
+/// [`square_integral`] over the positive part `polygon` of a triangle cut by f = 0.
+fn cut_square(polygon: &[Corner], area: f64) -> (f64, [f64; 3]) {
     let (mut integral, mut gradient) = (0.0, [0.0; 3]);
-    for (ratio, corners) in fan(&positive_part(f)) {
+    for (ratio, corners) in fan(polygon) {
         let sub = area * ratio;
         let v = corners.map(|c| c.1);
         integral += sub / 6.0
@@ -73,23 +89,43 @@ pub fn square_integral(f: [f64; 3], area: f64) -> (f64, [f64; 3]) {
     (integral, gradient)
 }
 
+#[cfg(test)]
 /// ∫ φₐ·φᵦ over the part of a triangle where f > 0 (φ the corners' linear weights): half
 /// the Hessian of [`square_integral`], which is continuous as the cut moves.
 pub fn pressed_mass(f: [f64; 3], area: f64) -> [[f64; 3]; 3] {
+    let (polygon, len) = positive_part(f);
+    cut_mass(&polygon[..len], area)
+}
+
+/// [`pressed_mass`] over the positive part `polygon` of a triangle cut by f = 0. Symmetric:
+/// each pair once (its products and sums are the same numbers either way round).
+fn cut_mass(polygon: &[Corner], area: f64) -> [[f64; 3]; 3] {
     let mut mass = [[0.0; 3]; 3];
-    for (ratio, corners) in fan(&positive_part(f)) {
+    for (ratio, corners) in fan(polygon) {
         let sub = area * ratio;
         let w = corners.map(|c| c.0);
-        for (a, row) in mass.iter_mut().enumerate() {
-            for (b, m) in row.iter_mut().enumerate() {
+        let sums: [f64; 3] = std::array::from_fn(|a| w.iter().map(|p| p[a]).sum::<f64>());
+        for a in 0..3 {
+            for b in a..3 {
                 let products: f64 = w.iter().map(|p| p[a] * p[b]).sum();
-                let sums =
-                    w.iter().map(|p| p[a]).sum::<f64>() * w.iter().map(|p| p[b]).sum::<f64>();
-                *m += sub / 12.0 * (products + sums);
+                mass[a][b] += sub / 12.0 * (products + sums[a] * sums[b]);
+                if b > a {
+                    mass[b][a] = mass[a][b];
+                }
             }
         }
     }
     mass
+}
+
+/// [`square_integral`] and [`pressed_mass`] of a triangle pressed in part, its positive part
+/// found once for both.
+pub fn cut_square_and_mass(f: [f64; 3], area: f64) -> ((f64, [f64; 3]), [[f64; 3]; 3]) {
+    let (polygon, len) = positive_part(f);
+    (
+        cut_square(&polygon[..len], area),
+        cut_mass(&polygon[..len], area),
+    )
 }
 
 /// The area of the part of a triangle of area `area` where f > 0 (f linear, `f` at the
@@ -98,5 +134,6 @@ pub fn pressed_area(f: [f64; 3], area: f64) -> f64 {
     if f.iter().all(|&x| x > 0.0) {
         return area;
     }
-    fan(&positive_part(f)).map(|(ratio, _)| area * ratio).sum()
+    let (polygon, len) = positive_part(f);
+    fan(&polygon[..len]).map(|(ratio, _)| area * ratio).sum()
 }

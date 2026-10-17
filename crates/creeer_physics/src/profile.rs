@@ -53,10 +53,14 @@ pub enum Slot {
     Sweeps,
     Increments,
     FlowIterations,
+    /// Faces' laws: their searches for the face's motion, and the material's integrations
+    /// over the face.
+    FaceSearches,
+    FaceIntegrations,
 }
 
 /// How many slots there are.
-pub const SLOTS: usize = Slot::FlowIterations as usize + 1;
+pub const SLOTS: usize = Slot::FaceIntegrations as usize + 1;
 
 #[cfg(feature = "profile")]
 static TOTALS: [std::sync::atomic::AtomicU64; SLOTS] =
@@ -145,6 +149,8 @@ pub const NAMES: [(Slot, &str); SLOTS] = [
     (Slot::Sweeps, "sweeps"),
     (Slot::Increments, "increments"),
     (Slot::FlowIterations, "flow iterations"),
+    (Slot::FaceSearches, "face searches"),
+    (Slot::FaceIntegrations, "face integrations"),
 ];
 
 /// Whether a slot holds a count (else nanoseconds).
@@ -164,5 +170,7 @@ pub fn is_count(slot: Slot) -> bool {
             | Slot::Sweeps
             | Slot::Increments
             | Slot::FlowIterations
+            | Slot::FaceSearches
+            | Slot::FaceIntegrations
     )
 }
