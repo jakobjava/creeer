@@ -1,6 +1,6 @@
 # ADR-0017: Fast ticks without loss: impacts, Newton and friction redesigned
 
-- **Status:** Proposed (2026-10-17), for review before anything is built
+- **Status:** Accepted (2026-10-17), in progress: the user chose all parts, for the best times with maximum realism and so that later, larger simulations gain too. B1 and C are measured and not adopted (below).
 - **Context:** branch `lag-fix`. The sandbox's bridge under a landing block froze for a moment and its rock pile lagged. Performance and maximum realism together are paramount (plan.md): the target is a worst tick of **2–3 ms per scene** on the development machine, with every validation test passing at its present tolerance.
 - **Builds on:** ADR-0004 (the implicit structure solver), ADR-0005 (contacts, impacts, plasticity; its F6 Newton amendment)
 - **Evidence:** `creeer_client --physics-bench` (timing gates), `physics_bench_tests.rs` (work gates), `physics_profile.rs` (`--features creeer_physics/profile`), the Hessian check (`CREEER_CHECK_HESSIAN=1`)
@@ -140,3 +140,46 @@ These are estimates, each to be replaced by measurement:
 1. The order: B1 → C → A1 → A2, each measured before the next. The alternative is A1 first, since the bridge is the worst scene.
 2. Whether the impact substeps may vary in size (A1). This changes the time discretisation, within the accuracy proven above.
 3. Whether subcycling (Not proposed) should be started now rather than held in reserve.
+
+## Decision
+
+The user's answer (2026-10-17): optimise for the best times with maximum realism, and so that similar simulations later in the game gain too. All parts are to be built, each kept only where its measurements pass; subcycling is held in reserve for impacts that A1 cannot make cheap enough.
+
+## Measured: B1 and C (2026-10-17)
+
+### How it was measured
+
+- **Where the iterations go.** A trace of every iteration in the rock pile's worst ticks (groups of four or more rocks): 51 % come after a friction refresh, 33 % are cut short where a contact closes (`Coupling::closing`), 12 % backtrack, and 44 % are spent within a thousand tolerances of the end. Newton converges linearly there, at rates of 0.1–0.7.
+- **Upper bounds first (oracles).** Newton's matrix for a group of rigid bodies built from central differences of the exact gradient and solved densely, with friction's λ lagged (B1's bound) or following the state (C's bound). Iterations a step, groups of four or more, the pile's first four seconds, friction consistent in every variant:
+
+| matrix | iterations a step |
+|---|---|
+| the solver's own (Gauss–Newton, L-BFGS), lag refreshed until consistent | 16.1 |
+| exact Hessian, λ lagged (B1's bound) | 15.0 |
+| exact Jacobian, λ following (C's bound) | 9.4 |
+| the solver's own plus the analytic coupling term, λ following | 12.2 |
+
+- **Same inputs for both.** Every tick of a reference run is stepped once more from its own saved state by each variant: chaotic piles go their own way after any change, and whole runs compared differently grouped piles.
+
+### B1: not built
+
+The exact Hessian of the lagged problem saves 7 % of the iterations. The turning terms it adds are worth that only with C, and C is not adopted.
+
+### C: built, measured, not adopted
+
+- **Built:** each contact's φᵢ·ψᵢᵀ (friction's gradient per unit of λ times ∂λ/∂x, a face's corners through ∂F/∂δ itself, not the matrix's tangent seen through the face's rigid motions), checked against differences of the gradient (700 states, worst 3 %); GMRES on the factorised matrix as its preconditioner (four iterations a solve on average); λ refreshed at every accepted iterate.
+- **From the first iterate:** 31 % fewer iterations in the pile's large groups, but its global phase, where contacts open and close, has no energy to guarantee progress. λ flipped with a contact between two iterates for 500 iterations, and settled piles crept at a rate of 0.98 until the matrix was made again at every iteration.
+- **After the lagged solve first converges** (or after its three refreshes), against the solver as it is, same inputs:
+
+| | rocks, lagged | rocks, following | stacks, lagged | stacks, following |
+|---|---|---|---|---|
+| iterations | 42,940 | 40,312 | 8,425 | 8,799 |
+| time (900 steps) | 3.05 s | 3.03 s | 178 ms | 211 ms |
+| worst step | 20.5 ms | 26.6 ms | 7.4 ms | 12.7 ms |
+| steps with friction > 5 % off | 169 | 16 | 25 | 2 |
+
+  Its direction aims at the consistent fixed point, not at the minimum of the step's objective with λ held, and the line search takes more trials (292 against 176 in one step); making the matrix every iteration cost 4 ms against 1.2. It fails the gate. The code is kept outside the tree for the realism fix below.
+
+### A realism defect found: friction on stale normal forces
+
+The lag's cap of three refreshes leaves 19 % of the rock pile's steps (169 of 900) and 3 % of the stacks' ending with some contact's friction (one carrying at least 1 % of the group's load) on a normal force more than 5 % off its own. Refreshing until consistent fixes it (1 step in 900) at 27 % more of the pile's iterations; following λ after the lagged solve fixes most of it (16) at no cost in iterations but with worse worst steps. Recorded in `docs/future-improvements.md`, to be fixed together with the speed it costs.
