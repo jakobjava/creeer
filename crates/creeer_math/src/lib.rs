@@ -10,6 +10,7 @@ pub mod codec;
 pub mod det;
 pub mod frame;
 pub mod render_space;
+pub mod sparse;
 pub mod units;
 
 pub use frame::Frame64;

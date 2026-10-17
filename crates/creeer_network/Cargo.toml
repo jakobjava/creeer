@@ -1,0 +1,13 @@
+[package]
+name = "creeer_network"
+description = "What the simulation's networks share: islands, energy ledgers, exchanges between domains, sleep."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+creeer_math.workspace = true
+
+[lints]
+workspace = true

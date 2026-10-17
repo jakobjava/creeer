@@ -58,7 +58,7 @@ Exact versions are pinned in `Cargo.lock` during F0. Each choice gets an ADR and
 | UI | `egui` + `egui_plot` with a custom theme |
 | Audio | `kira` |
 | Networking | `renet` (UDP, reliable/unreliable channels); serialisation with `bitcode`/`postcard` + `zstd` |
-| In-game scripting | Luau through `mlua`, sandboxed with an instruction budget |
+| In-game scripting | Lua 5.4 (built from source, deterministic) through `mlua`, sandboxed with an instruction budget |
 | Data | `serde` + RON files |
 | Profiling and logging | `tracing`, `tracy-client`, `puffin` |
 | Testing | `cargo test`, `proptest`, `insta`, `approx`, `criterion` |
@@ -80,7 +80,7 @@ creeer/
     creeer_electric/         # MNA circuit solver (DC, transient, AC phasors)
     creeer_thermal/          # lumped thermal network (conduction, convection, radiation)
     creeer_fluids/           # pipe networks, atmospheres, aerodynamics, buoyancy
-    creeer_logic/            # signals, gates, sensors, Luau controllers
+    creeer_logic/            # signals, gates, sensors, Lua controllers
     creeer_building/         # parametric parts -> physics structures, blueprints
     creeer_sim/              # composes everything: world, sim LOD, save/load
     creeer_net/              # protocol, replication, interest management
@@ -141,7 +141,7 @@ creeer/
 - Each planet has an atmosphere with composition, scale height and temperature profile.
 - Panel-based aerodynamics (lift and drag per surface element) and buoyancy in oceans.
 
-**Logic (`creeer_logic`):** signal wires, gates and sensors, plus Luau microcontrollers with a fixed instruction budget per tick. An emulated RISC-V CPU is an optional later extra for real nerds.
+**Logic (`creeer_logic`):** signal wires, gates and sensors, plus Lua 5.4 microcontrollers with a fixed instruction budget per tick. An emulated RISC-V CPU is an optional later extra for real nerds.
 
 **Building (`creeer_building`):**
 - A parametric part catalog: structural members (I-beams, tubes, rods, plates with chosen profile, dimensions and material), joints (welded, bolted, hinge, bearing), and mechanical, electrical, fluid, logic and propulsion parts.
@@ -172,7 +172,7 @@ creeer/
 
 **Persistence and modding:**
 - Region files hold zstd-compressed voxel deltas plus versioned entity snapshots, with migration tests.
-- Mods are data packs that override or extend `data/`. A Luau scripting API comes later.
+- Mods are data packs that override or extend `data/`. A Lua scripting API comes later.
 
 ## 5. Performance and platforms
 
@@ -257,7 +257,7 @@ There are no gameplay loops in this phase. Each milestone delivers a **tech sand
 | F3 | Planets & terrain | **Done** (ADR-0006). Cube-sphere planet, geology + ore deposit generator (data-driven), voxel octree + LOD meshing, dig/fill edits, terrain collision with the physics world, radial gravity, day/night, edits saved as deltas. Sandbox: fly from orbit down to the surface without hitches, and dig tunnels |
 | F4 | Orbital mechanics & solar system | **Done** (ADR-0007). Procedural solar system (stability-checked), **full n-body for the bodies** with pushes (instead of Kepler rails), restricted n-body rails for ships and small bodies, Lagrange points, reference-frame switching (rotating ↔ free fall), floating origin, time warp (governed), map view with predicted paths and a co-rotating frame. Orbit validation suite green. Sandbox: put a ship in orbit, fly to the moon, push bodies |
 | F5 | Networking & persistence | **Done** (ADR-0008; ADR-0005 amended). Client/server split, in-process server for singleplayer, interest management, snapshot interpolation, prediction for a test avatar, replication of soft bodies (plastic deltas) and terrain edits, dedicated server binary, versioned saves + migration tests. Bandwidth budgets met (typical play: 157 kbit/s to a client, 46 from it; budget 256). Sandbox: the planet sandbox is a client of a server it hosts or of a dedicated one (`--connect`); walk a test avatar (V), drop crates, balls and steel frames, dig; save and load the world (F3 edit files load too). **Also in F5, finishing F2–F3 work:** seamless terrain levels of detail (done: geomorphing, clipped meshes with caps instead of skirts, crease-free elevation; ADR-0006 amended) and more realistic contacts (done: contact laws from the materials, Hertz points and face patches in series with the resolvable stiffness, which stiffens with the load a contact carries at rest, critically damped on the gap's own rate; strain hardening and Cowper–Symonds rate-dependent plasticity; rigid bodies solved jointly with the structures they rest on; slender members that buckle, split as they are compressed and given EN 1090-2's crookedness; convex hulls as collision shapes (rocks, wedges, any convex part); ADR-0005 amended; then the contact law revised: the forces of a face's lifted corners reach the bodies, impacts carry friction, normals turn with their bodies and balls are measured to a box's or hull's closest point, faces on curved ground press with the ground's depth measured at their triangles' corners and as a punch of the area they press with, and bodies dropped on bumps come to rest; ADR-0005's last amendment. Still soft: sharp corners on flat faces) |
-| F6 | Simulation domains | The engines for each domain, each validated against analytic or reference results, each with a sandbox scene: **materials & chemistry** (species DB, mixtures, kinetics, equilibrium, mass/energy balance), **thermal** network, **electrical** MNA (DC/transient/AC), **fluids** (pipes, atmospheres, aero panels, buoyancy), **mechanical** drivetrain, **logic** (signals + sandboxed Luau VM) |
+| F6 | Simulation domains | Plan: `docs/f6-plan.md` (approved 2026-10-17). F6.1 network kit done (ADR-0009). The engines for each domain, each validated against analytic or reference results, each with a sandbox scene: **materials & chemistry** (species DB, mixtures, kinetics, equilibrium, mass/energy balance), **thermal** network, **electrical** MNA (DC/transient/AC), **fluids** (pipes, atmospheres, aero panels, buoyancy), **mechanical** drivetrain, **logic** (signals + sandboxed Lua VM) |
 | F7 | Scale & hardening | Simulation LOD (active / abstract / on rails), the abstract-mode rate solver, stress scenarios on all three operating systems, data/mod pipeline (data packs, validator, hot-reload), profiling pass. **Foundation gate:** every validation suite green and every budget met on Windows, Linux and macOS before Phase B starts |
 
 ### Phase B: Gameplay (the fun part)
@@ -270,7 +270,7 @@ There are no gameplay loops in this phase. Each milestone delivers a **tech sand
 | G4 | Power | Gameplay for shafts, gears and belts (Create-style); a steam engine with a real cycle; generators, motors, grids, batteries; Hall-Héroult aluminium |
 | G5 | Chemistry & fluids | Reactors, distillation, petrochemicals, plastics, fertiliser, gases; pipe and tank gameplay |
 | G6 | Vehicles | Pacejka tyres, suspension, combustion engines (fuel chemistry), gearboxes, aero, boats |
-| G7 | Automation & logic | Sensors, gates, Luau microcontrollers, programmable arms, logistics automation |
+| G7 | Automation & logic | Sensors, gates, Lua microcontrollers, programmable arms, logistics automation |
 | G8 | Rockets & space | Rocket engines (Isp from propellant chemistry), staging, Δv tools, maneuver nodes, re-entry heating, landing on and colonising other planets |
 | G9 | Survival, PvE, PvP | Health, hunger, thirst, O₂, temperature, radiation; food; fauna AI; hazards; ballistics, penetration, explosives; PvP server rules |
 | G10 | Advanced tech | Semiconductor chain (quartz → Si → Siemens → Czochralski → lithography → chips), fission, advanced alloys, composites |

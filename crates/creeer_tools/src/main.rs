@@ -6,6 +6,7 @@
 //! instead of failing; `--only` runs one section (for comparing two builds quickly).
 
 mod image_diff;
+mod network_bench;
 mod orbit_bench;
 mod solvers;
 mod spikes;
@@ -20,7 +21,7 @@ const USAGE: &str = "usage: creeer_tools <command>
 commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
-      structures, world, terrain, orbit)
+      structures, world, terrain, orbit, networks)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region";
 

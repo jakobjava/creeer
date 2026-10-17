@@ -588,6 +588,11 @@ version = "0.0.1"
 [[package]]
 name = "creeer_materials"
 version = "0.0.1"
+dependencies = [
+ "creeer_math",
+ "ron",
+ "serde",
+]
 
 [[package]]
 name = "creeer_math"
@@ -597,6 +602,7 @@ dependencies = [
  "glam",
  "libm",
  "proptest",
+ "rayon",
 ]
 
 [[package]]
@@ -610,6 +616,13 @@ dependencies = [
  "creeer_math",
  "renet",
  "renet_netcode",
+]
+
+[[package]]
+name = "creeer_network"
+version = "0.0.1"
+dependencies = [
+ "creeer_math",
 ]
 
 [[package]]
