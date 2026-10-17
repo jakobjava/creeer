@@ -206,3 +206,26 @@ The estimate tells the phases apart (the bridge's: under 10⁻⁷ m falling, up 
 ### What the three measurements say
 
 Within this solver, a deforming impact costs its substeps × about 1 ms (a third of it fixed costs, A2), and a pile its iterations × about 0.1 ms in its largest group, which no other core shares. The two converge as Newton can (B1, C) and the impact's short steps are needed while it strikes (A1). 2–3 ms for these scenes needs either the fixed costs and the contacts' evaluation spread over the idle cores, or a different solver architecture: decided with the user.
+
+## Measured: cores within a group, and fixed costs (2026-10-18)
+
+The user's decision after the measurements above: the work on the idle cores and the fixed costs, performance to the most, the 2–3 ms target kept, no corner cut.
+
+### Contacts of a large group in parallel: no gain on this machine
+
+- **Each step stepped twice from its saved state, serially and in parallel** (rayon, a face's law per task, sums in the same order): the same result bit for bit, and slower, 3.88 s against 3.02 s for the pile's 900 ticks.
+- **Rayon's fixed cost.** A parallel loop of 45 × 0.8 µs (a pile's faces' laws, 36 µs serially) costs 37 µs even run from within the pool, against 1–8 µs for loops back to back: its idle workers sleep within microseconds, and waking one on Windows takes about as long as the work.
+- **Workers kept awake** (tasks yielding to the pool's pending work while a large group solves, `rayon::yield_now`): the loop took 16 µs, and the faces' laws in the pile's worst tick 8.7 ms against 5.5. But five spinning workers slow the serial rest by 14 % (20.3 → 23.2 ms with nothing in parallel at all): the 7800X3D's eight cores carry sixteen threads, and a spinning worker shares its core with the solving one. With both, 21.2 against 21.2 ms.
+- Not adopted; the code is kept outside the tree. The structures' own parallel loops do pay (serially the bridge's worst tick took 35.5 ms against 32.8).
+
+### What did pay: the faces' laws without allocation (bit for bit)
+
+Their partly pressed triangles (97 % of the 100,000 the pile's busiest ticks integrate) allocated their polygons twice each. On the stack and found once for both integrals: the pile's total 2.94 → 2.73 s, p99 15.8 → 14.2 ms, worst 20.6 → 18.2 ms, every golden hash unchanged.
+
+### Fixed costs of the impact substeps
+
+In the bridge's worst tick (36 ms, 34 substeps): setup 4.3 ms, of which the joint solve of the block on the bridge 3.9 (each substep turns the nine joints' 27 columns A⁻¹·E, full-length, with the nodes' rotations); the energy guard 2.7; prediction 2.8; yield 1.6. Its iterations: 4.4 a substep, the structure's solve 48 µs and an evaluation 70 µs each; 70 of its 148 iterations after friction refreshes, which do not come from rising forces (λ extrapolated from the substep before changed none of them: contacts under the ringing block switch on and off), but halved the crash's p99 (2.99 → 1.52 ms); not adopted, as it changes the trajectories of the saved fixtures for that alone.
+
+### Where this leaves 2–3 ms
+
+A deforming impact in this design costs its substeps × about 1 ms, all of them needed while it strikes, and its fixed costs are a third of that: even without any, the bridge's worst tick would be about 22 ms. A pile's worst tick is its largest group's iterations, about 40 a step at 0.1 ms each, on one core. Reaching 2–3 ms needs a different method for these cases: subcycling the struck region (its few joints in short steps, the rest of the structure in the tick's), or the contact solve of a pile restructured so that its work splits into pieces large enough for the cores.
