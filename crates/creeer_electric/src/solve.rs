@@ -169,6 +169,12 @@ impl IslandSolver {
         self.still = 0;
     }
 
+    /// A right-hand side acting on it changed: step again, its matrix as it was.
+    pub fn stir(&mut self) {
+        self.asleep = false;
+        self.still = 0;
+    }
+
     /// A component switched: wake, and integrate from here by backward Euler.
     pub fn restart(&mut self) {
         self.wake();

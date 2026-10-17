@@ -1,12 +1,14 @@
 [package]
 name = "creeer_mech"
-description = "Mechanical drivetrain network: shafts, gears, belts, clutches."
+description = "Mechanical drivetrains: shafts, gears, belts, clutches, brakes, bearings; stick-slip friction; reactions on their housing."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_math.workspace = true
+creeer_network.workspace = true
 
 [lints]
 workspace = true

@@ -246,9 +246,9 @@ pub fn stamp<S: Sink>(s: &mut S, c: &Component, place: Place, x: &[f64], rule: R
         }
         Kind::Machine(m) => {
             // Armature: v_a − v_b = R·i + L·(a0·i + hist)/h + k·ω.
-            // Rotor: J·(a0·ω + hist)/h = k·i − b·ω − load, so ω = (r + k·i)/D: the rotor is
-            // eliminated, reflected into the armature as k²/D (its speed found after the solve).
-            let (d, r) = rotor(m, st, rule);
+            // Rotor: ω = free + mobility·k·i (`rotor`): eliminated, reflected into the armature
+            // as k²·mobility (its speed found after the solve).
+            let (free, mobility) = rotor(m, st, rule);
             let i = Some(e);
             s.m(a, i, 1.0);
             s.m(b, i, -1.0);
@@ -257,11 +257,13 @@ pub fn stamp<S: Sink>(s: &mut S, c: &Component, place: Place, x: &[f64], rule: R
             s.m(
                 i,
                 i,
-                -(m.resistance + m.inductance * rule.a0 / rule.h + m.constant * m.constant / d),
+                -(m.resistance
+                    + m.inductance * rule.a0 / rule.h
+                    + m.constant * m.constant * mobility),
             );
             s.b(
                 i,
-                m.inductance * rule.history(st.i[0], st.i[1]) + m.constant * r / d,
+                m.inductance * rule.history(st.i[0], st.i[1]) + m.constant * free,
             );
         }
     }
@@ -292,15 +294,19 @@ pub fn has_rhs(c: &Component) -> bool {
     )
 }
 
-/// A machine's rotor equation by rule `rule`, D·ω = r + k·i: (D, r).
+/// A machine's rotor equation by rule `rule`, ω = free + mobility·k·i: (free, mobility).
+/// Its own rotor: J·(a0·ω + hist)/h = k·i − b·ω − load. On a drivetrain: the drivetrain's.
 pub fn rotor(
     m: &crate::devices::DcMachine,
     st: &crate::component::State,
     rule: Rule,
 ) -> (f64, f64) {
+    if let Some(shaft) = st.shaft {
+        return shaft;
+    }
     let d = m.inertia * rule.a0 / rule.h + m.friction;
     (
-        d,
-        -m.inertia * rule.history(st.level, st.extra[0]) - st.load,
+        (-m.inertia * rule.history(st.level, st.extra[0]) - st.load) / d,
+        1.0 / d,
     )
 }

@@ -91,6 +91,9 @@ pub struct State {
     pub temperature: f64,
     /// Load torque on a machine's rotor (N·m), set from outside.
     pub load: f64,
+    /// A machine's rotor on a drivetrain instead of its own: the speed it would end the
+    /// coming step with (rad/s) and how much faster per N·m (`creeer_mech`'s response).
+    pub shaft: Option<(f64, f64)>,
 }
 
 /// A component in a circuit.

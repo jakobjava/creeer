@@ -162,11 +162,17 @@ pub(crate) fn finish(c: &mut Component, place: Place, x: &[f64], rule: Rule) -> 
             }
         }
         Kind::Machine(m) => {
-            let (d, r) = mna::rotor(m, &c.state, rule);
+            let (free, mobility) = mna::rotor(m, &c.state, rule);
             let s = &mut c.state;
+            let torque = m.constant * i;
             s.extra[0] = s.level;
-            s.level = (r + m.constant * i) / d;
-            let work = s.load * s.level * h;
+            s.level = free + mobility * torque;
+            // Its own rotor delivers its work to the load; on a drivetrain, its torque does, as
+            // the drivetrain books it (at the step's midpoint speed): the two ledgers agree.
+            let work = match s.shaft {
+                Some(_) => torque * 0.5 * (s.extra[0] + s.level) * h,
+                None => s.load * s.level * h,
+            };
             if work >= 0.0 {
                 flow.exported = work;
             } else {
