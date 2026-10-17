@@ -19,6 +19,8 @@ Limits that later work already lifted are not listed. Examples: members that cou
 
 **Kept up to date:** whenever something is deferred, it is added here as well as in its ADR.
 
+**Not a place for slowness.** Performance and maximum realism together are paramount (plan.md): a scene or system that is too slow is fixed now, not listed here. Only speed-ups beyond the budgets (headroom for larger worlds) belong here.
+
 ## Physics
 
 ### Structures and materials

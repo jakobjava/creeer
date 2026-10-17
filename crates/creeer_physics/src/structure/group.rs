@@ -248,6 +248,7 @@ pub fn step_group_with(
             v.previous_torque.clone_from(&s.torque);
         }
     }
+    let timer = crate::profile::start();
     // Plastic flow and fracture, on the converged state.
     for (s, v) in members.iter_mut() {
         let (yielding, wanted) = s.yield_members(&v.work);
@@ -262,6 +263,28 @@ pub fn step_group_with(
         v.last_yielding = yielding;
     }
     members[0].1.timings.total = start.elapsed();
+    timer.stop(crate::profile::Slot::Yield);
+    {
+        use crate::profile::{Slot, add};
+        let t = members[0].1.timings;
+        let ns = |d: std::time::Duration| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
+        add(Slot::GroupSteps, u64::from(substeps));
+        let most = members
+            .iter()
+            .map(|(_, v)| v.last_iterations)
+            .max()
+            .unwrap_or(0);
+        add(Slot::Iterations, u64::from(most));
+        for (slot, d) in [
+            (Slot::Guard, t.guard),
+            (Slot::Predict, t.predict),
+            (Slot::Residual, t.residual),
+            (Slot::Objective, t.objective),
+            (Slot::Solve, t.solve),
+        ] {
+            add(slot, ns(d));
+        }
+    }
 }
 
 fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Scheme) {

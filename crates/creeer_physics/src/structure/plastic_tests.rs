@@ -136,3 +136,33 @@ fn an_overloaded_bar_tears() {
     let e = &s.elements[2];
     assert!(e.plastic_strain > STEEL_S235.elongation);
 }
+
+/// A strain-rate-lifted increment balances k·(|x| − u) = D′(u), the capacity at its increment,
+/// to the rounding of those forces: for hinges and bars, at rates from a creep to a crash's,
+/// with and without hardening. (Bisecting the balance gives no more: u is often ten thousand
+/// times smaller than x, and both are known to the rounding of x.)
+#[test]
+fn a_rate_lifted_increment_balances_its_forces_to_rounding() {
+    use super::flow::Flow;
+    use super::section::STEEL_S235;
+    let mut worst = 0.0f64;
+    for (capacity, per, k) in [
+        (7.2e5, 0.5, 3.2e8),
+        (2.0e4, 0.5, 4.0e6),
+        (7.2e5, 0.5, 1.0e9),
+    ] {
+        for strain in [0.0, 0.05] {
+            for h in [1.0 / 60.0, 0.5e-3] {
+                let flow = Flow::new(capacity, &STEEL_S235, strain, per, h);
+                for step in 1..400 {
+                    let x = capacity / k * (1.0 + 1e-4 * f64::from(step * step));
+                    let u = flow.increment(x, k).abs();
+                    assert!(u > 0.0 && u < x, "{u} of {x}");
+                    let balance = k * (x - u) - flow.slope(u);
+                    worst = worst.max(balance.abs() / (k * x));
+                }
+            }
+        }
+    }
+    assert!(worst < 1e-14, "out of balance by {worst:e} of k·|x|");
+}

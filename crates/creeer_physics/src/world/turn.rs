@@ -76,6 +76,7 @@ impl World {
             }
             self.anchors = anchors;
             self.left = left;
+            crate::profile::add(crate::profile::Slot::TurnRedos, 1);
             self.step_in(substeps(turned));
         }
     }

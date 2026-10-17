@@ -166,6 +166,7 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
 fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small count
     let n = (dt / IMPACT_STEP).ceil().max(1.0) as u32;
+    crate::profile::add(crate::profile::Slot::ImpactSubsteps, u64::from(n));
     let h = dt / f64::from(n);
     for body in bodies.iter_mut() {
         body.solver.set_time_step(&body.structure, h);

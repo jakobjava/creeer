@@ -11,11 +11,15 @@ impl ImplicitSolver {
     /// materially since the last factorisation: other nodes touched, or a node's block changed
     /// by more than half. Without it a structure resting on contacts converges slowly (the
     /// matrix misses their stiffness; 48 iterations instead of 11 for a bridge on its piers).
-    /// Returns whether it refactorised.
+    /// Nodes in `exempt` are left out of that judgement: a joint solve (`coupled.rs`) takes
+    /// their contacts' stiffness as it is now, exactly, whatever the factorisation holds (a
+    /// block landing on a bridge refactorised it in 23 of a tick's 34 impact substeps for its
+    /// deck joints alone). Returns whether it refactorised.
     pub(super) fn use_contact_stiffness(
         &mut self,
         structure: &Structure,
         mut blocks: Vec<(usize, DMat3)>,
+        exempt: &[usize],
     ) -> bool {
         blocks.sort_by_key(|b| b.0);
         let mut merged: Vec<(usize, DMat3)> = Vec::with_capacity(blocks.len());
@@ -26,13 +30,17 @@ impl ImplicitSolver {
             }
         }
         let norm = |m: DMat3| m.to_cols_array().iter().map(|v| v * v).sum::<f64>().sqrt();
-        let same = merged.len() == self.contact_blocks.len()
-            && merged
-                .iter()
-                .zip(&self.contact_blocks)
-                .all(|((a, ha), (b, hb))| {
-                    a == b && norm(*ha - *hb) <= 0.5 * norm(*ha).max(norm(*hb))
-                });
+        let judged = |list: &[(usize, DMat3)]| -> Vec<(usize, DMat3)> {
+            list.iter()
+                .filter(|b| !exempt.contains(&b.0))
+                .copied()
+                .collect()
+        };
+        let (now, then) = (judged(&merged), judged(&self.contact_blocks));
+        let same = now.len() == then.len()
+            && now.iter().zip(&then).all(|((a, ha), (b, hb))| {
+                a == b && norm(*ha - *hb) <= 0.5 * norm(*ha).max(norm(*hb))
+            });
         if same {
             return false;
         }
@@ -61,6 +69,14 @@ impl ImplicitSolver {
     /// As [`Self::factor`]; false if the matrix cannot be made positive definite (negative
     /// masses or stiffnesses: never in a world that was stepped).
     pub(super) fn try_factor(&mut self, structure: &Structure, current: bool) -> bool {
+        crate::profile::add(crate::profile::Slot::Factorisations, 1);
+        let timer = crate::profile::start();
+        let done = self.factor_inner(structure, current);
+        timer.stop(crate::profile::Slot::Factorise);
+        done
+    }
+
+    fn factor_inner(&mut self, structure: &Structure, current: bool) -> bool {
         self.factorisations += 1;
         self.unit_columns.clear();
         if current {

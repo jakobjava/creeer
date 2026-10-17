@@ -7,6 +7,7 @@ use creeer_math::glam::{DMat3, DVec3};
 
 impl Coupling for Contacts {
     fn begin(&mut self, info: &StepInfo<'_>) {
+        self.kept.clear();
         self.beta = info.beta;
         self.smoothing = STICK_DISTANCE;
         self.carried.clear();
@@ -104,37 +105,51 @@ impl Coupling for Contacts {
         self.tolerance
     }
 
+    fn closing(
+        &self,
+        states: &[MemberState<'_>],
+        direction: &[DVec3],
+        offsets: &[usize],
+    ) -> Option<f64> {
+        self.closing_step(states, direction, offsets)
+    }
+
     fn energy(&self, states: &[MemberState<'_>]) -> f64 {
-        let at: Vec<_> = (0..self.list.len())
-            .map(|i| self.gap_and_slip(i, states))
-            .collect();
-        let gaps: Vec<f64> = at.iter().map(|a| a.0).collect();
-        let measured = self.measured_depths(states);
-        let (elastic, _, _) = self.normal_forces(&gaps, &measured, false);
-        let (damping, _, _) = self.dashpots(&gaps, &measured);
+        use crate::profile::{Slot, start};
+        let timer = start();
+        let geometry = self.geometry(states);
+        let (at, measured, gaps) = (&geometry.at, &geometry.measured, geometry.gaps());
+        timer.stop(Slot::ContactGeometry);
+        let timer = start();
+        let (elastic, _, _) = self.normal_forces(&gaps, measured, false);
+        timer.stop(Slot::ContactLaws);
+        let timer = start();
+        let (damping, _, _) = self.dashpots(&gaps, measured);
         let friction: f64 = self
             .list
             .iter()
-            .zip(&at)
+            .zip(at.iter())
             .map(|(c, &(_, _, _, slip, _, _))| c.friction * c.lambda * self.smooth(slip.length()).0)
             .sum();
-        elastic + damping + friction + self.twist_energy(states)
+        let twist = self.twist_energy(states);
+        timer.stop(Slot::ContactRest);
+        elastic + damping + friction + twist
     }
 
     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
-        self.normal_forces(&self.gaps(states), &self.measured_depths(states), false)
+        let geometry = self.geometry(states);
+        self.normal_forces(&geometry.gaps(), &geometry.measured, false)
             .0
     }
 
     fn add_gradient(&self, states: &[MemberState<'_>], gradient: &mut [Vec<DVec3>]) {
-        let at: Vec<_> = (0..self.list.len())
-            .map(|i| self.gap_and_slip(i, states))
-            .collect();
-        let gaps: Vec<f64> = at.iter().map(|a| a.0).collect();
-        let measured = self.measured_depths(states);
-        let (_, forces, points) = self.normal_forces(&gaps, &measured, true);
-        let (_, dashpots, point_dashpots) = self.dashpots(&gaps, &measured);
-        for (i, (c, &(_, _, direction, slip, ra, rb))) in self.list.iter().zip(&at).enumerate() {
+        let geometry = self.geometry(states);
+        let (at, measured, gaps) = (&geometry.at, &geometry.measured, geometry.gaps());
+        let (_, forces, points) = self.normal_forces(&gaps, measured, true);
+        let (_, dashpots, point_dashpots) = self.dashpots(&gaps, measured);
+        for (i, (c, &(_, _, direction, slip, ra, rb))) in
+            self.list.iter().zip(at.iter()).enumerate()
+        {
             // The elastic force wherever the law has one: a patch's corner carries its share of
             // the face's pressure while lifted itself (the face pressed in between the corners).
             // Applied only where the corner was pressed in, it never reached the bodies: a
@@ -197,8 +212,8 @@ impl Coupling for Contacts {
     }
 
     fn update_lag(&mut self, states: &[MemberState<'_>]) -> bool {
-        let (_, forces, _) =
-            self.normal_forces(&self.gaps(states), &self.measured_depths(states), false);
+        let geometry = self.geometry(states);
+        let (_, forces, _) = self.normal_forces(&geometry.gaps(), &geometry.measured, false);
         let mut changed = false;
         for (c, &force) in self.list.iter_mut().zip(&forces) {
             // Only friction uses λ: contacts without friction never need a refresh.
@@ -218,10 +233,10 @@ impl Coupling for Contacts {
     /// made again from them.
     fn relinearise(&mut self, states: &[MemberState<'_>]) -> bool {
         let e = self.smoothing;
-        let mut gaps = Vec::with_capacity(self.list.len());
+        let geometry = self.geometry(states);
+        let gaps = geometry.gaps();
         for i in 0..self.list.len() {
-            let (gap, _, _, slip, _, _) = self.gap_and_slip(i, states);
-            gaps.push(gap);
+            let (gap, slip) = (geometry.at[i].0, geometry.at[i].3);
             // Its normal stiffness while pressed, none apart: the step's anticipating stiffness
             // kept for a contact come apart made a sliding rock's matrix a hundred times too stiff
             // (and the pile took a third more iterations, F6).
@@ -246,7 +261,7 @@ impl Coupling for Contacts {
         }
         self.set_twist_stiffness(states);
         // Each pressed face's stiffness as it presses now (`Patch::tangent`).
-        let measured = self.measured_depths(states);
+        let measured = &geometry.measured;
         let faces: Vec<_> = (0..self.patches.len())
             .map(|p| {
                 let depths = std::array::from_fn(|k| -gaps[self.patches[p].first + k]);

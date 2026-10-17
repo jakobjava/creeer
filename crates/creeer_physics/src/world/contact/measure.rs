@@ -3,7 +3,7 @@
 
 use super::super::ground::closest;
 use super::patch::{Patch, weights};
-use super::{Contacts, point};
+use super::{Contacts, MATRIX_DEPTH, Side, point};
 use crate::structure::group::MemberState;
 
 use creeer_math::glam::{DMat3, DVec3};
@@ -160,5 +160,48 @@ impl Contacts {
                 (n.dot(r) - 0.5 * t.dot(st), n - st, arm)
             })
             .collect()
+    }
+}
+
+impl Contacts {
+    /// The step along `direction` (each member's translation blocks, then its rotation
+    /// blocks, from `offsets[member]`) at which the first contact now apart is pressed
+    /// [`MATRIX_DEPTH`] deep, its gap followed linearly, if that is within a full step.
+    ///
+    /// A Newton step from a state where a contact is still open does not know that contact's
+    /// stiffness: it runs into it, far too long, and backtracking takes a tenth of it again and
+    /// again while the gap closes geometrically (a rock coming down onto the ramp: ten
+    /// iterations). Taken to where the contact closes, the next iteration has its stiffness
+    /// and converges as Newton does.
+    pub(super) fn closing_step(
+        &self,
+        states: &[MemberState<'_>],
+        direction: &[DVec3],
+        offsets: &[usize],
+    ) -> Option<f64> {
+        let moved = |side: Side, arm: DVec3| match side {
+            Side::Node { member, node, .. } => {
+                let n = states[member].position.len();
+                let at = offsets[member];
+                direction[at + node] + direction[at + n + node].cross(arm)
+            }
+            Side::Fixed(_) => DVec3::ZERO,
+        };
+        let geometry = self.geometry(states);
+        let mut first: Option<f64> = None;
+        for (i, c) in self.list.iter().enumerate() {
+            let (gap, _, normal, _, arm_a, arm_b) = geometry.at[i];
+            if gap <= 0.0 {
+                continue;
+            }
+            let rate = normal.dot(moved(c.a, arm_a) - moved(c.b, arm_b));
+            if rate < 0.0 {
+                let alpha = (gap + MATRIX_DEPTH) / -rate;
+                if alpha < 1.0 && first.is_none_or(|f| alpha < f) {
+                    first = Some(alpha);
+                }
+            }
+        }
+        first
     }
 }

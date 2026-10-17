@@ -46,6 +46,8 @@ mod lab_tests;
 mod physics_drive;
 mod physics_fluids;
 mod physics_heat;
+#[cfg(test)]
+mod physics_profile;
 mod physics_rocks;
 mod physics_sandbox;
 mod physics_view;

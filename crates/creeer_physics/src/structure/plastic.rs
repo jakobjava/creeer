@@ -90,6 +90,7 @@ impl Element {
         s: &[f64; MEASURES],
         flows: &[Flow; MEASURES],
     ) -> [f64; MEASURES] {
+        crate::profile::add(crate::profile::Slot::Splits, 1);
         let k = |m: usize, n: usize| self.stiffness.entry(m, n);
         let mut p = [0.0; MEASURES];
         for m in 0..2 {
@@ -105,6 +106,7 @@ impl Element {
                 continue;
             }
             for _ in 0..24 {
+                crate::profile::add(crate::profile::Slot::Sweeps, 1);
                 let a =
                     flows[pair].increment(s[pair] + k12 / k11 * (s[pair + 1] - p[pair + 1]), k11);
                 let b = flows[pair + 1].increment(s[pair + 1] + k12 / k11 * (s[pair] - a), k11);

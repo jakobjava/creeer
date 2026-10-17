@@ -17,7 +17,7 @@
 - **Data-driven and mod-ready:** all content lives in data files.
 - **Tech decision:** a custom engine in Rust instead of Godot. The reasons: full control over performance, threading, the GPU and precision; very little need for an editor because content is procedural or player-built; precedent from Factorio, Teardown and Kitten Space Agency.
 - **Working style:** Claude writes most of the code, and the user understands code at a basic level. That makes the process **iterative**, with heavy testing and documented, double-checked decisions.
-- **Performance is a top priority.** There are hard, measured budgets from F0 onwards (see §5).
+- **Performance and maximum realism, together, are paramount.** Neither is traded for the other: physics is never simplified, nor its tolerances loosened, to gain speed, and slowness is never accepted as the price of realism or left "for later". Where the two seem to conflict, the answer is a formulation that is both exact and fast. There are hard, measured budgets from F0 onwards (see §5), on the worst tick as well as the typical one.
 - **Development approach à la Kitten Space Agency:** Phase A builds the technical foundation (engine and every simulation system, validated and fast). Phase B adds the gameplay.
 - **Cross-platform:** Windows, Linux (including Steam Deck) and macOS (Apple Silicon). The dedicated server runs on Linux, Windows and macOS, x86-64 and ARM64. Consoles and mobile are out of scope: closed SDKs and too little CPU for this simulation.
 
@@ -40,6 +40,7 @@ Environment: Windows 11, RTX 4070 SUPER, git installed, **Rust not installed yet
 8. **Every important decision gets an ADR** (Architecture Decision Record in `docs/adr/`), backed by a spike or benchmark wherever possible.
 9. **Simulation and rendering are decoupled.** The simulation runs on its own threads at a fixed rate. The renderer interpolates between the last two simulation states, so frame rate never depends on simulation load, and a slow tick never causes a stutter.
 10. **Portable by construction.** Only pure-Rust or cross-compiling dependencies are used. `wgpu` translates to Vulkan, DX12 and Metal. Nothing platform-specific lives outside a small `platform` module.
+11. **Realistic and fast at once.** Every sandbox scene runs in real time with room to spare: its worst tick is gated by a test (§6), measured with the physics crate's `profile` feature when it is not. A scene that lags is a bug, fixed before new work starts.
 
 ## 2. Tech stack (Rust)
 
@@ -236,6 +237,7 @@ creeer/
 - **Determinism tests:** the same seed and inputs give the same state hash; world generation has golden hashes.
 - **Snapshot tests** (`insta`) for data loading and world-gen outputs.
 - **Benchmarks** (`criterion`) with a performance budget per milestone, tracked for regressions.
+- **Real-time gates:** every sandbox scene's worst tick (not only its typical one) is tested against a budget of a few milliseconds on the development machine. Speed-ups are checked against the physics validation suite, and a change of rounding is proved as such before golden hashes are regenerated.
 - **Headless scenario runner:** scripted scenarios (dropping a car from 10 m, a bridge under load, a rocket to orbit) with checked outcomes.
 - **Process:** an ADR before each major decision, validation reports in `docs/physics/`, and at the end of each milestone a demo for the user plus a review before the next one starts.
 

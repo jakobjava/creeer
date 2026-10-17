@@ -43,20 +43,12 @@ struct Rate {
 
 impl Rate {
     /// The lift of the capacity at increment `u` (relative).
+    #[cfg(test)]
     fn lift(&self, u: f64) -> f64 {
         if u <= self.floor {
             0.0
         } else {
             self.scale * pow(u, self.exponent) - self.offset
-        }
-    }
-
-    /// d(lift)/du.
-    fn slope(&self, u: f64) -> f64 {
-        if u <= self.floor {
-            0.0
-        } else {
-            self.scale * self.exponent * pow(u, self.exponent - 1.0)
         }
     }
 
@@ -155,30 +147,54 @@ impl Flow {
         let Some(rate) = self.rate() else {
             return plain.copysign(x);
         };
-        // k·(|x| − u) = D′(u): its left side falls and D′ rises with u, so the root lies
-        // between 0 and the increment without the rate. Newton, kept inside the bracket.
-        let excess =
-            |u: f64| k * (size - u) - self.capacity * (1.0 + rate.lift(u)) - self.hardening * u;
-        let (mut lo, mut hi) = (0.0, plain);
-        let mut u = plain;
-        for _ in 0..100 {
-            let f = excess(u);
-            if f > 0.0 {
-                lo = u;
-            } else {
-                hi = u;
-            }
-            let derivative = k + self.hardening + self.capacity * rate.slope(u);
-            let mut next = u + f / derivative;
-            if next.is_nan() || next <= lo || next >= hi {
-                next = 0.5 * (lo + hi);
-            }
-            if (next - u).abs() <= 1e-15 * u.max(f64::MIN_POSITIVE) || hi - lo <= 1e-15 * hi {
-                u = next;
+        // At or below the reference rate's increment the rate lifts nothing.
+        if plain <= rate.floor {
+            return plain.copysign(x);
+        }
+        crate::profile::add(crate::profile::Slot::Increments, 1);
+        // Above it the lift is scale·u^e − offset (e = 1/q), continuous at the floor. In
+        // w = u^e the excess k·(|x| − u) − c·(1 + lift(u)) − H·u is
+        //   f(w) = k·|x| − c·(1 − offset) − c·scale·w − (k + H)·w^q,
+        // concave and falling, with its root between floor^e and plain^e: Newton from the
+        // right falls onto it monotonically and quadratically, one power an iteration (in u,
+        // where the lift rises as u^0.2, it took 10 to 15 iterations of two powers each,
+        // most of a crash's step).
+        let q = 1.0 / rate.exponent;
+        let (stiff, constant) = (
+            k + self.hardening,
+            k * size - self.capacity * (1.0 - rate.offset),
+        );
+        let lift = self.capacity * rate.scale;
+        // floor^e, where the lift is nought: scale·floor^e = offset.
+        let low = rate.offset / rate.scale;
+        // w^q: by multiplication for a whole q (steel's Cowper–Symonds q is 5: exact IEEE
+        // products, the same on every platform), else the deterministic pow.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // whole, 1 to 8
+        let whole = (q.fract() == 0.0 && (1.0..=8.0).contains(&q)).then_some(q as u32);
+        let power = |w: f64| match whole {
+            Some(n) => (1..n).fold(w, |p, _| p * w),
+            None => pow(w, q),
+        };
+        // Two bounds above the root: the increment without the rate, and the root of f's
+        // linear part (f there is −(k + H)·w^q < 0); from the nearer one Newton needs fewest
+        // steps.
+        let mut w = pow(plain, rate.exponent).min(constant / lift);
+        let mut wq = power(w);
+        for _ in 0..60 {
+            crate::profile::add(crate::profile::Slot::FlowIterations, 1);
+            let f = constant - lift * w - stiff * wq;
+            let slope = -lift - stiff * q * wq / w;
+            let next = (w - f / slope).max(low);
+            // From the right it only falls; once it stops falling it is there.
+            if next.partial_cmp(&w) != Some(std::cmp::Ordering::Less) {
                 break;
             }
-            u = next;
+            let done = w - next <= 1e-15 * w;
+            (w, wq) = (next, power(next));
+            if done {
+                break;
+            }
         }
-        u.copysign(x)
+        wq.min(plain).copysign(x)
     }
 }

@@ -13,3 +13,7 @@ rayon.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Time every phase of a step (`profile.rs`); off, it costs nothing.
+profile = []

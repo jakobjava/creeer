@@ -234,6 +234,14 @@ fn stacks(world: &mut World) {
     world.add(ball);
 }
 
+impl PhysicsSandbox {
+    /// Cost of the last physics step (ms).
+    #[cfg(test)]
+    pub(crate) fn step_ms(&self) -> f64 {
+        self.step_ms
+    }
+}
+
 impl Simulation for PhysicsSandbox {
     type Snapshot = PhysicsSnapshot;
 

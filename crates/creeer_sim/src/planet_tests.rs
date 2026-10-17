@@ -223,8 +223,13 @@ fn planet_physics_is_bit_identical_across_platforms() {
     // iteration's state), the step's tolerance no finer than the positions resolve, the energy
     // contacts held carried to the next step's guard, and drilling friction (F6, the rock pile's
     // lag), after 0xc08c_b8e6_5929_d6c3 (made together, not reverted one by one).
+    // Then for the speed work of 2026-10-18 (contact geometry kept per state, the line
+    // search's first trial where an open contact closes and its quadratic backtracking,
+    // factorisations judged without the joints a joint solve takes exactly): the same
+    // converged steps by another path, the bodies within 0.01 mm of the old ones after half
+    // a second and 0.6 mm after two (crates settling on terrain), after 0x71ef_08e3_442a_4dc9.
     assert_eq!(
-        hash, 0x71ef_08e3_442a_4dc9,
+        hash, 0xccbf_8f27_2ce7_305c,
         "planet physics hash {hash:#018x}"
     );
 }
