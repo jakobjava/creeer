@@ -111,7 +111,7 @@ impl Network {
             }
             let matrix = solver.assembly.matrix(&contributions);
             let factored = match solver.cholesky.as_mut() {
-                Some(ch) => ch.refactor(&matrix).map(|()| ()),
+                Some(ch) => ch.refactor(&matrix),
                 None => Cholesky::new(&matrix).map(|ch| solver.cholesky = Some(ch)),
             };
             factored.expect("a pipe network's system is positive definite");
