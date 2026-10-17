@@ -600,6 +600,7 @@ dependencies = [
  "creeer_chem",
  "creeer_materials",
  "creeer_math",
+ "creeer_network",
  "creeer_terrain",
 ]
 
