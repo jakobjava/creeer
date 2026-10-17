@@ -208,3 +208,47 @@ fn a_network_keeps_its_books() {
         net.ledger().relative_imbalance(net.stored())
     );
 }
+
+/// A valve shut on a line of two junctions cuts them off: the solve stays regular and nothing
+/// flows; opened again, the line runs.
+#[test]
+fn a_shut_valve_cuts_a_line_off() {
+    let mut net = Network::new(WATER, G);
+    let res = net.node(0.0, NodeKind::Reservoir, 5.0);
+    let (j1, j2) = (
+        net.node(0.0, NodeKind::Junction { demand: 0.0 }, 0.0),
+        net.node(0.0, NodeKind::Junction { demand: 0.0 }, 0.0),
+    );
+    let out = net.node(0.0, NodeKind::Reservoir, 0.0);
+    let shut = LinkKind::Valve {
+        diameter: 0.05,
+        open: 0.2,
+        opening: 0.0,
+    };
+    let v1 = net.link(res, j1, shut);
+    let line = net.link(
+        j1,
+        j2,
+        LinkKind::Pipe {
+            length: 20.0,
+            diameter: 0.05,
+            roughness: 1e-5,
+            minor: 0.0,
+            check: false,
+        },
+    );
+    let v2 = net.link(j2, out, shut);
+    assert!(net.step(1.0).converged);
+    assert_eq!(net.links[line].flow, 0.0);
+    for v in [v1, v2] {
+        net.links[v].kind = LinkKind::Valve {
+            diameter: 0.05,
+            open: 0.2,
+            opening: 1.0,
+        };
+    }
+    assert!(net.step(1.0).converged);
+    assert!(net.links[line].flow > 0.0);
+    let f = net.links[line].flow;
+    assert!((net.links[v1].flow - f).abs() < 1e-15 && (net.links[v2].flow - f).abs() < 1e-15);
+}

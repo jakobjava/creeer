@@ -8,8 +8,14 @@
 //! water's energy ρ·g·H·Q in and out of reservoirs and consumers, the tanks' potential energy
 //! held.
 
+mod carry;
+pub mod content;
 pub mod friction;
 pub mod gas;
+
+pub use carry::{of_mixture, temperature};
+#[cfg(test)]
+mod carry_tests;
 #[cfg(test)]
 mod gas_tests;
 mod links;

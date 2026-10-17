@@ -97,6 +97,7 @@ impl Network {
                     }
                 }
             }
+            let held = grounded(self, &linear);
             for (i, node) in self.nodes.iter().enumerate() {
                 let Some(r) = solver.unknown[i] else { continue };
                 let (diag, extra) = match node.kind {
@@ -104,9 +105,10 @@ impl Network {
                     NodeKind::Junction { demand } => (0.0, -demand),
                     NodeKind::Reservoir => unreachable!("a reservoir is known"),
                 };
-                // (A junction all of whose links are shut has no head: a touch on its
-                // diagonal keeps the system regular.)
-                contributions.push(diag + 1e-12);
+                // (Junctions cut off from every reservoir and tank have no head: a touch on
+                // their diagonals keeps the system regular. Only there: elsewhere it would
+                // leak 10⁻¹² m³/s per metre of head.)
+                contributions.push(if held[i] { diag } else { diag + 1e-12 });
                 rhs[r] += extra;
             }
             let matrix = solver.assembly.matrix(&contributions);
@@ -216,4 +218,33 @@ impl Network {
         let (h, _) = law(l, &self.liquid, self.gravity, l.flow);
         -self.liquid.density * self.gravity * l.flow * h / efficiency(&l.kind, l.flow)
     }
+}
+
+/// Whether each node is joined by open links to a reservoir or a tank (one that holds the
+/// heads of what it is joined to).
+fn grounded(net: &Network, linear: &[(f64, f64)]) -> Vec<bool> {
+    let mut root: Vec<usize> = (0..net.nodes.len()).collect();
+    fn find(root: &mut [usize], mut i: usize) -> usize {
+        while root[i] != i {
+            root[i] = root[root[i]];
+            i = root[i];
+        }
+        i
+    }
+    for (link, &(c, _)) in net.links.iter().zip(linear) {
+        if c > 0.0 {
+            let (a, b) = (find(&mut root, link.a), find(&mut root, link.b));
+            root[a] = b;
+        }
+    }
+    let mut held = vec![false; net.nodes.len()];
+    for (i, node) in net.nodes.iter().enumerate() {
+        if !matches!(node.kind, NodeKind::Junction { .. }) {
+            let r = find(&mut root, i);
+            held[r] = true;
+        }
+    }
+    (0..net.nodes.len())
+        .map(|i| held[find(&mut root, i)])
+        .collect()
 }
