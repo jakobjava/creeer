@@ -29,6 +29,7 @@
 //! (`creeer_server`), joined at once, walking.
 
 mod app;
+mod circuit_bench;
 mod demo;
 mod fly_camera;
 mod headless;

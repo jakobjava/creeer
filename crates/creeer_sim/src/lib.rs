@@ -9,6 +9,8 @@ pub mod avatar;
 pub mod heat;
 #[cfg(test)]
 mod heat_tests;
+#[cfg(test)]
+mod joule_tests;
 pub mod planet;
 #[cfg(test)]
 mod planet_tests;

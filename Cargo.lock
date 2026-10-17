@@ -551,6 +551,7 @@ name = "creeer_client"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_electric",
  "creeer_materials",
  "creeer_math",
  "creeer_net",
@@ -578,6 +579,12 @@ dependencies = [
 [[package]]
 name = "creeer_electric"
 version = "0.0.1"
+dependencies = [
+ "creeer_materials",
+ "creeer_math",
+ "creeer_network",
+ "rayon",
+]
 
 [[package]]
 name = "creeer_fluids"
@@ -680,6 +687,7 @@ dependencies = [
 name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
+ "creeer_electric",
  "creeer_materials",
  "creeer_math",
  "creeer_orbit",
@@ -714,6 +722,7 @@ name = "creeer_tools"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_electric",
  "creeer_materials",
  "creeer_math",
  "creeer_orbit",

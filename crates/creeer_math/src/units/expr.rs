@@ -180,7 +180,7 @@ const PREFIXES: [(&str, f64); 18] = [
 type Unit = (&'static str, f64, Dimension, bool);
 
 /// Known units: symbol, SI factor, dimension, takes prefixes.
-const UNITS: [Unit; 29] = [
+const UNITS: [Unit; 36] = [
     ("m", 1.0, Dimension::LENGTH, true),
     ("g", 1e-3, Dimension::MASS, true),
     ("s", 1.0, Dimension::TIME, true),
@@ -207,6 +207,13 @@ const UNITS: [Unit; 29] = [
         Dimension::POWER.div(Dimension::CURRENT.pow(2)),
         true,
     ),
+    ("F", 1.0, Dimension::CAPACITANCE, true),
+    ("H", 1.0, Dimension::INDUCTANCE, true),
+    ("S", 1.0, Dimension::CONDUCTANCE, true),
+    ("Wb", 1.0, Dimension::MAGNETIC_FLUX, true),
+    ("T", 1.0, Dimension::FLUX_DENSITY, true),
+    ("Wh", 3600.0, Dimension::ENERGY, true),
+    ("Ah", 3600.0, Dimension::CHARGE, true),
     ("L", 1e-3, Dimension::VOLUME, true),
     ("t", 1e3, Dimension::MASS, true),
     ("eV", 1.602_176_634e-19, Dimension::ENERGY, true),

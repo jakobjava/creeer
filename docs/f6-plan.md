@@ -1,6 +1,6 @@
 # F6 plan: simulation domains
 
-Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 and F6.2 done (2026-10-17; ADR-0009, ADR-0010).
+Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1, F6.2 and F6.3 done (2026-10-17; ADR-0009, ADR-0010, ADR-0011).
 
 F6 builds the engines behind everything a player will make: what things are made of and how they react (materials & chemistry), heat, electricity, shafts and gears, fluids and air, and logic. Each one must be **realistic** (validated against analytic or reference results, conserving what nature conserves) and **fast** (each has a budget inside the 10 ms tick of plan.md §5). Each gets a sandbox scene, like F2–F5.
 
@@ -85,6 +85,8 @@ The order follows dependencies: materials first (everything needs their properti
 - **Budget:** 20,000 nodes at 20 Hz ≤ 0.5 ms per 60 Hz tick (min-spec).
 
 ### F6.3 Electrical network (`creeer_electric`)
+
+**Done** (2026-10-17, ADR-0011): MNA on the LU (DC/transient by BDF2 with backward-Euler restarts, not the trapezoidal rule: it rings undamped at a 60 Hz tick), AC grids as per-phase phasors on the complex LU; every device listed below with its validation; Tellegen-exact energy booking; Joule heat coupled to the thermal network (tested); circuit bench window with an oscilloscope (capacitor, motor on a battery, solar through a day, transformer and induction motor). 10k-node DC 0.47 ms (0.93–0.97 projected ≤ 1), 2.4k-bus AC 0.12 ms.
 
 - **Modified Nodal Analysis** on the sparse LU, two modes:
   - **Transient:** companion models (trapezoidal, backward Euler right after switching to avoid ringing), Newton for nonlinear devices, events (switches, fuses) refactor.

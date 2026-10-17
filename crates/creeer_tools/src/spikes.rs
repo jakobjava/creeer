@@ -57,7 +57,7 @@ impl Report {
 }
 
 /// The spike sections, by the names `--only` takes.
-pub const SECTIONS: [&str; 9] = [
+pub const SECTIONS: [&str; 10] = [
     "xpbd",
     "meshing",
     "solvers",
@@ -67,6 +67,7 @@ pub const SECTIONS: [&str; 9] = [
     "orbit",
     "networks",
     "thermal",
+    "electric",
 ];
 
 /// Runs the spikes (all, or the section `only`). `metrics_out`, if given, receives one
@@ -102,6 +103,9 @@ pub fn run(metrics_out: Option<&Path>, report_only: bool, only: Option<&str>) ->
     }
     if section("networks") {
         crate::network_bench::run(&mut report);
+    }
+    if section("electric") {
+        crate::electric_bench::run(&mut report);
     }
     if section("thermal") {
         crate::thermal_bench::run(&mut report);

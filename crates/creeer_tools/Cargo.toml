@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 creeer_core.workspace = true
 creeer_materials.workspace = true
+creeer_electric.workspace = true
 creeer_math.workspace = true
 creeer_physics.workspace = true
 creeer_sim.workspace = true
