@@ -2,6 +2,7 @@
 //!
 //! F0 contains deterministic noise and the meshing spike; the production terrain arrives in F3.
 
+mod air;
 mod caps;
 #[cfg(test)]
 mod caps_tests;
@@ -35,6 +36,7 @@ pub mod tiles;
 #[cfg(test)]
 mod tiles_tests;
 
+pub use air::AtmosphereData;
 pub use planet::{DataError, Overrides, Planet};
 pub use terrain::Terrain;
 

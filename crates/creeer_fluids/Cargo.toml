@@ -1,12 +1,16 @@
 [package]
 name = "creeer_fluids"
-description = "Pipe networks, atmospheres, aerodynamics and buoyancy."
+description = "Fluids: atmospheres, pipe networks, aerodynamics, buoyancy and oceans."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_chem.workspace = true
+creeer_materials.workspace = true
+creeer_math.workspace = true
+creeer_terrain.workspace = true
 
 [lints]
 workspace = true

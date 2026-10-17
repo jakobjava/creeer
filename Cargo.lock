@@ -596,6 +596,12 @@ dependencies = [
 [[package]]
 name = "creeer_fluids"
 version = "0.0.1"
+dependencies = [
+ "creeer_chem",
+ "creeer_materials",
+ "creeer_math",
+ "creeer_terrain",
+]
 
 [[package]]
 name = "creeer_logic"

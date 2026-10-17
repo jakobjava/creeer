@@ -51,4 +51,21 @@ Planet(
             ),
         ],
     ),
+    // Earth's air at the datum (dry, by volume) and the US Standard Atmosphere 1976's
+    // temperature profile, its lapse rates by geopotential altitude (K per km of it). On a
+    // planet this small its gravity weakens faster with height: the geopotential takes it in.
+    atmosphere: Some((
+        composition: [("N2", 0.78084), ("O2", 0.20946), ("Ar", 0.00934), ("CO2", 0.00036)],
+        surface_pressure: "101325 Pa",
+        surface_temperature: "288.15 K",
+        layers: [
+            ("11 km", "-6.5 K/km"),
+            ("20 km", "0 K/km"),
+            ("32 km", "1 K/km"),
+            ("47 km", "2.8 K/km"),
+            ("51 km", "0 K/km"),
+            ("71 km", "-2.8 K/km"),
+            ("84.852 km", "-2 K/km"),
+        ],
+    )),
 )

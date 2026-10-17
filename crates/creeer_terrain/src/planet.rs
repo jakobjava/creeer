@@ -33,6 +33,8 @@ pub struct Planet {
     pub elevation: Arc<Elevation>,
     /// Rocks, provinces and ore deposits.
     pub geology: Geology,
+    /// Its atmosphere, if it has one (a generated body from a template has none).
+    pub atmosphere: Option<crate::air::AtmosphereData>,
 }
 
 impl Planet {
@@ -115,6 +117,8 @@ struct PlanetDef {
     axial_tilt: String,
     geology: String,
     elevation: ElevationDef,
+    #[serde(default)]
+    atmosphere: Option<crate::air::AtmosphereDef>,
 }
 
 #[derive(Deserialize)]
@@ -251,7 +255,12 @@ impl PlanetDef {
             mu,
             omega: std::f64::consts::TAU / sidereal_day,
         };
+        let atmosphere = match (&self.atmosphere, overrides) {
+            (Some(a), None) => Some(a.build()?),
+            _ => None,
+        };
         Ok(Planet {
+            atmosphere,
             datum,
             name: overrides.map_or(self.name, |o| o.name.clone()),
             seed,
