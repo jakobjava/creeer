@@ -25,12 +25,12 @@ pub mod vessels;
 use crate::TerrainGround;
 use bodies::{Bodies, Minor};
 use bubble::Bubble;
+use creeer_data::Data;
 use creeer_math::glam::DVec3;
 use creeer_orbit::generate::Generated;
 use creeer_physics::world::Body;
 use creeer_physics::world::ground::Ground;
 use pose::Pose;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use terrains::{BodyRef, Terrains};
 use vessels::{Vessel, Where};
@@ -121,8 +121,8 @@ pub struct Universe {
 
 impl Universe {
     /// A universe from a generated system, with the bubble on the home planet's surface;
-    /// `data` is the data directory, `dt` the physics step.
-    pub fn new(system: Generated, data: PathBuf, dt: f64) -> Self {
+    /// `data` the packs its terrains come from, `dt` the physics step.
+    pub fn new(system: Generated, data: Arc<Data>, dt: f64) -> Self {
         let home_file = system.majors[system.home]
             .body
             .surface

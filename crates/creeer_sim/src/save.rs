@@ -14,7 +14,7 @@
 //! **Version 2** (F5): the signature `CREEERSV`, the version (u32, little-endian), then
 //! sections, each a four-letter tag and its bytes with their length:
 //!
-//! - `META`: the planet's data file (as `creeer_terrain::data_path` takes it), the tick, and
+//! - `META`: the planet's file in the data packs (`planets/home.ron`), the tick, and
 //!   the next entity id to hand out;
 //! - `EDIT`: the terrain's edits, as `creeer_terrain::edits` writes a log;
 //! - `WRLD`: the physics world (`creeer_physics::world::save`: every body, its history, the

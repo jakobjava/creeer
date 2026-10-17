@@ -8,7 +8,7 @@ use creeer_math::glam::DVec3;
 use std::sync::Arc;
 
 fn cache() -> HeightCache {
-    let planet = Planet::load(&crate::data_path("planets/home.ron")).expect("loads");
+    let planet = Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("loads");
     HeightCache::new(Arc::clone(&planet.elevation), 256)
 }
 

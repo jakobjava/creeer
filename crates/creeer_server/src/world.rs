@@ -6,6 +6,7 @@
 //! tool makes one, and nothing is placed at a point that is not finite.
 
 use crate::things::{frame, upright};
+use creeer_data::Data;
 use creeer_materials::species::SpeciesTable;
 use creeer_math::glam::DVec3;
 use creeer_net::channel::TICK_RATE;
@@ -30,18 +31,20 @@ pub const MOST_BRUSH: f64 = 10.0;
 /// The longest tunnel an edit may bore (m).
 pub const MOST_TUNNEL: f64 = 60.0;
 
-/// A planet's terrain from its data file (as `creeer_terrain::data_path` takes it).
+/// A planet's terrain from its file `planet` in the packs `data` (`"planets/home.ron"`).
 ///
 /// # Errors
-/// If the file cannot be read.
-pub fn load_terrain(planet: &str) -> Result<Arc<Terrain>, String> {
-    let planet = Planet::load(&creeer_terrain::data_path(planet)).map_err(|e| e.to_string())?;
+/// If the file is not there or is not a valid planet.
+pub fn load_terrain(data: &Data, planet: &str) -> Result<Arc<Terrain>, String> {
+    let planet = Planet::load(data, planet).map_err(|e| e.to_string())?;
     Ok(Arc::new(Terrain::new(planet)))
 }
 
 /// The world.
 #[derive(Debug)]
 pub struct ServerWorld {
+    /// The data packs the world is made of (clients must have the same).
+    pub data: Arc<Data>,
     /// The terrain (its edits are the world's).
     pub terrain: Arc<Terrain>,
     /// The physics world.
@@ -90,19 +93,27 @@ fn ground_under(terrain: &Terrain, mut p: DVec3) -> DVec3 {
 
 impl ServerWorld {
     /// A new world on `terrain` (the planet of data file `planet`), with nothing on it.
-    pub fn new(terrain: Arc<Terrain>, planet: &str) -> Self {
+    pub fn new(data: Arc<Data>, terrain: Arc<Terrain>, planet: &str) -> Self {
         let mut world = World::new(DT);
         world.planet = Some(planet_gravity(terrain.planet()));
         world.static_friction = 0.7;
-        Self::with(terrain, world, planet.to_owned(), 0)
+        Self::with(data, terrain, world, planet.to_owned(), 0)
     }
 
-    fn with(terrain: Arc<Terrain>, mut world: World, planet: String, tick: u64) -> Self {
+    fn with(
+        data: Arc<Data>,
+        terrain: Arc<Terrain>,
+        mut world: World,
+        planet: String,
+        tick: u64,
+    ) -> Self {
         world.ground = Some(Arc::new(TerrainGround(Arc::clone(&terrain))));
         let spawn = spawn_point(&terrain);
-        let surroundings = Surroundings::of(terrain.planet(), &SpeciesTable::reference())
+        let species = SpeciesTable::from_data(&data).expect("the packs' species load");
+        let surroundings = Surroundings::of(terrain.planet(), &species)
             .expect("the planet's air is of known gases");
         Self {
+            data,
             terrain,
             world,
             planet,
@@ -117,7 +128,7 @@ impl ServerWorld {
     }
 
     /// The world a save holds, on `terrain` (its planet's; the save's edits replace its own).
-    pub fn from_save(save: Save, terrain: Arc<Terrain>) -> Self {
+    pub fn from_save(data: Arc<Data>, save: Save, terrain: Arc<Terrain>) -> Self {
         let water = save.water.clone();
         terrain.set_edits(save.edits);
         let mut world = save.world;
@@ -127,7 +138,7 @@ impl ServerWorld {
             world.planet = Some(planet_gravity(terrain.planet()));
             world.static_friction = 0.7;
         }
-        let mut this = Self::with(terrain, world, save.planet, save.tick);
+        let mut this = Self::with(data, terrain, world, save.planet, save.tick);
         this.next_id = save.next_id;
         (this.ids, this.players) = save
             .entities

@@ -36,11 +36,15 @@ pub struct SceneFluids {
 }
 
 fn home_sky() -> (Sky, Planet) {
-    let planet =
-        Planet::load(&creeer_terrain::data_path("planets/home.ron")).expect("home.ron loads");
+    let planet = Planet::load(&crate::content::data(), "planets/home.ron").expect("home.ron loads");
     let data = planet.atmosphere.clone().expect("home has air");
-    let atmosphere = Atmosphere::new(&data, planet.radius, planet.mu, &SpeciesTable::reference())
-        .expect("its air");
+    let atmosphere = Atmosphere::new(
+        &data,
+        planet.radius,
+        planet.mu,
+        &SpeciesTable::from_data(&crate::content::data()).expect("the species load"),
+    )
+    .expect("its air");
     (
         Sky {
             atmosphere,

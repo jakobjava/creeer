@@ -13,7 +13,9 @@ use std::sync::OnceLock;
 fn terrain() -> &'static Terrain {
     static TERRAIN: OnceLock<Terrain> = OnceLock::new();
     TERRAIN.get_or_init(|| {
-        Terrain::new(Planet::load(&crate::data_path("planets/home.ron")).expect("home.ron"))
+        Terrain::new(
+            Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
+        )
     })
 }
 

@@ -48,6 +48,11 @@ impl PhysicsView {
         }
     }
 
+    /// Starts the scene again (on the current data).
+    pub fn restart(&mut self) {
+        self.sim = spawn(self.scene, self.tick_rate_hz);
+    }
+
     /// The scene picker and live numbers.
     pub fn window(&mut self, ctx: &egui::Context, overlay: &mut Overlay) {
         let snapshot = self.sim.latest().current;

@@ -32,6 +32,7 @@ fn client_messages_read_back() {
     back(&ClientMessage::Hello {
         protocol: crate::PROTOCOL_VERSION,
         name: "Ada Lovelace — ✓".into(),
+        content: 0x0123_4567_89ab_cdef,
     });
     back(&ClientMessage::Inputs {
         ack: 77,

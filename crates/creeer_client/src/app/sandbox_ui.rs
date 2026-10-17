@@ -14,6 +14,7 @@ impl Running {
                 if ui.button("Solar system sandbox (F4) ▸").clicked() {
                     self.enter_system();
                 }
+                self.content_line(ui);
                 if ui.checkbox(&mut self.settings.vsync, "VSync").changed() {
                     self.renderer.set_vsync(self.settings.vsync);
                 }

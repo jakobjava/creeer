@@ -41,10 +41,3 @@ pub use air::AtmosphereData;
 pub use planet::{DataError, Overrides, Planet};
 pub use sea::OceanData;
 pub use terrain::Terrain;
-
-/// Path of a file in the repository's `data/` directory (for tools and tests).
-pub fn data_path(relative: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data")
-        .join(relative)
-}

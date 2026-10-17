@@ -59,6 +59,8 @@ pub struct Connection {
     renet: RenetClient,
     link: Link,
     name: String,
+    /// The hash of its data packs, sent in its hello.
+    content: u64,
     said_hello: bool,
     status: Status,
     /// What the server said when the client joined.
@@ -91,11 +93,12 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
-    fn with(renet: RenetClient, link: Link, name: &str) -> Self {
+    fn with(renet: RenetClient, link: Link, name: &str, content: u64) -> Self {
         Self {
             renet,
             link,
             name: name.to_owned(),
+            content,
             said_hello: false,
             status: Status::Connecting,
             welcome: None,
@@ -112,21 +115,27 @@ impl Connection {
         }
     }
 
-    /// Joins as `name` through the in-process connection `end` (`Server::connect_memory`).
-    pub fn memory(end: MemoryEnd, name: &str) -> Self {
+    /// Joins as `name`, with data of hash `content`, through the in-process connection `end`
+    /// (`Server::connect_memory`).
+    pub fn memory(end: MemoryEnd, name: &str, content: u64) -> Self {
         let mut renet = RenetClient::new(config());
         renet.set_connected();
-        Self::with(renet, Link::Memory(end), name)
+        Self::with(renet, Link::Memory(end), name, content)
     }
 
     /// Joins as `name` the server at `server` over UDP.
     ///
     /// # Errors
     /// If no socket can be opened.
-    pub fn udp(server: SocketAddr, name: &str) -> Result<Self, String> {
+    pub fn udp(server: SocketAddr, name: &str, content: u64) -> Result<Self, String> {
         let (renet, transport) = creeer_net::udp::connect(server, creeer_net::udp::fresh_id())
             .map_err(|e| e.to_string())?;
-        Ok(Self::with(renet, Link::Udp(Box::new(transport)), name))
+        Ok(Self::with(
+            renet,
+            Link::Udp(Box::new(transport)),
+            name,
+            content,
+        ))
     }
 
     /// Where it stands.
@@ -172,6 +181,7 @@ impl Connection {
             let hello = ClientMessage::Hello {
                 protocol: creeer_net::PROTOCOL_VERSION,
                 name: self.name.clone(),
+                content: self.content,
             };
             self.renet.send_message(RELIABLE, to_bytes(&hello));
         }

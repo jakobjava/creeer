@@ -5,7 +5,6 @@
 //! fire takes a quarter of one to weaken steel. The motion is not: what heat does to
 //! structures is slow beside how they move, so the frame sags as it would, only sooner.
 
-use creeer_materials::MaterialTable;
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_physics::structure::Section;
 use creeer_physics::structure::section::STEEL_S235;
@@ -172,9 +171,9 @@ impl SceneHeat {
 }
 
 fn steel() -> creeer_materials::Material {
-    MaterialTable::reference()
+    crate::content::materials()
         .get("steel_s235")
-        .expect("in the reference table")
+        .expect("in the packs")
         .clone()
 }
 
@@ -250,7 +249,7 @@ pub fn blocks(world: &mut World) -> SceneHeat {
 /// in two minutes and taking 300 W from the electronics it cools.
 pub fn radiator(world: &mut World, sun: DVec3) -> SceneHeat {
     let dt = world.dt();
-    let aluminium = MaterialTable::reference()
+    let aluminium = crate::content::materials()
         .get("aluminium_6061_t6")
         .expect("in the table")
         .clone();

@@ -38,7 +38,7 @@ impl Game {
             }
             None => (end, None),
         };
-        let mut client = Connection::memory(end, name);
+        let mut client = Connection::memory(end, name, creeer_data::Data::base().hash());
         client.attach_terrain(terrain());
         self.clients.push((client, relay));
         self.clients.len() - 1
@@ -204,6 +204,23 @@ fn a_name_in_use_or_too_long_is_refused_and_told_why() {
 }
 
 #[test]
+fn a_client_with_other_data_is_refused_and_told_the_servers_packs() {
+    let mut game = Game::new(world());
+    let end = game.server.connect_memory();
+    let mut other = Connection::memory(end, "bea", creeer_data::Data::base().hash() ^ 1);
+    other.attach_terrain(terrain());
+    game.clients.push((other, None));
+    game.run(20, still);
+    let Status::Refused(why) = game.clients[0].0.status() else {
+        panic!("joined: {:?}", game.clients[0].0.status())
+    };
+    assert!(
+        why.contains("data differs") && why.contains("base 0.0.1"),
+        "{why}"
+    );
+}
+
+#[test]
 fn a_player_who_comes_again_gets_their_avatar_back() {
     let mut game = Game::new(world());
     game.join("ada", None);
@@ -253,7 +270,7 @@ fn a_saved_world_loaded_again_is_told_to_every_player() {
 fn a_player_joins_over_udp() {
     let mut server = Server::new(world());
     let at = server.listen("127.0.0.1:0".parse().unwrap()).unwrap();
-    let mut client = Connection::udp(at, "ada").unwrap();
+    let mut client = Connection::udp(at, "ada", creeer_data::Data::base().hash()).unwrap();
     client.attach_terrain(terrain());
     let start = std::time::Instant::now();
     while client.status() != &Status::Joined || client.kinds.is_empty() {

@@ -109,7 +109,7 @@ fn neighbouring_chunks_join_without_gaps() {
 }
 
 fn home() -> Terrain {
-    Terrain::new(Planet::load(&crate::data_path("planets/home.ron")).expect("loads"))
+    Terrain::new(Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("loads"))
 }
 
 #[test]

@@ -1,5 +1,7 @@
 //! Developer tools: data validator, headless scenario runner, benchmarks.
 //!
+//! `creeer_tools validate [--data <dir>] [--mods <dir>]` checks every data pack (ADR-0018).
+//!
 //! `creeer_tools bench-spikes [--metrics <file>] [--report-only] [--only <section>]`
 //! measures the spikes against their budgets and optionally writes the metrics for
 //! `cargo xtask perf`. `--report-only` (used by CI) reports missed budgets as warnings
@@ -19,6 +21,7 @@ mod solvers;
 mod spikes;
 mod terrain_bench;
 mod thermal_bench;
+mod validate;
 mod world_bench;
 
 use std::path::PathBuf;
@@ -31,6 +34,8 @@ commands:
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech, chem,
       fluids, logic, reference)
+  validate [--data <dir>] [--mods <dir>]
+      load and check every data pack as the game merges them
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region
   import-nasa9 <thermo.inp> <out.ron>   NASA Glenn species data (the CEA program's thermo.inp)
@@ -60,6 +65,7 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("validate") => validate::run(&args[1..]),
         Some("image-diff") => match (args.get(1), args.get(2)) {
             (Some(a), Some(b)) => image_diff::run(a.as_ref(), b.as_ref()),
             _ => usage(),

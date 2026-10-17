@@ -223,7 +223,11 @@ impl Server {
         for id in ids {
             while let Some(bytes) = self.renet.receive_message(id, RELIABLE) {
                 match from_bytes::<ClientMessage>(&bytes) {
-                    Ok(ClientMessage::Hello { protocol, name }) => self.hello(id, protocol, &name),
+                    Ok(ClientMessage::Hello {
+                        protocol,
+                        name,
+                        content,
+                    }) => self.hello(id, protocol, &name, content),
                     Ok(ClientMessage::Command(command)) => {
                         let Some(session) = self.sessions.get_mut(&id) else {
                             continue;
@@ -258,7 +262,7 @@ impl Server {
         }
     }
 
-    fn hello(&mut self, id: ClientId, protocol: u32, name: &str) {
+    fn hello(&mut self, id: ClientId, protocol: u32, name: &str, content: u64) {
         let name = name.trim();
         let playing = self
             .sessions
@@ -268,6 +272,8 @@ impl Server {
             Some(format!(
                 "this server speaks protocol {PROTOCOL_VERSION}, the client {protocol}"
             ))
+        } else if content != self.world.data.hash() {
+            Some(different_data(&self.world.data, content))
         } else if name.is_empty() || name.chars().count() > LONGEST_NAME {
             Some(format!("a name of 1 to {LONGEST_NAME} characters, please"))
         } else if playing {
@@ -327,3 +333,17 @@ impl Server {
 mod play_tests;
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// Why a client with data `content` may not join a server with `data`: the server's packs.
+fn different_data(data: &creeer_data::Data, content: u64) -> String {
+    let packs: Vec<String> = data
+        .packs()
+        .iter()
+        .map(|p| format!("{} {}", p.name(), p.manifest.version))
+        .collect();
+    format!(
+        "this server's data differs from yours (its packs: {}; content {:016x}, yours {content:016x})",
+        packs.join(", "),
+        data.hash()
+    )
+}

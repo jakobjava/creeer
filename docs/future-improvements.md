@@ -163,6 +163,14 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Saving a script's functions and coroutines**: only its `memory` data survives a save, and it starts again from its source | A Lua state's insides cannot be saved portably | G | Large | ADR-0015 |
 | **Messages between controllers** other than wires (radio, buses) | Wires first | G | Medium | ADR-0015 |
 
+## Data and mods
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **The physics sandbox's members use the solver's built-in S235** (`section::STEEL_S235`), not the packs' steel: a mod's steel changes the heat scenes, not the bridge | The part catalog that builds members from the packs' materials is G2 | G | Small | ADR-0018 |
+| **A running server reloading its packs**: a server's data is fixed for its run (its world and its clients must agree) | Changing a running world's planet under its players' edits has no right answer; a restart applies changes | G | Medium | ADR-0018 |
+| **Signed or checksummed packs** for public servers: the content hash identifies data, it does not authenticate it | Not needed while servers are authoritative and private | G | Medium | ADR-0018 |
+
 ## Elsewhere
 
 | What | Why deferred | Improves | Size | Recorded in |

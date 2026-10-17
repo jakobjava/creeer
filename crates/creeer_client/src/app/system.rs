@@ -9,8 +9,8 @@ use winit::keyboard::KeyCode;
 
 /// Generates the default system and builds its universe.
 pub fn load_universe() -> Result<creeer_sim::Universe, String> {
-    let data = creeer_terrain::data_path("");
-    let system = creeer_orbit::generate::generate_file(&data.join("systems/default.ron"), &data)
+    let data = crate::content::data();
+    let system = creeer_orbit::generate::generate_file(&data, "systems/default.ron")
         .map_err(|e| e.to_string())?;
     Ok(creeer_sim::Universe::new(
         system,

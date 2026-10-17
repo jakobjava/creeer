@@ -55,7 +55,8 @@ impl Server {
             ));
         }
         let terrain = std::sync::Arc::clone(&self.world.terrain);
-        self.world = ServerWorld::from_save(save, terrain);
+        let data = std::sync::Arc::clone(&self.world.data);
+        self.world = ServerWorld::from_save(data, save, terrain);
         self.restart_sessions();
         Ok(())
     }

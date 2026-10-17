@@ -27,7 +27,6 @@ use creeer_math::glam::DVec3;
 use deposits::{Deposit, DepositHit, DepositKind};
 use rocks::RockTable;
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// One layer of a province's column.
@@ -94,27 +93,22 @@ pub struct Geology {
 }
 
 impl Geology {
-    /// Loads the geology file `path`, with the minerals and rocks in `rock_dir`; depths are
+    /// Loads geology file `path` of `data`, with the packs' minerals and rocks; depths are
     /// measured from the surface `height` metres above `datum`.
     pub fn load(
-        path: &Path,
-        rock_dir: &Path,
+        data: &creeer_data::Data,
+        path: &str,
         elevation: Arc<Elevation>,
         datum: Datum,
         seed: u64,
     ) -> Result<Self, DataError> {
-        let read = |p: &Path| {
-            std::fs::read_to_string(p).map_err(|e| DataError(format!("{}: {e}", p.display())))
-        };
-        let rocks = RockTable::parse(
-            &read(&rock_dir.join("minerals.ron"))?,
-            &read(&rock_dir.join("rocks.ron"))?,
-        )?;
-        let def: data::GeologyDef = ron::from_str(&read(path)?)
-            .map_err(|e| DataError(format!("{}: {e}", path.display())))?;
+        let rocks = RockTable::from_data(data)?;
+        let text = data.file(path).map_err(|e| DataError(e.to_string()))?;
+        let def: data::GeologyDef =
+            ron::from_str(text).map_err(|e| DataError(format!("{path}: {e}")))?;
         let built = def
             .build(&rocks, elevation.radius)
-            .map_err(|e| DataError(format!("{}: {}", path.display(), e.0)))?;
+            .map_err(|e| DataError(format!("{path}: {}", e.0)))?;
         if built.provinces.iter().any(|p| p.column.len() > MAX_LAYERS) {
             return Err(DataError(format!(
                 "at most {MAX_LAYERS} layers per province"

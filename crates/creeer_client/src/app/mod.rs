@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod content_reload;
 mod planet;
 mod sandbox_ui;
 pub(crate) mod system;
@@ -67,6 +68,9 @@ struct Running {
     last_frame: Instant,
     settings: Settings,
     adapter_label: String,
+    /// The data packs' watcher, and what its last reload did.
+    watcher: creeer_data::Watcher,
+    content: content_reload::ContentStatus,
 }
 
 impl ApplicationHandler for App {
@@ -241,6 +245,8 @@ impl Running {
             last_frame: now,
             settings,
             adapter_label,
+            watcher: crate::content::watcher(),
+            content: content_reload::ContentStatus::default(),
         })
     }
 
@@ -289,6 +295,7 @@ impl Running {
     }
 
     fn frame(&mut self) {
+        self.watch_content();
         let now = Instant::now();
         let dt = now - self.last_frame;
         self.last_frame = now;

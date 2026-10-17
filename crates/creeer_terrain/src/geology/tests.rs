@@ -7,7 +7,9 @@ use std::sync::OnceLock;
 
 fn home() -> &'static Planet {
     static PLANET: OnceLock<Planet> = OnceLock::new();
-    PLANET.get_or_init(|| Planet::load(&crate::data_path("planets/home.ron")).expect("loads"))
+    PLANET.get_or_init(|| {
+        Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("loads")
+    })
 }
 
 #[test]

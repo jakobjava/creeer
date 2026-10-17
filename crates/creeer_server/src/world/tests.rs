@@ -7,12 +7,12 @@ use creeer_terrain::edits::Brush;
 /// The reference planet's terrain, loaded anew (each side of a game has its own, as on two
 /// machines).
 pub(crate) fn terrain() -> Arc<Terrain> {
-    load_terrain("planets/home.ron").expect("the reference planet")
+    load_terrain(&creeer_data::Data::base(), "planets/home.ron").expect("the reference planet")
 }
 
 /// A new world on the reference planet.
 pub(crate) fn world() -> ServerWorld {
-    ServerWorld::new(terrain(), "planets/home.ron")
+    ServerWorld::new(creeer_data::Data::base(), terrain(), "planets/home.ron")
 }
 
 fn above(world: &ServerWorld, east: f64, height: f64) -> DVec3 {
@@ -154,7 +154,11 @@ fn a_world_saved_and_loaded_is_as_it_was() {
         w.step();
     }
     let bytes = w.to_save().to_bytes();
-    let loaded = ServerWorld::from_save(Save::from_bytes(&bytes).unwrap(), terrain());
+    let loaded = ServerWorld::from_save(
+        creeer_data::Data::base(),
+        Save::from_bytes(&bytes).unwrap(),
+        terrain(),
+    );
     assert_eq!(loaded.ids(), w.ids());
     assert_eq!(loaded.tick, 30);
     assert_eq!(loaded.terrain.edits().len(), 1);

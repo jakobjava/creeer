@@ -20,6 +20,8 @@ plan.md's exit criteria for F7: simulation LOD (active / abstract / on rails), t
 
 ### F7.1 Data packs, the validator and hot-reload (`creeer_data`, ADR-0018)
 
+**Done** (2026-10-18, ADR-0018): packs with manifests, files from the last pack, tables merged by name (replacement in place, removals, origins kept for errors); every loader reads through `Data`; data found at run time (`--data`, `--mods`, environment, beside the executable); the content hash checked when a client joins (protocol 2); `creeer_tools validate` (30 ms for the base pack); the client's hot-reload (polled, validated first, the open sandbox started again); an example mod in `tests/packs/example`. Changed from the plan: a server's data is fixed for its run (restart to apply), recorded in `docs/future-improvements.md`.
+
 - **Packs.** A pack is a directory with a `pack.ron` manifest: name, version, the packs it needs, a description. The base pack is `data/`; mods live in `mods/<name>/` (or wherever `--mods` points). Load order: the base, then the mods in dependency order (ties by name), so the result never depends on directory listing order.
 - **Two ways to change content:**
   - **files** with one definition (a planet, a geology, a solar system): a pack's file replaces the one before it;

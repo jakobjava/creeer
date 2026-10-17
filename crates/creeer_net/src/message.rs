@@ -41,12 +41,13 @@ pub enum Command {
 /// From a client to the server.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientMessage {
-    /// The first message: the protocol it speaks and the player's name.
+    /// The first message: the protocol it speaks ([`crate::PROTOCOL_VERSION`]), the
+    /// player's name and its data.
     Hello {
-        /// Its [`crate::PROTOCOL_VERSION`].
         protocol: u32,
-        /// The player's name.
         name: String,
+        /// The hash of its data packs (`creeer_data::Data::hash`): it must be the server's.
+        content: u64,
     },
     /// The latest inputs (the last few, newest last) and the newest snapshot received.
     Inputs {
@@ -85,8 +86,7 @@ pub enum ServerMessage {
         tick: u32,
         /// Ticks per second.
         rate: u32,
-        /// The planet the world stands on (its data file, as `creeer_terrain::data_path`
-        /// takes it).
+        /// The planet the world stands on (its file in the data packs: `planets/home.ron`).
         planet: String,
     },
     /// Refused: why (the protocol differs, the server is full).
@@ -195,10 +195,15 @@ fn read_text(r: &mut Reader<'_>) -> Result<String, DecodeError> {
 impl Encode for ClientMessage {
     fn encode(&self, w: &mut Writer) {
         match self {
-            Self::Hello { protocol, name } => {
+            Self::Hello {
+                protocol,
+                name,
+                content,
+            } => {
                 w.u8(0);
                 w.u32(*protocol);
                 text(w, name);
+                w.u64(*content);
             }
             Self::Inputs { ack, inputs } => {
                 w.u8(1);
@@ -237,6 +242,7 @@ impl Decode for ClientMessage {
             0 => Self::Hello {
                 protocol: r.u32()?,
                 name: read_text(r)?,
+                content: r.u64()?,
             },
             1 => Self::Inputs {
                 ack: u32::try_from(r.varint()?).map_err(|_| r.error("tick"))?,

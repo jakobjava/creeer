@@ -91,6 +91,11 @@ impl Species {
         (self.ranges[0], self.ranges[self.ranges.len() - 1])
     }
 
+    /// Where one polynomial gives way to the next (K): the ranges' inner boundaries.
+    pub fn joins(&self) -> &[f64] {
+        &self.ranges[1..self.ranges.len() - 1]
+    }
+
     /// Whether its data cover `t` (K).
     pub fn covers(&self, t: f64) -> bool {
         let (low, high) = self.range();
@@ -171,6 +176,29 @@ impl SpeciesTable {
     /// If it does not parse, a species is invalid, or a name repeats.
     pub fn parse(text: &str) -> Result<Self, String> {
         let defs: Vec<SpeciesDef> = ron::from_str(text).map_err(|e| format!("species: {e}"))?;
+        Self::from_defs(defs)
+    }
+
+    /// The species of every pack of `data` (table `species`, `chemistry/*.ron`).
+    ///
+    /// # Errors
+    /// As [`creeer_data::Table::merge`], or if a species is invalid.
+    pub fn from_data(data: &creeer_data::Data) -> Result<Self, String> {
+        let defs = (data.table("species", "chemistry/*.ron"))
+            .merge_traced(creeer_data::merge::ron_list::<SpeciesDef>, |d| &d.name)
+            .map_err(|e| e.to_string())?;
+        let mut table = Self::default();
+        for (def, origin) in defs {
+            let species = Species::build(def).map_err(|e| format!("{origin}: {e}"))?;
+            table
+                .index
+                .insert(species.name.clone(), table.species.len());
+            table.species.push(species);
+        }
+        Ok(table)
+    }
+
+    fn from_defs(defs: Vec<SpeciesDef>) -> Result<Self, String> {
         let mut table = Self::default();
         for def in defs {
             let species = Species::build(def)?;

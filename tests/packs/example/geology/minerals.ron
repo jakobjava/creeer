@@ -1,0 +1,4 @@
+// Added to the base pack's minerals.
+[
+    (name: "chromite", formula: "FeCr2O4", density: "4790 kg/m^3"),
+]

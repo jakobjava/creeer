@@ -567,6 +567,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_chem",
  "creeer_core",
+ "creeer_data",
  "creeer_electric",
  "creeer_fluids",
  "creeer_logic",
@@ -593,6 +594,14 @@ name = "creeer_core"
 version = "0.0.1"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "creeer_data"
+version = "0.0.1"
+dependencies = [
+ "ron",
+ "serde",
 ]
 
 [[package]]
@@ -631,6 +640,7 @@ dependencies = [
 name = "creeer_materials"
 version = "0.0.1"
 dependencies = [
+ "creeer_data",
  "creeer_math",
  "ron",
  "serde",
@@ -676,6 +686,7 @@ name = "creeer_orbit"
 version = "0.0.1"
 dependencies = [
  "approx",
+ "creeer_data",
  "creeer_math",
  "proptest",
  "rayon",
@@ -711,6 +722,7 @@ name = "creeer_server"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_data",
  "creeer_materials",
  "creeer_math",
  "creeer_net",
@@ -726,6 +738,7 @@ name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
  "creeer_chem",
+ "creeer_data",
  "creeer_electric",
  "creeer_fluids",
  "creeer_logic",
@@ -743,6 +756,7 @@ dependencies = [
 name = "creeer_terrain"
 version = "0.0.1"
 dependencies = [
+ "creeer_data",
  "creeer_materials",
  "creeer_math",
  "ron",
@@ -765,6 +779,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_chem",
  "creeer_core",
+ "creeer_data",
  "creeer_electric",
  "creeer_fluids",
  "creeer_logic",

@@ -30,6 +30,7 @@
 
 mod app;
 mod circuit_bench;
+mod content;
 mod control_panel;
 mod control_rigs;
 mod demo;
@@ -103,6 +104,7 @@ const BACKGROUND: wgpu::Color = wgpu::Color::BLACK;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    content::init(&args)?;
     if let Some(i) = args.iter().position(|a| a == "--bench") {
         let frames = args
             .get(i + 1)
