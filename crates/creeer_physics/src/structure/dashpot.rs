@@ -177,3 +177,18 @@ impl super::ImplicitSolver {
         }
     }
 }
+
+impl super::ImplicitSolver {
+    /// The scheme its last substep took (a fallback's, if the energy guard redid it).
+    #[allow(clippy::float_cmp)] // Newmark's τ is β itself
+    pub fn last_scheme(&self) -> super::Scheme {
+        let w = &self.work;
+        if w.tau == 0.0 {
+            super::Scheme::BackwardEuler
+        } else if w.tau == w.beta {
+            super::Scheme::Newmark
+        } else {
+            super::Scheme::Bdf2
+        }
+    }
+}

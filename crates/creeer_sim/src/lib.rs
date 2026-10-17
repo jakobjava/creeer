@@ -6,6 +6,9 @@
 //! F6: heat in structures (`heat`): members lengthening and weakening as they warm.
 //! F6: electric machines on drivetrains (`drive`): circuit and shaft solved as one.
 
+pub mod aero;
+#[cfg(test)]
+mod aero_tests;
 pub mod avatar;
 pub mod drive;
 #[cfg(test)]
