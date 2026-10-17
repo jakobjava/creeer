@@ -142,6 +142,7 @@ impl Atmosphere {
     /// Viscosity and γ at `t`, between the kelvins tabulated.
     fn tabulated(&self, t: f64) -> (f64, f64) {
         let x = (t - TABLE_FROM).clamp(0.0, (TABLE_KELVINS - 2) as f64);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped to the table above
         let k = x.floor() as usize;
         let f = x - k as f64;
         let (a, b) = (self.table[k], self.table[k + 1]);
