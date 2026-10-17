@@ -16,7 +16,7 @@
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
-//! `creeer_client --planet <orbit|high|low|surface|tunnel|night> <file.png> [--sun <deg>]`, and
+//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`, and
 //! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
 //!
 //! The F4 solar-system sandbox (button in the Sandbox window): a generated solar system with

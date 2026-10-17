@@ -14,6 +14,23 @@ pub struct Sky {
     pub sun_irradiance: [f64; 3],
     /// Brightness of the star field (0 = none).
     pub star_brightness: f32,
+    /// Its ocean, if it has one: water up to sea level (`sea.wgsl`).
+    pub sea: Option<SeaSurface>,
+}
+
+/// A planet's sea level, as the ellipsoid of its datum's polar and equatorial radii, its
+/// axis (simulation space), and its water's colour (linear RGB, its albedo from within).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SeaSurface {
+    pub polar_radius: f64,
+    pub equatorial_radius: f64,
+    pub axis: DVec3,
+    pub color: [f32; 3],
+}
+
+impl SeaSurface {
+    /// Open ocean's colour from within: a deep blue-green (an albedo of a few per cent).
+    pub const OCEAN: [f32; 3] = [0.004, 0.016, 0.03];
 }
 
 impl Sky {

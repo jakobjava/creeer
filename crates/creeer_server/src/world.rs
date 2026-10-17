@@ -5,16 +5,16 @@
 //! only within [`REACH`] of the asking player's avatar, an edit's brush is no larger than a
 //! tool makes one, and nothing is placed at a point that is not finite.
 
-use creeer_math::glam::{DQuat, DVec3};
+use crate::things::{frame, upright};
+use creeer_materials::species::SpeciesTable;
+use creeer_math::glam::DVec3;
 use creeer_net::channel::TICK_RATE;
 use creeer_net::entity::EntityId;
 use creeer_net::message::{AvatarInput, Command};
-use creeer_physics::structure::Section;
-use creeer_physics::structure::section::STEEL_S235;
-use creeer_physics::structure::shapes::{Base, space_frame};
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::{Body, World};
 use creeer_sim::save::Save;
+use creeer_sim::surroundings::Surroundings;
 use creeer_sim::{TerrainGround, avatar, planet_gravity};
 use creeer_terrain::edits::{Brush, Edit, Edits};
 use creeer_terrain::{Planet, Terrain};
@@ -57,6 +57,9 @@ pub struct ServerWorld {
     next_id: u32,
     /// Where avatars first appear: on land, on the ground.
     spawn: DVec3,
+    /// The planet's air and sea on its bodies (F6.6; avatars spared: their players'
+    /// machines predict them without).
+    surroundings: Surroundings,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -97,6 +100,8 @@ impl ServerWorld {
     fn with(terrain: Arc<Terrain>, mut world: World, planet: String, tick: u64) -> Self {
         world.ground = Some(Arc::new(TerrainGround(Arc::clone(&terrain))));
         let spawn = spawn_point(&terrain);
+        let surroundings = Surroundings::of(terrain.planet(), &SpeciesTable::reference())
+            .expect("the planet's air is of known gases");
         Self {
             terrain,
             world,
@@ -107,11 +112,13 @@ impl ServerWorld {
             index: HashMap::new(),
             next_id: 1,
             spawn,
+            surroundings,
         }
     }
 
     /// The world a save holds, on `terrain` (its planet's; the save's edits replace its own).
     pub fn from_save(save: Save, terrain: Arc<Terrain>) -> Self {
+        let water = save.water.clone();
         terrain.set_edits(save.edits);
         let mut world = save.world;
         if world.planet.is_none() {
@@ -127,6 +134,12 @@ impl ServerWorld {
             .into_iter()
             .map(|(id, p)| (EntityId(id), p))
             .unzip();
+        for (index, player) in this.players.iter().enumerate() {
+            if player.is_some() {
+                this.surroundings.spare(index);
+            }
+        }
+        this.surroundings.restore(water);
         this.reindex();
         this
     }
@@ -145,6 +158,7 @@ impl ServerWorld {
                 .map(|id| id.0)
                 .zip(self.players.iter().cloned())
                 .collect(),
+            water: self.surroundings.water(),
         }
     }
 
@@ -200,6 +214,9 @@ impl ServerWorld {
         let id = EntityId(self.next_id);
         self.next_id += 1;
         let index = self.world.add(body);
+        if player.is_some() {
+            self.surroundings.spare(index);
+        }
         self.lift_clear(index);
         self.index.insert(id, self.ids.len());
         self.ids.push(id);
@@ -315,6 +332,7 @@ impl ServerWorld {
             Command::Clear => {
                 let players = &self.players;
                 let map = self.world.retain_bodies(|i, _| players[i].is_some());
+                self.surroundings.retain(&map);
                 (self.ids, self.players) = (kept(&map, &self.ids), kept(&map, &self.players));
                 self.reindex();
             }
@@ -324,7 +342,9 @@ impl ServerWorld {
 
     /// One step.
     pub fn step(&mut self) {
+        self.surroundings.push(&mut self.world);
         self.world.step();
+        self.surroundings.settle(&mut self.world, DT);
         self.tick += 1;
     }
 }
@@ -354,35 +374,6 @@ fn check(edit: &Edit) -> Result<(), String> {
             "a brush larger than a tool's ({MOST_BRUSH} m, tunnels {MOST_TUNNEL} m)"
         )),
     }
-}
-
-/// An orientation standing upright on the local horizon at `at`.
-fn upright(at: DVec3) -> DQuat {
-    DQuat::from_rotation_arc(DVec3::Y, at.normalize())
-}
-
-/// A steel space frame (2 × 2 × 2 cells of 1 m, welded tubes of 50 mm, 3 mm wall: 160 kg)
-/// standing upright with its base centred at `at`.
-fn frame(at: DVec3) -> Body {
-    let structure = space_frame(
-        [2, 2, 2],
-        1.0,
-        Section::round_tube(0.05, 0.003),
-        STEEL_S235,
-        Base::Free,
-    );
-    let mut body = Body::structure(structure, DT);
-    let turn = upright(at);
-    let s = &mut body.structure;
-    for (p, q) in s.position.iter_mut().zip(&mut s.orientation) {
-        // Turned as a whole (every node with it, so no member is strained).
-        *p = at + turn * (*p - DVec3::new(1.0, 0.0, 1.0));
-        *q = turn;
-    }
-    body.friction = 0.6;
-    body.solver.refactor(&body.structure);
-    body.solver.reset_history(&body.structure);
-    body
 }
 
 #[cfg(test)]

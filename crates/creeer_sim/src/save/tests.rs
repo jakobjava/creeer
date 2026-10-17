@@ -78,6 +78,7 @@ fn scene() -> Save {
         edits,
         world,
         entities: vec![(1, None), (2, None), (5, Some("ada".into())), (8, None)],
+        water: Vec::new(),
     }
 }
 
@@ -195,4 +196,21 @@ fn a_section_of_a_later_version_is_skipped() {
     w.raw(&bytes[12 + (bytes.len() - 12 - r.remaining())..]);
     let read = Save::from_bytes(&w.finish()).unwrap();
     assert_eq!(read.to_bytes(), bytes);
+}
+
+/// The water moving with floating shapes comes back as it went (an optional section: a save
+/// without it reads as before, the water still).
+#[test]
+fn the_water_moving_with_floaters_is_kept() {
+    let mut save = scene();
+    save.water = vec![0.0, 128.25, 3.5e-7];
+    let back = Save::from_bytes(&save.to_bytes()).expect("reads");
+    assert_eq!(back.water, save.water);
+    let plain = scene();
+    assert!(
+        Save::from_bytes(&plain.to_bytes())
+            .expect("reads")
+            .water
+            .is_empty()
+    );
 }

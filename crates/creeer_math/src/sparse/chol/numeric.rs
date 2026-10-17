@@ -58,6 +58,22 @@ impl Cholesky {
         scratch: &mut [Vec<f64>],
         x: &mut [f64],
     ) -> Result<(), NotPositiveDefinite> {
+        if !self.jobs.is_empty() {
+            self.factor_tasks(a, l_val, scratch)?;
+        }
+        for k in (0..self.n).filter(|&k| !self.in_task[k]) {
+            self.row(k, a, (l_val, 0), (x, 0))?;
+        }
+        Ok(())
+    }
+
+    /// The subtrees' rows, in parallel (a small factorisation has none: no tasks started).
+    fn factor_tasks(
+        &self,
+        a: &Csc<f64>,
+        l_val: &mut [f64],
+        scratch: &mut [Vec<f64>],
+    ) -> Result<(), NotPositiveDefinite> {
         let parts = self.split(l_val, &self.l_ptr);
         let failed: Vec<NotPositiveDefinite> = self
             .jobs
@@ -71,13 +87,7 @@ impl Cholesky {
                     .find_map(|k| self.row(k, a, (part, base), (xs, lo)).err())
             })
             .collect();
-        if let Some(&e) = failed.first() {
-            return Err(e);
-        }
-        for k in (0..self.n).filter(|&k| !self.in_task[k]) {
-            self.row(k, a, (l_val, 0), (x, 0))?;
-        }
-        Ok(())
+        failed.first().map_or(Ok(()), |&e| Err(e))
     }
 
     /// Row k of L (up-looking): `l_val` holds L's values from storage index `l_base`, `x` is
@@ -148,16 +158,19 @@ impl Cholesky {
             y[k] = b[self.perm[k]];
         }
 
-        // Forward: the subtrees, then the rows above them.
-        let parts = self.split_rows(&mut y);
-        self.jobs
-            .par_iter()
-            .zip(parts)
-            .for_each(|(&(lo, hi), part)| {
-                for k in (lo..hi).filter(|&k| self.in_task[k]) {
-                    self.forward_row(k, part, lo);
-                }
-            });
+        // Forward: the subtrees, then the rows above them. (A small factorisation has no
+        // subtree tasks: no tasks started, they cost more than its rows.)
+        if !self.jobs.is_empty() {
+            let parts = self.split_rows(&mut y);
+            self.jobs
+                .par_iter()
+                .zip(parts)
+                .for_each(|(&(lo, hi), part)| {
+                    for k in (lo..hi).filter(|&k| self.in_task[k]) {
+                        self.forward_row(k, part, lo);
+                    }
+                });
+        }
         for k in (0..self.n).filter(|&k| !self.in_task[k]) {
             self.forward_row(k, &mut y, 0);
         }

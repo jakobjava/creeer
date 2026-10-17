@@ -306,6 +306,7 @@ pub fn sky(bodies: &[BodyView], home: usize, to_render: impl Fn(DVec3) -> DVec3)
         planet_center: to_render(home.state.0),
         sun_irradiance: [3.6, 3.4, 3.1],
         star_brightness: 1.0,
+        sea: None,
     }
 }
 

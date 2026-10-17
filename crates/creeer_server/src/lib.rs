@@ -9,6 +9,7 @@ pub mod predicted;
 pub mod replicate;
 pub mod server;
 pub mod session;
+mod things;
 pub mod world;
 
 pub use client::Connection;

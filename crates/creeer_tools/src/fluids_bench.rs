@@ -1,7 +1,8 @@
 //! F6.6 fluids: a town's water mains of 5,000 pipes (a 50 × 50 grid of junctions fed by two
 //! pumped reservoirs and a tank, every junction drawing its demand, the demand swinging
-//! ±50 % over ten minutes) with what the water carries, at 10 Hz (ADR-0014: a quasi-steady
-//! network's states are its tanks' levels and its content, which move over seconds); 1,000 aero panels on 100 bodies tumbling
+//! ±50 % over ten minutes) with what the water carries, at the rate it picks from its
+//! structure (ADR-0014); and 250 houses' water (5,250 pipes in small networks, each every tick,
+//! stepped in parallel as a world's machines are); 1,000 aero panels on 100 bodies tumbling
 //! through the air; 200 boxes and hulls floating in a sea.
 
 use crate::spikes::{Better, MIN_SPEC_CORE_FACTOR, Report, p, time_ticks};
@@ -15,10 +16,9 @@ use creeer_physics::world::{Body, World, rotation};
 use creeer_sim::aero::{Airframe, Datum, Sky};
 use creeer_sim::sea::{Floater, Level, Sea};
 use creeer_terrain::{AtmosphereData, OceanData};
+use rayon::prelude::*;
 
 const DT: f64 = 1.0 / 60.0;
-/// A pipe network's step (s): 10 Hz.
-const PIPE_DT: f64 = 0.1;
 /// Budgets on the minimum-spec CPU (docs/f6-plan.md), ms per 60 Hz tick.
 const PIPES_MS: f64 = 1.0;
 const PANELS_MS: f64 = 0.2;
@@ -28,6 +28,7 @@ const FLOATING_MS: f64 = 0.2;
 pub fn run(report: &mut Report) {
     println!("F6.6 fluids (ms per 60 Hz tick, p50 / p99)");
     pipes(report);
+    houses(report);
     panels(report);
     floating(report);
     println!();
@@ -94,40 +95,49 @@ fn pipes(report: &mut Report) {
         .filter(|l| matches!(l.kind, LinkKind::Pipe { .. }))
         .count();
     let mut tracer = net.tracer(&[0.0, 288.0]);
-    for _ in 0..30 {
-        net.step(PIPE_DT);
-        net.carry(&mut tracer, PIPE_DT);
+    // Its own rate, from its structure (ADR-0014).
+    let every = net.ticks_per_step();
+    for _ in 0..30 * every {
+        if let Some((_, h)) = net.tick(DT) {
+            net.carry(&mut tracer, h);
+        }
     }
     let mut tick = 0u32;
     let mut iterations = 0;
+    // Each sample: one step's interval of ticks.
     let t = time_ticks(
         || {
-            // The demand swings ±50 % over ten minutes (a day's swing 144 times as fast).
-            let swing = 1.0
-                + 0.5
-                    * creeer_math::det::sin(
-                        f64::from(tick) * PIPE_DT * std::f64::consts::TAU / 600.0,
-                    );
-            for &j in &junctions {
-                net.nodes[j].kind = NodeKind::Junction {
-                    demand: 2e-4 * swing,
-                };
+            for _ in 0..every {
+                // The demand swings ±50 % over ten minutes (a day's swing 144 times as fast).
+                let swing = 1.0
+                    + 0.5
+                        * creeer_math::det::sin(
+                            f64::from(tick) * DT * std::f64::consts::TAU / 600.0,
+                        );
+                for &j in &junctions {
+                    net.nodes[j].kind = NodeKind::Junction {
+                        demand: 2e-4 * swing,
+                    };
+                }
+                if let Some((r, h)) = net.tick(DT) {
+                    iterations = iterations.max(r.iterations);
+                    net.carry(&mut tracer, h);
+                }
+                tick += 1;
             }
-            iterations = iterations.max(net.step(PIPE_DT).iterations);
-            net.carry(&mut tracer, PIPE_DT);
-            tick += 1;
         },
         200,
     );
-    let per_tick = p(&t, 50.0) / 6.0;
+    let per_tick = p(&t, 50.0) / f64::from(every);
     println!(
-        "  {pipes} pipes and their content: {:.3} / {:.3} ms every 0.1 s, {per_tick:.3} ms a tick | Newton <= {iterations} iterations",
+        "  {pipes} pipes and their content: every {every} ticks ({} Hz), {:.3} / {:.3} ms a step, {per_tick:.3} ms a tick | Newton <= {iterations} iterations",
+        60 / every,
         p(&t, 50.0),
         p(&t, 99.0)
     );
     report.metric("fluids_5000_pipes_p50_ms", p(&t, 50.0), Better::Lower);
     let projected = per_tick / MIN_SPEC_CORE_FACTOR;
-    report.budget(projected <= PIPES_MS, format!("{pipes} pipes at 10 Hz projected to min-spec: {projected:.2} ms a tick <= {PIPES_MS} ms"));
+    report.budget(projected <= PIPES_MS, format!("{pipes} pipes at their rate projected to min-spec: {projected:.2} ms a tick <= {PIPES_MS} ms"));
 }
 
 fn standard_sky() -> Sky {
@@ -258,4 +268,86 @@ fn floating(report: &mut Report) {
         projected <= FLOATING_MS,
         format!("200 floating bodies projected to min-spec: {projected:.3} ms <= {FLOATING_MS} ms"),
     );
+}
+
+/// A house's water: the mains, a pump up to a roof tank, twenty taps on a branching line.
+fn house() -> Network {
+    let mut net = Network::new(Liquid::WATER_20C, 9.806_65);
+    let mains = net.node(0.0, NodeKind::Reservoir, 30.0);
+    let tank = net.node(
+        12.0,
+        NodeKind::Tank {
+            area: 1.0,
+            floor: 12.0,
+        },
+        12.5,
+    );
+    let pump = LinkKind::Pump {
+        shutoff: 25.0,
+        resistance: 4e4,
+        speed: 1.0,
+        best_flow: 0.002,
+        best_efficiency: 0.6,
+    };
+    net.link(mains, tank, pump);
+    let mut last = tank;
+    for k in 0..20 {
+        let tap = net.node(
+            10.0 - f64::from(k % 5),
+            NodeKind::Junction { demand: 5e-5 },
+            0.0,
+        );
+        let line = LinkKind::Pipe {
+            length: 3.0,
+            diameter: 0.02,
+            roughness: 1e-4,
+            minor: 0.5,
+            check: false,
+        };
+        net.link(if k % 4 == 0 { tank } else { last }, tap, line);
+        last = tap;
+    }
+    net
+}
+
+/// 250 houses (5,250 pipes in small networks): each picks every tick, and they are stepped in
+/// parallel, as a world's separate machines are.
+fn houses(report: &mut Report) {
+    let mut town: Vec<(Network, creeer_fluids::pipes::content::Tracer)> = (0..250)
+        .map(|_| {
+            let net = house();
+            let tracer = net.tracer(&[0.0, 288.0]);
+            (net, tracer)
+        })
+        .collect();
+    let every = town[0].0.ticks_per_step();
+    let pipes: usize = town.iter().map(|(n, _)| n.links.len()).sum();
+    let mut tick = 0u32;
+    let t = time_ticks(
+        || {
+            let swing = 1.0
+                + 0.5 * creeer_math::det::sin(f64::from(tick) * DT * std::f64::consts::TAU / 600.0);
+            town.par_iter_mut().for_each(|(net, tracer)| {
+                for node in &mut net.nodes {
+                    if let NodeKind::Junction { demand } = &mut node.kind {
+                        *demand = 5e-5 * swing;
+                    }
+                }
+                if let Some((_, h)) = net.tick(DT) {
+                    net.carry(tracer, h);
+                }
+            });
+            tick += 1;
+        },
+        200,
+    );
+    println!(
+        "  250 houses, {pipes} pipes: every {every} tick ({} Hz), {:.3} / {:.3} ms a tick",
+        60 / every,
+        p(&t, 50.0),
+        p(&t, 99.0)
+    );
+    report.metric("fluids_250_houses_p50_ms", p(&t, 50.0), Better::Lower);
+    let projected = p(&t, 50.0) / MIN_SPEC_CORE_FACTOR;
+    report.budget(projected <= PIPES_MS, format!("{pipes} pipes in 250 houses projected to min-spec: {projected:.2} ms a tick <= {PIPES_MS} ms"));
 }

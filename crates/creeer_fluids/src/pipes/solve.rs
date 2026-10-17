@@ -9,6 +9,9 @@ use creeer_math::sparse::{Cholesky, Csc, NotPositiveDefinite};
 /// Conjugate-gradient iterations tried before refactorising.
 const TRIES: usize = 6;
 
+/// A refactorisation costing at most this many solves is made rather than preconditioned.
+const CHEAP: f64 = 4.0;
+
 /// Done when the preconditioned residual, M⁻¹·r (the error, M being near A), is this small
 /// against the solution (a direct solve's rounding is some 10⁻¹⁵ of it).
 const ROUNDING: f64 = 1e-13;
@@ -32,6 +35,12 @@ pub(crate) fn solve(
     b: &mut [f64],
     fresh: bool,
 ) -> Result<bool, NotPositiveDefinite> {
+    // A factorisation that costs no more than a few solves (a small or tree-like network's)
+    // is simply made again: conjugate gradients would take as long.
+    let fresh = fresh
+        || factor
+            .as_ref()
+            .is_some_and(|m| m.factor_to_solve() <= CHEAP);
     if let Some(m) = factor.as_mut().filter(|_| !fresh)
         && refine(m, a, b)
     {

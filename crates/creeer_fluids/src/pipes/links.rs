@@ -1,7 +1,7 @@
 //! What each link does to the head: its loss h(Q) along it (H_a − H_b = h(Q)), and the
 //! loss's slope dh/dQ, for Newton's method.
 
-use super::friction::{LAMINAR, darcy_from};
+use super::friction::{Hint, LAMINAR, darcy_from};
 use super::{Link, LinkKind, Liquid};
 
 /// The least slope (m per m³/s) a link's law is given: where it is flat at no flow (a pump
@@ -15,7 +15,7 @@ fn area(diameter: f64) -> f64 {
 
 /// A pipe's or a valve's loss at `q`: friction (Darcy–Weisbach) and minor losses, v|v|/2g,
 /// and its exact slope by q (the friction factor's own by Re included).
-fn loss(kind: &LinkKind, liquid: &Liquid, g: f64, q: f64, hint: &mut f64) -> (f64, f64) {
+fn loss(kind: &LinkKind, liquid: &Liquid, g: f64, q: f64, hint: &mut Hint) -> (f64, f64) {
     match *kind {
         LinkKind::Pipe {
             length,
@@ -65,12 +65,18 @@ fn loss(kind: &LinkKind, liquid: &Liquid, g: f64, q: f64, hint: &mut f64) -> (f6
 
 /// Link `link`'s head loss at flow `q` and its slope.
 pub(crate) fn law(link: &Link, liquid: &Liquid, g: f64, q: f64) -> (f64, f64) {
-    law_from(link, liquid, g, q, &mut 0.0)
+    law_from(link, liquid, g, q, &mut Hint::default())
 }
 
 /// As [`law`], its friction factor's solve started from `hint` (1/√f a step ago), left
 /// with this one's.
-pub(crate) fn law_from(link: &Link, liquid: &Liquid, g: f64, q: f64, hint: &mut f64) -> (f64, f64) {
+pub(crate) fn law_from(
+    link: &Link,
+    liquid: &Liquid,
+    g: f64,
+    q: f64,
+    hint: &mut Hint,
+) -> (f64, f64) {
     let (h, slope) = loss(&link.kind, liquid, g, q, hint);
     (h, slope.max(FLATTEST))
 }

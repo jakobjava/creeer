@@ -21,17 +21,26 @@ pub fn colebrook(re: f64, rr: f64) -> f64 {
 /// x = −2·log₁₀(a + b·x), so dx/dRe·(1 + 2b/(ln 10·(a + b·x))) = 2·x·b/(Re·ln 10·(a + b·x)),
 /// and df/dRe = −2·x⁻³·dx/dRe.
 pub fn colebrook_slope(re: f64, rr: f64) -> (f64, f64) {
-    let mut x = 0.0;
-    colebrook_from(re, rr, &mut x)
+    colebrook_from(re, rr, &mut Hint::default())
 }
 
-/// As [`colebrook_slope`], Newton started from `x` = 1/√f if it is positive (the factor
-/// found for the same pipe a step ago: one or two steps then reach rounding, against four
-/// from Swamee and Jain's estimate, which costs three powers besides), left with the root.
-pub fn colebrook_from(re: f64, rr: f64, hint: &mut f64) -> (f64, f64) {
+/// Where a pipe's last Colebrook solve ended: x = 1/√f at Reynolds number `re`, and dx/dRe
+/// there. (Nought: none yet.)
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Hint {
+    pub x: f64,
+    pub re: f64,
+    pub slope: f64,
+}
+
+/// As [`colebrook_slope`], Newton started from `hint`'s root carried to this Re along its
+/// slope (first order: the start is off by the change squared, and one Newton step reaches
+/// rounding, against four from Swamee and Jain's estimate, which costs three powers
+/// besides); `hint` is left at this solve.
+pub fn colebrook_from(re: f64, rr: f64, hint: &mut Hint) -> (f64, f64) {
     let ln10 = std::f64::consts::LN_10;
-    let mut x = *hint;
-    if x <= 0.0 {
+    let mut x = hint.x + hint.slope * (re - hint.re);
+    if hint.x <= 0.0 || x <= 0.0 {
         let swamee = 0.25 / det::pow(det::log10(rr / 3.7 + 5.74 / det::pow(re, 0.9)), 2.0);
         x = 1.0 / swamee.sqrt();
     }
@@ -42,13 +51,15 @@ pub fn colebrook_from(re: f64, rr: f64, hint: &mut f64) -> (f64, f64) {
         let dg = 1.0 + 2.0 / ln10 * b / inner;
         let step = g / dg;
         x -= step;
-        if step.abs() < 1e-14 * x {
+        // Newton's next step is about this one squared over x (|g''/2g'| ≤ 1/x here): below
+        // 10⁻⁷·x, the root is reached to 10⁻¹⁴, rounding.
+        if step.abs() < 1e-7 * x {
             break;
         }
     }
-    *hint = x;
     let inner = ln10 * (rr / 3.7 + b * x);
     let dx = 2.0 * x * b / (re * inner) / (1.0 + 2.0 * b / inner);
+    *hint = Hint { x, re, slope: dx };
     (1.0 / (x * x), -2.0 / (x * x * x) * dx)
 }
 
@@ -59,11 +70,11 @@ pub fn darcy(re: f64, rr: f64) -> f64 {
 
 /// The Darcy factor and its slope df/dRe.
 pub fn darcy_slope(re: f64, rr: f64) -> (f64, f64) {
-    darcy_from(re, rr, &mut 0.0)
+    darcy_from(re, rr, &mut Hint::default())
 }
 
 /// As [`darcy_slope`], Colebrook's solve started from `hint` ([`colebrook_from`]).
-pub fn darcy_from(re: f64, rr: f64, hint: &mut f64) -> (f64, f64) {
+pub fn darcy_from(re: f64, rr: f64, hint: &mut Hint) -> (f64, f64) {
     if re <= LAMINAR {
         let re = re.max(1e-12);
         return (64.0 / re, -64.0 / (re * re));
@@ -73,7 +84,9 @@ pub fn darcy_from(re: f64, rr: f64, hint: &mut f64) -> (f64, f64) {
     }
     // Hermite cubic on Re between the laminar law's end and Colebrook's start.
     let (f0, d0) = (64.0 / LAMINAR, -64.0 / (LAMINAR * LAMINAR));
-    let (f1, d1) = colebrook_slope(TURBULENT, rr);
+    // (Its turbulent end from the pipe's hint too: the same for it every step, so one
+    // logarithm instead of a cold solve; a household pipe flows here.)
+    let (f1, d1) = colebrook_from(TURBULENT, rr, hint);
     let span = TURBULENT - LAMINAR;
     let s = (re - LAMINAR) / span;
     let (h00, h10, h01, h11) = (

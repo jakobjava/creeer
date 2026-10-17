@@ -16,6 +16,9 @@ pub(super) struct Scratch {
     passing: Vec<usize>,
     waiting: Vec<usize>,
     out: Vec<f64>,
+    fill: Vec<usize>,
+    /// What came in and went out, each quantity's.
+    sums: Vec<Sum>,
 }
 
 impl Tracer {
@@ -39,8 +42,11 @@ impl Tracer {
         #[allow(clippy::cast_precision_loss)]
         let tau = dt / parts as f64;
         self.settle_order(flows, draws);
-        let (mut imported, mut exported) = (vec![Sum::default(); n], vec![Sum::default(); n]);
         let mut s = std::mem::take(&mut self.scratch);
+        let mut sums = std::mem::take(&mut s.sums);
+        sums.clear();
+        sums.resize(2 * n, Sum::default());
+        let (imported, exported) = sums.split_at_mut(n);
         s.inflow.resize(self.points.len() * n, 0.0);
         for _ in 0..parts {
             s.inflow.fill(0.0);
@@ -109,10 +115,16 @@ impl Tracer {
                 }
             }
         }
-        for ((ledger, i), e) in self.ledgers.iter_mut().zip(&imported).zip(&exported) {
+        for ((ledger, i), e) in self
+            .ledgers
+            .iter_mut()
+            .zip(imported.iter())
+            .zip(exported.iter())
+        {
             ledger.import(i.value());
             ledger.export(e.value());
         }
+        s.sums = sums;
         self.scratch = s;
         parts
     }
@@ -142,12 +154,13 @@ impl Tracer {
         }
         s.passing.clear();
         s.passing.resize(s.starts[count], 0);
-        let mut fill = s.starts[..count].to_vec();
+        s.fill.clear();
+        s.fill.extend_from_slice(&s.starts[..count]);
         for (j, (l, &m)) in self.lines.iter().zip(flows).enumerate() {
             if passes(l, m) {
                 let from = if m > 0.0 { l.a } else { l.b };
-                s.passing[fill[from]] = j;
-                fill[from] += 1;
+                s.passing[s.fill[from]] = j;
+                s.fill[from] += 1;
             }
         }
         s.order.clear();

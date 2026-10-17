@@ -287,4 +287,4 @@ mod sky;
 mod tests;
 
 pub use luts::{AtmosphereLuts, MULTISCATTER_LUT, TRANSMITTANCE_LUT, atmosphere_luts};
-pub use sky::Sky;
+pub use sky::{SeaSurface, Sky};

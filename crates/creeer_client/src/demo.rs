@@ -290,6 +290,7 @@ pub fn sky(origin: DVec3) -> Sky {
         planet_center: origin - DVec3::Y * PLANET_RADIUS,
         sun_irradiance: [3.6, 3.4, 3.1],
         star_brightness: 1.0,
+        sea: None,
     }
 }
 

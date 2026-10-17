@@ -31,6 +31,14 @@ fn quadratic(k: f64, u: DVec3) -> (DVec3, DMat3) {
 pub fn push(sea: &Sea, world: &mut World, floaters: &mut [Floater]) {
     let rho = sea.water.density;
     for f in floaters.iter_mut() {
+        // A sleeping body is not stepped: nothing on it (it wakes when something touches it).
+        if world.bodies[f.body].sleep.asleep {
+            // (Its history restarts when it wakes: no end force carried into that step.)
+            (f.force, f.torque, f.dashpot, f.end, f.idle) =
+                (DVec3::ZERO, DVec3::ZERO, None, DVec3::ZERO, true);
+            continue;
+        }
+        f.idle = false;
         let (rotation, x, v, w) = {
             let s = &world.bodies[f.body].structure;
             let n = f.node;
@@ -103,10 +111,13 @@ pub fn push(sea: &Sea, world: &mut World, floaters: &mut [Floater]) {
 /// the mean velocity).
 pub fn settle(world: &mut World, floaters: &mut [Floater], h: f64) {
     for f in floaters.iter_mut().rev() {
-        let s = &mut world.bodies[f.body].structure;
         let n = f.node;
-        s.load[n] -= f.force;
+        world.bodies[f.body].take_load(n, f.force);
+        let s = &mut world.bodies[f.body].structure;
         s.torque[n] -= f.torque;
+        if f.idle {
+            continue;
+        }
         let point = s.position[n] + DMat3::from_quat(s.orientation[n]) * f.centre;
         let moved = point - f.start;
         let Some(d) = f.dashpot.take() else {

@@ -17,6 +17,9 @@
 //!   friction anchors; the ground is the terrain's);
 //! - `ENTS`: for each body of the world in its order, its entity id, and whose avatar it is
 //!   if it is one (the player's name: they get it back when they come again).
+//! - `SURR` (F6.6, optional): the water moving with each floating shape, in the order the
+//!   planet's surroundings meet them (`creeer_sim::surroundings`), so a floating body goes
+//!   on as it would have; without it the water is taken as still.
 //!
 //! A section with a tag this version does not know is skipped (a later version may add
 //! one that an older game can do without); one it needs and does not find is an error.
@@ -52,6 +55,8 @@ pub struct Save {
     pub world: World,
     /// For each body of `world`: its entity id, and the player whose avatar it is.
     pub entities: Vec<(u32, Option<String>)>,
+    /// The water moving with each floating shape (`creeer_sim::surroundings`; none: still).
+    pub water: Vec<f64>,
 }
 
 /// Why a file could not be read as a save.
@@ -97,7 +102,7 @@ impl Save {
         let mut w = Writer::new();
         w.raw(MAGIC);
         w.u32(VERSION);
-        w.varint(4);
+        w.varint(if self.water.is_empty() { 4 } else { 5 });
         let mut meta = Writer::new();
         meta.put(&self.planet);
         meta.u64(self.tick);
@@ -112,6 +117,14 @@ impl Save {
             ents.put(player);
         }
         section(&mut w, b"ENTS", ents.bytes());
+        if !self.water.is_empty() {
+            let mut surr = Writer::new();
+            surr.varint(self.water.len() as u64);
+            for &m in &self.water {
+                surr.f64(m);
+            }
+            section(&mut w, b"SURR", surr.bytes());
+        }
         w.finish()
     }
 
@@ -137,6 +150,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         edits,
         world: World::new(1.0 / 60.0),
         entities: Vec::new(),
+        water: Vec::new(),
     })
 }
 
@@ -147,7 +161,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     if version > VERSION {
         return Err(SaveError::Newer(version));
     }
-    let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
+    let (mut meta, mut edits, mut world, mut ents, mut surr) = (None, None, None, None, None);
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -156,6 +170,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"EDIT" => edits = Some(body),
             b"WRLD" => world = Some(body),
             b"ENTS" => ents = Some(body),
+            b"SURR" => surr = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -186,6 +201,14 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             "entity ids repeat or run past the next".into(),
         ));
     }
+    let mut water = Vec::new();
+    if let Some(body) = surr {
+        let mut s = Reader::new(body);
+        for _ in 0..s.count(8)? {
+            water.push(s.f64()?);
+        }
+        s.end()?;
+    }
     Ok(Save {
         planet,
         tick,
@@ -193,6 +216,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         edits,
         world,
         entities,
+        water,
     })
 }
 

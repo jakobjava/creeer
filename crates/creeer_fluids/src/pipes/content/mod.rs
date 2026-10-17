@@ -64,6 +64,8 @@ pub struct Tracer {
     /// The mass's ledger and each quantity's.
     ledgers: Vec<Ledger>,
     scratch: step::Scratch,
+    /// The flows and draws a network gives it, kept between steps (`carry.rs`).
+    pub(crate) given: (Vec<f64>, Vec<f64>),
 }
 
 impl Tracer {
@@ -75,6 +77,7 @@ impl Tracer {
             lines: Vec::new(),
             ledgers: vec![Ledger::new(0.0); quantities + 1],
             scratch: step::Scratch::default(),
+            given: (Vec::new(), Vec::new()),
         }
     }
 

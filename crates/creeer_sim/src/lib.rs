@@ -29,6 +29,9 @@ pub mod save;
 pub mod sea;
 #[cfg(test)]
 mod station_tests;
+pub mod surroundings;
+#[cfg(test)]
+mod surroundings_tests;
 pub mod universe;
 
 pub use planet::{TerrainGround, planet_gravity};

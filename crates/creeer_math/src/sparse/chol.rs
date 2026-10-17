@@ -152,6 +152,11 @@ impl Cholesky {
         self.l_idx.len()
     }
 
+    /// A refactorisation's multiply-adds (fixed by the pattern).
+    pub fn flops(&self) -> usize {
+        self.flops
+    }
+
     /// A refactorisation's cost against a solve's (in multiply-adds; a solve makes two per
     /// entry of L): whether reusing a stale factorisation, with a few more solves, is cheaper
     /// than making a new one. Fixed by the pattern, so a choice made by it is deterministic.

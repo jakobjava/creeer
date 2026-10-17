@@ -11,7 +11,9 @@ use crate::planet_net::PlanetSession;
 use creeer_math::det;
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_net::message::Command;
-use creeer_render::{Atmosphere, Camera, Renderer, Sky, TerrainMeshData, TerrainVertex};
+use creeer_render::{
+    Atmosphere, Camera, Renderer, SeaSurface, Sky, TerrainMeshData, TerrainVertex,
+};
 use creeer_terrain::Terrain;
 use creeer_terrain::chunk::ChunkKey;
 use creeer_terrain::stream::{StreamSettings, Streamer};
@@ -252,12 +254,20 @@ impl PlanetView {
 
     /// The planet's sky: an Earth-like atmosphere scaled to its radius.
     pub fn sky(&self) -> Sky {
-        let radius = self.terrain.planet().radius;
+        let planet = self.terrain.planet();
+        // Its ocean at sea level, the datum (the planet turns about +Y in its own frame).
+        let sea = planet.ocean.map(|_| SeaSurface {
+            polar_radius: planet.datum.polar_radius,
+            equatorial_radius: planet.datum.equatorial_radius(),
+            axis: DVec3::Y,
+            color: SeaSurface::OCEAN,
+        });
         Sky {
-            atmosphere: Atmosphere::earthlike(radius),
+            atmosphere: Atmosphere::earthlike(planet.radius),
             planet_center: DVec3::ZERO,
             sun_irradiance: [3.6, 3.4, 3.1],
             star_brightness: 1.0,
+            sea,
         }
     }
 

@@ -40,21 +40,21 @@ impl Network {
     /// it took.
     pub fn carry(&self, tracer: &mut Tracer, dt: f64) -> usize {
         let rho = self.liquid.density;
-        let flows: Vec<f64> = self
-            .links
-            .iter()
-            .map(|l| if l.open { rho * l.flow } else { 0.0 })
-            .collect();
-        let draws: Vec<f64> = (self.nodes.iter())
-            .map(|n| {
-                if let NodeKind::Junction { demand } = n.kind {
-                    rho * demand
-                } else {
-                    0.0
-                }
-            })
-            .collect();
-        tracer.step(&flows, &draws, dt)
+        let (mut flows, mut draws) = std::mem::take(&mut tracer.given);
+        flows.clear();
+        flows.extend(
+            self.links
+                .iter()
+                .map(|l| if l.open { rho * l.flow } else { 0.0 }),
+        );
+        draws.clear();
+        draws.extend(self.nodes.iter().map(|n| match n.kind {
+            NodeKind::Junction { demand } => rho * demand,
+            _ => 0.0,
+        }));
+        let parts = tracer.step(&flows, &draws, dt);
+        tracer.given = (flows, draws);
+        parts
     }
 }
 

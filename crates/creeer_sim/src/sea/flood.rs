@@ -88,8 +88,8 @@ impl Flood {
 
     /// After the world's step: its load and inertia off again.
     pub fn settle(&mut self, world: &mut World) {
+        world.bodies[self.body].take_load(self.node, self.load);
         let s = &mut world.bodies[self.body].structure;
-        s.load[self.node] -= self.load;
         s.torque[self.node] -= self.torque;
         if let Some(k) = s.added_mass.iter().rposition(|a| a.node == self.node) {
             s.added_mass.remove(k);

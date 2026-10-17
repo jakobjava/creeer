@@ -60,6 +60,7 @@ fn render_patch(
         planet_center: DVec3::ZERO,
         sun_irradiance: [3.6, 3.4, 3.1],
         star_brightness: 1.0,
+        sea: None,
     };
     let ground = DVec3::Y * RADIUS;
     renderer.insert_terrain(7, ground, mesh);
@@ -142,6 +143,7 @@ fn terrain_in_a_turned_and_moved_body_frame_looks_the_same() {
         planet_center: shift,
         sun_irradiance: [3.6, 3.4, 3.1],
         star_brightness: 1.0,
+        sea: None,
     };
     let ground = DVec3::Y * RADIUS;
     renderer.insert_terrain_in(7, 0, ground, &patch());

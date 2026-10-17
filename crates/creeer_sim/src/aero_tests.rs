@@ -228,3 +228,42 @@ fn a_crate_comes_down_under_its_canopy() {
         "lost {lost} J, the air did {work} J"
     );
 }
+
+/// A crate set down on the ground in the air comes to rest and sleeps, and stays asleep: the
+/// drag it fell asleep under (its last, tiny) is taken off with it, so the stopped drag does
+/// not wake it every tick (it did: every body in the planet's air stayed awake).
+#[test]
+fn a_body_at_rest_in_the_air_sleeps() {
+    let sky = sky();
+    let mut world = World::new(DT);
+    world
+        .statics
+        .push(creeer_physics::world::shape::StaticShape::Plane {
+            normal: DVec3::Y,
+            offset: -10.0,
+        });
+    let body = world.add(Body::rigid(
+        Collider::Box {
+            half: DVec3::splat(0.3),
+        },
+        20.0,
+        DVec3::new(0.0, -9.6, 0.0),
+        DT,
+    ));
+    let surface = Surface {
+        shape: Shape::Bluff {
+            area: 0.36,
+            drag: 1.0,
+        },
+        offset: DVec3::ZERO,
+    };
+    let mut frames = vec![Airframe::new(body, 0, surface)];
+    for _ in 0..60 * 5 {
+        step(&sky, &mut world, &mut frames);
+    }
+    assert!(world.bodies[body].sleep.asleep, "asleep after 5 s");
+    for _ in 0..60 * 2 {
+        step(&sky, &mut world, &mut frames);
+        assert!(world.bodies[body].sleep.asleep, "stays asleep");
+    }
+}

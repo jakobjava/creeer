@@ -6,15 +6,19 @@
 //! definite system in the heads alone. Its solution gives new flows, its law is linearised
 //! there, until the flows stop moving and no one-way link wants to switch.
 
+use super::friction::Hint;
 use super::links::{efficiency, law, law_from, one_way, passable};
 use super::{LinkKind, Network, NodeKind, PipeReport};
-use creeer_math::sparse::{Assembly, Cholesky};
+use creeer_math::sparse::{Assembly, Cholesky, Csc};
 // (`Cholesky` kept between steps: `solve.rs` preconditions with it.)
 use creeer_network::Sum;
 use rayon::prelude::*;
 
 /// Newton iterations at most per step.
 const ITERATIONS: usize = 60;
+
+/// Links from which a step evaluates its laws in parallel (below, the tasks cost more).
+const PARALLEL: usize = 256;
 
 /// The solve's structure: which nodes are unknowns, the matrix pattern, the factor.
 #[derive(Clone, Debug)]
@@ -23,13 +27,23 @@ pub(crate) struct Solver {
     assembly: Assembly,
     cholesky: Option<Cholesky>,
     /// Each link's friction factor as 1/√f, where its last solve found it.
-    hints: Vec<f64>,
+    hints: Vec<Hint>,
     /// Newton's contraction: its next move is about this times its last squared (1/(m³/s)).
     rate: f64,
+    /// Ticks a step (`schedule.rs`), once worked out.
+    pub(crate) every: Option<u32>,
+    /// A step's buffers, kept.
+    old: Vec<f64>,
+    contributions: Vec<f64>,
+    rhs: Vec<f64>,
+    linear: Vec<(f64, f64)>,
+    matrix: Option<Csc<f64>>,
+    /// Which links were open, and which nodes that let reach a reservoir or a tank.
+    reach: (Vec<bool>, Vec<bool>),
 }
 
 impl Solver {
-    fn new(net: &Network) -> Self {
+    pub(crate) fn new(net: &Network) -> Self {
         let mut unknown = vec![None; net.nodes.len()];
         let mut n = 0;
         for (i, node) in net.nodes.iter().enumerate() {
@@ -54,6 +68,13 @@ impl Solver {
             cholesky: None,
             hints: Vec::new(),
             rate: f64::INFINITY,
+            every: None,
+            old: Vec::new(),
+            contributions: Vec::new(),
+            rhs: Vec::new(),
+            linear: Vec::new(),
+            matrix: None,
+            reach: (Vec::new(), Vec::new()),
         }
     }
 }
@@ -67,37 +88,67 @@ impl Network {
     pub fn step(&mut self, dt: f64) -> PipeReport {
         let mut solver = self.solver.take().unwrap_or_else(|| Solver::new(self));
         let n = solver.assembly.n();
-        let old: Vec<f64> = self.nodes.iter().map(|n| n.head).collect();
+        // (Buffers kept between steps: a small network's step is a few microseconds, and its
+        // allocations were half of them.)
+        let mut old = std::mem::take(&mut solver.old);
+        old.clear();
+        old.extend(self.nodes.iter().map(|n| n.head));
         let (liquid, g) = (self.liquid, self.gravity);
         let mut report = PipeReport::default();
-        let mut contributions = Vec::new();
-        let mut rhs = vec![0.0; n];
-        let mut linear = Vec::with_capacity(self.links.len());
+        let mut contributions = std::mem::take(&mut solver.contributions);
+        let mut rhs = std::mem::take(&mut solver.rhs);
+        rhs.resize(n, 0.0);
+        let mut linear = std::mem::take(&mut solver.linear);
+        let mut matrix = solver
+            .matrix
+            .take()
+            .unwrap_or_else(|| solver.assembly.zeros());
         // Which junctions reach a reservoir or a tank (again only when a link opens or shuts).
         let mut held: Option<Vec<bool>> = None;
+        let mut reach = std::mem::take(&mut solver.reach);
         let mut before = f64::INFINITY;
         for _ in 0..ITERATIONS {
             report.iterations += 1;
             contributions.clear();
             rhs.fill(0.0);
-            // Each link's law linearised (in parallel: the friction factors are most of a step).
-            solver.hints.resize(self.links.len(), 0.0);
-            (self
-                .links
-                .par_iter()
-                .zip(solver.hints.par_iter_mut())
-                .with_min_len(256))
-            .map(|(link, hint)| {
+            // Each link's law linearised (in parallel for a large network: the friction factors
+            // are most of its step).
+            solver.hints.resize(self.links.len(), Hint::default());
+            let linearise = |(link, hint): (&super::Link, &mut Hint)| {
                 if link.open && passable(link) {
                     let (h, y) = law_from(link, &liquid, g, link.flow, hint);
                     (1.0 / y, link.flow - h / y)
                 } else {
                     (0.0, 0.0)
                 }
-            })
-            .collect_into_vec(&mut linear);
+            };
+            if self.links.len() >= PARALLEL {
+                (self
+                    .links
+                    .par_iter()
+                    .zip(solver.hints.par_iter_mut())
+                    .with_min_len(PARALLEL))
+                .map(linearise)
+                .collect_into_vec(&mut linear);
+            } else {
+                linear.clear();
+                linear.extend(
+                    self.links
+                        .iter()
+                        .zip(solver.hints.iter_mut())
+                        .map(linearise),
+                );
+            }
             if held.is_none() {
-                held = Some(grounded(self, &linear));
+                // Kept from the last step while the same links are open (it rarely changes).
+                let same = reach.0.len() == linear.len()
+                    && reach.0.iter().zip(&linear).all(|(o, l)| *o == (l.0 > 0.0));
+                if !same {
+                    reach.0.clear();
+                    reach.0.extend(linear.iter().map(|l| l.0 > 0.0));
+                    reach.1 = grounded(self, &linear);
+                }
+                held = Some(std::mem::take(&mut reach.1));
             }
             let reached = held.as_ref().expect("found");
             for (link, &(c, q0)) in self.links.iter().zip(&linear) {
@@ -134,7 +185,7 @@ impl Network {
                 contributions.push(if reached[i] { diag } else { diag + 1e-12 });
                 rhs[r] += extra;
             }
-            let matrix = solver.assembly.matrix(&contributions);
+            solver.assembly.fill(&contributions, &mut matrix.values);
             // A step's first iteration meets laws moved since the last step: factorised afresh;
             // its later ones, laws moved a little: the factor preconditions them (`solve.rs`).
             super::solve::solve(
@@ -197,10 +248,20 @@ impl Network {
             }
             before = moved;
             if switched {
-                (held, before) = (None, f64::INFINITY);
+                if let Some(h) = held.take() {
+                    reach.1 = h;
+                }
+                before = f64::INFINITY;
             }
         }
-        self.book(&old, dt, &mut solver.hints);
+        if let Some(h) = held {
+            reach.1 = h;
+        }
+        solver.reach = reach;
+        self.book(&old, dt);
+        (solver.old, solver.contributions, solver.rhs, solver.linear) =
+            (old, contributions, rhs, linear);
+        solver.matrix = Some(matrix);
         self.solver = Some(solver);
         report
     }
@@ -208,39 +269,27 @@ impl Network {
     /// The step's energy: pumps' shaft work in, friction and the pumps' losses as heat,
     /// water's ρgHQ into and out of reservoirs and consumers, the tanks' potential energy
     /// (backward Euler's ρgA·ΔH²/2 of it to heat).
-    fn book(&mut self, old: &[f64], dt: f64, hints: &mut [f64]) {
+    fn book(&mut self, old: &[f64], dt: f64) {
         let rg = self.liquid.density * self.gravity;
         let (mut imported, mut exported, mut dissipated) =
             (Sum::default(), Sum::default(), Sum::default());
         let mut net = vec![0.0; self.nodes.len()];
-        // Each link's shaft work in and heat out (in parallel, summed in link order).
-        let (liquid, g) = (self.liquid, self.gravity);
-        let works: Vec<(f64, f64)> = (self
-            .links
-            .par_iter()
-            .zip(hints.par_iter_mut())
-            .with_min_len(256))
-        .map(|(link, hint)| {
-            if !(link.open && passable(link)) {
-                return (0.0, 0.0);
-            }
-            let (h, _) = law_from(link, &liquid, g, link.flow, hint);
+        // Each link's head loss is its law's as the last solve linearised it: exactly the heads'
+        // difference the flows were found for. So the books close to rounding whatever Newton's
+        // residual (below its tolerance), and no law is evaluated again (it was a third of a
+        // small network's step).
+        for link in self.links.iter().filter(|l| l.open && passable(l)) {
+            net[link.a] -= link.flow;
+            net[link.b] += link.flow;
+            let h = self.nodes[link.a].head - self.nodes[link.b].head;
             if let LinkKind::Pump { .. } = link.kind {
                 let hydraulic = -rg * link.flow * h;
                 let shaft = hydraulic / efficiency(&link.kind, link.flow);
-                (shaft * dt, (shaft - hydraulic) * dt)
+                imported.add(shaft * dt);
+                dissipated.add((shaft - hydraulic) * dt);
             } else {
-                (0.0, rg * link.flow * h * dt)
+                dissipated.add(rg * link.flow * h * dt);
             }
-        })
-        .collect();
-        for (link, &(work, heat)) in self.links.iter().zip(&works) {
-            if link.open && passable(link) {
-                net[link.a] -= link.flow;
-                net[link.b] += link.flow;
-            }
-            imported.add(work);
-            dissipated.add(heat);
         }
         for (i, node) in self.nodes.iter().enumerate() {
             match node.kind {
@@ -302,4 +351,29 @@ fn grounded(net: &Network, linear: &[(f64, f64)]) -> Vec<bool> {
     (0..net.nodes.len())
         .map(|i| held[find(&mut root, i)])
         .collect()
+}
+
+impl Solver {
+    /// The factorisation's size for this pattern, found on the pattern itself (its graph's
+    /// Laplacian plus the identity: positive definite, the same fill): the entries of L and a
+    /// factorisation's multiply-adds. Kept as the factor the first step refactorises.
+    pub(crate) fn pattern_size(&mut self, net: &Network) -> (usize, usize) {
+        let mut contributions = Vec::new();
+        let diagonal = vec![1.0; self.assembly.n()];
+        for link in &net.links {
+            let (a, b) = (self.unknown[link.a], self.unknown[link.b]);
+            for (r, c, v) in [(a, a, 1.0), (b, b, 1.0), (a, b, -1.0), (b, a, -1.0)] {
+                if let (Some(_), Some(_)) = (r, c) {
+                    contributions.push(v);
+                }
+            }
+        }
+        contributions.extend(diagonal);
+        let matrix = self.assembly.matrix(&contributions);
+        let factor =
+            Cholesky::new(&matrix).expect("a Laplacian plus the identity is positive definite");
+        let size = (factor.nnz(), factor.flops());
+        self.cholesky = Some(factor);
+        size
+    }
 }

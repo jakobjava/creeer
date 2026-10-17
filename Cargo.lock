@@ -602,6 +602,7 @@ dependencies = [
  "creeer_math",
  "creeer_network",
  "creeer_terrain",
+ "rayon",
 ]
 
 [[package]]
@@ -692,6 +693,7 @@ name = "creeer_server"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_materials",
  "creeer_math",
  "creeer_net",
  "creeer_physics",
@@ -707,6 +709,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_chem",
  "creeer_electric",
+ "creeer_fluids",
  "creeer_materials",
  "creeer_math",
  "creeer_mech",
@@ -744,6 +747,7 @@ dependencies = [
  "creeer_chem",
  "creeer_core",
  "creeer_electric",
+ "creeer_fluids",
  "creeer_materials",
  "creeer_math",
  "creeer_mech",

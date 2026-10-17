@@ -222,7 +222,7 @@ The order follows dependencies: materials first (everything needs their properti
   - a crate with a parachute panel, a glider;
   - boats floating, rolling and sinking when flooded.
 - **Budget:**
-  - 5,000 pipe segments ≤ 1 ms per tick;
+  - 5,000 pipe segments ≤ 1 ms per tick. Each network picks its own rate, deterministically, from its estimated cost: small networks every tick (60 Hz), only large meshed ones at 20 Hz, or 10 Hz at most (ADR-0014);
   - 1,000 aero panels ≤ 0.2 ms;
   - buoyancy of 200 bodies ≤ 0.2 ms.
 
@@ -259,6 +259,8 @@ The order follows dependencies: materials first (everything needs their properti
   4. everything heats up and cools (thermal);
   5. a Lua controller regulates it (logic);
   6. all of it sits on a structure that feels every reaction torque.
+- **Fast couplings every tick.** A turbine's or pump's torque on a drivetrain is taken every tick from the machine's curve at the shaft's speed, even where its pipe network solves more slowly; the energy books still close (ADR-0016).
+- **Slow networks spread out.** A network stepping at 20 or 10 Hz has its step run across its interval (or beside the tick), so that it is not one tick's spike (ADR-0014, ADR-0016).
 - **The test:** the total energy ledger over 10 minutes closes (potential energy of the water in = hydrogen's chemical energy + heat + losses, to rounding). The same for mass and angular momentum.
 - **The reference load of plan.md §5:**
   - 1,000 machines across all domains, 20,000 beams, 8 players;
@@ -285,7 +287,7 @@ The order follows dependencies: materials first (everything needs their properti
 | Electrical | 10,000 nodes transient; 2,000-bus AC | 1.0 ms each |
 | Mechanical | 1,000 drivetrains | 0.3 ms |
 | Chemistry | 500 reactors at 10 Hz | 0.5 ms |
-| Fluids | 5,000 pipe segments; 1,000 aero panels; 200 floating bodies | 1.0 + 0.2 + 0.2 ms |
+| Fluids | 5,000 pipe segments (each network at its own rate: 60 Hz when it fits its share, large meshed ones 20 or 10 Hz); 1,000 aero panels; 200 floating bodies | 1.0 + 0.2 + 0.2 ms |
 | Logic | 10,000 gates; 100 scripts | 0.5 ms |
 | **All domains** | | **≈ 5 ms**, leaving room for structures and contacts in the 10 ms tick |
 
@@ -296,6 +298,10 @@ The order follows dependencies: materials first (everything needs their properti
 3. **Oceans in F6.6**, with a simple water surface: buoyancy needs water, and the planets' basins are dry today.
 4. **Two-phase pipe flow** (steam lines) in G4/G5, not F6. Boiling and condensing in vessels is in F6.
 5. **Order of the sub-milestones** as above, with a demo and review after each one (like the F2–F5 sandboxes).
+
+## Deferred
+
+- **Supernodal Cholesky** in `creeer_math::sparse`. The up-looking factorisation runs at about 1 GFlop/s through its indices. A supernodal one would do the same work in dense blocks several times faster. It would let large meshed pipe networks run at 60 Hz instead of 20 or 10 Hz, and it would speed up the thermal and electrical networks' meshed islands (ADR-0014).
 
 ## Risks
 

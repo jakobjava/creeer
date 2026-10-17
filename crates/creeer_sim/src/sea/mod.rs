@@ -104,11 +104,13 @@ pub struct Floater {
     pub torque: DVec3,
     /// The work the water did on it, summed (J).
     pub work: f64,
-    added: f64,
+    pub(crate) added: f64,
     /// The centre of buoyancy (node frame) and where it was at the step's start.
     centre: DVec3,
     start: DVec3,
     origin: DVec3,
+    /// Whether its body slept through the step (nothing put on, nothing to book).
+    idle: bool,
     end: DVec3,
     dashpot: Option<Dashpot>,
 }
@@ -130,6 +132,7 @@ impl Floater {
             centre: DVec3::ZERO,
             start: DVec3::ZERO,
             origin: DVec3::ZERO,
+            idle: false,
             end: DVec3::ZERO,
             dashpot: None,
         }

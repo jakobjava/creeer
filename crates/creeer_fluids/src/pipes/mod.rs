@@ -20,6 +20,9 @@ mod carry_tests;
 mod gas_tests;
 mod links;
 mod liquid;
+pub mod schedule;
+#[cfg(test)]
+mod schedule_tests;
 mod solve;
 #[cfg(test)]
 mod tests;
@@ -118,6 +121,8 @@ pub struct Network {
     pub gravity: f64,
     pub(crate) ledger: Ledger,
     pub(crate) solver: Option<liquid::Solver>,
+    /// Ticks gone by (`schedule.rs`: its rate falls on some).
+    pub(crate) ticks: u64,
 }
 
 impl Network {
@@ -130,6 +135,7 @@ impl Network {
             gravity,
             ledger: Ledger::new(0.0),
             solver: None,
+            ticks: 0,
         }
     }
 

@@ -188,8 +188,18 @@ pub fn push(sky: &Sky, sea: Option<&Sea>, world: &mut World, frames: &mut [Airfr
     let mut runs: Vec<&mut [Airframe]> = frames
         .chunk_by_mut(|a, b| a.body == b.body && a.node == b.node)
         .collect();
-    let sums: Vec<(DVec3, DVec3, Dashpot)> = (runs.par_iter_mut().with_min_len(2))
+    let sums: Vec<Option<(DVec3, DVec3, Dashpot)>> = (runs.par_iter_mut().with_min_len(2))
         .map(|run| {
+            // A sleeping body is not stepped: nothing on it (it wakes when something touches it).
+            if seen.bodies[run[0].body].sleep.asleep {
+                for f in run.iter_mut() {
+                    book_one(seen, f);
+                    // (Its history restarts when it wakes: no end force carried into that step.)
+                    (f.force, f.torque, f.dashpot, f.end) =
+                        (DVec3::ZERO, DVec3::ZERO, None, DVec3::ZERO);
+                }
+                return None;
+            }
             let (mut load, mut torque) = (DVec3::ZERO, DVec3::ZERO);
             let mut all: Option<Dashpot> = None;
             for f in run.iter_mut() {
@@ -206,10 +216,12 @@ pub fn push(sky: &Sky, sea: Option<&Sea>, world: &mut World, frames: &mut [Airfr
                     None => all = Some(d),
                 }
             }
-            (load, torque, all.expect("a run has a surface"))
+            Some((load, torque, all.expect("a run has a surface")))
         })
         .collect();
-    for (run, (load, torque, dashpot)) in runs.iter_mut().zip(sums) {
+    for (run, (load, torque, dashpot)) in
+        runs.iter_mut().zip(sums).filter_map(|(r, s)| Some((r, s?)))
+    {
         let first = &mut run[0];
         let s = &mut world.bodies[first.body].structure;
         s.load[first.node] += load;
@@ -227,8 +239,8 @@ pub fn settle(world: &mut World, frames: &mut [Airframe]) {
         let Some((slot, placed, load, torque)) = f.placed.take() else {
             continue;
         };
+        world.bodies[f.body].take_load(f.node, load);
         let s = &mut world.bodies[f.body].structure;
-        s.load[f.node] -= load;
         s.torque[f.node] -= torque;
         // Where push put it, unless something else came off out of turn.
         if s.dashpots.get(slot) == Some(&placed) {
