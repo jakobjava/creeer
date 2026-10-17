@@ -163,9 +163,12 @@ impl Drivetrain {
     /// Adds an element.
     pub fn add(&mut self, element: Element) -> usize {
         self.twist.push(0.0);
-        // A gear with backlash starts in the middle of its play.
-        let free = matches!(element, Element::Gear { backlash, .. } if backlash > 0.0);
-        self.grip.push(if free { Grip::Free } else { Grip::Stuck });
+        // A gear with backlash starts in the middle of its play, a released clutch slipping.
+        self.grip.push(match element {
+            Element::Gear { backlash, .. } if backlash > 0.0 => Grip::Free,
+            Element::Clutch { capacity, .. } if capacity <= 0.0 => Grip::Slipping(1),
+            _ => Grip::Stuck,
+        });
         self.elements.push(element);
         self.carried.push(0.0);
         self.heat.push(Sum::default());
@@ -184,6 +187,11 @@ impl Drivetrain {
         self.ledger.joined(self.stored() - held);
     }
 
+    /// The torque on a part from the housing (N·m).
+    pub fn torque(&self, node: Node) -> f64 {
+        self.parts[node].torque
+    }
+
     /// The torque on a part from the housing (N·m: a motor's; held until changed).
     pub fn set_torque(&mut self, node: Node, torque: f64) {
         self.parts[node].torque = torque;
@@ -196,9 +204,15 @@ impl Drivetrain {
     }
 
     /// A clutch's or a brake's capacity (N·m).
+    /// Released (0), it slips from now on: a response asked before the next step (a
+    /// machine's) sees it free, not held as it was.
     pub fn set_capacity(&mut self, element: usize, newton_metres: f64) {
-        if let Element::Clutch { capacity, .. } = &mut self.elements[element] {
+        if let Element::Clutch { a, b, capacity } = &mut self.elements[element] {
             *capacity = newton_metres;
+            if newton_metres <= 0.0 && self.grip[element] == Grip::Stuck {
+                let slip = self.parts[*a].speed - self.parts[*b].speed;
+                self.grip[element] = Grip::Slipping(if slip >= 0.0 { 1 } else { -1 });
+            }
         }
     }
 

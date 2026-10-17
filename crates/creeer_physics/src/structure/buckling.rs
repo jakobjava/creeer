@@ -192,6 +192,14 @@ impl ImplicitSolver {
         solver.previous_w = pick(&self.previous_w);
         solver.acceleration = pick(&self.acceleration);
         solver.angular_acceleration = pick(&self.angular_acceleration);
+        // The new joints carry no load (`split`).
+        let kept = |v: &[DVec3]| {
+            (0..n)
+                .map(|i| if i < old { v[i] } else { DVec3::ZERO })
+                .collect::<Vec<_>>()
+        };
+        solver.previous_load = kept(&self.previous_load);
+        solver.previous_torque = kept(&self.previous_torque);
         solver.previous_q = (0..n)
             .map(|i| {
                 if i < old {

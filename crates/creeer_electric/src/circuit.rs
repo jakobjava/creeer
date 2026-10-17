@@ -1,7 +1,7 @@
 //! A circuit: its nodes and components, how it is built and driven from outside, and what
 //! it holds.
 
-use crate::component::{Component, Kind, Node, State};
+use crate::component::{Component, Kind, Node, Shaft, State};
 use crate::devices::{Battery, DcMachine, Diode, SolarModule};
 use crate::solve::IslandSolver;
 use creeer_network::{Ledger, Sum};
@@ -155,14 +155,17 @@ impl Circuit {
         self.wake(id);
     }
 
-    /// Puts a machine's rotor on a drivetrain (or back on its own, `None`): for the coming
-    /// step, the speed it would end with (rad/s) and how much faster per N·m of the machine's
-    /// torque (rad/s per N·m), from `creeer_mech`'s `Drivetrain::response`. Set before every
-    /// step: the machine's speed then ends where the drivetrain's will, its torque given to
-    /// the drivetrain (`torque`) carrying the work both ledgers book. Its own inertia, friction
-    /// and load are the drivetrain's then.
-    pub fn set_shaft(&mut self, id: ComponentId, shaft: Option<(f64, f64)>) {
+    /// Puts a machine's rotor on a drivetrain (or back on its own, `None`) for the coming step
+    /// (`Shaft`, from `creeer_mech`'s `Drivetrain::response`). Set before every step: the
+    /// machine's speed then starts where the drivetrain's is and ends where the drivetrain's
+    /// will, its torque given to the drivetrain (`torque`) carrying the work both ledgers
+    /// book. Its own inertia, friction and load are the drivetrain's then.
+    pub fn set_shaft(&mut self, id: ComponentId, shaft: Option<Shaft>) {
         let held = stored_in(&self.components[id]);
+        if let Some(s) = shaft {
+            self.components[id].state.level = s.speed;
+        }
+        let shaft = shaft.map(|s| (s.free, s.mobility));
         let old = std::mem::replace(&mut self.components[id].state.shaft, shaft);
         self.ledger.joined(stored_in(&self.components[id]) - held);
         #[allow(clippy::float_cmp)] // whether the matrix entry changes at all

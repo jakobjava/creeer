@@ -216,9 +216,11 @@ fn planet_physics_is_bit_identical_across_platforms() {
     // friction in impact impulses, face dashpots on pressed points, normals turning with their
     // bodies, faces on the ground measured at their triangles' corners and pressing as a punch
     // of their pressed area, faces counted by any part within the margin), after
-    // 0x0b2b_3e03_525c_b032 (made together, not reverted one by one).
+    // 0x0b2b_3e03_525c_b032 (made together, not reverted one by one). Then for rotations
+    // carried as momentum through the torques' share of a step (F6.4, `structure/step.rs`),
+    // after 0x0949_6c57_efc7_e0f5 (which the old predictor and end velocity gave back).
     assert_eq!(
-        hash, 0x0949_6c57_efc7_e0f5,
+        hash, 0xc08c_b8e6_5929_d6c3,
         "planet physics hash {hash:#018x}"
     );
 }

@@ -1,6 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 4** (F6): as version 3, a structure's solver keeping the last step's external
+//! loads and torques (what its next Newmark step carries on, for the energy guard).
+//!
 //! **Version 3** (F6): as version 2, a member of a structure keeping its thermal elongation
 //! (after its plastic strain).
 //!
@@ -26,7 +29,7 @@ use creeer_physics::world::World;
 use creeer_terrain::edits::Edits;
 
 /// The version this game writes.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).

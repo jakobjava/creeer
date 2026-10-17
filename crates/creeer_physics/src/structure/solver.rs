@@ -109,6 +109,11 @@ pub struct ImplicitSolver {
     /// Accelerations at the end of the last step (Newmark).
     pub(super) acceleration: Vec<DVec3>,
     pub(super) angular_acceleration: Vec<DVec3>,
+    /// The external loads and torques of the last step: Newmark carries them into the next
+    /// (its forces are the step's two ends' mean), so the energy guard credits a step
+    /// with the work of that mean (`group.rs`).
+    pub(super) previous_load: Vec<DVec3>,
+    pub(super) previous_torque: Vec<DVec3>,
     /// Check every Newmark step for energy gain and redo it with BDF2 if it gained (default
     /// on; see `step.rs`).
     pub energy_guard: bool,
@@ -136,6 +141,10 @@ pub(super) struct Work {
     pub q_star: Vec<DQuat>,
     /// World-frame nodal inertia at q*.
     pub inertia_star: Vec<DMat3>,
+    /// The angular momentum the prediction carries to the step's end (world frame); the
+    /// minimum adds the step's torques' share, I*·turn/β, and the end velocity is the
+    /// momentum's (`finish_substep`).
+    pub momentum_star: Vec<DVec3>,
     /// Drag dashpot per node for this step: drag·|v| at its start (N·s/m).
     pub drag_rate: Vec<f64>,
     /// Coriolis force per node for this step (N).
@@ -209,6 +218,8 @@ impl ImplicitSolver {
             previous_w: structure.angular_velocity.clone(),
             acceleration: vec![DVec3::ZERO; n],
             angular_acceleration: vec![DVec3::ZERO; n],
+            previous_load: structure.load.clone(),
+            previous_torque: structure.torque.clone(),
             energy_guard: true,
             fallbacks: 0,
             snapshot: Snapshot::default(),
@@ -219,6 +230,7 @@ impl ImplicitSolver {
                 x_star: vec![DVec3::ZERO; n],
                 q_star: vec![DQuat::IDENTITY; n],
                 inertia_star: vec![DMat3::ZERO; n],
+                momentum_star: vec![DVec3::ZERO; n],
                 drag_rate: vec![0.0; n],
                 coriolis: vec![DVec3::ZERO; n],
                 frame_torque: vec![DVec3::ZERO; n],
@@ -276,6 +288,9 @@ impl ImplicitSolver {
     /// structure released under gravity starts with a = g, not 0).
     pub(crate) fn initial_accelerations(&mut self, s: &Structure) {
         let n = s.node_count();
+        // The accelerations now are of the loads now.
+        self.previous_load.clone_from(&s.load);
+        self.previous_torque.clone_from(&s.torque);
         let w = &mut self.work;
         w.x_star.clone_from(&s.position);
         w.q_star.clone_from(&s.orientation);

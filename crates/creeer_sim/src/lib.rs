@@ -4,17 +4,24 @@
 //! F4: the universe: a generated solar system, vessels, and the physics bubble that moves
 //! between frames (ADR-0007).
 //! F6: heat in structures (`heat`): members lengthening and weakening as they warm.
+//! F6: electric machines on drivetrains (`drive`): circuit and shaft solved as one.
 
 pub mod avatar;
+pub mod drive;
+#[cfg(test)]
+mod drive_tests;
 pub mod heat;
 #[cfg(test)]
 mod heat_tests;
 #[cfg(test)]
 mod joule_tests;
+pub mod mount;
 pub mod planet;
 #[cfg(test)]
 mod planet_tests;
 pub mod save;
+#[cfg(test)]
+mod station_tests;
 pub mod universe;
 
 pub use planet::{TerrainGround, planet_gravity};

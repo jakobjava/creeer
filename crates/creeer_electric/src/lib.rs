@@ -30,7 +30,7 @@ mod tests;
 mod validation;
 
 pub use circuit::{Circuit, ComponentId};
-pub use component::{CONTACT, GROUND, Kind, Node};
+pub use component::{CONTACT, GROUND, Kind, Node, Shaft};
 pub use devices::{Battery, DcMachine, Diode, SolarModule};
 pub use grid::{Branch, Bus, Grid, NEUTRAL};
 pub use grid_step::GridReport;

@@ -153,6 +153,37 @@ fn group_energy(
     (total.0 + contact, total.1 + contact)
 }
 
+/// The work the members' external loads and torques did since they were at `start` (J) that
+/// the energy's potential of the loads does not count. A torque has no potential as a load
+/// has (rotations do not add): its work, τ·Δθ for the rotation vector Δθ a node turned by,
+/// is credited instead; without that every joule a torque gave was taken for the
+/// integration's gain and removed (a motor in a free-floating station turned it for a
+/// second, then no more: F6). Newmark's forces are the mean of the step's two ends: a load
+/// or torque that changed did the work of its mean with the last step's, which the potential
+/// (at the load now) misses by ½·(f₋₁ − f)·Δx: unbooked, a thruster or motor switched on or
+/// off took the step for a gain and redid it by backward Euler.
+fn unbooked_work(members: &[Member<'_>], start: &[(Vec<DVec3>, Vec<DQuat>)], newmark: bool) -> f64 {
+    let mut work = 0.0;
+    for ((s, v), (x0, q0)) in members.iter().zip(start) {
+        for i in 0..s.node_count() {
+            let (torque, before) = (s.torque[i], v.previous_torque[i]);
+            let torque = if newmark {
+                0.5 * (torque + before)
+            } else {
+                torque
+            };
+            if torque != DVec3::ZERO {
+                work += torque.dot(crate::so3::log(s.orientation[i] * q0[i].conjugate()));
+            }
+            let change = v.previous_load[i] - s.load[i];
+            if newmark && change != DVec3::ZERO {
+                work += 0.5 * change.dot(s.position[i] - x0[i]);
+            }
+        }
+    }
+    work
+}
+
 /// Advances every member by one step of its solver, solving them jointly with `coupling`.
 /// All members must use the same scheme, time step and substeps.
 ///
@@ -192,10 +223,35 @@ pub fn step_group_with(
             for (s, v) in members.iter_mut() {
                 v.save(s);
             }
+            // Whether any load or torque does work the loads' potential misses.
+            let acting = members.iter().any(|(s, v)| {
+                s.torque
+                    .iter()
+                    .chain(&v.previous_torque)
+                    .any(|t| *t != DVec3::ZERO)
+                    || s.load != v.previous_load
+            });
+            let start: Vec<(Vec<DVec3>, Vec<DQuat>)> = if acting {
+                members
+                    .iter()
+                    .map(|(s, _)| (s.position.clone(), s.orientation.clone()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            // The energy after a substep by `scheme`, less the work the loads' potential misses.
+            let net = |members: &[Member<'_>], energy: f64, scheme: Scheme| {
+                if acting {
+                    energy - unbooked_work(members, &start, scheme == Scheme::Newmark)
+                } else {
+                    energy
+                }
+            };
             members[0].1.timings.guard += t.elapsed();
             substep(members, coupling, scheme);
             let t = Instant::now();
             let (after, active_after) = group_energy(members, coupling, true);
+            let after = net(members, after, scheme);
             members[0].1.timings.guard += t.elapsed();
             // The slack scales with the energy in motion before or after the step, whichever
             // is larger: a body starting from rest in a varying field (planet gravity) makes
@@ -217,7 +273,7 @@ pub fn step_group_with(
                         v.fallbacks += 1;
                     }
                     substep(members, coupling, fallback);
-                    after = group_energy(members, coupling, true).0;
+                    after = net(members, group_energy(members, coupling, true).0, fallback);
                     if after <= limit {
                         break;
                     }
@@ -232,6 +288,11 @@ pub fn step_group_with(
             }
         } else {
             substep(members, coupling, scheme);
+        }
+        // What the next substep's prediction carries: these loads.
+        for (s, v) in members.iter_mut() {
+            v.previous_load.clone_from(&s.load);
+            v.previous_torque.clone_from(&s.torque);
         }
     }
     // Plastic flow and fracture, on the converged state.

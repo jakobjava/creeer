@@ -107,3 +107,13 @@ pub struct Component {
     /// Its state.
     pub state: State,
 }
+
+/// A machine's rotor on a drivetrain, for one step: its speed now (rad/s), the speed it
+/// would end the step with (rad/s), and how much faster per N·m of the machine's torque
+/// (rad/s per N·m).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shaft {
+    pub speed: f64,
+    pub free: f64,
+    pub mobility: f64,
+}
