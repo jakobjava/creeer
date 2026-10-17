@@ -42,6 +42,7 @@ mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
 mod physics_drive;
+mod physics_fluids;
 mod physics_heat;
 mod physics_rocks;
 mod physics_sandbox;
@@ -59,6 +60,7 @@ mod system_shot;
 mod system_sim;
 mod system_ui;
 mod system_view;
+mod water_bench;
 
 use app::App;
 use headless::{ScreenshotOptions, bench, screenshot};

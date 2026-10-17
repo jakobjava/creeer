@@ -179,6 +179,8 @@ The order follows dependencies: materials first (everything needs their properti
 
 ### F6.6 Fluids, air and water (`creeer_fluids`)
 
+**Done** (2026-10-17, ADR-0014): atmospheres from planet data (US Standard 1976 to 5·10⁻⁴); liquid networks by the global gradient method with exact slopes (Hagen–Poiseuille, the Moody chart, Torricelli, a pump on its system curve, energy books to rounding); isothermal gas networks (Weymouth); content and enthalpy carried (plug flow, mixing, a reactor's gas at its temperature); each network at its own deterministic rate; aero surfaces (lifting line, stall, Prandtl–Glauert, Ackeret, Newtonian, skin friction, sphere drag curve, heating) as loads with implicit dashpots in the structure step; oceans to sea level with exact buoyancy, added mass, hull drag, heave wave damping, flooding; the sea drawn per pixel. Budgets met (pipes 0.48 ms at the town grid's 10 Hz and 0.18 ms for 250 houses at 60 Hz; panels 0.19 ms; floating 0.14 ms). Sandbox: the pipe bench window, the air drop and harbour scenes, the planet's coast. Not modelled: waves and roll radiation, sloshing, currents and wind fields, two-phase pipe flow (G4/G5).
+
 - **Pipe networks:**
   - nodes (junctions, tanks) and edges (pipes, pumps, valves, check valves);
   - Darcy–Weisbach with the Colebrook friction factor (laminar to turbulent), plus minor losses;

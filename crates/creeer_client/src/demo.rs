@@ -324,6 +324,8 @@ pub fn camera_preset(name: &str, origin: DVec3) -> Option<Camera> {
         "radiator" => (DVec3::new(-76.0, 5.0, 5.0), 0.675, -0.155),
         "fire" => (DVec3::new(-80.0, 2.4, 6.5), 0.0, -0.04),
         "station" => (DVec3::new(-80.0, 4.5, 6.5), 0.0, -0.2),
+        "air" => (DVec3::new(-82.0, 30.0, 70.0), 0.05, -0.12),
+        "harbour" => (DVec3::new(-80.0, 9.0, 22.0), 0.0, -0.3),
         _ => return None,
     };
     let mut camera = Camera::new(origin + position);
@@ -381,7 +383,7 @@ mod tests {
     fn presets_exist() {
         for name in [
             "overview", "factory", "closeup", "top", "far", "orbit", "horizon", "physics", "crash",
-            "stacks", "rocks", "cooling", "radiator", "fire", "station",
+            "stacks", "rocks", "cooling", "radiator", "fire", "station", "air", "harbour",
         ] {
             assert!(camera_preset(name, DVec3::ZERO).is_some(), "{name}");
         }

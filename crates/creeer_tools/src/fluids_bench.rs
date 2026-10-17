@@ -226,7 +226,7 @@ fn floating(report: &mut Report) {
         temperature: 288.15,
     };
     let sea = Sea {
-        level: Level::Flat,
+        level: Level::Flat(0.0),
         water,
         surface_pressure: 101_325.0,
     };

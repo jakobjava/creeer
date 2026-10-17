@@ -1,6 +1,6 @@
 # ADR-0014: Fluids, air and water
 
-- **Status:** Accepted, in progress (2026-10-17; completed with F6.6)
+- **Status:** Accepted (2026-10-17)
 - **Context:** F6.6 (`docs/f6-plan.md`). Pipe networks of liquids and gases that carry what flows in them; planets' atmospheres; air on panels, wings and bluff bodies; oceans, buoyancy and flooding. Budgets on the minimum-spec CPU, per 60 Hz tick: 5,000 pipe segments 1 ms, 1,000 aero panels 0.2 ms, 200 floating bodies 0.2 ms.
 
 ## Decision
@@ -64,6 +64,18 @@
 - **Flooding** runs through an opening by Torricelli, and the water inside weighs low in the hull.
 - **Validated** against Archimedes' draft, the wall-sided righting arm, a wide box righting and a tall one capsizing, hydrostatics, a dropped ball's books, and a holed hull sinking.
 - **The renderer** draws the sea per pixel where the view ray meets the datum's ellipsoid, writing its depth so land above sea level hides it. It is lit through the air and reflects the sky (Fresnel) and the sun's glint.
+
+### The planet's world
+
+- `creeer_sim::surroundings` gives every body of a planet's world (the server's) its air and its sea: drag on its shapes (a sphere's by the drag curve; a box's or a hull's as a bluff body of C_d 1 on its mean projected area, a quarter of its surface by Cauchy's formula), buoyancy, added mass and hull drag under water. Avatars are spared: their players' machines predict them without.
+- A save keeps the water moving with each floater (an optional `SURR` section), so a floating body goes on as it would have.
+- **Sleep.** A sleeping body is left alone. A coupling's load is taken off with `Body::take_load`, which also takes it off the loads a body fell asleep under: drag that stopped with the body otherwise woke it every tick, and no body in the air ever slept (the server's tests took three times as long).
+
+### Sandbox and benches
+
+- **Pipe bench window:** a waterworks (pump, tank, valve, dye put in the well and watched to the taps) and a gas transmission line (its line pack holding up the city's demand).
+- **Physics scenes:** an air drop (a crate under its canopy, a glider) and a harbour (a pontoon at its draft, a steel boat that springs a leak and sinks, a tall box that capsizes). Headless `--physics air|harbour`, views `air`, `harbour`; the planet sandbox's `--planet coast`.
+- **Benches** (`fluids`, projected to the minimum-spec CPU): a 4,900-pipe town grid at the 10 Hz it picks, 0.48 ms a tick, and 250 houses at 60 Hz, 0.18 ms (budget 1 ms); 1,000 panels 0.19 ms (0.2); 200 floating bodies 0.14 ms (0.2).
 
 ## Future improvements
 

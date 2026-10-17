@@ -19,6 +19,9 @@ const CONCRETE: Material = Material::dielectric([0.62, 0.61, 0.58], 0.9);
 const BROKEN: Material = Material::dielectric([0.15, 0.15, 0.15], 0.9);
 const GRANITE: Material = Material::dielectric([0.55, 0.52, 0.50], 0.85);
 const WHITE_PAINT: Material = Material::dielectric([0.9, 0.9, 0.88], 0.6);
+const CANVAS: Material = Material::dielectric([0.85, 0.35, 0.12], 0.8);
+/// Sea water seen from above: dark, smooth (its colour from within, as the sea pass has it).
+const WATER: Material = Material::dielectric([0.02, 0.07, 0.11], 0.08);
 
 /// The running physics scene.
 pub struct PhysicsView {
@@ -67,7 +70,7 @@ impl PhysicsView {
                     ui.radio_value(overlay, Overlay::Utilisation, "show member utilisation");
                     ui.radio_value(overlay, Overlay::PartTemperature, "show temperatures");
                 });
-                for note in [&snapshot.heat, &snapshot.drive].into_iter().flatten() {
+                for note in [&snapshot.heat, &snapshot.drive, &snapshot.fluids].into_iter().flatten() {
                     ui.label(note);
                 }
                 let (bodies, asleep, contacts) = snapshot.counts;
@@ -169,6 +172,8 @@ pub fn draw(
             Look::Steel => incandescent(STEEL, t),
             Look::Concrete => CONCRETE,
             Look::Radiator => WHITE_PAINT,
+            Look::Canvas => CANVAS,
+            Look::Water => WATER,
         };
         add_box(scene, meshes, origin, (c, q, half), material, shown(t));
     }

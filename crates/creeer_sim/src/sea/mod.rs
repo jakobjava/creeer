@@ -35,8 +35,8 @@ pub const ADDED: f64 = 0.5;
 /// Where the sea's surface is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Level {
-    /// A flat world: y = 0, up +y.
-    Flat,
+    /// A flat world: the sea's surface at height y (m), up +y.
+    Flat(f64),
     /// A planet's datum (centred at the origin).
     Planet(Datum),
 }
@@ -54,7 +54,7 @@ impl Sea {
     /// The surface near `p`: a point of it and its upward normal.
     pub fn surface(&self, p: DVec3) -> (DVec3, DVec3) {
         match self.level {
-            Level::Flat => (DVec3::new(p.x, 0.0, p.z), DVec3::Y),
+            Level::Flat(y) => (DVec3::new(p.x, y, p.z), DVec3::Y),
             Level::Planet(datum) => {
                 // Down the level's normal to it (three steps: the normal turns 10⁻⁷ rad a km).
                 let mut q = p;

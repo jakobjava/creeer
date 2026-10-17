@@ -2,6 +2,7 @@
 //! contacts, plasticity) on the simulation thread.
 
 use crate::physics_drive::{self, SceneDrive};
+use crate::physics_fluids::{self, SceneFluids};
 use crate::physics_heat::{self, SceneHeat};
 use creeer_core::Simulation;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
@@ -31,11 +32,15 @@ pub enum PhysicsScene {
     Fire,
     /// A frame floating in space turned by the flywheel it spins up (F6.4).
     Station,
+    /// A crate under its canopy and a glider in the home planet's air (F6.6).
+    AirDrop,
+    /// A pontoon, a boat that springs a leak, a tall box that capsizes, in a 3 m sea (F6.6).
+    Harbour,
 }
 
 impl PhysicsScene {
     /// All scenes with their names.
-    pub const ALL: [(Self, &'static str); 8] = [
+    pub const ALL: [(Self, &'static str); 10] = [
         (Self::Bridge, "bridge under load"),
         (Self::Crash, "crash test"),
         (Self::Stacks, "stacking"),
@@ -44,6 +49,8 @@ impl PhysicsScene {
         (Self::Radiator, "radiator in orbit"),
         (Self::Fire, "frame in a fire"),
         (Self::Station, "flywheel station"),
+        (Self::AirDrop, "air drop"),
+        (Self::Harbour, "harbour"),
     ];
 }
 
@@ -56,6 +63,7 @@ pub struct PhysicsSandbox {
     scene: PhysicsScene,
     heat: Option<SceneHeat>,
     drive: Option<SceneDrive>,
+    fluids: Option<SceneFluids>,
 }
 
 /// How a box is drawn.
@@ -70,6 +78,10 @@ pub enum Look {
     Concrete,
     /// A white-painted radiator panel.
     Radiator,
+    /// Sail canvas (a canopy, a wing's skin).
+    Canvas,
+    /// Sea water.
+    Water,
 }
 
 /// What the renderer needs from one tick.
@@ -99,6 +111,7 @@ pub struct PhysicsSnapshot {
     /// What heat is doing, and a drivetrain, for the window.
     pub heat: Option<String>,
     pub drive: Option<String>,
+    pub fluids: Option<String>,
     /// Cost of the last physics step (ms).
     pub step_ms: f64,
 }
@@ -129,6 +142,11 @@ impl PhysicsSandbox {
             _ => None,
         };
         let drive = (scene == PhysicsScene::Station).then(|| physics_drive::station(&mut world));
+        let fluids = match scene {
+            PhysicsScene::AirDrop => Some(physics_fluids::air_drop(&mut world)),
+            PhysicsScene::Harbour => Some(physics_fluids::harbour(&mut world)),
+            _ => None,
+        };
         Self {
             world,
             time: 0.0,
@@ -136,6 +154,7 @@ impl PhysicsSandbox {
             scene,
             heat,
             drive,
+            fluids,
         }
     }
 }
@@ -223,9 +242,15 @@ impl Simulation for PhysicsSandbox {
         if let Some(drive) = &mut self.drive {
             drive.before(&mut self.world, dt);
         }
+        if let Some(fluids) = &mut self.fluids {
+            fluids.before(&mut self.world, dt);
+        }
         self.world.step();
         if let Some(drive) = &mut self.drive {
             drive.after(&mut self.world, dt);
+        }
+        if let Some(fluids) = &mut self.fluids {
+            fluids.after(&mut self.world, dt);
         }
         if let Some(heat) = &mut self.heat {
             heat.tick(&mut self.world, dt);
@@ -299,6 +324,24 @@ impl Simulation for PhysicsSandbox {
             snap.box_heat.push(f32::NAN);
             snap.box_look.push(Look::Steel);
             snap.drive = Some(drive.label(&self.world));
+        }
+        if let Some(fluids) = &self.fluids {
+            let (parts, water) = fluids.parts(&self.world);
+            let looks: Vec<Look> = parts
+                .iter()
+                .map(|_| Look::Canvas)
+                .chain(water.iter().map(|_| Look::Water))
+                .collect();
+            snap.boxes.extend(
+                parts
+                    .into_iter()
+                    .chain(water.map(|(c, h)| (c, DQuat::IDENTITY, h))),
+            );
+            for look in looks {
+                snap.box_heat.push(f32::NAN);
+                snap.box_look.push(look);
+            }
+            snap.fluids = Some(fluids.label(&self.world));
         }
         for fixed in &self.world.statics {
             if let StaticShape::Box {

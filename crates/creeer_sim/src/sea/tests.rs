@@ -23,7 +23,7 @@ const WATER: OceanData = OceanData {
     temperature: 288.15,
 };
 const SEA: Sea = Sea {
-    level: Level::Flat,
+    level: Level::Flat(0.0),
     water: WATER,
     surface_pressure: 101_325.0,
 };
