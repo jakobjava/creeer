@@ -80,6 +80,9 @@ pub struct ImplicitSolver {
     pub tolerance: f64,
     /// Newton iterations used by the last step (summed over substeps).
     pub last_iterations: u32,
+    /// Newton iterations of all its steps so far (not saved): the work a scene's ticks cost,
+    /// the same on every machine (the sandbox's work gates).
+    pub iterations_total: u64,
     /// Where the time of the last step went.
     pub timings: Timings,
     /// Plastic flow and fracture in the last step.
@@ -216,6 +219,7 @@ impl ImplicitSolver {
             max_iterations: 500,
             tolerance: 3.0e-7,
             last_iterations: 0,
+            iterations_total: 0,
             timings: Timings::default(),
             last_yielding: super::Yielding::default(),
             refactoring: Refactoring::WhenSlow,

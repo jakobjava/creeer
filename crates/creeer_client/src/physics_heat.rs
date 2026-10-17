@@ -192,7 +192,7 @@ pub fn blocks(world: &mut World) -> SceneHeat {
     let mut nodes = [0; 2];
     let mut bodies = [0; 2];
     for (k, x) in [-1.0, 1.0].into_iter().enumerate() {
-        crate::physics_sandbox::wall(world, DVec3::new(x, 0.25, 0.0), DVec3::new(0.3, 0.25, 0.3));
+        crate::physics_scenes::wall(world, DVec3::new(x, 0.25, 0.0), DVec3::new(0.3, 0.25, 0.3));
         let block = Body::rigid(
             Shape::Box {
                 half: DVec3::splat(0.5 * side),
@@ -318,7 +318,7 @@ pub fn fire(world: &mut World) -> SceneHeat {
     let fire = heat.fire(&frame, &burning, iso_834(0.0));
     let body = world.add(Body::structure(frame, dt));
     for x in [-2.3, 2.3] {
-        crate::physics_sandbox::wall(world, DVec3::new(x, 0.75, 0.0), DVec3::new(0.4, 0.75, 0.8));
+        crate::physics_scenes::wall(world, DVec3::new(x, 0.75, 0.0), DVec3::new(0.4, 0.75, 0.8));
     }
     let top = 2.5 + 2.0 * tube.extent[0];
     world.add(Body::rigid(

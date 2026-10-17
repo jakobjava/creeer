@@ -148,6 +148,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
         let t = Instant::now();
         for (s, v) in members.iter_mut() {
             v.last_iterations += 1;
+            v.iterations_total += 1;
             if v.refactoring == Refactoring::EveryIteration && !s.elements.is_empty() {
                 v.refactor(s);
                 v.update_turns(s);
