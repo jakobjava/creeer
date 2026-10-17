@@ -35,6 +35,12 @@ mod drive_bench;
 mod fly_camera;
 mod headless;
 mod hulls;
+mod lab;
+mod lab_ellingham;
+mod lab_plots;
+mod lab_runs;
+#[cfg(test)]
+mod lab_tests;
 mod physics_drive;
 mod physics_heat;
 mod physics_rocks;

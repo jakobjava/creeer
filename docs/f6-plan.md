@@ -1,6 +1,6 @@
 # F6 plan: simulation domains
 
-Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 to F6.4 done (2026-10-17; ADR-0009 to ADR-0012).
+Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 to F6.5 done (2026-10-17; ADR-0009 to ADR-0013).
 
 F6 builds the engines behind everything a player will make: what things are made of and how they react (materials & chemistry), heat, electricity, shafts and gears, fluids and air, and logic. Each one must be **realistic** (validated against analytic or reference results, conserving what nature conserves) and **fast** (each has a budget inside the 10 ms tick of plan.md §5). Each gets a sandbox scene, like F2–F5.
 
@@ -142,6 +142,8 @@ The order follows dependencies: materials first (everything needs their properti
 
 ### F6.5 Materials and chemistry (`creeer_materials`, `creeer_chem`)
 
+**Done** (2026-10-17, ADR-0013): NASA Glenn's 1,798 species (the CEA program's thermo.inp, NASA-9) imported with two corrections written down; equilibrium by the CEA method with the phase rule, phase swaps and feed starts added; vapour pressures with real-gas vapour (water to IAPWS within 0.4 % to 450 K), Raoult flashes, liquid densities, viscosities and conductivities (Wilke); reversible Arrhenius kinetics, batch and CSTR reactors (BDF2, energy ledger closed), the shrinking core; electrolysis cells in circuits coupled to reactors (Faraday to the mole). Validations as listed below; 500 equilibria at 10 Hz 0.04–0.05 ms a tick projected (≤ 0.5). Sandbox: the Lab window. Not modelled: activity models (slags, brines), cryogenic liquids (G8), distillation-grade organic vapour pressures (G5).
+
 - **Species database:**
   - formula (existing parser), phase, molar mass;
   - thermodynamic polynomials: NASA-7 for gases and condensed phases (NASA Glenn data), and mineral data from Robie & Hemingway (USGS) for the geology's minerals;
@@ -262,11 +264,16 @@ The order follows dependencies: materials first (everything needs their properti
   - 1,000 machines across all domains, 20,000 beams, 8 players;
   - measured against the 10 ms tick on min-spec, with every F6 budget in `cargo xtask perf`.
 - **ADRs:**
-  - ADR-0009: network kit and multi-rate coupling;
-  - ADR-0010: thermal and electrical;
-  - ADR-0011: chemistry and materials data;
-  - ADR-0012: fluids, atmospheres, aero and buoyancy;
-  - ADR-0013: logic and the Lua sandbox.
+  - ADR-0009: network kit;
+  - ADR-0010: thermal networks;
+  - ADR-0011: electrical networks;
+  - ADR-0012: mechanical drivetrains;
+  - ADR-0013: materials and chemistry;
+  - ADR-0014: fluids, atmospheres, aero and buoyancy;
+  - ADR-0015: logic and the Lua sandbox;
+  - ADR-0016: integration and multi-rate coupling.
+  
+  (One ADR a sub-phase, as they were written; the plan first grouped them differently.)
   
   Validation reports go in `docs/physics/`.
 

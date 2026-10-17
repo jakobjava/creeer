@@ -20,6 +20,7 @@ creeer_thermal.workspace = true
 creeer_electric.workspace = true
 creeer_materials.workspace = true
 creeer_mech.workspace = true
+creeer_chem.workspace = true
 creeer_ui.workspace = true
 winit.workspace = true
 egui.workspace = true
