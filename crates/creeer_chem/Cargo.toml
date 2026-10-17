@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 creeer_materials.workspace = true
 creeer_math.workspace = true
+creeer_network.workspace = true
 
 [lints]
 workspace = true

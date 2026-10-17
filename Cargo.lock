@@ -548,6 +548,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_materials",
  "creeer_math",
+ "creeer_network",
 ]
 
 [[package]]

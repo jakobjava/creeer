@@ -7,13 +7,24 @@
 //!   NASA CEA method), at fixed temperature and pressure or adiabatic.
 //! - [`vle`]: vapour pressures, boiling points, Raoult's law and flashes.
 
+mod dense;
+pub mod electrolysis;
+#[cfg(test)]
+mod electrolysis_tests;
 mod equilibrium;
 #[cfg(test)]
 mod equilibrium_tests;
+pub mod kinetics;
 mod phases;
 #[cfg(test)]
 mod reaction_tests;
+pub mod reactor;
+#[cfg(test)]
+mod reactor_tests;
 pub mod real;
+pub mod shrinking;
+#[cfg(test)]
+mod shrinking_tests;
 mod system;
 pub mod vle;
 #[cfg(test)]
