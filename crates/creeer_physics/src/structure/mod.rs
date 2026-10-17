@@ -8,6 +8,7 @@ use crate::gravity::PlanetGravity;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 use rayon::prelude::*;
 
+mod added;
 mod assemble;
 mod buckling;
 #[cfg(test)]
@@ -50,6 +51,7 @@ mod step;
 #[cfg(test)]
 mod validation_tests;
 
+pub use added::AddedMass;
 pub use builder::StructureBuilder;
 pub use dashpot::Dashpot;
 use element::Element;
@@ -119,6 +121,9 @@ pub struct Structure {
     /// Loads that depend on the motion, linearised for the coming step ([`Dashpot`]): set
     /// with the loads they belong to, before each step (not saved).
     pub dashpots: Vec<Dashpot>,
+    /// Water moving with nodes, for the coming step ([`AddedMass`]): set before each step
+    /// (not saved).
+    pub added_mass: Vec<AddedMass>,
     /// Uniform gravitational acceleration (m/s²).
     pub gravity: DVec3,
     /// A planet's gravity in its rotating frame (`gravity.rs`), on top of `gravity`.

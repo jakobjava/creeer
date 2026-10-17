@@ -47,6 +47,7 @@ impl Work {
         #[allow(clippy::float_cmp)] // Newmark's τ is β itself
         let newmark = self.tau == beta;
         self.dashpot_scale = if newmark { self.h / beta } else { 1.0 };
+        self.referred = true;
         self.dashpot_ref.clear();
         self.dashpot_ref.extend(s.dashpots.iter().map(|d| {
             let n = d.node;
@@ -116,13 +117,21 @@ impl Structure {
         blocks
     }
 
-    /// The sum of node 0's dashpots (a rigid body's), times `scale`.
-    pub(super) fn rigid_dashpot(&self, scale: f64) -> [[f64; 6]; 6] {
+    /// What node 0's dashpots (times `scale`) and added masses put in a rigid body's 6×6
+    /// Newton matrix: β·D and M.
+    pub(super) fn rigid_dashpot(&self, beta: f64, scale: f64) -> [[f64; 6]; 6] {
         let mut sum = [[0.0; 6]; 6];
+        for a in self.added_mass.iter().filter(|a| a.node == 0) {
+            for (c, column) in a.matrix.to_cols_array_2d().iter().enumerate() {
+                for (r, m) in column.iter().enumerate() {
+                    sum[r][c] += m;
+                }
+            }
+        }
         for d in self.dashpots.iter().filter(|d| d.node == 0) {
             for (row, add) in sum.iter_mut().zip(&d.matrix) {
                 for (a, b) in row.iter_mut().zip(add) {
-                    *a += b * scale;
+                    *a += b * scale * beta;
                 }
             }
         }
@@ -159,6 +168,11 @@ impl super::ImplicitSolver {
         let w = &self.work;
         let excess = w.dashpot_scale - 1.0;
         self.dashpot_end.clear();
+        // The water's impulse is no force on the body's own acceleration (`added.rs`).
+        for a in &s.added_mass {
+            let f = w.added_force(s, a) * s.free_translation[a.node];
+            self.acceleration[a.node] -= f / s.mass[a.node];
+        }
         for (k, d) in s.dashpots.iter().enumerate() {
             let n = d.node;
             let (delta, _) = w.offset(k, n, &s.position, &s.orientation);

@@ -162,7 +162,7 @@ impl ImplicitSolver {
         }
         let b2 = self.work.beta * self.work.beta;
         let inertia = self.work.inertia_star[0];
-        let dashpot = s.rigid_dashpot(self.work.dashpot_scale);
+        let dashpot = s.rigid_dashpot(self.work.beta, self.work.dashpot_scale);
         let free: [f64; 6] = std::array::from_fn(|k| {
             if k < 3 {
                 s.free_translation[0][k]
@@ -180,7 +180,7 @@ impl ImplicitSolver {
                     (false, false) => inertia.col(c - 3)[r - 3],
                     _ => 0.0,
                 };
-                mass + b2 * coupling[r][c] + self.work.beta * dashpot[r][c]
+                mass + b2 * coupling[r][c] + dashpot[r][c]
             })
         }))
     }

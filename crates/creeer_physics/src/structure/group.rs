@@ -183,7 +183,7 @@ fn unbooked_work(members: &[Member<'_>], start: &[Start], newmark: bool) -> f64 
                 work += 0.5 * change.dot(s.position[i] - x0[i]);
             }
         }
-        work += s.dashpot_work(x0, q0);
+        work += s.dashpot_work(x0, q0) + s.added_work(x0, v.h);
         // Newmark's mean took the last step's dashpots' forces too (in its accelerations).
         if newmark {
             for &(n, force, torque) in dashpots {
@@ -243,6 +243,7 @@ pub fn step_group_with(
                     .any(|t| *t != DVec3::ZERO)
                     || s.load != v.previous_load
                     || !s.dashpots.is_empty()
+                    || !s.added_mass.is_empty()
             });
             let start: Vec<Start> = if acting {
                 members

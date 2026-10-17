@@ -157,6 +157,8 @@ pub(super) struct Work {
     pub dashpot_ref: Vec<(DVec3, DQuat)>,
     /// What the dashpots are taken times this substep (`dashpot.rs`: h/β for Newmark).
     pub dashpot_scale: f64,
+    /// Whether the dashpots and added masses were referred to this substep's prediction.
+    pub referred: bool,
     /// Coriolis force per node for this step (N).
     pub coriolis: Vec<DVec3>,
     /// The rotating frame's fictitious torque per node for this step (N·m).
@@ -256,6 +258,7 @@ impl ImplicitSolver {
                 drag_rate: vec![0.0; n],
                 dashpot_ref: Vec::new(),
                 dashpot_scale: 1.0,
+                referred: false,
                 coriolis: vec![DVec3::ZERO; n],
                 frame_torque: vec![DVec3::ZERO; n],
                 s_hat: vec![[0.0; MEASURES]; structure.element_count()],
@@ -331,6 +334,7 @@ impl ImplicitSolver {
         // With x = x* the residual is β²·f (no inertia term, no damping).
         // (Nor dashpots: at the motion they were linearised at they exert nothing.)
         w.dashpot_ref.clear();
+        w.referred = false;
         w.residual(s);
         let scale = 1.0 / (w.beta * w.beta);
         for i in 0..n {

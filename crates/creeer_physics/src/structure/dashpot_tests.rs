@@ -118,3 +118,46 @@ fn a_dashpot_on_a_structure_damps_it() {
         s.velocity[tip].length()
     );
 }
+
+/// Water moving with a 1 kg body (added mass 1 kg, its momentum carried): a 2 N push
+/// accelerates it as 2 kg, x = t²/2 exactly (Newmark is exact for constant acceleration);
+/// going into still water at 3 m/s it shares its momentum, v = m·v₀/(m + M); its water left
+/// behind, it keeps its speed.
+#[test]
+fn added_mass_is_inertia_without_weight() {
+    for scheme in [Scheme::Newmark, Scheme::BackwardEuler] {
+        let mut s = StructureBuilder::rigid_body(DVec3::ZERO, 1.0, DMat3::IDENTITY);
+        s.gravity = DVec3::ZERO;
+        s.load[0] = DVec3::X * 2.0;
+        let water = |s: &Structure| AddedMass {
+            node: 0,
+            matrix: DMat3::IDENTITY,
+            momentum: s.velocity[0],
+        };
+        // (Newmark carries the body's own acceleration, F/m, the water's impulse apart.)
+        let mut solver = ImplicitSolver::new(&s, scheme, DT, 1);
+        for _ in 0..60 {
+            s.added_mass = vec![water(&s)];
+            solver.step(&mut s);
+        }
+        let v = s.velocity[0].x;
+        assert!((v - 1.0).abs() < 1e-9, "{scheme:?}: {v} m/s after 1 s");
+        if scheme == Scheme::Newmark {
+            assert!((s.position[0].x - 0.5).abs() < 1e-9, "{}", s.position[0].x);
+        }
+    }
+    let mut s = StructureBuilder::rigid_body(DVec3::ZERO, 1.0, DMat3::IDENTITY);
+    s.gravity = DVec3::ZERO;
+    s.velocity[0] = DVec3::new(0.0, -3.0, 0.0);
+    let mut solver = ImplicitSolver::new(&s, Scheme::Newmark, DT, 1);
+    s.added_mass = vec![AddedMass {
+        node: 0,
+        matrix: DMat3::IDENTITY * 0.5,
+        momentum: DVec3::ZERO,
+    }];
+    solver.step(&mut s);
+    assert!((s.velocity[0].y + 2.0).abs() < 1e-9, "{}", s.velocity[0].y);
+    s.added_mass.clear();
+    solver.step(&mut s);
+    assert!((s.velocity[0].y + 2.0).abs() < 1e-9, "{}", s.velocity[0].y);
+}

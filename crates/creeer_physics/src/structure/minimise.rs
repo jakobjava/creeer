@@ -60,6 +60,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
     for (m, (s, v)) in members.iter_mut().enumerate() {
         let mut blocks = coupling.node_stiffness(m);
         blocks.extend(s.dashpot_blocks(v.work.beta, v.work.dashpot_scale));
+        blocks.extend(s.added_blocks(v.work.beta));
         if !s.elements.is_empty() && v.use_contact_stiffness(s, blocks) {
             v.update_turns(s);
         }

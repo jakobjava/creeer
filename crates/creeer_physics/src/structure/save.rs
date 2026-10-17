@@ -231,6 +231,7 @@ impl Decode for Structure {
             torque: r.get()?,
             drag: r.get()?,
             dashpots: Vec::new(),
+            added_mass: Vec::new(),
             gravity: r.get()?,
             planet: r.get()?,
             rest: r.get()?,
