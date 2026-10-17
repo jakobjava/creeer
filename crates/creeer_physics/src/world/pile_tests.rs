@@ -71,7 +71,10 @@ fn smash(speed: f64) {
 /// A 40 m steel bridge resting on two piers (by contact, with friction) under a 10 t
 /// load: its Newton matrix includes the contacts' stiffness (without it: 48 iterations a
 /// step on the piers alone, 72 with the load), and the load is solved jointly with it
-/// (`structure/coupled.rs`; without: 15.5), so a step takes about two: one and the check.
+/// (`structure/coupled.rs`; without: 12). The load set on it suddenly sets the deck ringing
+/// at 1.3 Hz, its 0.6 % damping taking it down 4 % a cycle: eight seconds on it still swings,
+/// and a step takes about four. (F5 measured two: steps whose joint solve went uphill ended
+/// as converged where they began, which also stopped the ringing within a second, F6.)
 #[test]
 fn a_bridge_resting_on_contacts_converges_quickly() {
     let mut world = World::new(DT);
@@ -92,16 +95,18 @@ fn a_bridge_resting_on_contacts_converges_quickly() {
     let load = Body::rigid(Shape::Box { half }, 10_000.0, DVec3::Y * (top + 0.5), DT);
     world.add(load);
     let mut iterations = 0;
-    // At rest: after the block's landing (members yield in impact substeps) and the rocking
-    // on the swinging deck have died away. When that happens depends on the exact path: a
-    // micrometre on where the block starts moved it between the first and the sixth second
-    // (F5).
+    // The middle of the deck's bottom chord, and how far it swings in the last two seconds.
+    let middle = 2 * 21 + 10;
+    let (mut low, mut high) = (f64::INFINITY, f64::NEG_INFINITY);
     for tick in 0..600 {
         world.step();
         if tick >= 480 {
             iterations += world.bodies[0].solver.last_iterations;
+            let y = world.bodies[0].structure.position[middle].y;
+            (low, high) = (low.min(y), high.max(y));
         }
     }
     let mean = f64::from(iterations) / 120.0;
-    assert!(mean < 3.0, "{mean} iterations per step");
+    assert!(mean < 5.0, "{mean} iterations per step");
+    assert!(high - low > 0.02, "the deck still rings: {} m", high - low);
 }

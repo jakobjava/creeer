@@ -22,6 +22,11 @@ fn residuals(members: &mut [Member<'_>], coupling: &dyn Coupling, gradient: &mut
     }
 }
 
+/// How far `direction` goes down the objective: the residual (the negative gradient) along it.
+fn downhill(residual: &[DVec3], direction: &[DVec3]) -> f64 {
+    residual.iter().zip(direction).map(|(r, d)| r.dot(*d)).sum()
+}
+
 /// Newton/L-BFGS iterations with line search on the group's incremental potential, until
 /// the estimated remaining error is below the tolerance.
 pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) {
@@ -110,6 +115,19 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
                 c.solve(all, kept, &offsets);
             }
         });
+        // A direction uphill would fail every line search, and a failed search reads as
+        // convergence (the joint solve of rigid bodies on structures gave such directions while
+        // its correction for the contacts was scaled wrong: a frame froze 3 mm above its piers
+        // under a block, a bridge stopped ringing at once, F6). Should one occur again, each
+        // member's own matrix, positive definite, gives the direction, and L-BFGS restarts.
+        if downhill(&residual, &direction) <= 0.0 {
+            direction.copy_from_slice(&residual);
+            for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
+                let range = offsets[m]..offsets[m] + v.work.direction.len();
+                v.precondition(s, &mut direction[range], matrix.as_ref());
+            }
+            lbfgs.clear();
+        }
         let mut offset = 0;
         for (_, v) in members.iter_mut() {
             let len = v.work.direction.len();
