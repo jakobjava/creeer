@@ -9,6 +9,9 @@
 //! held.
 
 pub mod friction;
+pub mod gas;
+#[cfg(test)]
+mod gas_tests;
 mod links;
 mod liquid;
 #[cfg(test)]
