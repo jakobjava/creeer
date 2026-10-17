@@ -183,3 +183,26 @@ The exact Hessian of the lagged problem saves 7 % of the iterations. The turning
 ### A realism defect found: friction on stale normal forces
 
 The lag's cap of three refreshes leaves 19 % of the rock pile's steps (169 of 900) and 3 % of the stacks' ending with some contact's friction (one carrying at least 1 % of the group's load) on a normal force more than 5 % off its own. Refreshing until consistent fixes it (1 step in 900) at 27 % more of the pile's iterations; following λ after the lagged solve fixes most of it (16) at no cost in iterations but with worse worst steps. Recorded in `docs/future-improvements.md`, to be fixed together with the speed it costs.
+
+## Measured: A1 (2026-10-17)
+
+### Built
+
+Impact substeps chosen by BDF2's local error, estimated as 4/7 of how far a step ends from its second-order prediction x + h·v + ½h²·a (Milne's device): doubled under an eighth of the tolerance, halved past it, on the ladder 0.5 ms·2ʲ (so that the matrix is refactorised only when the step changes). The shortest step was kept wherever a contact would close within the step or had touched within the shortest step before, and wherever a flowing member would tear within it (a tear is found at a step's end).
+
+### Accuracy: as good as the fixed grid, or better
+
+| test | fixed 0.5 ms | controlled, 10⁻⁶ m |
+|---|---|---|
+| tube, perfectly plastic, 5 / 10 / 20 m/s | −1.42 / +0.15 / +0.61 % | +0.17 / +0.43 / +0.06 % |
+| tube, real steel, 5 / 10 / 20 m/s | −1.21 / −1.05 / −0.69 % | −0.96 / −0.95 / −0.27 % |
+
+A step ending where its contact closes starts each impact at its touch: the 5 m/s crush moved from −1.4 % to +0.2 %. Without the rules for touching contacts the first step of a crush was 1 ms (5 % short); without the tear rule a 30 m/s tube tore 7 % late in a 4 ms step.
+
+### Speed: no gain, not adopted
+
+The estimate tells the phases apart (the bridge's: under 10⁻⁷ m falling, up to 5·10⁻⁴ m as the block strikes, 10⁻⁶ m sagging), and the bridge took 6–32 substeps a tick instead of 34. Its ticks did not get cheaper: a longer step takes more Newton iterations, every change of step refactorises the bridge (7–16 factorisations a tick against 4–5), and two more ticks substepped. Worst tick 42 ms against 33, p99 13.7 against 4.8; the crash's p99 halved (2.85 → 1.3 ms), its worst stayed (19 ms). It fails the gate (the bridge's worst under 10 ms). The code is kept outside the tree.
+
+### What the three measurements say
+
+Within this solver, a deforming impact costs its substeps × about 1 ms (a third of it fixed costs, A2), and a pile its iterations × about 0.1 ms in its largest group, which no other core shares. The two converge as Newton can (B1, C) and the impact's short steps are needed while it strikes (A1). 2–3 ms for these scenes needs either the fixed costs and the contacts' evaluation spread over the idle cores, or a different solver architecture: decided with the user.
