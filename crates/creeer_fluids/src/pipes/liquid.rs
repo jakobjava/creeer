@@ -6,10 +6,12 @@
 //! definite system in the heads alone. Its solution gives new flows, its law is linearised
 //! there, until the flows stop moving and no one-way link wants to switch.
 
-use super::links::{efficiency, law, one_way, passable};
+use super::links::{efficiency, law, law_from, one_way, passable};
 use super::{LinkKind, Network, NodeKind, PipeReport};
 use creeer_math::sparse::{Assembly, Cholesky};
+// (`Cholesky` kept between steps: `solve.rs` preconditions with it.)
 use creeer_network::Sum;
+use rayon::prelude::*;
 
 /// Newton iterations at most per step.
 const ITERATIONS: usize = 60;
@@ -20,6 +22,10 @@ pub(crate) struct Solver {
     unknown: Vec<Option<usize>>,
     assembly: Assembly,
     cholesky: Option<Cholesky>,
+    /// Each link's friction factor as 1/√f, where its last solve found it.
+    hints: Vec<f64>,
+    /// Newton's contraction: its next move is about this times its last squared (1/(m³/s)).
+    rate: f64,
 }
 
 impl Solver {
@@ -46,6 +52,8 @@ impl Solver {
             unknown,
             assembly: Assembly::new(n, &positions),
             cholesky: None,
+            hints: Vec::new(),
+            rate: f64::INFINITY,
         }
     }
 }
@@ -64,19 +72,35 @@ impl Network {
         let mut report = PipeReport::default();
         let mut contributions = Vec::new();
         let mut rhs = vec![0.0; n];
+        let mut linear = Vec::with_capacity(self.links.len());
+        // Which junctions reach a reservoir or a tank (again only when a link opens or shuts).
+        let mut held: Option<Vec<bool>> = None;
+        let mut before = f64::INFINITY;
         for _ in 0..ITERATIONS {
             report.iterations += 1;
             contributions.clear();
             rhs.fill(0.0);
-            let mut linear = Vec::with_capacity(self.links.len());
-            for link in &self.links {
-                let (c, q0) = if link.open && passable(link) {
-                    let (h, y) = law(link, &liquid, g, link.flow);
+            // Each link's law linearised (in parallel: the friction factors are most of a step).
+            solver.hints.resize(self.links.len(), 0.0);
+            (self
+                .links
+                .par_iter()
+                .zip(solver.hints.par_iter_mut())
+                .with_min_len(256))
+            .map(|(link, hint)| {
+                if link.open && passable(link) {
+                    let (h, y) = law_from(link, &liquid, g, link.flow, hint);
                     (1.0 / y, link.flow - h / y)
                 } else {
                     (0.0, 0.0)
-                };
-                linear.push((c, q0));
+                }
+            })
+            .collect_into_vec(&mut linear);
+            if held.is_none() {
+                held = Some(grounded(self, &linear));
+            }
+            let reached = held.as_ref().expect("found");
+            for (link, &(c, q0)) in self.links.iter().zip(&linear) {
                 let (a, b) = (solver.unknown[link.a], solver.unknown[link.b]);
                 // Q = c·(H_a − H_b) + q₀ leaves a and enters b.
                 for (r, col, v) in [(a, a, c), (b, b, c), (a, b, -c), (b, a, -c)] {
@@ -97,7 +121,6 @@ impl Network {
                     }
                 }
             }
-            let held = grounded(self, &linear);
             for (i, node) in self.nodes.iter().enumerate() {
                 let Some(r) = solver.unknown[i] else { continue };
                 let (diag, extra) = match node.kind {
@@ -108,20 +131,19 @@ impl Network {
                 // (Junctions cut off from every reservoir and tank have no head: a touch on
                 // their diagonals keeps the system regular. Only there: elsewhere it would
                 // leak 10⁻¹² m³/s per metre of head.)
-                contributions.push(if held[i] { diag } else { diag + 1e-12 });
+                contributions.push(if reached[i] { diag } else { diag + 1e-12 });
                 rhs[r] += extra;
             }
             let matrix = solver.assembly.matrix(&contributions);
-            let factored = match solver.cholesky.as_mut() {
-                Some(ch) => ch.refactor(&matrix),
-                None => Cholesky::new(&matrix).map(|ch| solver.cholesky = Some(ch)),
-            };
-            factored.expect("a pipe network's system is positive definite");
-            solver
-                .cholesky
-                .as_mut()
-                .expect("factorised")
-                .solve(&mut rhs);
+            // A step's first iteration meets laws moved since the last step: factorised afresh;
+            // its later ones, laws moved a little: the factor preconditions them (`solve.rs`).
+            super::solve::solve(
+                &mut solver.cholesky,
+                &matrix,
+                &mut rhs,
+                report.iterations == 1,
+            )
+            .expect("a pipe network's system is positive definite");
             for (i, node) in self.nodes.iter_mut().enumerate() {
                 if let Some(r) = solver.unknown[i] {
                     node.head = rhs[r];
@@ -156,12 +178,29 @@ impl Network {
                     }
                 }
             }
-            if !switched && moved <= 1e-12 + 1e-9 * largest {
+            // Converged when the flows stopped moving, or are converging quadratically (as
+            // Newton's method does near its root) to where the next move would be below that:
+            // the flows taken are then as good as one more iteration's.
+            let tolerance = 1e-12 + 1e-9 * largest;
+            let quadratic =
+                before.is_finite() && moved <= 0.1 * before && moved * moved / before <= tolerance;
+            // Newton's next move is C·(this one)²: C as the last pair of moves measured it (this
+            // step's, or the last step's for its first iteration: the laws change slowly from step
+            // to step), with a tenfold margin. (Deuflhard's contraction estimate.)
+            if before.is_finite() && before > 0.0 && moved <= 0.1 * before {
+                solver.rate = moved / (before * before);
+            }
+            let predicted = !before.is_finite() && 10.0 * solver.rate * moved * moved <= tolerance;
+            if !switched && (moved <= tolerance || quadratic || predicted) {
                 report.converged = true;
                 break;
             }
+            before = moved;
+            if switched {
+                (held, before) = (None, f64::INFINITY);
+            }
         }
-        self.book(&old, dt);
+        self.book(&old, dt, &mut solver.hints);
         self.solver = Some(solver);
         report
     }
@@ -169,23 +208,39 @@ impl Network {
     /// The step's energy: pumps' shaft work in, friction and the pumps' losses as heat,
     /// water's ρgHQ into and out of reservoirs and consumers, the tanks' potential energy
     /// (backward Euler's ρgA·ΔH²/2 of it to heat).
-    fn book(&mut self, old: &[f64], dt: f64) {
+    fn book(&mut self, old: &[f64], dt: f64, hints: &mut [f64]) {
         let rg = self.liquid.density * self.gravity;
         let (mut imported, mut exported, mut dissipated) =
             (Sum::default(), Sum::default(), Sum::default());
         let mut net = vec![0.0; self.nodes.len()];
-        for link in self.links.iter().filter(|l| l.open && passable(l)) {
-            net[link.a] -= link.flow;
-            net[link.b] += link.flow;
-            let (h, _) = law(link, &self.liquid, self.gravity, link.flow);
+        // Each link's shaft work in and heat out (in parallel, summed in link order).
+        let (liquid, g) = (self.liquid, self.gravity);
+        let works: Vec<(f64, f64)> = (self
+            .links
+            .par_iter()
+            .zip(hints.par_iter_mut())
+            .with_min_len(256))
+        .map(|(link, hint)| {
+            if !(link.open && passable(link)) {
+                return (0.0, 0.0);
+            }
+            let (h, _) = law_from(link, &liquid, g, link.flow, hint);
             if let LinkKind::Pump { .. } = link.kind {
                 let hydraulic = -rg * link.flow * h;
                 let shaft = hydraulic / efficiency(&link.kind, link.flow);
-                imported.add(shaft * dt);
-                dissipated.add((shaft - hydraulic) * dt);
+                (shaft * dt, (shaft - hydraulic) * dt)
             } else {
-                dissipated.add(rg * link.flow * h * dt);
+                (0.0, rg * link.flow * h * dt)
             }
+        })
+        .collect();
+        for (link, &(work, heat)) in self.links.iter().zip(&works) {
+            if link.open && passable(link) {
+                net[link.a] -= link.flow;
+                net[link.b] += link.flow;
+            }
+            imported.add(work);
+            dissipated.add(heat);
         }
         for (i, node) in self.nodes.iter().enumerate() {
             match node.kind {

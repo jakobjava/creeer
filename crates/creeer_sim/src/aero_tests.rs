@@ -2,7 +2,7 @@
 //! velocity on the drag curve, a dart turning into its flight, a crate under a canopy coming
 //! down at the canopy's terminal velocity with the air's work booked.
 
-use crate::aero::{Airframe, Datum, Sky, push, settle};
+use crate::aero::{Airframe, Datum, Sky, book, push, settle};
 use creeer_fluids::aero::{Section, Shape, Surface};
 use creeer_fluids::atmosphere::Atmosphere;
 use creeer_materials::species::SpeciesTable;
@@ -220,6 +220,7 @@ fn a_crate_comes_down_under_its_canopy() {
     );
     let up = DMat3::from_quat(s.orientation[0]) * DVec3::Y;
     assert!(up.y > 0.9999, "hangs under it: {up}");
+    book(&world, &mut frames);
     let work: f64 = frames.iter().map(|f| f.work).sum();
     let lost = energy(&world) - before;
     assert!(

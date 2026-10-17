@@ -20,6 +20,7 @@ mod carry_tests;
 mod gas_tests;
 mod links;
 mod liquid;
+mod solve;
 #[cfg(test)]
 mod tests;
 

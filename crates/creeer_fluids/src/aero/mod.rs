@@ -13,6 +13,7 @@
 
 pub mod coefficients;
 mod eigen;
+mod slope;
 #[cfg(test)]
 mod tests;
 
@@ -61,13 +62,25 @@ impl Surface {
     /// The air's force on it (N, world frame) moving at `velocity` through the air (m/s,
     /// world), its body turned by `rotation` (body to world).
     pub fn force(&self, rotation: DMat3, velocity: DVec3, air: &Air) -> DVec3 {
+        self.evaluate(rotation, velocity, air, None).0
+    }
+
+    /// The force, and what its coefficients took from the flow's Mach and Reynolds numbers
+    /// (a panel's Mach number and friction coefficient, a sphere's Mach number and drag
+    /// coefficient); or the force with those held at `frozen`.
+    fn evaluate(
+        &self,
+        rotation: DMat3,
+        velocity: DVec3,
+        air: &Air,
+        frozen: Option<(f64, f64)>,
+    ) -> (DVec3, (f64, f64)) {
         let u = -velocity;
         let speed = u.length();
         if speed <= 0.0 {
-            return DVec3::ZERO;
+            return (DVec3::ZERO, frozen.unwrap_or((0.0, 0.0)));
         }
         let q = 0.5 * air.density * speed * speed;
-        let mach = speed / air.sound;
         let along = u / speed;
         match self.shape {
             Shape::Panel {
@@ -78,39 +91,85 @@ impl Surface {
                 normal,
                 chord,
             } => {
+                let (mach, cf) = frozen.unwrap_or_else(|| {
+                    let mach = speed / air.sound;
+                    let length = (area / aspect).sqrt();
+                    let re = air.density * speed * length / air.viscosity;
+                    (mach, skin_friction(re, mach))
+                });
                 let (n, c) = (rotation * normal, rotation * chord);
                 let alpha = det::atan2(u.dot(n), -u.dot(c));
                 let (cl, cd) = lift_drag(&section, aspect, efficiency, alpha, mach);
                 let lift = along.cross(c.cross(n)).normalize_or_zero();
-                let length = (area / aspect).sqrt();
-                let cf = skin_friction(air.density * speed * length / air.viscosity, mach);
                 let tangential = u - n * u.dot(n);
-                (lift * cl + along * cd) * (q * area)
-                    + tangential * (air.density * speed * cf * area)
+                let f = (lift * cl + along * cd) * (q * area)
+                    + tangential * (air.density * speed * cf * area);
+                (f, (mach, cf))
             }
             Shape::Sphere { diameter } => {
-                let re = air.density * speed * diameter / air.viscosity;
-                along * (q * 0.25 * PI * diameter * diameter * sphere_drag(re, mach))
+                let (mach, cd) = frozen.unwrap_or_else(|| {
+                    let mach = speed / air.sound;
+                    let re = air.density * speed * diameter / air.viscosity;
+                    (mach, sphere_drag(re, mach))
+                });
+                let f = along * (q * 0.25 * PI * diameter * diameter * cd);
+                (f, (mach, cd))
             }
-            Shape::Bluff { area, drag } => along * (q * area * drag),
+            Shape::Bluff { area, drag } => (along * (q * area * drag), (0.0, drag)),
         }
     }
 
     /// The force as [`Self::force`] and the damping part of its slope: D, symmetric positive
     /// semidefinite, with F(v + δv) ≈ F(v) − D·δv in every direction the force resists (the
     /// rest of the slope, lift turning with the flow or a stalled wing's negative one, is no
-    /// damping: an implicit step takes it at the step's start).
+    /// damping: an implicit step takes it at the step's start). The slope holds the
+    /// coefficients the Mach and Reynolds numbers set (friction, a sphere's drag) where they
+    /// are: they move slowly with the speed, and D only steadies the step (the force is exact).
     pub fn linearised(&self, rotation: DMat3, velocity: DVec3, air: &Air) -> (DVec3, DMat3) {
-        let f = self.force(rotation, velocity, air);
-        let d = 1e-6 * velocity.length().max(1e-3);
-        let columns: [DVec3; 3] = std::array::from_fn(|k| {
-            let mut v = velocity;
-            v[k] += d;
-            (self.force(rotation, v, air) - f) / d
-        });
-        let slope = DMat3::from_cols(columns[0], columns[1], columns[2]);
-        let resist = (slope + slope.transpose()) * -0.5;
-        (f, eigen::positive_part(resist))
+        if let Shape::Panel {
+            area,
+            aspect,
+            efficiency,
+            section,
+            normal,
+            chord,
+        } = self.shape
+        {
+            let speed = velocity.length();
+            if speed <= 0.0 {
+                return (DVec3::ZERO, DMat3::ZERO);
+            }
+            let mach = speed / air.sound;
+            let re = air.density * speed * (area / aspect).sqrt() / air.viscosity;
+            let (n, c) = (rotation * normal, rotation * chord);
+            let panel = slope::Panel {
+                area,
+                aspect,
+                efficiency,
+                section: &section,
+                n,
+                c,
+            };
+            let (f, j) = slope::slope(
+                &panel,
+                -velocity,
+                air.density,
+                mach,
+                skin_friction(re, mach),
+            );
+            // dF/dv = −dF/du (u = −v): the damping, −dF/dv's symmetric part, is dF/du's.
+            return (f, eigen::positive_part((j + j.transpose()) * 0.5));
+        }
+        let (f, _) = self.evaluate(rotation, velocity, air, None);
+        // A sphere's or a bluff body's −k·|v|·v: its slope k·(|v|·I + v·vᵀ/|v|) is all damping.
+        let speed = velocity.length();
+        if speed <= 0.0 {
+            return (f, DMat3::ZERO);
+        }
+        let k = f.length() / (speed * speed);
+        let v = velocity;
+        let outer = DMat3::from_cols(v * v.x, v * v.y, v * v.z) / speed;
+        (f, (DMat3::IDENTITY * speed + outer) * k)
     }
 
     /// The heat the boundary layer gives its wall (W; negative: takes) at `wall` (K), moving

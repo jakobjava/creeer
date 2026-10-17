@@ -173,12 +173,12 @@ fn the_slope_is_the_damping() {
     let k = -f.dot(v) / (v.length() * v.length() * v.length());
     let speed = v.length();
     let exact = DMat3::IDENTITY * speed + DMat3::from_cols(v * v.x, v * v.y, v * v.z) / speed;
-    // (The coefficient varies with Re: a few per cent of the slope along v.)
+    // (Its drag coefficient held where it is: the slope is the formula's, to rounding.)
     let off = (d - exact * k)
         .to_cols_array()
         .iter()
         .fold(0.0f64, |m, x| m.max(x.abs()));
-    assert!(off < 0.05 * k * speed, "{d:?} against {:?}", exact * k);
+    assert!(off < 1e-12 * k * speed, "{d:?} against {:?}", exact * k);
     let m = DMat3::from_cols(
         DVec3::new(2.0, 1.0, 0.0),
         DVec3::new(1.0, -3.0, 0.5),
@@ -226,4 +226,105 @@ fn a_wall_at_recovery_takes_no_heat() {
     assert!((recovery / AIR.t - 1.713).abs() < 1e-3);
     assert!(panel.heating(v, &AIR, recovery).abs() < 1e-6);
     assert!(panel.heating(v, &AIR, 300.0) > 0.0 && panel.heating(v, &AIR, 600.0) < 0.0);
+}
+
+/// The positive part against its definition, on matrices with one, two and three negative
+/// eigenvalues and repeated ones: V·max(Λ, 0)·Vᵀ, built from known eigenvectors.
+#[test]
+fn the_positive_part_is_exact() {
+    let r = DMat3::from_quat(creeer_math::glam::DQuat::from_axis_angle(
+        DVec3::new(1.0, 2.0, -0.5).normalize(),
+        0.7,
+    ));
+    for lambda in [
+        [3.0, 1.0, -2.0],
+        [2.0, -1.0, -4.0],
+        [-1.0, -2.0, -3.0],
+        [5.0, 5.0, -1.0],
+        [2.0, -3.0, -3.0],
+        [4.0, 0.0, -1.0],
+    ] {
+        let m = r * DMat3::from_diagonal(DVec3::from_array(lambda)) * r.transpose();
+        let kept = r
+            * DMat3::from_diagonal(DVec3::from_array(lambda.map(|l: f64| l.max(0.0))))
+            * r.transpose();
+        let off = (positive_part(m) - kept)
+            .to_cols_array()
+            .iter()
+            .fold(0.0f64, |a, x| a.max(x.abs()));
+        assert!(off < 1e-12, "{lambda:?}: off by {off}");
+    }
+}
+
+/// The panel's analytic slope against finite differences of its force (coefficients held as
+/// the slope holds them), across attached, stalled, reversed and supersonic flow, sideslip
+/// included.
+#[test]
+fn the_panel_slope_is_its_forces() {
+    let shape = Shape::Panel {
+        area: 0.7,
+        aspect: 5.0,
+        efficiency: 0.9,
+        section: Section::NACA_2412,
+        normal: DVec3::Y,
+        chord: DVec3::X,
+    };
+    let panel = Surface {
+        shape,
+        offset: DVec3::ZERO,
+    };
+    let turn = DMat3::from_quat(creeer_math::glam::DQuat::from_axis_angle(
+        DVec3::new(0.3, 1.0, 0.2).normalize(),
+        0.4,
+    ));
+    for v in [
+        DVec3::new(40.0, -3.0, 1.0),
+        DVec3::new(30.0, -12.0, -4.0),
+        DVec3::new(-25.0, 2.0, 6.0),
+        DVec3::new(900.0, -60.0, 20.0),
+    ] {
+        let v = turn * v;
+        let (f, frozen) = panel.evaluate(turn, v, &AIR, None);
+        let Shape::Panel {
+            area,
+            aspect,
+            efficiency,
+            section,
+            normal,
+            chord,
+        } = shape
+        else {
+            unreachable!()
+        };
+        let p = super::slope::Panel {
+            area,
+            aspect,
+            efficiency,
+            section: &section,
+            n: turn * normal,
+            c: turn * chord,
+        };
+        let (force, j) = super::slope::slope(&p, -v, AIR.density, frozen.0, frozen.1);
+        assert!(
+            (force - f).length() < 1e-12 * f.length(),
+            "{force} against {f}"
+        );
+        let h = 1e-6 * v.length();
+        for k in 0..3 {
+            let mut u = v;
+            u[k] -= h;
+            let mut w = v;
+            w[k] += h;
+            // dF/du along k is −dF/dv.
+            let fd = (panel.evaluate(turn, u, &AIR, Some(frozen)).0
+                - panel.evaluate(turn, w, &AIR, Some(frozen)).0)
+                / (2.0 * h);
+            let off = (j.col(k) - fd).length();
+            assert!(
+                off < 1e-5 * f.length() / v.length() * 10.0 + 1e-9,
+                "v {v}, column {k}: {} against {fd}",
+                j.col(k)
+            );
+        }
+    }
 }
