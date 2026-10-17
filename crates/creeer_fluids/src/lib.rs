@@ -5,6 +5,7 @@
 //! - [`pipes`]: liquid pipe networks (junctions, reservoirs, tanks, pipes, pumps, valves) by the
 //!   global gradient method.
 
+pub mod aero;
 pub mod atmosphere;
 #[cfg(test)]
 mod atmosphere_tests;
