@@ -4,8 +4,8 @@
 // Elevation: the continent noise is mapped to the fraction of the planet's surface where
 // it is lower (0..1), and `curve` maps that fraction to a base height. A coast at 0.54
 // therefore means 46 % land whatever the seed. Mask `from`/`to` are fractions too. Heights
-// are relative to the datum radius ("sea level"; there is no water before F6, so ocean
-// basins are dry).
+// are relative to the datum radius ("sea level"; from F6 the ocean fills the
+// basins below it).
 Planet(
     name: "Home",
     seed: 20261016,
@@ -67,5 +67,13 @@ Planet(
             ("71 km", "-2.8 K/km"),
             ("84.852 km", "-2 K/km"),
         ],
+    )),
+    // Its ocean: sea water at 15 °C, salinity 35 g/kg (UNESCO EOS-80: 1025.97 kg/m³; viscosity
+    // 1.22 mPa·s; sound 1506.7 m/s by Mackenzie at the surface).
+    ocean: Some((
+        density: "1025.97 kg/m^3",
+        viscosity: "1.22e-3 Pa*s",
+        sound: "1506.7 m/s",
+        temperature: "288.15 K",
     )),
 )

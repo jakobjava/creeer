@@ -8,6 +8,7 @@
 //! stable as a heavy one. After the step they come off again, and the work the air did is
 //! counted.
 
+use crate::sea::{Sea, effective_gravity};
 use creeer_fluids::aero::Surface;
 use creeer_fluids::atmosphere::{Air, Atmosphere};
 use creeer_math::glam::{DMat3, DVec3};
@@ -93,15 +94,24 @@ fn cross(r: DVec3) -> DMat3 {
     )
 }
 
-/// Before the world's step: every surface's force and torque on its node, its damping as a
-/// dashpot (on the node's (v, ω): the surface's point moves at v + ω × r).
-pub fn push(sky: &Sky, world: &mut World, frames: &mut [Airframe]) {
+/// Before the world's step: every surface's force and torque on its node, in the air or (below
+/// `sea`'s surface) the water, its damping as a dashpot (on the node's (v, ω): the surface's point moves at v + ω × r).
+pub fn push(sky: &Sky, sea: Option<&Sea>, world: &mut World, frames: &mut [Airframe]) {
     for f in frames.iter_mut() {
         let (rotation, arm, point) = f.point(world);
-        let s = &mut world.bodies[f.body].structure;
+        let s = &world.bodies[f.body].structure;
         let (v, w) = (s.velocity[f.node], s.angular_velocity[f.node]);
-        let moving = v + w.cross(arm) - sky.wind;
-        let (force, d) = f.surface.linearised(rotation, moving, &sky.air(point));
+        // Under the sea, the water (still: currents are a later phase's) is the medium.
+        let under = sea.filter(|sea| sea.depth(point) > 0.0);
+        let (moving, medium) = match under {
+            Some(sea) => (
+                v + w.cross(arm),
+                sea.medium(point, effective_gravity(world, f.body, point).length()),
+            ),
+            None => (v + w.cross(arm) - sky.wind, sky.air(point)),
+        };
+        let s = &mut world.bodies[f.body].structure;
+        let (force, d) = f.surface.linearised(rotation, moving, &medium);
         f.force = force;
         f.torque = arm.cross(force);
         f.point = point;

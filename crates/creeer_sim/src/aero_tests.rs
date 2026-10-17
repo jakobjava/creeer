@@ -40,7 +40,7 @@ fn sky() -> Sky {
 }
 
 fn step(sky: &Sky, world: &mut World, frames: &mut [Airframe]) {
-    push(sky, world, frames);
+    push(sky, None, world, frames);
     world.step();
     settle(world, frames);
 }

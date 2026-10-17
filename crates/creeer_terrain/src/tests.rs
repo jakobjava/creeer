@@ -17,6 +17,16 @@ fn reference_planet_loads_with_si_values() {
     assert_eq!(p.sidereal_day, 21_600.0);
     assert!((p.axial_tilt.to_degrees() - 23.5).abs() < 1e-9);
     assert_eq!(p.elevation.layers.len(), 3);
+    let ocean = p.ocean.expect("home has an ocean");
+    assert_eq!(
+        (
+            ocean.density,
+            ocean.viscosity,
+            ocean.sound,
+            ocean.temperature
+        ),
+        (1025.97, 1.22e-3, 1506.7, 288.15)
+    );
 }
 
 fn quantiles(mut values: Vec<f64>) -> Vec<(f64, f64)> {

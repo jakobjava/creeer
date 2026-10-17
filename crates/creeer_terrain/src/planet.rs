@@ -35,6 +35,8 @@ pub struct Planet {
     pub geology: Geology,
     /// Its atmosphere, if it has one (a generated body from a template has none).
     pub atmosphere: Option<crate::air::AtmosphereData>,
+    /// Its ocean, if it has one: water up to sea level in every basin.
+    pub ocean: Option<crate::sea::OceanData>,
 }
 
 impl Planet {
@@ -119,6 +121,8 @@ struct PlanetDef {
     elevation: ElevationDef,
     #[serde(default)]
     atmosphere: Option<crate::air::AtmosphereDef>,
+    #[serde(default)]
+    ocean: Option<crate::sea::OceanDef>,
 }
 
 #[derive(Deserialize)]
@@ -259,8 +263,13 @@ impl PlanetDef {
             (Some(a), None) => Some(a.build()?),
             _ => None,
         };
+        let ocean = match (&self.ocean, overrides) {
+            (Some(o), None) => Some(o.build()?),
+            _ => None,
+        };
         Ok(Planet {
             atmosphere,
+            ocean,
             datum,
             name: overrides.map_or(self.name, |o| o.name.clone()),
             seed,
