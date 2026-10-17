@@ -123,6 +123,18 @@ pub fn hypot(x: f64, y: f64) -> f64 {
     libm::hypot(x, y)
 }
 
+/// The error function, (2/√π)·∫₀ˣ e^(−t²) dt: diffusion's profiles.
+#[inline]
+pub fn erf(x: f64) -> f64 {
+    libm::erf(x)
+}
+
+/// The complementary error function, 1 − erf(x), accurate where erf(x) is near 1.
+#[inline]
+pub fn erfc(x: f64) -> f64 {
+    libm::erfc(x)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::disallowed_methods)] // Comparing against std on purpose.

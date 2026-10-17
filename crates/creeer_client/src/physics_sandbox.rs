@@ -1,6 +1,7 @@
 //! F2 physics sandbox: scenes that exercise the physics core (structures, rigid bodies,
 //! contacts, plasticity) on the simulation thread.
 
+use crate::physics_heat::{self, SceneHeat};
 use creeer_core::Simulation;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 use creeer_physics::structure::Section;
@@ -21,15 +22,24 @@ pub enum PhysicsScene {
     Stacks,
     /// Rocks (convex hulls) dropped onto a ramp, a hexagonal prism and wedges at its foot.
     Rocks,
+    /// Steel blocks at 900 °C cooling, one in air, one in a vacuum (F6.2).
+    Cooling,
+    /// A radiator panel in orbit turning in and out of sunlight (F6.2).
+    Radiator,
+    /// A loaded steel frame in a fire, sagging as it weakens (F6.2).
+    Fire,
 }
 
 impl PhysicsScene {
     /// All scenes with their names.
-    pub const ALL: [(Self, &'static str); 4] = [
+    pub const ALL: [(Self, &'static str); 7] = [
         (Self::Bridge, "bridge under load"),
         (Self::Crash, "crash test"),
         (Self::Stacks, "stacking"),
         (Self::Rocks, "rock pile"),
+        (Self::Cooling, "cooling blocks"),
+        (Self::Radiator, "radiator in orbit"),
+        (Self::Fire, "frame in a fire"),
     ];
 }
 
@@ -39,6 +49,23 @@ pub struct PhysicsSandbox {
     world: World,
     time: f64,
     step_ms: f64,
+    scene: PhysicsScene,
+    heat: Option<SceneHeat>,
+}
+
+/// How a box is drawn.#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]pub enum Look {    /// A wooden crate.    #[default]    Crate,    /// Bare steel (glowing when hot).    Steel,    /// A white-painted radiator panel.    Radiator,}
+/// How a box is drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Look {
+    /// A wooden crate.
+    #[default]
+    Crate,
+    /// Bare steel (glowing when hot).
+    Steel,
+    /// A concrete block.
+    Concrete,
+    /// A white-painted radiator panel.
+    Radiator,
 }
 
 /// What the renderer needs from one tick.
@@ -58,6 +85,15 @@ pub struct PhysicsSnapshot {
     pub time: f64,
     /// Bodies, of which asleep, and contacts.
     pub counts: (usize, usize, usize),
+    /// Each box's temperature (°C) where heat follows it (else NaN), and how it looks.
+    pub box_heat: Vec<f32>,
+    pub box_look: Vec<Look>,
+    /// Each member's temperature (°C) where heat follows it, else NaN.
+    pub beam_heat: Vec<f32>,
+    /// A fire's bed (centre, half extents) and its gas temperature (°C).
+    pub fire: Option<(DVec3, DVec3, f32)>,
+    /// What heat is doing, for the window.
+    pub heat: Option<String>,
     /// Cost of the last physics step (ms).
     pub step_ms: f64,
 }
@@ -75,16 +111,29 @@ impl PhysicsSandbox {
             PhysicsScene::Crash => crash(&mut world),
             PhysicsScene::Stacks => stacks(&mut world),
             PhysicsScene::Rocks => crate::physics_rocks::rocks(&mut world),
+            _ => {}
         }
+        let heat = match scene {
+            PhysicsScene::Cooling => Some(physics_heat::blocks(&mut world)),
+            PhysicsScene::Radiator => {
+                world.statics.clear();
+                let sun = crate::demo::sun_direction(crate::DEFAULT_SUN_ELEVATION);
+                Some(physics_heat::radiator(&mut world, sun))
+            }
+            PhysicsScene::Fire => Some(physics_heat::fire(&mut world)),
+            _ => None,
+        };
         Self {
             world,
             time: 0.0,
             step_ms: 0.0,
+            scene,
+            heat,
         }
     }
 }
 
-fn wall(world: &mut World, center: DVec3, half: DVec3) {
+pub(crate) fn wall(world: &mut World, center: DVec3, half: DVec3) {
     world.statics.push(StaticShape::Box {
         center,
         rotation: DQuat::IDENTITY,
@@ -165,6 +214,9 @@ impl Simulation for PhysicsSandbox {
     fn step(&mut self, dt: f64) {
         let start = Instant::now();
         self.world.step();
+        if let Some(heat) = &mut self.heat {
+            heat.tick(&mut self.world, dt);
+        }
         self.time += dt;
         self.step_ms = start.elapsed().as_secs_f64() * 1000.0;
     }
@@ -180,12 +232,25 @@ impl Simulation for PhysicsSandbox {
             ),
             ..PhysicsSnapshot::default()
         };
-        for body in &self.world.bodies {
+        let heat = self.heat.as_ref();
+        #[allow(clippy::cast_possible_truncation)] // colour values
+        let shown = |t: Option<f64>| t.map_or(f32::NAN, |t| t as f32);
+        for (index, body) in self.world.bodies.iter().enumerate() {
+            let warm = heat.and_then(|h| h.body_temperature(index));
             let s = &body.structure;
             for (node, shape) in &body.shapes {
                 let at = (s.position[*node], s.orientation[*node]);
                 match shape {
-                    Shape::Box { half } => snap.boxes.push((at.0, at.1, *half)),
+                    Shape::Box { half } => {
+                        snap.boxes.push((at.0, at.1, *half));
+                        snap.box_heat.push(shown(warm));
+                        snap.box_look.push(match (self.scene, warm) {
+                            (PhysicsScene::Cooling, Some(_)) => Look::Steel,
+                            (PhysicsScene::Radiator, Some(_)) => Look::Radiator,
+                            (PhysicsScene::Fire, _) => Look::Concrete,
+                            _ => Look::Crate,
+                        });
+                    }
                     Shape::Sphere { radius } if s.element_count() == 0 => {
                         snap.spheres.push((at.0, *radius));
                     }
@@ -198,12 +263,23 @@ impl Simulation for PhysicsSandbox {
                 }
             }
             let usage = s.utilization();
+            let members = heat.and_then(|h| h.member_temperatures(index, s.element_count()));
+            snap.beam_heat
+                .extend((0..s.element_count()).map(|k| shown(members.as_ref().map(|m| m[k]))));
             for ((a, b, radius, broken), u) in s.members().into_iter().zip(usage) {
                 #[allow(clippy::cast_possible_truncation)] // a colour value
                 snap.beams
                     .push((s.position[a], s.position[b], radius, u as f32, broken));
             }
         }
+        if let Some(gas) = heat.and_then(SceneHeat::fire) {
+            snap.fire = Some((
+                DVec3::new(0.0, 0.03, 0.0),
+                DVec3::new(1.0, 0.03, 0.6),
+                shown(Some(gas)),
+            ));
+        }
+        snap.heat = heat.map(SceneHeat::label);
         for fixed in &self.world.statics {
             if let StaticShape::Box {
                 center,

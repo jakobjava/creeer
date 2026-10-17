@@ -2,8 +2,9 @@
 //! what is no save, a later version's or damaged is refused.
 //!
 //! The fixtures are saves as each version wrote them: `v1_f3_edits.bin` byte by byte from
-//! the F3 edit log's format (two edits), `v2_f5_world.bin` by this version (the scene below
-//! after half a second; `cargo test -p creeer_sim -- --ignored write_v2_fixture` writes it
+//! the F3 edit log's format (two edits), `v2_f5_world.bin` by F5 and `v3_f6_world.bin` by this
+//! version (the scene below
+//! after half a second; `cargo test -p creeer_sim -- --ignored write_v3_fixture` writes it
 //! again, which only a new version may need). A change to how a version is written that
 //! would not read its fixture fails here: such a change is a new version, with a migration.
 
@@ -19,6 +20,7 @@ use creeer_terrain::edits::{Brush, Edit};
 
 const V1: &[u8] = include_bytes!("fixtures/v1_f3_edits.bin");
 const V2: &[u8] = include_bytes!("fixtures/v2_f5_world.bin");
+const V3: &[u8] = include_bytes!("fixtures/v3_f6_world.bin");
 const DT: f64 = 1.0 / 60.0;
 
 /// A crate, a ball, a player's avatar and a steel frame on level ground, half a second in,
@@ -77,11 +79,11 @@ fn scene() -> Save {
 }
 
 #[test]
-#[ignore = "writes the version 2 fixture"]
-fn write_v2_fixture() {
+#[ignore = "writes the version 3 fixture"]
+fn write_v3_fixture() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/save/fixtures/v2_f5_world.bin"
+        "/src/save/fixtures/v3_f6_world.bin"
     );
     std::fs::write(path, scene().to_bytes()).unwrap();
 }
@@ -129,10 +131,17 @@ fn the_version_2_fixture_reads_as_it_was_saved() {
     assert_eq!(save.entities, scene().entities);
     assert_eq!(save.world.bodies.len(), 4);
     assert_eq!(save.edits.len(), 1);
-    // The world in it is the scene's, bit for bit (the scene is deterministic), and saving
-    // it again gives the fixture's bytes.
+    // The world in it is the scene's, bit for bit (the scene is deterministic: nothing in it
+    // is heated, so version 3 adds nothing to it), and saving it again writes version 3.
     assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
-    assert_eq!(save.to_bytes(), V2);
+    assert_eq!(save.to_bytes(), V3);
+}
+
+#[test]
+fn the_version_3_fixture_reads_as_it_was_saved() {
+    let save = Save::from_bytes(V3).unwrap();
+    assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
+    assert_eq!(save.to_bytes(), V3);
 }
 
 #[test]

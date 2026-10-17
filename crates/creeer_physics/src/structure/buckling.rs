@@ -63,8 +63,10 @@ impl Element {
 }
 
 impl Structure {
-    /// Splits member `e` at mid-length (see the module docs); returns the new joint.
-    pub(crate) fn split_member(&mut self, e: usize) -> NodeId {
+    /// Splits member `e` at mid-length (see the module docs; buckling does, and anything that
+    /// needs a joint mid-member may): its first half takes its place, its second is appended.
+    /// Returns the new joint.
+    pub fn split_member(&mut self, e: usize) -> NodeId {
         let el = self.elements[e];
         let (a, b) = (el.a, el.b);
         let (qa, qb) = (self.orientation[a], self.orientation[b]);
@@ -113,6 +115,8 @@ impl Structure {
             let mut h = Element::new((i, pi), (j, pj), el.y, el.section, el.material);
             h.plastic_strain = el.plastic_strain;
             h.crooked = true;
+            // A hot member's halves are as hot: each is half as much longer.
+            h.thermal = 0.5 * el.thermal;
             h
         };
         let mut first = half((a, self.rest[a]), (m, self.rest[m]));

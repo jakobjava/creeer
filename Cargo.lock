@@ -551,6 +551,7 @@ name = "creeer_client"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_materials",
  "creeer_math",
  "creeer_net",
  "creeer_orbit",
@@ -559,6 +560,7 @@ dependencies = [
  "creeer_server",
  "creeer_sim",
  "creeer_terrain",
+ "creeer_thermal",
  "creeer_ui",
  "egui",
  "egui-winit",
@@ -641,6 +643,7 @@ dependencies = [
 name = "creeer_physics"
 version = "0.0.1"
 dependencies = [
+ "creeer_materials",
  "creeer_math",
  "rayon",
 ]
@@ -677,10 +680,12 @@ dependencies = [
 name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
+ "creeer_materials",
  "creeer_math",
  "creeer_orbit",
  "creeer_physics",
  "creeer_terrain",
+ "creeer_thermal",
  "rayon",
 ]
 
@@ -697,17 +702,25 @@ dependencies = [
 [[package]]
 name = "creeer_thermal"
 version = "0.0.1"
+dependencies = [
+ "creeer_materials",
+ "creeer_math",
+ "creeer_network",
+ "rayon",
+]
 
 [[package]]
 name = "creeer_tools"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_materials",
  "creeer_math",
  "creeer_orbit",
  "creeer_physics",
  "creeer_sim",
  "creeer_terrain",
+ "creeer_thermal",
  "png",
  "rayon",
 ]

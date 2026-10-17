@@ -1,6 +1,6 @@
 # F6 plan: simulation domains
 
-Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 done (2026-10-17; ADR-0009).
+Status: **approved** (2026-10-17), with Lua 5.4 instead of Luau. In progress: F6.1 and F6.2 done (2026-10-17; ADR-0009, ADR-0010).
 
 F6 builds the engines behind everything a player will make: what things are made of and how they react (materials & chemistry), heat, electricity, shafts and gears, fluids and air, and logic. Each one must be **realistic** (validated against analytic or reference results, conserving what nature conserves) and **fast** (each has a budget inside the 10 ms tick of plan.md §5). Each gets a sandbox scene, like F2–F5.
 
@@ -53,6 +53,8 @@ The order follows dependencies: materials first (everything needs their properti
 - **Budget:** LU of a 10,000-node circuit-like matrix refactorised in ≤ 1 ms on min-spec (projected).
 
 ### F6.2 Thermal network (`creeer_thermal`)
+
+**Done** (2026-10-17, ADR-0010): enthalpy as the state (the ledger closes to rounding), backward Euler (not BDF2: first order is within the correlations' accuracy at 20 Hz, and monotone) with Newton per island, lagged convection and conduction coefficients, exact radiation and melting; air and water; sunlight, sky, view factors, ISO 834 fires, joints; members of structures heated, lengthening and weakening (save version 3); scenes "cooling blocks", "radiator in orbit", "frame in a fire"; 21,000 nodes in 0.64 ms (1.28 ms projected ≤ 1.5). Found on the way and fixed: the joint solve of bodies on structures (ADR-0005, amended in F6).
 
 - **Nodes:** heat capacities m·cp(T), with an enthalpy method across melting, so latent heat is honoured.
 - **Edges:**

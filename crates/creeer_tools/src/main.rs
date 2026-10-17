@@ -11,6 +11,7 @@ mod orbit_bench;
 mod solvers;
 mod spikes;
 mod terrain_bench;
+mod thermal_bench;
 mod world_bench;
 
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ const USAGE: &str = "usage: creeer_tools <command>
 commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
-      structures, world, terrain, orbit, networks)
+      structures, world, terrain, orbit, networks, thermal)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region";
 

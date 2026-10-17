@@ -24,6 +24,9 @@ mod flow;
 pub mod group;
 #[cfg(test)]
 mod hardening_tests;
+mod heat;
+#[cfg(test)]
+mod heat_tests;
 pub mod history;
 mod lbfgs;
 mod minimise;
@@ -46,6 +49,7 @@ mod validation_tests;
 
 pub use builder::StructureBuilder;
 use element::Element;
+pub use heat::BUILT_AT;
 pub use plastic::Yielding;
 pub(crate) use save::{read_solver, write_solver};
 pub use section::{Material, RateSensitivity, Section};

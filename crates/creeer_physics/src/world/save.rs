@@ -218,12 +218,20 @@ impl World {
         w.finish()
     }
 
-    /// A world from bytes written by [`Self::to_bytes`], without ground.
+    /// A world from bytes written by [`Self::to_bytes`] of this version, without ground.
     ///
     /// # Errors
     /// If the bytes are not a whole world.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let mut r = Reader::new(bytes);
+        Self::from_bytes_of(bytes, u32::MAX)
+    }
+
+    /// A world from bytes written by the save format's version `version`, without ground.
+    ///
+    /// # Errors
+    /// If the bytes are not a whole world.
+    pub fn from_bytes_of(bytes: &[u8], version: u32) -> Result<Self, DecodeError> {
+        let mut r = Reader::versioned(bytes, version);
         let dt = r.finite()?;
         if dt <= 0.0 {
             return Err(r.error("a world without a time step"));

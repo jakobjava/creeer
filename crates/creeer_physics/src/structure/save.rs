@@ -36,20 +36,32 @@ impl Encode for Section {
             w.put(&v);
         }
         w.f64(self.plastic_torsion);
+        w.f64(self.perimeter);
     }
 }
 
 impl Decode for Section {
     fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let (area, i_y, i_z, torsion) = (r.finite()?, r.finite()?, r.finite()?, r.finite()?);
+        let (shear_factor, extent): ([f64; 2], [f64; 2]) = (r.get()?, r.get()?);
+        let (plastic_modulus, plastic_torsion) = (r.get()?, r.finite()?);
+        // Version 3 (F6) on. Before, as if round (exact for the tubes and bars the earlier
+        // sandboxes built).
+        let perimeter = if r.version() >= 3 {
+            r.finite()?
+        } else {
+            std::f64::consts::PI * (extent[0] + extent[1])
+        };
         Ok(Self {
-            area: r.finite()?,
-            i_y: r.finite()?,
-            i_z: r.finite()?,
-            torsion: r.finite()?,
-            shear_factor: r.get()?,
-            extent: r.get()?,
-            plastic_modulus: r.get()?,
-            plastic_torsion: r.finite()?,
+            area,
+            i_y,
+            i_z,
+            torsion,
+            shear_factor,
+            extent,
+            plastic_modulus,
+            plastic_torsion,
+            perimeter,
         })
     }
 }
@@ -121,6 +133,7 @@ impl Encode for Element {
         w.put(&self.plastic);
         w.put(&self.flow_rate);
         w.f64(self.plastic_strain);
+        w.f64(self.thermal);
         w.put(&self.broken);
         w.put(&self.crooked);
     }
@@ -145,6 +158,8 @@ impl Decode for Element {
             plastic: r.get::<[f64; MEASURES]>()?,
             flow_rate: r.get::<[f64; MEASURES]>()?,
             plastic_strain: r.finite()?,
+            // Version 3 (F6) on.
+            thermal: if r.version() >= 3 { r.finite()? } else { 0.0 },
             broken: r.get()?,
             crooked: r.get()?,
         })

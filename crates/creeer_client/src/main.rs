@@ -33,6 +33,7 @@ mod demo;
 mod fly_camera;
 mod headless;
 mod hulls;
+mod physics_heat;
 mod physics_rocks;
 mod physics_sandbox;
 mod physics_view;

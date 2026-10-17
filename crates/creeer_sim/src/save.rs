@@ -1,6 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 3** (F6): as version 2, a member of a structure keeping its thermal elongation
+//! (after its plastic strain).
+//!
 //! **Version 2** (F5): the signature `CREEERSV`, the version (u32, little-endian), then
 //! sections, each a four-letter tag and its bytes with their length:
 //!
@@ -23,7 +26,7 @@ use creeer_physics::world::World;
 use creeer_terrain::edits::Edits;
 
 /// The version this game writes.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -116,7 +119,7 @@ impl Save {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SaveError> {
         match bytes.get(..8) {
             Some(m) if m == V1_MAGIC => from_v1(bytes),
-            Some(m) if m == MAGIC => from_v2(bytes),
+            Some(m) if m == MAGIC => from_sections(bytes),
             _ => Err(SaveError::NotASave),
         }
     }
@@ -134,7 +137,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
     })
 }
 
-fn from_v2(bytes: &[u8]) -> Result<Save, SaveError> {
+fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     let mut r = Reader::new(bytes);
     r.raw(8)?;
     let version = r.u32()?;
@@ -161,7 +164,7 @@ fn from_v2(bytes: &[u8]) -> Result<Save, SaveError> {
     m.end()?;
     let edits = Edits::from_bytes(edits.ok_or_else(|| missing("EDIT"))?)
         .map_err(|e| SaveError::Damaged(e.0))?;
-    let world = World::from_bytes(world.ok_or_else(|| missing("WRLD"))?)?;
+    let world = World::from_bytes_of(world.ok_or_else(|| missing("WRLD"))?, version)?;
     let mut e = Reader::new(ents.ok_or_else(|| missing("ENTS"))?);
     let entities = (0..e.count(5)?)
         .map(|_| {

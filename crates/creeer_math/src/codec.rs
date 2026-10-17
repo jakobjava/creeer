@@ -31,6 +31,9 @@ impl std::error::Error for DecodeError {}
 pub struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
+    /// The version of the format the bytes were written in (a decoder of a value whose
+    /// layout changed reads the old layout for an old version).
+    version: u32,
 }
 
 /// A value that can be written.
@@ -126,7 +129,25 @@ impl Writer {
 impl<'a> Reader<'a> {
     /// Reads `bytes` from the start.
     pub fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, at: 0 }
+        Self {
+            bytes,
+            at: 0,
+            version: u32::MAX,
+        }
+    }
+
+    /// Reads `bytes` written in version `version` of their format.
+    pub fn versioned(bytes: &'a [u8], version: u32) -> Self {
+        Self {
+            bytes,
+            at: 0,
+            version,
+        }
+    }
+
+    /// The version of the format being read ([`u32::MAX`]: the latest).
+    pub fn version(&self) -> u32 {
+        self.version
     }
 
     /// The byte reading is at.

@@ -128,6 +128,9 @@ pub(crate) struct Element {
     pub flow_rate: [f64; MEASURES],
     /// Accumulated equivalent plastic strain.
     pub plastic_strain: f64,
+    /// Its thermal elongation (m): the length its temperature adds to its rest length (set
+    /// by [`super::Structure::set_temperature`]).
+    pub thermal: f64,
     /// Broken members carry nothing.
     pub broken: bool,
     /// A half of a split member: its share of the member's crookedness is already in its
@@ -166,6 +169,7 @@ impl Element {
             plastic: [0.0; MEASURES],
             flow_rate: [0.0; MEASURES],
             plastic_strain: 0.0,
+            thermal: 0.0,
             broken: false,
             crooked: false,
         }
@@ -207,7 +211,9 @@ impl Element {
             bend[2],
             bend[3],
         ];
-        std::array::from_fn(|m| raw[m] - self.plastic[m])
+        let mut s: [f64; MEASURES] = std::array::from_fn(|m| raw[m] - self.plastic[m]);
+        s[0] -= self.thermal;
+        s
     }
 
     /// The measures and their gradients (derivations in the comments; checked against
@@ -285,6 +291,7 @@ impl Element {
         for (s, p) in s.iter_mut().zip(&self.plastic) {
             *s -= p;
         }
+        s[0] -= self.thermal;
         (s, g)
     }
 }

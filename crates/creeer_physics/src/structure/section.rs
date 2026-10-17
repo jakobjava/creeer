@@ -124,7 +124,7 @@ pub const STEEL_S235: Material = Material {
 
 /// Aluminium alloy 6061-T6: E = 68.9 GPa, ν = 0.33.
 /// Past yield it hardens at once, to its ultimate strength at 8 % (uniform elongation), and
-// breaks at 12 %. Taken as rate-insensitive: tests often find 6061-T6 nearly so, while the
+/// breaks at 12 %. Taken as rate-insensitive: tests often find 6061-T6 nearly so, while the
 /// Cowper–Symonds fit commonly quoted for aluminium alloys (D = 6500 s⁻¹, q = 4) would add a
 /// third at crash rates; the materials database is to settle it.
 pub const ALUMINIUM_6061_T6: Material = Material {
@@ -161,6 +161,9 @@ pub struct Section {
     pub plastic_modulus: [f64; 2],
     /// Plastic torsion modulus (m³): fully plastic torque T_p = τ_y·this, τ_y = σ_y/√3.
     pub plastic_torsion: f64,
+    /// Its outline's length (m): the surface it shows to air or fire, per metre of member
+    /// (EN 1993-1-2's A_m, the section factor's numerator).
+    pub perimeter: f64,
 }
 
 impl Section {
@@ -177,6 +180,7 @@ impl Section {
             extent: [r; 2],
             plastic_modulus: [d * d * d / 6.0; 2],
             plastic_torsion: std::f64::consts::PI * d * d * d / 12.0,
+            perimeter: std::f64::consts::PI * d,
         }
     }
 
@@ -194,6 +198,7 @@ impl Section {
             extent: [ro; 2],
             plastic_modulus: [(cube(d) - cube(d - 2.0 * t)) / 6.0; 2],
             plastic_torsion: std::f64::consts::PI * (cube(d) - cube(d - 2.0 * t)) / 12.0,
+            perimeter: std::f64::consts::PI * d,
         }
     }
 
@@ -221,6 +226,7 @@ impl Section {
             plastic_modulus: [width * height * height / 4.0, height * width * width / 4.0],
             // Sand-heap analogy: a²·(3c − a)/6 for sides a ≤ c.
             plastic_torsion: short * short * (3.0 * long - short) / 6.0,
+            perimeter: 2.0 * (width + height),
         }
     }
 
@@ -246,6 +252,8 @@ impl Section {
                 tf * b * b / 2.0 + web * tw * tw / 4.0,
             ],
             plastic_torsion: (2.0 * tf * tf * (3.0 * b - tf) + tw * tw * (3.0 * web - tw)) / 6.0,
+            // Its outline: the flanges' faces and edges, and the web's two faces.
+            perimeter: 2.0 * h + 4.0 * b - 2.0 * tw,
         }
     }
 }
@@ -287,5 +295,42 @@ mod tests {
         assert!(close(s.i_y, 3692e-8, 0.06), "Iy {}", s.i_y);
         assert!(close(s.i_z, 1336e-8, 0.01), "Iz {}", s.i_z);
         assert!(close(s.torsion, 21e-8, 0.3), "J {}", s.torsion);
+    }
+}
+
+impl From<creeer_materials::Structural> for Material {
+    /// The structure solver's view of an engineering material at one temperature
+    /// (`creeer_materials`).
+    fn from(s: creeer_materials::Structural) -> Self {
+        Self {
+            youngs_modulus: s.youngs_modulus,
+            shear_modulus: s.shear_modulus,
+            density: s.density,
+            yield_strength: s.yield_strength,
+            ultimate_strength: s.ultimate_strength,
+            damping: s.damping,
+            elongation: s.elongation,
+            hardening_start: s.hardening_start,
+            uniform_elongation: s.uniform_elongation,
+            rate: s.rate.map_or(RateSensitivity::NONE, |r| RateSensitivity {
+                d: r.d,
+                q: r.q,
+                reference: r.reference,
+            }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod database_tests {
+    use super::*;
+
+    /// The built-in materials are the materials database's, at room temperature.
+    #[test]
+    fn the_built_in_materials_are_the_database_ones() {
+        let table = creeer_materials::MaterialTable::reference();
+        let at = |id: &str| Material::from(table.get(id).expect("shipped").structural(293.15));
+        assert_eq!(at("steel_s235"), STEEL_S235);
+        assert_eq!(at("aluminium_6061_t6"), ALUMINIUM_6061_T6);
     }
 }
