@@ -71,6 +71,21 @@
   - An entity that became something else (a character fallen, or up again) is despawned for every client that has it and spawned anew as it is now.
 - **Saves.** The `PEOP` section holds the people: health, a fallen one's segments (they must be bodies of the world), how long it has lain still and been dead.
 
+### Amended in P1 (2026-10-18): the legs as a strut, and three corrections to falling
+
+- **The legs are a strut** (`world::strut`, ADR-0024), solved in the step with the body and what it stands on, no longer a load put on what they stand on before the step.
+  - A load from the legs' spring is stable only on a body heavier than k·h², 8 kg at 60 Hz. A character standing on a ragdoll's hand (0.6 kg) put 3 kN on it; the hand was flung at 64 rad/s, and the world's step was redone in 16 substeps (the play scene's 58 ms tick).
+  - The strut runs from the body's centre to the foot's point on what the ray found (or the ground), along the vertical, its rest length shifted by the hip's offset: the force is the old one (k·compression + c·its rate, at least nought, at most 3.6 kN), and no new torque.
+  - What stays a load: the walk, and on slopes the friction cone's correction to the legs' part (from the legs' force as the step begins).
+  - Set even while the character sleeps: a support that wakes wakes it.
+  - Validation (`world/strut_tests.rs`): a body on a strut rests at m·g/k; a 105 kg body standing on a 0.6 kg plate on the floor presses it down (it rocks once at 2.8 rad/s as the floor takes up the load, then lies still) and the floor carries both within 2 %; between free bodies a strut keeps momentum, pushes only, at most its most; its damper against its one-sided law integrated finely (RK4), within 3 %. Every character test as before.
+- **Injury sees the struts.** A part's velocity change less gravity, its loads and the struts' push on it (`World::strut_pushes`: its legs', or the legs of one standing on it) is what struck it. Without, the legs braking a 3 m landing read as a blow (harm 2.0).
+- **Struck down, it falls once its strike is over.** Fallen in the strike's first step, the body's leftover speed (3.4 m/s at 3 m) went to every segment at once, and they struck the ground together; the body now takes the whole strike as one pulse, then falls. Toppled, it falls at once.
+- **The ragdoll is laid out with the legs it has.** Legs pressed shorter than they stand (the body on its knees or on its box) are folded to their length, and a segment still in the ground is put on it. Laid out standing, the legs were half a metre in the ground and its contacts threw them out: a fall from 3 m that had ended at rest took two healths. (This was there before the struts, and inflated the falls' numbers.)
+- **Injury by region**, in its first form (`injury::Region`): the head by HIC; pelvis and torso by their deceleration against the torso's tolerance; a limb by the force of the blow (½·Δv·√(m·k)) against the load that breaks its bones (upper arm 3, forearm 2.5, hand 2, thigh 8, shank and foot 5 kN). A break takes a fifth of a person's health, a judgement until G9. Judged as torsos, a hand catching a fall at 3 m/s struck at 130 g.
+- **A strike's duration** is the steps it was seen in less one (it starts and ends within its first and last): taken as all of them, a 20 m fall's 32 ms strike seen over three steps read as 50 ms, and two thirds as hard.
+- **Falls**, each from five leans (people land differently; one landing alone is chance): 1 m unhurt, standing; 3 m 0–0.12, down; 5 m 0–0.14; 10 m 0.53–0.61; 20 m 1.0–1.06, killed every time.
+
 ### Not yet (G1.2's next slice)
 
 Prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
@@ -93,7 +108,7 @@ Prediction of bodies near the player. Climbing needs something to climb: ladders
 | At sea (the home planet's) | floats with its centre at the surface (−0.01 m), at rest; swims at 0.68 m/s; rises 0.1 m when asked |
 | The ragdoll's handover | momentum and angular momentum within 10⁻⁹; its segments weigh what the body did |
 | A ragdoll fallen | comes to rest on the ground within 10 s, its joints shut within 1 mm; stands up with its mass |
-| Falls onto rock | 1 m: unhurt, standing; 3 m: unhurt, down; 10 m: half its health (0.51); 20 m: killed |
+| Falls onto rock (five leans each) | 1 m: unhurt, standing; 3 m: 0–0.12, down; 10 m: 0.53–0.61; 20 m: killed every time |
 | A fall on the terrain (server) | down, hurt; stands up after 2 s still, where it fell, its segments gone, healing |
 | Killed | stands whole at the spawn point after 5 s, its tank full |
 | Saved down | loads down, with its health and segments, and stands up as it would have |

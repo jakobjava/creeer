@@ -298,9 +298,11 @@ impl ServerWorld {
         drop(scope);
         self.people_before();
         self.world.step();
+        // (What the legs pushed with, for the people's injuries: before their struts come off.)
+        let pushes = self.world.strut_pushes();
         character::release(&mut self.world, &mut self.reactions);
         let scope = profile::scope("people");
-        self.people_after();
+        self.people_after(&pushes);
         drop(scope);
         let _scope = profile::scope("surroundings");
         self.surroundings.settle(&mut self.world, DT);

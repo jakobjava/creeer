@@ -50,7 +50,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
-| **Injury by body region**: a ragdoll's segments' harms are summed, each judged against the torso's tolerance (the head by HIC), not scored by region (AIS per region, an injury severity score) | Calibrated on falls onto rock as the sum; regions need their own tolerances and consequences (a broken leg slows you), which are G9's needs | R | Medium | ADR-0023; `character/injury.rs` |
+| **Injury by region, fully**: regions are judged (head by HIC, torso by deceleration, limbs by their bones' breaking loads), but their harms are summed into one health, a break is a fixed fifth of it, and nothing is scored as AIS per region or an injury severity score | Injuries need consequences (a broken leg slows you), which are G9's needs | R | Medium | ADR-0023; `character/injury.rs` |
 | **Soft ground's yielding** in injuries: every ground counts as rock (stiffer than a person) | Soil's give is not modelled in contacts | R | Medium | ADR-0023; `character/injury.rs` |
 | **Keeping one's feet by stepping**: a character is knocked down by a jolt over 2 m/s or a lean past 45°, not by a model of balance recovery | Its legs are one spring under the hip, with no steps to recover with | R | Medium | ADR-0023; `character/ragdoll.rs` |
 | **Getting up**: a ragdoll at rest becomes the standing character at once | Needs a driven ragdoll (the joints' drives, G1.1) pushing itself up | G | Medium | ADR-0023; `world/people.rs` |

@@ -7,7 +7,7 @@
 //! of mass where the body's was, moving at its velocity, turning at the spin that gives its own
 //! inertia the body's angular momentum (`I_rag·ω' = I_body·ω`).
 
-use super::CENTRE;
+use super::{CENTRE, HIP};
 use crate::character;
 use creeer_math::glam::{DMat3, DVec3};
 use creeer_physics::world::joint::{Joint, Kind};
@@ -81,9 +81,28 @@ const LINKS: [Link; 14] = [
 const DAMPING: f64 = 2.0;
 /// The segments' boots' and suit's friction.
 const FRICTION: f64 = 0.8;
+/// How far above the ground a segment found in it is put (m).
+const LIFTED: f64 = 1e-3;
 
 /// The head's segment.
 pub const HEAD: usize = 2;
+
+/// The loads that break a person's bones in a blow, about (N): upper arm, forearm, hand,
+/// thigh, shank, foot (the femur's 8 kN against FMVSS 208's axial 10 kN; a wrist breaks in a
+/// fall at 2–3 kN).
+const BREAKS: [f64; 6] = [3000.0, 2500.0, 2000.0, 8000.0, 5000.0, 5000.0];
+
+/// How an impact on segment `k` is judged (`injury::Region`).
+pub fn region(k: usize) -> super::injury::Region {
+    use super::injury::Region;
+    match k {
+        HEAD => Region::Head,
+        0 | 1 => Region::Torso,
+        _ => Region::Limb {
+            breaks: BREAKS[(k - 3) % 6],
+        },
+    }
+}
 
 /// A box's inertia (kg·m²) of `mass` and `half` extents, in its frame.
 fn box_inertia(mass: f64, half: DVec3) -> DMat3 {
@@ -107,13 +126,41 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
     let body_angular = turn * s.inertia_of(0) * turn.transpose() * w;
     let (gravity, planet) = (s.gravity, s.planet.clone());
     let dt = world.dt();
-    // Each segment where it stands in the body's frame, its centre of mass on the body's.
+    // Each segment where it stands in the body's frame, its centre of mass on the body's. Legs
+    // pressed shorter than they stand (the body down on its knees, or on its box) are folded
+    // to the length they have: laid out standing, they were half a metre in the ground, and
+    // its contacts threw them out (a fall of 3 m, ended at rest, then took two healths).
     let feet = x - q * DVec3::Y * CENTRE;
+    let hip = feet + q * DVec3::Y * HIP;
+    let fold = (world.ray(hip, -(q * DVec3::Y), HIP, Some(index)))
+        .map_or(1.0, |h| (h.distance / HIP).clamp(0.1, 1.0));
+    let stand = |p: DVec3| {
+        if p.y < HIP {
+            DVec3::new(p.x, HIP - (HIP - p.y) * fold, p.z)
+        } else {
+            p
+        }
+    };
     let masses: Vec<f64> = SEGMENTS.iter().map(|s| s.2 * mass).collect();
-    let mut at: Vec<DVec3> = SEGMENTS.iter().map(|s| feet + q * s.0).collect();
+    let mut at: Vec<DVec3> = SEGMENTS.iter().map(|s| feet + q * stand(s.0)).collect();
     let centre = at.iter().zip(&masses).map(|(p, m)| *p * *m).sum::<DVec3>() / mass;
     for p in &mut at {
         *p += x - centre;
+    }
+    // Any still in the ground under the body (its arms beside a body lying on its side, feet
+    // folded under it) out of it, along its normal.
+    let down = planet.as_ref().map_or(gravity, |p| p.acceleration(x));
+    if let Some(ground) = world.ray(x, down.normalize_or_zero(), 3.0, Some(index)) {
+        let n = ground.normal;
+        for (p, seg) in at.iter_mut().zip(&SEGMENTS) {
+            let reach: f64 = (0..3)
+                .map(|i| (n.dot(q * DVec3::AXES[i]) * seg.1[i]).abs())
+                .sum();
+            let gap = (*p - ground.point).dot(n) - reach;
+            if gap < LIFTED {
+                *p += n * (LIFTED - gap);
+            }
+        }
     }
     // The spin whose angular momentum, with the ragdoll's inertia, is the body's.
     let mut inertia = DMat3::ZERO;
@@ -144,7 +191,7 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
         }
     }
     for &(child, parent, at, axis, kind) in &LINKS {
-        let at = feet + q * at + (x - centre);
+        let at = feet + q * stand(at) + (x - centre);
         let axis = q * axis;
         let reference = axis.any_orthonormal_vector();
         let joint = Joint::new(
@@ -168,14 +215,14 @@ const TOPPLED: f64 = std::f64::consts::FRAC_1_SQRT_2;
 const STRUCK: f64 = 2.0;
 
 /// Whether character `index` was knocked down in the last step (moving at `before` when it
-/// began): toppled (leaning past 45° from `up`), or struck (jolted by more than [`STRUCK`]).
+/// began, its legs pushing it with `pushed`): toppled (leaning past 45° from `up`), or struck (jolted by more than [`STRUCK`]).
 /// The jolt, not its contacts' forces: an impact's impulse is the impact law's, outside them.
-pub fn knocked(world: &World, index: usize, up: DVec3, before: DVec3) -> bool {
+pub fn knocked(world: &World, index: usize, up: DVec3, motion: (DVec3, DVec3)) -> bool {
     let s = &world.bodies[index].structure;
     if (s.orientation[0] * DVec3::Y).dot(up) < TOPPLED {
         return true;
     }
-    super::injury::jolt(world, index, before).length() > STRUCK
+    super::injury::jolt(world, index, motion).length() > STRUCK
 }
 
 fn outer(a: DVec3, b: DVec3) -> DMat3 {

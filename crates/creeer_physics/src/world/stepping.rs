@@ -133,8 +133,13 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
     // bodies keep Newmark.
     let scheme = if impact {
         Some(Scheme::BackwardEuler)
-    } else if contacts.list.is_empty() && !contacts.joints.limited() && !held {
-        // (A joint's stops are stepped as contacts are, and bodies held: `Body::held`.)
+    } else if contacts.list.is_empty()
+        && !contacts.joints.limited()
+        && !contacts.joints.has_struts()
+        && !held
+    {
+        // (A joint's stops are stepped as contacts are, and struts and bodies held:
+        // `Body::held`.)
         None
     } else {
         Some(Scheme::Bdf2)

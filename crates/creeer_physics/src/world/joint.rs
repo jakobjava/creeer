@@ -18,6 +18,7 @@ mod group;
 mod project;
 mod rows;
 mod save;
+mod strut;
 #[cfg(test)]
 mod tests;
 

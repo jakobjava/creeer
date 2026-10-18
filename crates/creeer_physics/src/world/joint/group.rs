@@ -29,6 +29,8 @@ pub(crate) struct Joints {
     pub(crate) rigid: Vec<[[f64; 6]; 6]>,
     pub(crate) cross: Vec<NodeCoupling>,
     nodes: Vec<(usize, usize, DMat3)>,
+    /// The group's struts (`strut.rs`): their terms ride with the joints'.
+    pub(crate) struts: Vec<super::strut::GroupStrut>,
 }
 
 /// f₀ and f₀'/x of the friction's smoothing (the contacts' cubic).
@@ -133,6 +135,7 @@ impl Joints {
                 (j.measured(info.hat, false).arms).map(|a| a.map(|arm| arm.map(|s| s.value)))
             })
             .collect();
+        self.begin_struts(info);
         // Friction sticks where a joint first meets it.
         for (_, joint) in &mut self.list {
             if joint.friction > 0.0 && joint.anchor.is_none() {
@@ -234,17 +237,24 @@ impl Joints {
         total
     }
 
-    /// Their contribution to the step's objective.
+    /// Their contribution to the step's objective (the struts' with it).
     pub(crate) fn energy(&self, states: &[MemberState<'_>]) -> f64 {
         let timer = crate::profile::start();
-        let energy = self.terms(states, false, |_, _, _, _| {}).1;
+        let energy = self.terms(states, false, |_, _, _, _| {}).1
+            + self.strut_terms(states, |_, _, _, _| {}).1;
         timer.stop(crate::profile::Slot::JointTerms);
         energy
     }
 
-    /// The energy they store (their drives'; constraints and limits are ideal).
+    /// The energy they store (their drives' and the struts' springs; constraints and limits
+    /// are ideal).
     pub(crate) fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
-        self.terms(states, false, |_, _, _, _| {}).0
+        self.terms(states, false, |_, _, _, _| {}).0 + self.strut_terms(states, |_, _, _, _| {}).0
+    }
+
+    /// The step's β (its velocities are the change from x̂ over it).
+    pub(super) fn beta(&self) -> f64 {
+        self.beta
     }
 
     /// Adds their gradient (translation blocks, then rotation blocks, per member).
@@ -260,6 +270,14 @@ impl Joints {
             add(joint.a, &s.a, coefficient);
             if let Some(b) = joint.b {
                 add(b, &s.b, coefficient);
+            }
+        });
+        self.strut_terms(states, |k, s, coefficient, _| {
+            let [(a, _), (b, _)] = self.strut_sides(k);
+            for (side, row) in [(a, &s.a), (b, &s.b)] {
+                if let Some(side) = side {
+                    add(side, row, coefficient);
+                }
             }
         });
         timer.stop(crate::profile::Slot::JointTerms);
@@ -305,6 +323,11 @@ impl Joints {
         let timer = crate::profile::start();
         let members = (self.list.iter())
             .flat_map(|(_, j)| [Some(j.a.0), j.b.map(|b| b.0)])
+            .chain(
+                self.struts
+                    .iter()
+                    .flat_map(|g| [Some(g.strut.a.0), g.strut.b.map(|b| b.0)]),
+            )
             .flatten()
             .max()
             .map_or(0, |m| m + 1);
@@ -341,6 +364,26 @@ impl Joints {
             }
             if let Some(slot) = slots[j] {
                 outer(&mut cross[slot].2, &s.a, &s.b, w);
+            }
+        });
+        // The struts' alike (their cross blocks after the joints').
+        self.strut_terms(states, |k, s, _, w| {
+            if w == 0.0 {
+                return;
+            }
+            let [(a, rigid_a), (b, rigid_b)] = self.strut_sides(k);
+            for (side, row, rigid_side) in [(a, &s.a, rigid_a), (b, &s.b, rigid_b)] {
+                let Some((m, n)) = side else { continue };
+                if rigid_side {
+                    outer(&mut rigid[m], row, row, w);
+                } else {
+                    nodes.push((m, n, translation(row, w)));
+                }
+            }
+            if let (Some(a), Some(b)) = (a, b) {
+                let mut m6 = [[0.0; 6]; 6];
+                outer(&mut m6, &s.a, &s.b, w);
+                cross.push((a, b, m6));
             }
         });
         (self.rigid, self.cross, self.nodes) = (rigid, cross, nodes);

@@ -8,7 +8,7 @@
 use super::{DT, ServerWorld, kept};
 use creeer_math::glam::DVec3;
 use creeer_net::entity::EntityId;
-use creeer_sim::character::injury::{HEAD_STIFFNESS, Strikes, TORSO_STIFFNESS};
+use creeer_sim::character::injury::{Region, Strikes, pushed_on};
 use creeer_sim::character::{self, ragdoll};
 use creeer_sim::save::SavedPerson;
 
@@ -34,6 +34,8 @@ pub struct Person {
     /// Ticks it has lain still, and been dead.
     still: u32,
     dead_for: u32,
+    /// Knocked down, its strike not yet over.
+    struck: bool,
     /// Its parts' velocities when the step began.
     before: Vec<DVec3>,
 }
@@ -46,6 +48,7 @@ impl Default for Person {
             parts: Vec::new(),
             still: 0,
             dead_for: 0,
+            struck: false,
             before: Vec::new(),
         }
     }
@@ -111,20 +114,20 @@ impl ServerWorld {
     }
 
     /// After the world's step: each person's harm, healing, falls, rising and respawning.
-    pub(super) fn people_after(&mut self) {
+    pub(super) fn people_after(&mut self, pushes: &[(usize, usize, DVec3)]) {
         let ids: Vec<EntityId> = self.people.keys().copied().collect();
         for id in ids {
             let Some(mut p) = self.people.remove(&id) else {
                 continue;
             };
             if self.index(id).is_some() {
-                self.live(id, &mut p);
+                self.live(id, &mut p, pushes);
             }
             self.people.insert(id, p);
         }
     }
 
-    fn live(&mut self, id: EntityId, p: &mut Person) {
+    fn live(&mut self, id: EntityId, p: &mut Person, pushes: &[(usize, usize, DVec3)]) {
         let parts: Vec<usize> = if p.fallen() {
             p.parts.iter().filter_map(|e| self.index(*e)).collect()
         } else {
@@ -137,17 +140,13 @@ impl ServerWorld {
         let mut harm = 0.0;
         if p.fallen() {
             for (k, (&b, &v)) in parts.iter().zip(&p.before).enumerate() {
-                let head = k == ragdoll::HEAD;
-                let stiffness = if head {
-                    HEAD_STIFFNESS
-                } else {
-                    TORSO_STIFFNESS
-                };
-                harm += (p.strikes).after_step(&self.world, (k + 1, b), v, (stiffness, head));
+                let motion = (v, pushed_on(pushes, b));
+                harm += (p.strikes).after_step(&self.world, (k + 1, b), motion, ragdoll::region(k));
             }
         } else {
             let (b, v) = (parts[0], p.before[0]);
-            harm += (p.strikes).after_step(&self.world, (0, b), v, (TORSO_STIFFNESS, false));
+            let motion = (v, pushed_on(pushes, b));
+            harm += (p.strikes).after_step(&self.world, (0, b), motion, Region::Torso);
         }
         let alive = p.health > 0.0;
         p.health = (p.health - harm).max(0.0);
@@ -157,9 +156,14 @@ impl ServerWorld {
         if !p.fallen() {
             let i = parts[0];
             let up = self.world.bodies[i].structure.position[0].normalize();
-            if p.health <= 0.0 || ragdoll::knocked(&self.world, i, up, p.before[0]) {
-                // The impact it is in so far is the body's; its segments take the rest.
-                let harm = (p.strikes).end(&self.world, (0, i), (TORSO_STIFFNESS, false));
+            let motion = (p.before[0], pushed_on(pushes, i));
+            p.struck |= ragdoll::knocked(&self.world, i, up, motion);
+            // Struck, it falls once the strike is over: its body takes the whole strike (falling
+            // in it, its segments were given its speed into the ground at once, and struck it
+            // again). Killed, at once.
+            if p.health <= 0.0 || (p.struck && !p.strikes.striking(0)) {
+                // (An impact it is in so far is the body's; its segments take the rest.)
+                let harm = (p.strikes).end(&self.world, (0, i), Region::Torso);
                 p.health = (p.health - harm).max(0.0);
                 self.fall(id, p);
             }
@@ -187,6 +191,7 @@ impl ServerWorld {
 
     /// Avatar `id` (person `p`) falls: its body becomes its ragdoll.
     fn fall(&mut self, id: EntityId, p: &mut Person) {
+        p.struck = false;
         let Some(i) = self.index(id) else { return };
         let segments = ragdoll::fall(&mut self.world, i);
         self.surroundings.renew(i, &self.world);

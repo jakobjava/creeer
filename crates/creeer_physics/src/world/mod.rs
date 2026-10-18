@@ -55,6 +55,9 @@ mod save;
 pub mod shape;
 mod sleep;
 mod stepping;
+pub mod strut;
+#[cfg(test)]
+mod strut_tests;
 pub mod surface;
 #[cfg(test)]
 mod tests;
@@ -175,6 +178,8 @@ pub struct World {
     groups: Vec<(Vec<usize>, Contacts)>,
     /// Joints between bodies, or bodies and the world (`joint.rs`).
     joints: Vec<joint::Joint>,
+    /// Struts for the next step (`strut.rs`).
+    struts: Vec<strut::Strut>,
     /// Friction anchors of the last step.
     anchors: Vec<anchor::Anchor>,
     /// The elastic energy each point contact and face held at the end of the last step, by
@@ -199,6 +204,7 @@ impl World {
             groups: Vec::new(),
             left: Left::default(),
             joints: Vec::new(),
+            struts: Vec::new(),
             anchors: Vec::new(),
             dt,
         }
@@ -245,6 +251,7 @@ impl World {
         let found = loop {
             // Bodies joined to awake ones wake with them (one group).
             let mut woke = self.wake_joined();
+            woke |= self.wake_strutted();
             let found = self.detect();
             for (a, _, b, _) in &found {
                 if let Some((b, _)) = b {

@@ -71,6 +71,46 @@ pub fn torso(p: Pulse) -> f64 {
     ((p.peak - from) / (to - from)).clamp(0.0, 1.0)
 }
 
+/// The share of a person's health a broken limb takes (until G9's needs give injuries their
+/// consequences: a judgement, a fifth).
+const BROKEN: f64 = 0.2;
+
+/// Where on a person a part is, and so how an impact on it is judged.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Region {
+    /// By the head-injury criterion.
+    Head,
+    /// The body, pelvis and torso: by the deceleration against the torso's tolerance.
+    Torso,
+    /// An arm, a leg, a hand or a foot: by the force of the blow against the load that breaks
+    /// its bones (N). A hand that catches a fall at 3 m/s strikes at 130 g, which a torso
+    /// would not take; its bones take the 1.2 kN.
+    Limb { breaks: f64 },
+}
+
+impl Region {
+    /// The part's stiffness against the ground (N/m).
+    pub fn stiffness(self) -> f64 {
+        match self {
+            Self::Head => HEAD_STIFFNESS,
+            Self::Torso | Self::Limb { .. } => TORSO_STIFFNESS,
+        }
+    }
+
+    /// The share of a person's health pulse `p` on a part of `mass` (kg) takes. A limb's risk
+    /// of a break rises from naught at half its bones' load to certain at one and a half.
+    pub fn harm(self, p: Pulse, mass: f64) -> f64 {
+        match self {
+            Self::Head => serious_head(hic(p)),
+            Self::Torso => torso(p),
+            Self::Limb { breaks } => {
+                let force = p.peak * G * mass;
+                BROKEN * (force / breaks - 0.5).clamp(0.0, 1.0)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,17 +137,18 @@ mod tests {
 }
 
 /// The change of body `part`'s velocity over `world`'s last step (from `before`) that neither
-/// gravity nor its own loads explain: what it met gave it (m/s).
+/// gravity, its own loads nor the struts' `pushed` (its legs', or the legs of one standing
+/// on it: `World::strut_pushes`) explain: what it met gave it (m/s).
 pub fn jolt(
     world: &creeer_physics::world::World,
     part: usize,
-    before: creeer_math::glam::DVec3,
+    (before, pushed): (creeer_math::glam::DVec3, creeer_math::glam::DVec3),
 ) -> creeer_math::glam::DVec3 {
     let s = &world.bodies[part].structure;
     let g = (s.planet.as_ref()).map_or(s.gravity, |p| p.acceleration(s.position[0]));
     // What the body's own loads explain is no impact (its legs' braking: merged with the
     // body's strike into one long one, it diluted a 10 m fall to bruises).
-    let own = s.load[0] / s.masses()[0];
+    let own = (s.load[0] + pushed) / s.masses()[0];
     s.velocity[0] - before - (g + own) * world.dt()
 }
 
@@ -126,27 +167,32 @@ pub struct Strikes {
 }
 
 impl Strikes {
-    /// After a step: part `k` (body `part` of `world`, moving at `before` when the step began)
-    /// of `stiffness` (the head's judged by HIC). Returns the harm of an impact that ended
-    /// with this step, as a share of a person's health.
+    /// After a step: part `k` (body `part` of `world`, moving at `before` when the step began,
+    /// the struts pushing it with `pushed`) of the body's `region`. Returns the harm of an
+    /// impact that ended with this step, as a share of a person's health.
     pub fn after_step(
         &mut self,
         world: &creeer_physics::world::World,
         (k, part): (usize, usize),
-        before: creeer_math::glam::DVec3,
-        (stiffness, head): (f64, bool),
+        motion: (creeer_math::glam::DVec3, creeer_math::glam::DVec3),
+        region: Region,
     ) -> f64 {
         if self.going.len() <= k {
             self.going.resize(k + 1, (0.0, 0));
         }
         let mass = world.bodies[part].structure.masses()[0];
-        let change = jolt(world, part, before).length();
+        let change = jolt(world, part, motion).length();
         if change > STRIKING {
             self.going[k].0 += change * mass;
             self.going[k].1 += 1;
             return 0.0;
         }
-        self.end(world, (k, part), (stiffness, head))
+        self.end(world, (k, part), region)
+    }
+
+    /// Whether part `k` is in an impact (struck in the last step, and not yet stopped).
+    pub fn striking(&self, k: usize) -> bool {
+        self.going.get(k).is_some_and(|g| g.1 > 0)
     }
 
     /// Part `k`'s impact (if it is in one) ends now: its harm, as [`Strikes::after_step`]'s
@@ -155,23 +201,33 @@ impl Strikes {
         &mut self,
         world: &creeer_physics::world::World,
         (k, part): (usize, usize),
-        (stiffness, head): (f64, bool),
+        region: Region,
     ) -> f64 {
         let Some(going) = self.going.get_mut(k) else {
             return 0.0;
         };
         let mass = world.bodies[part].structure.masses()[0];
         let (impulse, steps) = std::mem::take(going);
-        let Some(mut p) = pulse(impulse, mass, stiffness) else {
+        let Some(mut p) = pulse(impulse, mass, region.stiffness()) else {
             return 0.0;
         };
         // At least as long as it was seen to last (the legs stopping a landing over 150 ms: not
-        // the body's own 32 ms pulse).
-        let seen = f64::from(steps) * world.dt();
+        // the body's own 32 ms pulse). A strike begins and ends within its first and last steps:
+        // seen over n steps it lasted about n − 1 (taken as n, a 20 m fall's 32 ms strike seen
+        // over three steps read as 50 ms, and two thirds as hard).
+        let seen = f64::from(steps.saturating_sub(1)) * world.dt();
         if seen > p.duration {
             p.peak *= p.duration / seen;
             p.duration = seen;
         }
-        if head { serious_head(hic(p)) } else { torso(p) }
+        region.harm(p, mass)
     }
+}
+
+/// What `pushes` (`World::strut_pushes`) push body `body` with (N).
+pub fn pushed_on(
+    pushes: &[(usize, usize, creeer_math::glam::DVec3)],
+    body: usize,
+) -> creeer_math::glam::DVec3 {
+    (pushes.iter()).filter(|p| p.0 == body).map(|p| p.2).sum()
 }

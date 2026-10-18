@@ -31,10 +31,11 @@ impl World {
             i
         }
         let joined = (self.joints.iter()).filter_map(|j| j.b.map(|b| (j.a.0, b.0)));
+        let strutted = (self.struts.iter()).filter_map(|s| s.b.map(|b| (s.a.0, b.0)));
         let touching = found
             .iter()
             .filter_map(|(a, _, b, _)| b.map(|(b, _)| (*a, b)));
-        for (a, b) in touching.chain(joined) {
+        for (a, b) in touching.chain(joined).chain(strutted) {
             let (ra, rb) = (root(&mut parent, a), root(&mut parent, b));
             parent[ra.max(rb)] = ra.min(rb);
         }
@@ -205,9 +206,31 @@ impl World {
             lists[g].0.push((index, local));
             lists[g].1.push([inertia(Some(joint.a)), inertia(joint.b)]);
         }
-        (lists.into_iter())
+        let mut joints: Vec<super::joint::Joints> = (lists.into_iter())
             .map(|(list, sides)| super::joint::Joints::new(list, sides))
-            .collect()
+            .collect();
+        // The struts alike (`strut.rs`), with whether each side is a rigid body.
+        for strut in &self.struts {
+            let Some(&g) = group_of.get(strut.a.0).filter(|&&g| g != usize::MAX) else {
+                continue;
+            };
+            let member = |body: usize| groups[g].iter().position(|&b| b == body);
+            let rigid = |side: Option<(usize, NodeId)>| {
+                side.is_some_and(|(body, _)| {
+                    let s = &self.bodies[body].structure;
+                    s.node_count() == 1 && s.element_count() == 0
+                })
+            };
+            let mut local = *strut;
+            let Some(a) = member(strut.a.0) else { continue };
+            local.a.0 = a;
+            if let Some((body, node)) = strut.b {
+                let Some(b) = member(body) else { continue };
+                local.b = Some((b, node));
+            }
+            joints[g].add_strut(local, [rigid(Some(strut.a)), rigid(strut.b)]);
+        }
+        joints
     }
 
     /// The surface of body `b`, or of the fixed world.

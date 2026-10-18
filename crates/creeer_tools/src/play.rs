@@ -2,7 +2,8 @@
 //! [--only <name>] [--record <file>] [--replay <file>]` (G1.0, `docs/g1-plan.md`): the play
 //! scenes (`creeer_server::play::scenes`), headless over the real server path, each with its
 //! tick percentiles, its most work in a tick, its bandwidth and a hash of its end state.
-//! `PLAY_TRACE=<ms>` lists the ticks over that (2 ms if not a number).
+//! `PLAY_TRACE=<ms>` lists the ticks over that (2 ms if not a number; with the physics phases
+//! when built with `--features creeer_physics/profile`).
 //!
 //! - `--short`: CI's lengths (on every OS: the hashes compare platforms);
 //! - `--check` / `--save-golden`: the hashes against / into `tests/scenarios/play.txt`;
@@ -46,8 +47,19 @@ fn play(s: &Scene, ticks: u32, trace: Option<f64>, profiled: bool) -> Report {
         if let Some(c) = &mut clock {
             c.end_tick(u64::from(t));
         }
+        let spent = creeer_physics::profile::take();
         if trace.is_some_and(|ms| cost.ms > ms) {
-            eprintln!("tick {t}: {:.3} ms, {} iterations", cost.ms, cost.work);
+            // With the physics' phases when built with `--features creeer_physics/profile`.
+            let phases: Vec<String> = (creeer_physics::profile::NAMES.iter())
+                .filter(|(s, _)| spent[*s as usize] > 0)
+                .map(|(s, n)| format!("{n} {}", spent[*s as usize]))
+                .collect();
+            eprintln!(
+                "tick {t}: {:.3} ms, {} iterations; {}",
+                cost.ms,
+                cost.work,
+                phases.join(", ")
+            );
         }
     });
     if clock.take().is_some() {

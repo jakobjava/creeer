@@ -54,6 +54,7 @@ Also: joining two bodies resets their solvers' history (an impulse, as an impact
 | A joint force's geometric stiffness (λ·∂²c, its positive part) in the matrices | Iterations identical to the digit | No gain |
 | Joints' blocks kept within a step (not remade at each iteration) | 0.134 against 0.149 ms | Two accuracy tests failed: the minimisation stops at different states |
 | A hold of 10⁻⁷ m | Every step of a ragdoll took the three refreshes allowed | Below what the solver's tolerance lets a gap settle to |
+| The multipliers refreshed by Newton's method, by the step's matrix (P1) | Quadratic on its own; on a falling ragdoll iterations unchanged, +18 % time | Friction's normal forces refresh with them and reopen the joints: ADR-0024, its patch kept |
 
 ## Validation
 

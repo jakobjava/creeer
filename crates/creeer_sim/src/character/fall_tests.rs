@@ -1,43 +1,47 @@
-//! Falls onto rock, as a person's go: from 1 m unhurt (the legs take it), from 3 m on the
-//! legs and then its hips (unhurt, but down), from 10 m seriously hurt (half its health), from
-//! 20 m killed. A character knocked down falls as its ragdoll, whose segments take the rest of
-//! the impacts.
+//! Falls onto rock, as a person's go, each from five slightly different leans (people land
+//! differently; one landing alone is chance): from 1 m unhurt on its feet (the legs take it),
+//! from 3 m on the legs and then its hips (all but unhurt, down), from 10 m seriously hurt
+//! (about half its health), from 20 m killed. A character struck down finishes its strike as
+//! its body, then falls as its ragdoll, whose segments take what comes after.
 
-use super::injury::{HEAD_STIFFNESS, Strikes, TORSO_STIFFNESS};
-use super::ragdoll::{HEAD, fall, knocked};
+use super::injury::{Region, Strikes, pushed_on};
+use super::ragdoll::{fall, knocked, region};
 use super::*;
 use creeer_physics::world::shape::StaticShape;
 
 const DT: f64 = 1.0 / 60.0;
 
-/// The harm (share of health) a character dropped with its feet `height` above rock takes,
-/// and whether it ended down.
-fn dropped(height: f64) -> (f64, bool) {
+/// The leans it is let go at (rad).
+const LEANS: [f64; 5] = [-0.08, -0.04, 0.0, 0.04, 0.08];
+
+/// The harm (share of health) a character dropped with its feet `height` above rock, leaning
+/// by `lean`, takes, and whether it ended down.
+fn dropped(height: f64, lean: f64) -> (f64, bool) {
     let mut world = World::new(DT);
     world.statics.push(StaticShape::Plane {
         normal: DVec3::Y,
         offset: 0.0,
     });
-    let c = world.add(body(DVec3::new(0.0, height, 0.0), DVec3::Y, DT));
-    let (mut total, mut parts) = (0.0, None::<Vec<usize>>);
+    let mut b = body(DVec3::new(0.0, height, 0.0), DVec3::Y, DT);
+    b.structure.orientation[0] = creeer_math::glam::DQuat::from_rotation_x(lean);
+    b.solver.reset_history(&b.structure);
+    let c = world.add(b);
+    let (mut total, mut parts, mut struck) = (0.0, None::<Vec<usize>>, false);
     let mut strikes = Strikes::default();
     let mut reactions = Vec::new();
     for _ in 0..360 {
         match &parts {
             None => {
-                steer(
-                    &mut world,
-                    c,
-                    Intent::default(),
-                    (DVec3::Y, None),
-                    &mut reactions,
-                );
+                let intent = Intent::default();
+                steer(&mut world, c, intent, (DVec3::Y, None), &mut reactions);
                 let before = world.bodies[c].structure.velocity[0];
                 world.step();
+                let motion = (before, pushed_on(&world.strut_pushes(), c));
                 release(&mut world, &mut reactions);
-                total += strikes.after_step(&world, (0, c), before, (TORSO_STIFFNESS, false));
-                if knocked(&world, c, DVec3::Y, before) {
-                    total += strikes.end(&world, (0, c), (TORSO_STIFFNESS, false));
+                total += strikes.after_step(&world, (0, c), motion, Region::Torso);
+                // Knocked down, it falls once its strike is over (as the server's people do).
+                struck |= knocked(&world, c, DVec3::Y, motion);
+                if struck && !strikes.striking(0) {
                     parts = Some(fall(&mut world, c));
                 }
             }
@@ -47,13 +51,8 @@ fn dropped(height: f64) -> (f64, bool) {
                     .collect();
                 world.step();
                 for (k, (&b, v)) in p.iter().zip(before).enumerate() {
-                    let head = k == HEAD;
-                    let stiffness = if head {
-                        HEAD_STIFFNESS
-                    } else {
-                        TORSO_STIFFNESS
-                    };
-                    total += strikes.after_step(&world, (k + 1, b), v, (stiffness, head));
+                    let motion = (v, DVec3::ZERO);
+                    total += strikes.after_step(&world, (k + 1, b), motion, region(k));
                 }
             }
         }
@@ -61,19 +60,32 @@ fn dropped(height: f64) -> (f64, bool) {
     (total, parts.is_some())
 }
 
+/// Each lean's harm from `height`, and whether every one ended down (and whether any did).
+fn from(height: f64) -> (Vec<f64>, bool, bool) {
+    let all: Vec<(f64, bool)> = LEANS.iter().map(|&l| dropped(height, l)).collect();
+    let harms = all.iter().map(|a| a.0).collect();
+    (harms, all.iter().all(|a| a.1), all.iter().any(|a| a.1))
+}
+
 #[test]
 fn falls_onto_rock_hurt_as_a_persons_do() {
-    let (one, down) = dropped(1.0);
-    assert!(one == 0.0 && !down, "1 m: harm {one}, down {down}");
-    let (three, down) = dropped(3.0);
-    assert!(three < 0.1 && down, "3 m: harm {three}, down {down}");
-    let (ten, down) = dropped(10.0);
+    let (one, _, any) = from(1.0);
     assert!(
-        (0.15..1.0).contains(&ten) && down,
-        "10 m: harm {ten}, down {down}"
+        one.iter().all(|&h| h == 0.0) && !any,
+        "1 m: harms {one:?}, down {any}"
     );
-    let (twenty, _) = dropped(20.0);
-    eprintln!("falls onto rock: 1 m {one:.3}, 3 m {three:.3}, 10 m {ten:.3}, 20 m {twenty:.3}");
-    // Fatal, or as near as makes no difference (half of falls of four floors kill).
-    assert!(twenty >= 0.95, "20 m: harm {twenty}");
+    let (three, all, _) = from(3.0);
+    assert!(
+        three.iter().all(|&h| h < 0.15) && all,
+        "3 m: harms {three:?}, down {all}"
+    );
+    let (ten, all, _) = from(10.0);
+    assert!(
+        ten.iter().all(|h| (0.3..0.9).contains(h)) && all,
+        "10 m: harms {ten:?}, down {all}"
+    );
+    // Fatal (half of falls of four floors, about 15 m, kill).
+    let (twenty, _, _) = from(20.0);
+    assert!(twenty.iter().all(|&h| h >= 0.95), "20 m: harms {twenty:?}");
+    eprintln!("falls onto rock: 3 m {three:.3?}, 10 m {ten:.3?}, 20 m {twenty:.3?}");
 }

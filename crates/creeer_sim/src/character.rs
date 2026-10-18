@@ -4,7 +4,9 @@
 //! - **The body** is one rigid body: torso and head as a box from the knees up, with the mass and inertia of a person in a suit.
 //! - **The legs** are a spring and damper from the hip to the ground found below it (a ray),
 //!   with a person's leg stiffness and a strength limit: they hold the body up, absorb a
-//!   landing, step it up a kerb, and push whatever they stand on back. Compressed beyond their
+//!   landing, step it up a kerb, and push whatever they stand on back. They are a strut
+//!   (`world::strut`), solved in the step with what they stand on: a light body under a boot
+//!   is pressed into the ground, not thrown. Compressed beyond their
 //!   reach, the body itself meets the ground: a real impact, its deceleration the contacts'.
 //! - **Walking** is a force at the feet, within the friction between boot and ground (μ times
 //!   the legs' force: a slope beyond the friction angle cannot be climbed, ice is slippery),
@@ -14,11 +16,12 @@
 //!   are the way to steer there, G1.2).
 //!
 //! The server steers every character, and a client its own predicted one, with the same code
-//! from the same inputs (ADR-0008). A step's reactions on other bodies are loads for that step
-//! alone: [`release`] takes them off after it.
+//! from the same inputs (ADR-0008). A step's other reactions on other bodies (the walk's, the
+//! balance's) are loads for that step alone: [`release`] takes them off after it, with the struts.
 
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_physics::world::shape::Shape;
+use creeer_physics::world::strut::Strut;
 use creeer_physics::world::{Body, World};
 
 /// A person (80 kg) in a work suit with its backpack (22 kg), without the jetpack's gas.
@@ -188,19 +191,44 @@ pub fn steer(
     };
     let hip = x + up * hip();
     let hit = world.ray(hip, -up, LEG_REACH, Some(index));
-    // Asleep and asked for nothing: it stands as it fell asleep. (Its legs' force taken
+    let standing = hit.filter(|h| h.normal.dot(up) > 0.0);
+    // The legs' spring and damper: a strut from the body's centre to the foot on what the
+    // ray found, solved in the step with it (`world/strut.rs`; a load from it on a light body
+    // threw it). Set even asleep: a support that wakes wakes the character.
+    if let Some(hit) = standing {
+        let b = hit.body;
+        let at_b = b.map_or(hit.point, |(b, n)| {
+            let s = &world.bodies[b].structure;
+            s.orientation[n].conjugate() * (hit.point - s.position[n])
+        });
+        world.add_strut(Strut {
+            a: (index, 0),
+            at_a: DVec3::ZERO,
+            b,
+            at_b,
+            direction: up,
+            rest: LEG_LENGTH + CENTRE - HIP,
+            stiffness: LEG_STIFFNESS,
+            damping: LEG_DAMPING,
+            most: LEG_MOST,
+        });
+    }
+    // Asleep and asked for nothing: it stands as it fell asleep. (Its walk's force taken
     // again from where it rests differs from the force it fell asleep under in its last
     // bits, and a changed load wakes a body: it never slept, and was never parked.)
     if world.bodies[index].sleep.asleep && intent == Intent::default() {
+        let legs = standing.map_or(0.0, |h| {
+            (LEG_STIFFNESS * (LEG_LENGTH - h.distance)).clamp(0.0, LEG_MOST)
+        });
         return Footing {
-            legs: world.bodies[index].structure.load[0],
+            legs: up * legs,
             ground: hit.map(|h| h.normal),
         };
     }
     let mut footing = Footing::default();
     let mut mine = None;
     let (mut force, mut torque) = (DVec3::ZERO, DVec3::ZERO);
-    if let Some(hit) = hit.filter(|h| h.normal.dot(up) > 0.0) {
+    if let Some(hit) = standing {
         // The ground's motion at the foot (a raft, a crate, a lift).
         let ground_v = hit.body.map_or(DVec3::ZERO, |(b, n)| {
             let s = &world.bodies[b].structure;
@@ -231,7 +259,13 @@ pub fn steer(
         if sliding.length() > mu * pressing {
             sliding = sliding.normalize_or_zero() * mu * pressing;
         }
-        force = n * pressing + sliding;
+        // The foot's force in all; the strut gives its legs' part (as it is when the step ends,
+        // the legs here as the step begins: on level ground the rest is the walk alone).
+        footing = Footing {
+            legs: n * pressing + sliding,
+            ground: Some(n),
+        };
+        force = footing.legs - up * legs;
         // Upright, within the body's strength; and the feet hold its spin about the vertical.
         let tilt = (q * DVec3::Y).cross(up);
         let (k, c, most) = BALANCE;
@@ -251,10 +285,6 @@ pub fn steer(
                 mass: None,
             });
         }
-        footing = Footing {
-            legs: force,
-            ground: Some(n),
-        };
         if jump && v.dot(up) < 0.5 * JUMP_SPEED && legs > 0.0 {
             let impulse = up * (MASS * (JUMP_SPEED - v.dot(up).max(0.0)));
             world.apply_impulse(index, 0, impulse, x);
@@ -315,41 +345,9 @@ pub fn steer(
     footing
 }
 
-/// The jetpack for a step: its push (`thrust` as a fraction of its most, while gas lasts)
-/// and its attitude jets' hold on the spin `w`, and the body's mass after the step. The gas
-/// they spend is the push over its exhaust's speed (Isp·g₀); the body steps with half the
-/// step's gas spent (the mean mass over the step: Tsiolkovsky's Δv to second order) and ends
-/// it without the step's.
-fn jetpack(
-    world: &mut World,
-    index: usize,
-    thrust: DVec3,
-    w: DVec3,
-) -> Option<(DVec3, DVec3, f64)> {
-    let body = &mut world.bodies[index];
-    let (mass, gas) = (body.structure.masses()[0], gas(body));
-    if thrust == DVec3::ZERO || gas <= 0.0 {
-        return None;
-    }
-    let exhaust = ISP * G0;
-    let (damping, most, arm) = ATTITUDE;
-    let mut push = thrust.clamp_length_max(1.0) * THRUST_MOST;
-    let mut hold = (-w * damping).clamp_length_max(most);
-    // Kilograms a step: the push's, and the attitude jets' (a pair at their lever).
-    let dt = world.dt();
-    let mut burn = (push.length() + hold.length() / arm) / exhaust * dt;
-    if burn > gas {
-        (push, hold) = (push * (gas / burn), hold * (gas / burn));
-        burn = gas;
-    }
-    let body = &mut world.bodies[index];
-    body.solver
-        .set_mass(&mut body.structure, 0, mass - 0.5 * burn);
-    Some((push, hold, mass - burn))
-}
-
-/// Takes the step's reactions off the bodies they were put on.
+/// Takes the step's reactions off the bodies they were put on, and the legs' struts off.
 pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
+    world.clear_struts();
     for r in reactions.drain(..) {
         if let Some(body) = world.bodies.get_mut(r.body) {
             body.take_load(r.node, r.force);
@@ -369,6 +367,8 @@ mod tests;
 mod fall_tests;
 /// Injury from impacts.
 pub mod injury;
+mod jetpack;
+use jetpack::jetpack;
 #[cfg(test)]
 mod jet_tests;
 /// A character fallen: its ragdoll.
