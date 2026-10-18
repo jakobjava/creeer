@@ -32,7 +32,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
 | **One integrator** instead of Newmark, BDF2 and backward Euler switched per group and step around an energy guard: a smooth part that cannot gain energy, impacts within the same solve (nonsmooth generalized-α; Moreau–Jean with an energy-consistent impact law) | The largest change; needs its own survey and ADR | R, S | Very large | Review W1 |
-| **Contacts persistent across steps, their set following the iterate** (no frozen manifold, no world-wide turn substeps, no found-anew surplus) | Builds on W1 and the friction below | R, S | Large | Review W2, W8 |
+| **Contacts persistent across steps, their set following the iterate** (no frozen manifold, no world-wide turn substeps, no found-anew surplus) | **Next in P1**: measured as most of the ragdolls' cost (three of seven bench cases never rest: 1.4–2 J found anew each step at the same pose, a jitter of millimetres for good) | R, S | Large | Review W2, W8; ADR-0024 |
 | **Friction by a semismooth Newton** (Alart–Curnier) within the step instead of lagged refreshes | P1 | R, S | Large | Review W3; ADR-0017 |
 | **Property tests with random orientations** for every contact and joint law; an energy audit per step naming the term that gained | Next, before more solver work | R | Small | Review W9 |
 | **Every explicit coupling checked against its stability criterion** (springs k·h² ≪ m, dashpots c·h ≪ m, added mass) | Next | R, S | Small | Review W7 |

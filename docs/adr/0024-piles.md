@@ -62,6 +62,16 @@ What moved in each refresh of the ragdoll bench's states (5.29 s, 35,580 iterati
 
 The joints take part in 94 % of the refreshes that go on, which is the 93 % above; but friction's normal forces moved in 78 % of them too. Taking either away leaves most refreshes: the joint tree took the joints' and the refreshes' iterations fell by 8 %. Both must go for the refreshes to go: friction within Newton's iterations first, then the tree again.
 
+### Ragdolls that never rest: three quarters of the bench (measured 2026-10-18)
+
+The bench's whole runs, case by case: four cases come to rest within 2–3 s and cost 200–430 ms each; three never do in 10 s and cost 880–2,171 ms each, 4,164 of 5,529 ms in all. In the worst (the crate at (−0.35, 1.0, 0)) every body's velocity is exactly nought from 2.5 s on, yet each step moves bodies 1–2 mm and none falls asleep: a cycle of two steps.
+
+- **Each step's contacts, found anew at the pose the last step ended in, hold 1.4–2.0 J more elastic energy than the last step's contacts held there** (the energy guard's surplus, `structure/group.rs`; about the whole elastic energy of the 2 kN under the 200 kg crate). The guard takes it from the kinetic energy, which leaves the velocities at nought, while the energy found anew pushes the bodies on: the minimum of each step's frozen contacts is not a rest of the contacts found at it.
+- **Where:** along the crate's load path. Leaving one pair's contacts out of a step at a time, the crate on a forearm (1, 8), the forearm on a shank (8, 15) and that shank on the ground (15, ground) each break the cycle; the others (7, 13), (8, 14), (10, ground) do not. Over 300 steps the forearm and the other shank (8, 14) change their contacts every step (face patch found, then none), (8, 15) in 181 and (7, 13) in 110.
+- **Not the feature choice alone:** Gregorius's bias for coherent contacts (Valve, 2015: prefer faces over edges and one face over the other; Box2D's tolerance likewise), 0.5 and 2 mm here against A's and B's faces and the edges, leaves the surplus as it was, from the same states. What the step freezes besides (each patch's clipped domain, its incident face, its corners) is measured at the step's start; at its end the contacts found anew describe the same pose differently.
+
+This is the review's W2 and W8 (`docs/physics/review-2026-10-18.md`): contacts whose description follows the iterate within the step, and persists across steps, so that the step's minimum is a rest of the contacts as found there. Measured here as both a realism defect (ragdolls under a crate jitter by millimetres for good) and most of the ragdolls' cost: had the three cases rested as the other four did, the bench would take about 2.3 s instead of 5.5.
+
 ### Found and fixed on the way
 
 - **The energy guard measured turning contacts unturned.** A contact whose normal turns with a body (a face's) or with two edges got its start (the bodies' orientations, the edges' sign) only when its step began, after the guard had measured the contacts: with the identity for a start, each normal was turned by its body's whole orientation. Found on a ragdoll's foot under a crate's edge: 6 mm apart, measured 4 mm deep, 21 J found every step, and the guard took it from the motion (it stopped the foot dead every other step, and the group never slept). A turning contact now starts where it is found, and again at each substep before the guard measures. Every physics test as before; it holds wherever bodies are turned, which most tests' are not.
@@ -127,8 +137,8 @@ Sources: arxiv.org/html/2605.15875v1; doi.org/10.1145/3355621; graphics.cs.utah.
 
 ### 2. Then, each with its own prior work recorded before it is built
 
-- Friction within Newton's iterations (Alart–Curnier; the 2024 barrier-augmented Lagrangian), for its realism defect and its iterations: now first, as the refreshes measured wait on it.
-- The contact set persistent across steps (feature identities, as engines keep manifolds), which also ends the world-wide turn substeps.
+- **First: contacts whose description follows the iterate and persists across steps** (feature identities, as engines keep manifolds), for the ragdolls that never rest (*Ragdolls that never rest*: three quarters of the bench, and a jitter); it may also end the world-wide turn substeps.
+- Friction within Newton's iterations (Alart–Curnier; the 2024 barrier-augmented Lagrangian), for its realism defect and its iterations; then the joint tree again on top (the refreshes wait on both).
 - Large groups split across cores by consensus ADMM (Distributed ABD), for piles.
 
 ### Open items (kept until each is closed)
