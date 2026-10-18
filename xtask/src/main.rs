@@ -110,7 +110,21 @@ fn perf(save_baseline: bool) -> ExitCode {
         "--metrics",
         LATEST,
     ]);
-    let budgets_ok = budgets_ok && scenes_ok && stress_ok;
+    println!("==> playing the play scenes (release build)");
+    let play_ok = cargo(&[
+        "run",
+        "--quiet",
+        "--release",
+        "--package",
+        "creeer_tools",
+        "--",
+        "play",
+        "--check",
+        "--gate",
+        "--metrics",
+        LATEST,
+    ]);
+    let budgets_ok = budgets_ok && scenes_ok && stress_ok && play_ok;
     let Some(latest) = read_metrics(Path::new(LATEST)) else {
         eprintln!("xtask perf: no metrics were written to {LATEST}");
         return ExitCode::FAILURE;

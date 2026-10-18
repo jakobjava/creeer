@@ -17,6 +17,7 @@ mod mech_bench;
 mod nasa_import;
 mod network_bench;
 mod orbit_bench;
+mod play;
 mod rates_bench;
 mod reference_bench;
 mod solvers;
@@ -43,6 +44,10 @@ commands:
   stress [--short] [--check | --save-golden] [--metrics <file>] [--only <name>]
       the stress scenarios (beams, cars, factory, server, flyover): tick percentiles
       and state hashes (checked against tests/scenarios/stress.txt)
+  play [--short] [--check | --save-golden] [--gate] [--metrics <file>] [--only <name>]
+       [--record <file>] [--replay <file>]
+      the play scenes over the real server path (G1): tick percentiles, work,
+      bandwidth and state hashes (checked against tests/scenarios/play.txt)
   validate [--data <dir>] [--mods <dir>]
       load and check every data pack as the game merges them
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
@@ -76,6 +81,7 @@ fn main() -> ExitCode {
         }
         Some("validate") => validate::run(&args[1..]),
         Some("stress") => stress::run(&args[1..]),
+        Some("play") => play::run(&args[1..]),
         Some("image-diff") => match (args.get(1), args.get(2)) {
             (Some(a), Some(b)) => image_diff::run(a.as_ref(), b.as_ref()),
             _ => usage(),

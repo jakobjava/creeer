@@ -3,6 +3,7 @@
 //! (drawn a little in the past, between snapshots), the terrain's edits, and its own avatar
 //! (predicted, `predicted.rs`). The game's window draws from it; tests play with it.
 
+use crate::play::record::Act;
 use crate::predicted::Predicted;
 use creeer_math::glam::DVec3;
 use creeer_net::channel::{RELIABLE, TICK_RATE, UNRELIABLE, config};
@@ -84,6 +85,9 @@ pub struct Connection {
     /// Whether this tick is a send round (every [`INPUT_EVERY`]: the inputs, and renet's
     /// acknowledgements with them, go out together).
     due: bool,
+    /// What it sent, act by act, while recording (`record`), and the commands since the
+    /// last input.
+    recording: Option<(Vec<Act>, Vec<Command>)>,
 }
 
 impl std::fmt::Debug for Connection {
@@ -117,7 +121,22 @@ impl Connection {
             terrain: None,
             predicted: None,
             due: true,
+            recording: None,
         }
+    }
+
+    /// Records from now on every input and command it sends (a play scene's track, or a
+    /// live player's: `play::record`).
+    pub fn record(&mut self) {
+        self.recording = Some((Vec::new(), Vec::new()));
+    }
+
+    /// What it recorded since `record` (and goes on recording).
+    pub fn take_recording(&mut self) -> Vec<Act> {
+        self.recording
+            .as_mut()
+            .map(|(acts, _)| std::mem::take(acts))
+            .unwrap_or_default()
     }
 
     /// Joins as `name` (data of hash `content`) through `end` (`Server::connect_memory`).
@@ -265,6 +284,13 @@ impl Connection {
     /// moves the predicted avatar at once and goes to the server (with the last few).
     pub fn input(&mut self, walk: DVec3, jump: bool) {
         let Some(p) = &mut self.predicted else { return };
+        if let Some((acts, commands)) = &mut self.recording {
+            acts.push(Act {
+                walk,
+                jump,
+                commands: std::mem::take(commands),
+            });
+        }
         let input = p.input(walk, jump);
         if input.seq % INPUT_EVERY != 0 {
             return;
@@ -279,6 +305,9 @@ impl Connection {
 
     /// Asks the world for something.
     pub fn command(&mut self, command: Command) {
+        if let Some((_, commands)) = &mut self.recording {
+            commands.push(command.clone());
+        }
         self.renet
             .send_message(RELIABLE, to_bytes(&ClientMessage::Command(command)));
         self.due = true;

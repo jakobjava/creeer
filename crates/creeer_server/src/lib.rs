@@ -5,6 +5,7 @@
 
 pub mod client;
 pub mod host;
+pub mod play;
 pub mod predicted;
 mod profiling;
 pub mod replicate;

@@ -132,12 +132,13 @@ impl Session {
     /// Queues what came into and left the client's view, and the edits it has not had.
     pub fn update_view(&mut self, world: &ServerWorld, grid: &Grid, shapes: &mut Shapes) {
         let centre = self.centre(world);
-        let near: HashSet<EntityId> = grid.around(centre, VIEW).into_iter().map(|e| e.0).collect();
-        let kept: HashSet<EntityId> = grid
-            .around(centre, VIEW * LEAVE)
-            .into_iter()
+        // One search for both: what may stay, and of that what is near enough to come.
+        let around = grid.around(centre, VIEW * LEAVE);
+        let near: HashSet<EntityId> = (around.iter())
+            .filter(|(_, p)| (*p - centre).length_squared() <= VIEW * VIEW)
             .map(|e| e.0)
             .collect();
+        let kept: HashSet<EntityId> = around.into_iter().map(|e| e.0).collect();
         // Left: gone from the world, or beyond the view.
         let gone: Vec<EntityId> = self
             .spawned

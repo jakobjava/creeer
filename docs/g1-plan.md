@@ -34,6 +34,8 @@ What makes Factorio's look, and how Creëer carries it into 3D: a summary. The r
 
 ### G1.0 The play-scene harness
 
+**Done** (2026-10-18): `creeer_server::play` (a server and scripted players over counting in-process links; each tick's server time and Newton work, both ways' bytes, an end-state hash), recordings (`play::record`, written by the clients themselves while `Connection::record` is on), the scenes (`play::scenes`, *crowd* first with F5's avatars), `creeer_tools play` (`--short`, `--check`/`--save-golden` against `tests/scenarios/play.txt`, `--gate`, `--metrics`, `--record`/`--replay`, `--profile`, `PLAY_TRACE`), CI (hashes on every OS; work and bandwidth in `play/tests.rs`) and `cargo xtask perf` (time gates). Found on the way: each client's view cost 3 ms a send (ADR-0008 amended): *crowd* 25.8 → 0.65 ms p50. *crowd* stands at worst 4.0 ms, p99 2.9 ms (gate 2): its slow ticks are the eight ball avatars pressed together leaving the spawn, one group's contact solve (P1, G1.8). A client binary's `--record` comes with G1.10's recorded scenes.
+
 - **Scripted play.** A play scene is a server world plus recorded inputs for N simulated players: walk here, strike there, pick up this. It runs headless, with no client. The inputs are the network's own messages (`AvatarInput`, `Command`, and those G1 adds), so a scene exercises the real server path.
 - **What it measures.** Every tick's time (worst, p99, p50), the Newton iterations of the worst tick (the work gate, as in `physics_bench_tests.rs`), every client's bandwidth (through the real replication), and a state hash at the end (determinism).
 - **Where it runs.** `creeer_tools play <scene>` and `cargo xtask perf` (time gates); the work gates in CI.

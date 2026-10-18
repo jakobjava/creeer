@@ -85,3 +85,7 @@
 - **The test avatar holds itself on slopes.** Braked by a push proportional to its velocity, an idle avatar settled where that push equalled gravity's pull along the ground: it crept downhill for ever (0.13 m/s on 7°) and never slept. Standing, its legs now cancel gravity's pull along the ground (`avatar::steer`); it rests and sleeps on 7°, 15° and 30° (ADR-0019, where parking idle avatars found it).
 - **Clients send the hash of their data packs** in their hello; a server with other data refuses them, naming its packs (protocol version 2, ADR-0018).
 - **Save version 6** adds the parked islands (`PARK`, ADR-0019).
+
+## Amended in G1 (2026-10-18): the view found from occupied cells
+
+- **A client's view cost 3 ms a send.** G1.0's play harness, the first to run eight clients through real sessions, found the server's tick at 25.8 ms p50 with eight players: each session's view (`interest::Grid::around`, 600 m in 32 m cells) looked up about 55,000 cells, twice. The grid now visits its occupied cells instead whenever there are fewer of them than the view's box spans, and a session searches once (the wider radius) and takes the nearer set from it. The same entities in the same order: the play scene's state hash is unchanged, and the tick fell to 0.65 ms p50.
