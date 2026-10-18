@@ -82,12 +82,29 @@ pub fn steer(world: &mut World, index: usize, (walk, jump): (DVec3, bool), up: D
         accel = accel.normalize() * most;
     }
     let mut push = accel * MASS * if ground.is_some() { ROLLING } else { 1.0 };
-    // An avatar left standing (asked for nothing, all but still) is not pushed: the world
-    // may put it to sleep (any load would keep waking it).
+    // Standing, its legs hold it against gravity's pull along the ground: without, the
+    // push above settles where it equals that pull, and the avatar creeps downhill for ever
+    // (0.13 m/s on 7°: F7, found parking idle avatars).
+    let hold = if ground.is_some() {
+        let g = s
+            .planet
+            .as_ref()
+            .map_or(s.gravity, |p| p.acceleration(s.position[0]));
+        -along(g) * MASS
+    } else {
+        DVec3::ZERO
+    };
+    // An avatar left standing (asked for nothing, all but still) is only held: the world
+    // may put it to sleep (its load then the same every step).
     let still =
         along(s.velocity[0]).length() < STILL * RADIUS && s.angular_velocity[0].length() < STILL;
     if wanted == DVec3::ZERO && ground.is_some() && still {
         push = DVec3::ZERO;
+    }
+    push += hold;
+    let most = most * MASS * if ground.is_some() { ROLLING } else { 1.0 };
+    if push.length() > most {
+        push = push.normalize() * most;
     }
     let rising = s.velocity[0].dot(up);
     let centre = s.position[0];

@@ -18,11 +18,13 @@ fn measure_the_work_ceilings() {
 }
 
 /// Each scene's most work in a tick (Newton iterations summed over its bodies), a tenth above
-/// what it measured on 2026-10-18 (316, 207, 1355, 1520, 8, 1, 220, 2, 4, 6), brought down as
+/// what it measured on 2026-10-18 (316, 495, 1355, 1520, 8, 1, 220, 2, 4, 6), brought down as
 /// the solver needs fewer.
 const CEILINGS: [(PhysicsScene, u64); 10] = [
     (PhysicsScene::Bridge, 350),
-    (PhysicsScene::Crash, 230),
+    // (Measured 207 until F7.6: a member buckling split it into a new solver, whose count
+    // began at nought; the crash's worst tick takes 495, as ADR-0017's profile found.)
+    (PhysicsScene::Crash, 545),
     (PhysicsScene::Stacks, 1490),
     (PhysicsScene::Rocks, 1670),
     (PhysicsScene::Cooling, 10),

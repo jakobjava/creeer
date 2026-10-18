@@ -226,6 +226,10 @@ impl ImplicitSolver {
         solver.fallbacks = self.fallbacks;
         solver.factorisations = self.factorisations;
         solver.last_iterations = self.last_iterations;
+        // (Its books go on: a split reset them, and a crash's work and its ticks' Newton
+        // iterations, the sandbox's work gates, were lost with every member that buckled.)
+        solver.iterations_total = self.iterations_total;
+        solver.plastic_work = self.plastic_work;
         solver.last_yielding = self.last_yielding;
         *self = solver;
         new

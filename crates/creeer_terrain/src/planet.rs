@@ -6,11 +6,20 @@
 use crate::datum::Datum;
 use crate::elevation::{Elevation, Layer, LayerKind, Mask, Octaves};
 use crate::geology::Geology;
+use creeer_data::Data;
 use creeer_math::units::{Dimension, parse_as};
 use serde::Deserialize;
 use std::fmt;
-use std::path::Path;
 use std::sync::Arc;
+
+/// `file` named in a file of directory `dir` (paths in packs are relative to the file).
+fn relative(dir: &str, file: &str) -> String {
+    if dir.is_empty() {
+        file.to_owned()
+    } else {
+        format!("{dir}/{file}")
+    }
+}
 
 /// A planet's bulk properties and terrain generator.
 #[derive(Debug)]
@@ -45,22 +54,26 @@ impl Planet {
         std::f64::consts::TAU / self.sidereal_day
     }
 
-    /// Loads a planet from a RON file.
-    pub fn load(path: &Path) -> Result<Self, DataError> {
-        Self::load_with(path, None)
+    /// Loads planet file `path` of `data` (`"planets/home.ron"`).
+    pub fn load(data: &Data, path: &str) -> Result<Self, DataError> {
+        Self::load_with(data, path, None)
     }
 
     /// Loads a planet from a RON file used as a template for a generated body: its bulk
     /// numbers are replaced by `overrides`, and its relief and the wavelengths of its noise
     /// are scaled with the radius, so a 2 km asteroid has the shape of a 100 km one.
-    pub fn load_with(path: &Path, overrides: Option<&Overrides>) -> Result<Self, DataError> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| DataError(format!("{}: {e}", path.display())))?;
+    pub fn load_with(
+        data: &Data,
+        path: &str,
+        overrides: Option<&Overrides>,
+    ) -> Result<Self, DataError> {
+        let origin = || data.origin(path).unwrap_or("?").to_owned();
+        let text = data.file(path).map_err(|e| DataError(e.to_string()))?;
         let def: PlanetDef =
-            ron::from_str(&text).map_err(|e| DataError(format!("{}: {e}", path.display())))?;
-        let dir = path.parent().unwrap_or(Path::new("."));
-        def.build(dir, overrides)
-            .map_err(|e| DataError(format!("{}: {}", path.display(), e.0)))
+            ron::from_str(text).map_err(|e| DataError(format!("{}: {path}: {e}", origin())))?;
+        let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
+        def.build(data, dir, overrides)
+            .map_err(|e| DataError(format!("{}: {path}: {}", origin(), e.0)))
     }
 }
 
@@ -190,9 +203,14 @@ impl OctavesDef {
 }
 
 impl PlanetDef {
-    /// Builds the planet; `dir` is the directory of its file (the geology file is relative
-    /// to it, rocks and minerals are in `../geology`).
-    fn build(self, dir: &Path, overrides: Option<&Overrides>) -> Result<Planet, DataError> {
+    /// Builds the planet; `dir` is the directory of its file in the packs (the geology file
+    /// is relative to it; minerals and rocks are the packs' tables).
+    fn build(
+        self,
+        data: &Data,
+        dir: &str,
+        overrides: Option<&Overrides>,
+    ) -> Result<Planet, DataError> {
         let template_radius = positive("radius", &self.radius, Dimension::LENGTH)?;
         let g = positive(
             "surface_gravity",
@@ -281,8 +299,8 @@ impl PlanetDef {
                 None => quantity("axial_tilt", &self.axial_tilt, Dimension::NONE)?,
             },
             geology: Geology::load(
-                &dir.join(&self.geology),
-                &dir.join("../geology"),
+                data,
+                &relative(dir, &self.geology),
                 Arc::clone(&elevation),
                 datum,
                 seed,

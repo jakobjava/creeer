@@ -13,7 +13,7 @@ use creeer_terrain::{Planet, Terrain};
 const DT: f64 = 1.0 / 60.0;
 
 fn home() -> (Terrain, Surroundings) {
-    let planet = Planet::load(&creeer_terrain::data_path("planets/home.ron")).expect("home.ron");
+    let planet = Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron");
     let surroundings = Surroundings::of(&planet, &SpeciesTable::reference()).expect("its air");
     (Terrain::new(planet), surroundings)
 }

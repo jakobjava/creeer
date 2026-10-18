@@ -10,6 +10,7 @@
 use crate::replicate::Shapes;
 use crate::session::Session;
 use crate::world::{DT, ServerWorld};
+use creeer_core::profile;
 use creeer_net::PROTOCOL_VERSION;
 use creeer_net::channel::{RELIABLE, SEND_EVERY, TICK_RATE, UNRELIABLE, config};
 use creeer_net::interest::Grid;
@@ -23,6 +24,8 @@ use std::time::Duration;
 
 /// The longest name a player may have (characters).
 pub const LONGEST_NAME: usize = 32;
+/// Ticks between the machines' list sent to every client (F7.4).
+pub const MACHINES_EVERY: u32 = 60;
 /// Ticks a refused client is given to hear why before it is disconnected.
 const CLOSE_AFTER: u64 = 30;
 
@@ -54,6 +57,7 @@ pub struct Server {
     /// Ticks since the server started: what snapshots are numbered by (the world's own
     /// tick goes back when a save is loaded; a connection's must not).
     net_tick: u32,
+    profiling: crate::profiling::Profiling,
 }
 
 impl std::fmt::Debug for Server {
@@ -79,6 +83,7 @@ impl Server {
             events: Vec::new(),
             next_memory: 1,
             net_tick: 0,
+            profiling: crate::profiling::Profiling::default(),
         }
     }
 
@@ -119,6 +124,8 @@ impl Server {
 
     /// One tick.
     pub fn tick(&mut self) {
+        let scope = profile::scope("server tick");
+        let network = profile::scope("network in");
         let dt = Duration::from_secs_f64(DT);
         self.renet.update(dt);
         if let Some(udp) = &mut self.udp
@@ -134,6 +141,7 @@ impl Server {
         }
         self.connections();
         self.receive();
+        drop(network);
         let mut steered = std::collections::HashSet::new();
         for session in self.sessions.values_mut() {
             if let Some(avatar) = session.avatar {
@@ -149,8 +157,20 @@ impl Server {
                     .steer(id, &creeer_net::message::AvatarInput::default());
             }
         }
+        let centres: Vec<_> = (self.sessions.values())
+            .filter_map(|s| s.avatar.and_then(|id| self.world.index(id)))
+            .map(|i| self.world.world.bodies[i].structure.position[0])
+            .collect();
+        self.world.regions(&centres);
         self.world.step();
         self.net_tick += 1;
+        let sending = profile::scope("network out");
+        if self.net_tick.is_multiple_of(MACHINES_EVERY) {
+            let views = ServerMessage::Machines(self.world.machine_views());
+            for session in self.sessions.values_mut().filter(|s| s.player.is_some()) {
+                session.queue(&views);
+            }
+        }
         if self.net_tick.is_multiple_of(SEND_EVERY) {
             self.send();
         }
@@ -162,6 +182,13 @@ impl Server {
         self.closing = keep;
         for (id, _) in close {
             self.renet.disconnect(id);
+        }
+        drop(sending);
+        drop(scope);
+        for (client, report) in self.profiling.end_tick(u64::from(self.net_tick)) {
+            if let Some(session) = self.sessions.get_mut(&client) {
+                session.queue(&report);
+            }
         }
         // In process, the server is the transport: it sends, and removes the connections it
         // disconnected or whose client is gone.
@@ -209,6 +236,7 @@ impl Server {
                     self.sessions.insert(client_id, Session::new(client_id));
                 }
                 ServerEvent::ClientDisconnected { client_id, .. } => {
+                    self.profiling.watch(client_id, false);
                     // Its avatar stays where it is, for when the player comes again.
                     if let Some(player) = self.sessions.remove(&client_id).and_then(|s| s.player) {
                         self.events.push(Event::Left(player));
@@ -223,7 +251,11 @@ impl Server {
         for id in ids {
             while let Some(bytes) = self.renet.receive_message(id, RELIABLE) {
                 match from_bytes::<ClientMessage>(&bytes) {
-                    Ok(ClientMessage::Hello { protocol, name }) => self.hello(id, protocol, &name),
+                    Ok(ClientMessage::Hello {
+                        protocol,
+                        name,
+                        content,
+                    }) => self.hello(id, protocol, &name, content),
                     Ok(ClientMessage::Command(command)) => {
                         let Some(session) = self.sessions.get_mut(&id) else {
                             continue;
@@ -239,6 +271,11 @@ impl Server {
                         };
                         if let Err(why) = result {
                             self.events.push(Event::CommandRefused(player, why));
+                        }
+                    }
+                    Ok(ClientMessage::Profile(on)) => {
+                        if self.sessions.get(&id).is_some_and(|s| s.player.is_some()) {
+                            self.profiling.watch(id, on);
                         }
                     }
                     Ok(ClientMessage::Inputs { .. }) | Err(_) => {}
@@ -258,7 +295,7 @@ impl Server {
         }
     }
 
-    fn hello(&mut self, id: ClientId, protocol: u32, name: &str) {
+    fn hello(&mut self, id: ClientId, protocol: u32, name: &str, content: u64) {
         let name = name.trim();
         let playing = self
             .sessions
@@ -268,6 +305,8 @@ impl Server {
             Some(format!(
                 "this server speaks protocol {PROTOCOL_VERSION}, the client {protocol}"
             ))
+        } else if content != self.world.data.hash() {
+            Some(different_data(&self.world.data, content))
         } else if name.is_empty() || name.chars().count() > LONGEST_NAME {
             Some(format!("a name of 1 to {LONGEST_NAME} characters, please"))
         } else if playing {
@@ -327,3 +366,17 @@ impl Server {
 mod play_tests;
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// Why a client with data `content` may not join a server with `data`: the server's packs.
+fn different_data(data: &creeer_data::Data, content: u64) -> String {
+    let packs: Vec<String> = data
+        .packs()
+        .iter()
+        .map(|p| format!("{} {}", p.name(), p.manifest.version))
+        .collect();
+    format!(
+        "this server's data differs from yours (its packs: {}; content {:016x}, yours {content:016x})",
+        packs.join(", "),
+        data.hash()
+    )
+}

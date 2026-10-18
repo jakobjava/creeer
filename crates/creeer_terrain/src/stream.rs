@@ -333,6 +333,7 @@ fn work<T>(
     send: &Sender<Built<T>>,
     build: &(dyn Fn(&Terrain, ChunkKey) -> Option<T> + Send + Sync),
 ) {
+    crate::tiles::generate_serially_here();
     let (lock, wake) = queue;
     loop {
         let key = {

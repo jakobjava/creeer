@@ -1,0 +1,14 @@
+[package]
+name = "creeer_data"
+description = "Data packs: the base data and mods, merged in load order, hashed, watched."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ron.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

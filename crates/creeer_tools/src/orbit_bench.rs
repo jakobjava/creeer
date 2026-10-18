@@ -41,8 +41,8 @@ fn orbiters(u: &mut Universe, altitudes: impl Iterator<Item = f64>) {
 
 pub fn run(report: &mut Report) {
     println!("F4 orbits: the default solar system");
-    let data = creeer_terrain::data_path("");
-    let params = Params::load(&data.join("systems/default.ron"), &data).expect("default.ron");
+    let data = creeer_data::Data::base();
+    let params = Params::load(&data, "systems/default.ron").expect("default.ron");
     let start = Instant::now();
     let system = generate(&params).expect("stable");
     let generation_ms = start.elapsed().as_secs_f64() * 1e3;

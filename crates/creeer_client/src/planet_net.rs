@@ -49,10 +49,12 @@ impl PlanetSession {
     /// # Errors
     /// If the planet cannot be loaded.
     pub fn singleplayer() -> Result<(Self, Arc<Terrain>), String> {
-        let mut server = Server::new(ServerWorld::new(load_terrain(PLANET)?, PLANET));
+        let data = crate::content::data();
+        let world = ServerWorld::new(Arc::clone(&data), load_terrain(&data, PLANET)?, PLANET);
+        let mut server = Server::new(world);
         let end = server.connect_memory();
-        let mut connection = Connection::memory(end, PLAYER);
-        let terrain = load_terrain(PLANET)?;
+        let mut connection = Connection::memory(end, PLAYER, data.hash());
+        let terrain = load_terrain(&data, PLANET)?;
         connection.attach_terrain(Arc::clone(&terrain));
         let session = Self {
             connection,
@@ -68,7 +70,8 @@ impl PlanetSession {
     /// # Errors
     /// If the server cannot be reached, refuses, or names a planet this client lacks.
     pub fn connect(server: SocketAddr, name: &str) -> Result<(Self, Arc<Terrain>), String> {
-        let mut connection = Connection::udp(server, name)?;
+        let data = crate::content::data();
+        let mut connection = Connection::udp(server, name, data.hash())?;
         let start = Instant::now();
         let step = Duration::from_millis(10);
         loop {
@@ -89,7 +92,7 @@ impl PlanetSession {
             .as_ref()
             .map(|w| w.planet.clone())
             .unwrap_or_default();
-        let terrain = load_terrain(&planet)?;
+        let terrain = load_terrain(&data, &planet)?;
         connection.attach_terrain(Arc::clone(&terrain));
         let session = Self {
             connection,

@@ -49,8 +49,11 @@ pub mod section;
 mod settle;
 pub mod shapes;
 mod solver;
+#[cfg(test)]
+mod split_tests;
 pub mod statics;
 mod step;
+mod step_flows;
 #[cfg(test)]
 mod validation_tests;
 

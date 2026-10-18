@@ -20,6 +20,7 @@
 //! number: [`Powerhouse::books`] adds up where the water's energy went.
 
 mod build;
+mod machine;
 mod readings;
 #[cfg(test)]
 mod tests;
@@ -112,6 +113,9 @@ pub struct Powerhouse {
     pub time: f64,
     pub start: Stores,
     pub moved: Moved,
+    /// Heat given to the air from outside the thermal network's books (abstract mode's:
+    /// `machine.rs`).
+    pub air: f64,
 }
 
 impl std::fmt::Debug for Powerhouse {

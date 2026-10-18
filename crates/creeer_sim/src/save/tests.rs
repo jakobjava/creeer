@@ -26,6 +26,7 @@ const V2: &[u8] = include_bytes!("fixtures/v2_f5_world.bin");
 const V3: &[u8] = include_bytes!("fixtures/v3_f6_world.bin");
 const V4: &[u8] = include_bytes!("fixtures/v4_f6_world.bin");
 const V5: &[u8] = include_bytes!("fixtures/v5_f6_world.bin");
+const V6: &[u8] = include_bytes!("fixtures/v6_f7_world.bin");
 const DT: f64 = 1.0 / 60.0;
 
 /// A crate, a ball, a player's avatar and a steel frame on level ground, half a second in,
@@ -81,7 +82,73 @@ fn scene() -> Save {
         world,
         entities: vec![(1, None), (2, None), (5, Some("ada".into())), (8, None)],
         water: Vec::new(),
+        parked: Vec::new(),
+        machines: Vec::new(),
     }
+}
+
+/// The scene with its first two bodies parked as one island and its last alone, the water
+/// moving with a floater of the first (F7.2: version 6).
+pub(super) fn parked_scene() -> Save {
+    let mut save = scene();
+    let (bodies, _) = save.world.take_bodies(|i, _| i != 2);
+    let mut bodies = bodies.into_iter();
+    let mut next = |id: u32, water: Vec<f64>| ParkedBody {
+        id,
+        player: None,
+        body: bodies.next().unwrap(),
+        water,
+    };
+    save.parked = vec![
+        vec![next(1, vec![12.5]), next(2, Vec::new())],
+        vec![next(8, Vec::new())],
+    ];
+    save.entities = vec![(5, Some("ada".into()))];
+    save
+}
+
+#[test]
+#[ignore = "writes the version 6 fixture"]
+fn write_v6_fixture() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/save/fixtures/v6_f7_world.bin"
+    );
+    std::fs::write(path, parked_scene().to_bytes()).unwrap();
+}
+
+/// Parked islands come back as they went: their bodies bit for bit, their entities, the water.
+#[test]
+fn the_version_6_fixture_keeps_parked_islands() {
+    let save = Save::from_bytes(V6).unwrap();
+    // Written as version 7 (no machines): the same bytes but the version's.
+    assert_eq!(save.to_bytes()[12..], V6[12..]);
+    assert_eq!(save.to_bytes(), parked_scene().to_bytes());
+    let sizes: Vec<usize> = save.parked.iter().map(Vec::len).collect();
+    assert_eq!(sizes, [2, 1]);
+    assert_eq!(save.parked[0][0].water, [12.5]);
+    let scene = scene();
+    let mut parked = World::new(DT);
+    parked.bodies = save
+        .parked
+        .iter()
+        .flatten()
+        .map(|p| p.body.clone())
+        .collect();
+    let mut expected = World::new(DT);
+    expected.bodies = vec![
+        scene.world.bodies[0].clone(),
+        scene.world.bodies[1].clone(),
+        scene.world.bodies[3].clone(),
+    ];
+    assert_eq!(parked.to_bytes(), expected.to_bytes());
+    // A parked entity's id may not repeat a live one's.
+    let mut clash = parked_scene();
+    clash.parked[1][0].id = 5;
+    assert!(matches!(
+        Save::from_bytes(&clash.to_bytes()),
+        Err(SaveError::Damaged(_))
+    ));
 }
 
 #[test]
@@ -169,7 +236,10 @@ fn the_version_4_fixture_reads_as_it_was_saved() {
 fn the_version_5_fixture_reads_as_it_was_saved() {
     let save = Save::from_bytes(V5).unwrap();
     assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
-    assert_eq!(save.to_bytes(), V5);
+    // Written as this version (nothing parked, no machines): the same bytes but the version's.
+    let again = save.to_bytes();
+    assert_eq!(again[12..], V5[12..]);
+    assert_eq!(again[8..12], VERSION.to_le_bytes());
 }
 
 #[test]

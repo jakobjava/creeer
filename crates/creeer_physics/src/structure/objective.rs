@@ -7,7 +7,10 @@
 
 use super::Structure;
 use super::element::MEASURES;
+use super::flow::Flow;
+use super::plastic::Guess;
 use super::solver::Work;
+use super::step_flows::StepFlows;
 use crate::so3;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 use rayon::prelude::*;
@@ -22,17 +25,14 @@ fn element_terms(
     s: &Structure,
     index: usize,
     measures: &[f64; MEASURES],
-    guess: &mut [f64; MEASURES],
+    guess: &mut Guess,
+    (flows, built): (&mut [[Flow; MEASURES]; 2], &mut bool),
 ) -> ([f64; MEASURES], f64, f64) {
     let e = &s.elements[index];
     let gamma = e.material.damping / work.beta;
-    let (energy, stored, force) = e.elastoplastic(
-        measures,
-        &work.s_hat[index],
-        gamma,
-        (&work.caps[index], &work.scaled[index]),
-        guess,
-    );
+    let mut step = StepFlows::of(work, index, (flows, built));
+    let (energy, stored, force) =
+        e.elastoplastic(measures, &work.s_hat[index], gamma, &mut step, guess);
     (force, energy, stored)
 }
 
@@ -84,33 +84,40 @@ impl Work {
         let mut element_force = std::mem::take(&mut self.element_force);
         let mut element_energy = std::mem::take(&mut self.element_energy);
         let mut guesses = std::mem::take(&mut self.flow_guess);
-        guesses.resize(s.elements.len(), [0.0; MEASURES]);
+        guesses.resize(s.elements.len(), [0.0; 2 * MEASURES]);
+        let mut flows = std::mem::take(&mut self.flows);
+        let mut built = std::mem::take(&mut self.built);
         let this = &*self;
         element_energy
             .par_iter_mut()
             .zip(&mut element_force)
-            .zip(guesses.par_iter_mut())
+            .zip(
+                guesses
+                    .par_iter_mut()
+                    .zip(flows.par_iter_mut().zip(&mut built)),
+            )
             .enumerate()
             .with_min_len(CHUNK)
-            .for_each(|(index, ((energy, force), guess))| {
+            .for_each(|(index, ((energy, force), (guess, step)))| {
                 let e = &s.elements[index];
                 let (ra, rb) = (this.rotations[e.a], this.rotations[e.b]);
                 if forces {
                     let (m, g) = e.kinematics(x[e.a], ra, x[e.b], rb);
-                    let (sigma, total, stored) = element_terms(this, s, index, &m, guess);
+                    let (sigma, total, stored) = element_terms(this, s, index, &m, guess, step);
                     *force = std::array::from_fn(|group| {
                         (0..MEASURES).map(|k| g[k][group] * sigma[k]).sum()
                     });
                     *energy = [total, stored];
                 } else {
                     let m = e.measures(x[e.a], ra, x[e.b], rb);
-                    let (_, total, stored) = element_terms(this, s, index, &m, guess);
+                    let (_, total, stored) = element_terms(this, s, index, &m, guess, step);
                     *energy = [total, stored];
                 }
             });
         self.element_force = element_force;
         self.element_energy = element_energy;
         self.flow_guess = guesses;
+        (self.flows, self.built) = (flows, built);
         let value = value + self.dashpot_energy(s, x, q) + self.added_energy(s, x);
         let total = self.element_energy.iter().fold(value, |sum, e| sum + e[0]);
         let elastic = self.element_energy.iter().fold(0.0, |sum, e| sum + e[1]);

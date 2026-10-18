@@ -134,6 +134,8 @@ impl Running {
             );
             request = planet_ui::window(ui.ctx(), planet, &self.camera);
             planet_ui::crosshair(ui.ctx());
+            self.profiler
+                .window(ui.ctx(), Some(&mut planet.session.connection));
         });
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);

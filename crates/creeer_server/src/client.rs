@@ -9,9 +9,8 @@ use creeer_net::channel::{RELIABLE, TICK_RATE, UNRELIABLE, config};
 use creeer_net::entity::{EntityId, Kind};
 use creeer_net::interp::{Playback, Pose, sample};
 use creeer_net::link::MemoryEnd;
-use creeer_net::message::{ClientMessage, Command, Plastic, ServerMessage, from_bytes, to_bytes};
+use creeer_net::message::{ClientMessage, Command, ServerMessage, from_bytes, to_bytes};
 use creeer_net::predict::INPUT_EVERY;
-use creeer_net::quant::POSITION_SCALE;
 use creeer_net::renet::RenetClient;
 use creeer_net::snapshot::Receiver;
 use creeer_terrain::Terrain;
@@ -59,6 +58,8 @@ pub struct Connection {
     renet: RenetClient,
     link: Link,
     name: String,
+    /// The hash of its data packs, sent in its hello.
+    content: u64,
     said_hello: bool,
     status: Status,
     /// What the server said when the client joined.
@@ -67,6 +68,10 @@ pub struct Connection {
     pub kinds: BTreeMap<EntityId, Kind>,
     /// The members of structures that are broken.
     pub broken: BTreeMap<EntityId, BTreeSet<u32>>,
+    /// The world's machines as the server last told them (F7.4).
+    pub machines: Vec<creeer_net::message::MachineView>,
+    /// The server's profile, as its last report gave it (while asked for: `watch_profile`).
+    pub profile: Option<creeer_net::message::ProfileReport>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -91,16 +96,19 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
-    fn with(renet: RenetClient, link: Link, name: &str) -> Self {
+    fn with(renet: RenetClient, link: Link, name: &str, content: u64) -> Self {
         Self {
             renet,
             link,
             name: name.to_owned(),
+            content,
             said_hello: false,
             status: Status::Connecting,
             welcome: None,
             kinds: BTreeMap::new(),
             broken: BTreeMap::new(),
+            machines: Vec::new(),
+            profile: None,
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),
@@ -112,21 +120,26 @@ impl Connection {
         }
     }
 
-    /// Joins as `name` through the in-process connection `end` (`Server::connect_memory`).
-    pub fn memory(end: MemoryEnd, name: &str) -> Self {
+    /// Joins as `name` (data of hash `content`) through `end` (`Server::connect_memory`).
+    pub fn memory(end: MemoryEnd, name: &str, content: u64) -> Self {
         let mut renet = RenetClient::new(config());
         renet.set_connected();
-        Self::with(renet, Link::Memory(end), name)
+        Self::with(renet, Link::Memory(end), name, content)
     }
 
     /// Joins as `name` the server at `server` over UDP.
     ///
     /// # Errors
     /// If no socket can be opened.
-    pub fn udp(server: SocketAddr, name: &str) -> Result<Self, String> {
+    pub fn udp(server: SocketAddr, name: &str, content: u64) -> Result<Self, String> {
         let (renet, transport) = creeer_net::udp::connect(server, creeer_net::udp::fresh_id())
             .map_err(|e| e.to_string())?;
-        Ok(Self::with(renet, Link::Udp(Box::new(transport)), name))
+        Ok(Self::with(
+            renet,
+            Link::Udp(Box::new(transport)),
+            name,
+            content,
+        ))
     }
 
     /// Where it stands.
@@ -172,6 +185,7 @@ impl Connection {
             let hello = ClientMessage::Hello {
                 protocol: creeer_net::PROTOCOL_VERSION,
                 name: self.name.clone(),
+                content: self.content,
             };
             self.renet.send_message(RELIABLE, to_bytes(&hello));
         }
@@ -227,58 +241,8 @@ impl Connection {
             ServerMessage::Edits { first, log } => self.edited(first, &log),
             ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),
             ServerMessage::Snapshot(snapshot) => self.snapshot(&snapshot),
-        }
-    }
-
-    /// Edits from the `first`-th on: the client keeps the edits before it, and these
-    /// replace the rest.
-    fn edited(&mut self, first: u64, log: &[u8]) {
-        let Ok(part) = Edits::from_bytes(log) else {
-            return;
-        };
-        let Ok(first) = usize::try_from(first) else {
-            return;
-        };
-        if first > self.edits.len() {
-            return; // never, in order: a gap would be a server's mistake
-        }
-        let replaced = first < self.edits.len();
-        let mut edits = Edits::default();
-        for edit in self.edits.log()[..first].iter().chain(part.log()) {
-            edits.push(*edit);
-        }
-        self.edits = edits;
-        if replaced {
-            self.edits_generation += 1;
-        }
-        if let Some(terrain) = &self.terrain {
-            if replaced {
-                terrain.set_edits(self.edits.clone());
-            } else {
-                for edit in part.log() {
-                    terrain.edit(*edit);
-                }
-            }
-        }
-    }
-
-    fn deformed(&mut self, id: EntityId, plastic: &Plastic) {
-        let Some(Kind::Structure(frame)) = self.kinds.get_mut(&id) else {
-            return;
-        };
-        for (node, at) in &plastic.nodes {
-            let node = *node as usize;
-            if node >= frame.nodes.len() {
-                frame.nodes.resize(node + 1, DVec3::ZERO);
-            }
-            frame.nodes[node] = at.value(POSITION_SCALE);
-        }
-        if let Some(members) = &plastic.members {
-            frame.members.clone_from(members);
-            self.broken.remove(&id);
-        }
-        if !plastic.broken.is_empty() {
-            self.broken.entry(id).or_default().extend(&plastic.broken);
+            ServerMessage::Machines(list) => self.machines = list,
+            ServerMessage::Profile(report) => self.profile = Some(report),
         }
     }
 
@@ -317,6 +281,16 @@ impl Connection {
     pub fn command(&mut self, command: Command) {
         self.renet
             .send_message(RELIABLE, to_bytes(&ClientMessage::Command(command)));
+        self.due = true;
+    }
+
+    /// Asks the server for its profile, a report a second (`on`), or for no more.
+    pub fn watch_profile(&mut self, on: bool) {
+        self.renet
+            .send_message(RELIABLE, to_bytes(&ClientMessage::Profile(on)));
+        if !on {
+            self.profile = None;
+        }
         self.due = true;
     }
 
@@ -386,3 +360,5 @@ impl Connection {
         &self.receiver
     }
 }
+
+mod apply;

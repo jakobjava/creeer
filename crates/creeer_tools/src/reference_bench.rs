@@ -25,7 +25,7 @@ const DOMAINS_MS: f64 = 5.0;
 /// Ticks measured each way, after a second's warm-up.
 const TICKS: usize = 300;
 
-type Part<'a> = (&'static str, Box<dyn FnMut(u32) + Send + 'a>);
+pub(crate) type Part<'a> = (&'static str, Box<dyn FnMut(u32) + Send + 'a>);
 
 /// Four 5,000-beam bridges on their piers, each crossed by a 20 kN load at 20 m/s.
 fn bridges() -> Box<dyn FnMut(u32) + Send> {
@@ -78,7 +78,7 @@ fn players() -> Box<dyn FnMut(u32) + Send> {
 }
 
 /// The domains' reference loads, each stepping as its domain does (at its rate).
-fn machines<'a>() -> Vec<Part<'a>> {
+pub(crate) fn machines<'a>() -> Vec<Part<'a>> {
     let mut parts: Vec<Part<'a>> = Vec::new();
     let mut hall = crate::thermal_bench::hall(500, 20, 1000, 10);
     parts.push((

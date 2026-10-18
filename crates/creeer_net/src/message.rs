@@ -6,7 +6,6 @@
 //! the client has acknowledged) and the client's inputs (each repeating the last few, so a
 //! lost packet loses none).
 
-use crate::entity::{EntityId, Kind};
 use crate::quant::Quantised;
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 use creeer_math::glam::DVec3;
@@ -36,17 +35,20 @@ pub enum Command {
     Clear,
     /// Drop a steel space frame (2 × 2 × 2 cells of 1 m, welded tubes) at a point, at rest.
     Frame(DVec3),
+    /// Build a powerhouse (F6.8's machine) at a point.
+    Powerhouse(DVec3),
 }
 
 /// From a client to the server.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientMessage {
-    /// The first message: the protocol it speaks and the player's name.
+    /// The first message: the protocol it speaks ([`crate::PROTOCOL_VERSION`]), the
+    /// player's name and its data.
     Hello {
-        /// Its [`crate::PROTOCOL_VERSION`].
         protocol: u32,
-        /// The player's name.
         name: String,
+        /// The hash of its data packs (`creeer_data::Data::hash`): it must be the server's.
+        content: u64,
     },
     /// The latest inputs (the last few, newest last) and the newest snapshot received.
     Inputs {
@@ -57,64 +59,16 @@ pub enum ClientMessage {
     },
     /// A command.
     Command(Command),
+    /// Send the server's profile (once a second), or stop (F7.6).
+    Profile(bool),
 }
 
-/// A structure's lasting change of shape: nodes now elsewhere relative to node 0 (in its
-/// frame; an index past its nodes is a node new to it: a member buckling splits in two),
-/// its members anew if they changed, and members now broken.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Plastic {
-    /// Nodes moved for good: index and where they are now (1/1024 m).
-    pub nodes: Vec<(u32, Quantised)>,
-    /// All its members, if they changed (a member split where it buckles).
-    pub members: Option<Vec<[u32; 2]>>,
-    /// Members broken (in the members as they are now).
-    pub broken: Vec<u32>,
-}
-
-/// From the server to a client.
-#[derive(Clone, Debug, PartialEq)]
-pub enum ServerMessage {
-    /// The answer to [`ClientMessage::Hello`].
-    Welcome {
-        /// The client's id.
-        client: u64,
-        /// Its avatar.
-        avatar: EntityId,
-        /// The server's tick now.
-        tick: u32,
-        /// Ticks per second.
-        rate: u32,
-        /// The planet the world stands on (its data file, as `creeer_terrain::data_path`
-        /// takes it).
-        planet: String,
-    },
-    /// Refused: why (the protocol differs, the server is full).
-    Refused(String),
-    /// An entity came into view: what it is.
-    Spawn(EntityId, Kind),
-    /// An entity left view (or the world).
-    Despawn(EntityId),
-    /// Terrain edits, as `creeer_terrain::edits` writes a log, the first of them the
-    /// `first`-th edit of the world (a client joining gets the whole log).
-    Edits {
-        /// The index of the first edit.
-        first: u64,
-        /// The edits.
-        log: Vec<u8>,
-    },
-    /// A structure deformed for good.
-    Plastic(EntityId, Plastic),
-    /// A snapshot (`snapshot.rs`).
-    Snapshot(Vec<u8>),
-}
-
+/// Numbered one past the input before it (its number is not written).
 /// Steps of an input's walk per m/s (8 mm/s: finer than any hand on a stick).
 pub const WALK_SCALE: f64 = 128.0;
 
 const JUMP: u8 = 1;
 const SAME_WALK: u8 = 2;
-/// Numbered one past the input before it (its number is not written).
 const NEXT: u8 = 4;
 
 /// Writes inputs, each against the one before it: its number only if it is not the next, and
@@ -183,11 +137,11 @@ impl Decode for AvatarInput {
     }
 }
 
-fn text(w: &mut Writer, s: &str) {
+pub(crate) fn text(w: &mut Writer, s: &str) {
     w.bytes_with_length(s.as_bytes());
 }
 
-fn read_text(r: &mut Reader<'_>) -> Result<String, DecodeError> {
+pub(crate) fn read_text(r: &mut Reader<'_>) -> Result<String, DecodeError> {
     let bytes = r.bytes_with_length()?;
     String::from_utf8(bytes.to_vec()).map_err(|_| r.error("text not UTF-8"))
 }
@@ -195,10 +149,15 @@ fn read_text(r: &mut Reader<'_>) -> Result<String, DecodeError> {
 impl Encode for ClientMessage {
     fn encode(&self, w: &mut Writer) {
         match self {
-            Self::Hello { protocol, name } => {
+            Self::Hello {
+                protocol,
+                name,
+                content,
+            } => {
                 w.u8(0);
                 w.u32(*protocol);
                 text(w, name);
+                w.u64(*content);
             }
             Self::Inputs { ack, inputs } => {
                 w.u8(1);
@@ -221,11 +180,19 @@ impl Encode for ClientMessage {
                         w.bytes_with_length(bytes);
                     }
                     Command::Clear => w.u8(3),
+                    Command::Powerhouse(at) => {
+                        w.u8(5);
+                        w.put(at);
+                    }
                     Command::Frame(at) => {
                         w.u8(4);
                         w.put(at);
                     }
                 }
+            }
+            Self::Profile(on) => {
+                w.u8(3);
+                w.u8(u8::from(*on));
             }
         }
     }
@@ -237,6 +204,7 @@ impl Decode for ClientMessage {
             0 => Self::Hello {
                 protocol: r.u32()?,
                 name: read_text(r)?,
+                content: r.u64()?,
             },
             1 => Self::Inputs {
                 ack: u32::try_from(r.varint()?).map_err(|_| r.error("tick"))?,
@@ -248,126 +216,15 @@ impl Decode for ClientMessage {
                 2 => Command::Edit(r.bytes_with_length()?.to_vec()),
                 3 => Command::Clear,
                 4 => Command::Frame(r.get()?),
+                5 => Command::Powerhouse(r.get()?),
                 _ => return Err(r.error("unknown command")),
             }),
+            3 => Self::Profile(match r.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(r.error("not a flag")),
+            }),
             _ => return Err(r.error("unknown client message")),
-        })
-    }
-}
-
-impl Encode for ServerMessage {
-    fn encode(&self, w: &mut Writer) {
-        match self {
-            Self::Welcome {
-                client,
-                avatar,
-                tick,
-                rate,
-                planet,
-            } => {
-                w.u8(0);
-                w.u64(*client);
-                w.put(avatar);
-                w.u32(*tick);
-                w.u32(*rate);
-                text(w, planet);
-            }
-            Self::Refused(why) => {
-                w.u8(1);
-                text(w, why);
-            }
-            Self::Spawn(id, kind) => {
-                w.u8(2);
-                w.put(id);
-                w.put(kind);
-            }
-            Self::Despawn(id) => {
-                w.u8(3);
-                w.put(id);
-            }
-            Self::Edits { first, log } => {
-                w.u8(4);
-                w.varint(*first);
-                w.bytes_with_length(log);
-            }
-            Self::Plastic(id, plastic) => {
-                w.u8(5);
-                w.put(id);
-                w.varint(plastic.nodes.len() as u64);
-                for (node, at) in &plastic.nodes {
-                    w.varint(u64::from(*node));
-                    at.write(w, Quantised::default());
-                }
-                match &plastic.members {
-                    None => w.u8(0),
-                    Some(members) => {
-                        w.u8(1);
-                        w.varint(members.len() as u64);
-                        for [a, b] in members {
-                            w.varint(u64::from(*a));
-                            w.varint(u64::from(*b));
-                        }
-                    }
-                }
-                w.varint(plastic.broken.len() as u64);
-                for member in &plastic.broken {
-                    w.varint(u64::from(*member));
-                }
-            }
-            Self::Snapshot(bytes) => {
-                w.u8(6);
-                w.raw(bytes);
-            }
-        }
-    }
-}
-
-impl Decode for ServerMessage {
-    fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        let index = |r: &mut Reader<'_>| u32::try_from(r.varint()?).map_err(|_| r.error("index"));
-        Ok(match r.u8()? {
-            0 => Self::Welcome {
-                client: r.u64()?,
-                avatar: r.get()?,
-                tick: r.u32()?,
-                rate: r.u32()?,
-                planet: read_text(r)?,
-            },
-            1 => Self::Refused(read_text(r)?),
-            2 => Self::Spawn(r.get()?, r.get()?),
-            3 => Self::Despawn(r.get()?),
-            4 => Self::Edits {
-                first: r.varint()?,
-                log: r.bytes_with_length()?.to_vec(),
-            },
-            5 => {
-                let id = r.get()?;
-                let nodes = (0..r.count(4)?)
-                    .map(|_| Ok((index(r)?, Quantised::read(r, Quantised::default())?)))
-                    .collect::<Result<_, DecodeError>>()?;
-                let members = match r.u8()? {
-                    0 => None,
-                    1 => Some(
-                        (0..r.count(2)?)
-                            .map(|_| Ok([index(r)?, index(r)?]))
-                            .collect::<Result<_, DecodeError>>()?,
-                    ),
-                    _ => return Err(r.error("not a flag")),
-                };
-                let broken = (0..r.count(1)?)
-                    .map(|_| index(r))
-                    .collect::<Result<_, DecodeError>>()?;
-                Self::Plastic(
-                    id,
-                    Plastic {
-                        nodes,
-                        members,
-                        broken,
-                    },
-                )
-            }
-            6 => Self::Snapshot(r.raw(r.remaining())?.to_vec()),
-            _ => return Err(r.error("unknown server message")),
         })
     }
 }
@@ -389,6 +246,11 @@ pub fn from_bytes<T: Decode>(bytes: &[u8]) -> Result<T, DecodeError> {
     r.end()?;
     Ok(message)
 }
+
+pub(crate) mod profile;
+mod server;
+pub use profile::ProfileReport;
+pub use server::{MachineView, Plastic, ServerMessage};
 
 #[cfg(test)]
 mod tests;

@@ -35,11 +35,14 @@ impl Network {
         for (k, link) in self.links.iter().enumerate() {
             links_of[islands.island_of(link.nodes().0)].push(k);
         }
-        let solvers = (0..islands.count())
-            .filter(|&i| is_mass(islands.members(i)[0]))
-            .map(|i| {
+        // In parallel, each island by itself, collected in order (a 20,000-node hall's 1,500
+        // islands took 22 ms on one thread, its first step's).
+        let solvers = std::mem::take(&mut links_of)
+            .into_par_iter()
+            .enumerate()
+            .filter(|(i, _)| is_mass(islands.members(*i)[0]))
+            .map(|(i, links)| {
                 let nodes = islands.members(i).to_vec();
-                let links = std::mem::take(&mut links_of[i]);
                 IslandSolver::new(nodes, links, &self.kinds, &self.links, |n| islands.local(n))
             })
             .collect();

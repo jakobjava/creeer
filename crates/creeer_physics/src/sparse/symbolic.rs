@@ -19,6 +19,9 @@ pub struct SymbolicCholesky {
     /// Row j of L left of the diagonal: `(k, storage index of L(j, k))`, k ascending.
     pub(super) row_ptr: Vec<usize>,
     pub(super) row_entry: Vec<(usize, usize)>,
+    /// The same rows' k alone, compact: all the substitutions read (a solve is bound by the
+    /// memory it reads, more so with several structures solving at once).
+    pub(super) row_col: Vec<u32>,
     /// Per input edge: storage index of its block and whether it lands transposed.
     pub(super) edge_slot: Vec<(usize, bool)>,
 }
@@ -129,12 +132,17 @@ impl SymbolicCholesky {
             })
             .collect();
 
+        let row_col = row_entry
+            .iter()
+            .map(|&(k, _)| u32::try_from(k).expect("fewer than 2³² block rows"))
+            .collect();
         Self {
             perm,
             col_ptr,
             row_idx,
             row_ptr,
             row_entry,
+            row_col,
             edge_slot,
             tree,
         }

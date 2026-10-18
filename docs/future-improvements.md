@@ -34,7 +34,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Lateral-torsional buckling** (a beam bent about its strong axis twisting sideways) | Only compression splits members | R | Medium | ADR-0005 |
 | **Members colliding with each other** (a folded column passes through itself) | Self-contact of a structure is not detected | R | Large | ADR-0005 |
 | **Material damping model**: steel's damping over-damps a joint's kilohertz rattle (crash 5 % short at 5 m/s with it) | The crash test runs undamped; a frequency-dependent model is needed | R | Medium | ADR-0005 |
-| **Impacts on structures cost substeps** (a 10 t block landing on a bridge: about 33 ms a tick while it strikes, 34 substeps of 0.5 ms at about 1 ms each, a third of that fixed costs) | Error-controlled substeps were as accurate but no faster (ADR-0017, A1); the substeps are needed while the block strikes. **Subcycling the struck region** (its joints in short steps, the rest in the tick's, energy exact where they meet) is the method left, weeks of work: deferred by the user (2026-10-18) | S | Large | ADR-0005, ADR-0017 |
+| **Impacts on structures cost substeps** (a 10 t block landing on a bridge: about 33 ms a tick while it strikes, 34 substeps of 0.5 ms at about 1 ms each, a third of that fixed costs); ten cars crashing in pairs at 15 m/s (F7.5): 91 ms the tick they strike (134 before F7.6 warm-started members' splits), 34 substeps of 50–75 Newton iterations in the struck groups | Error-controlled substeps were as accurate but no faster (ADR-0017, A1); the substeps are needed while the block strikes. **Subcycling the struck region** (its joints in short steps, the rest in the tick's, energy exact where they meet) is the method left, weeks of work: deferred by the user (2026-10-18) | S | Large | ADR-0005, ADR-0017 |
 
 ### Gravity and orbits
 
@@ -94,6 +94,10 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Lagged friction's outer loop**: half the rock pile's iterations come after a friction refresh; the gap's curvature terms (B1) save only 7 % | Coupled Newton for friction (ADR-0017, C) measured on the same inputs: iterations −6 % on the pile, +4 % on the stacks, worse worst steps; not adopted. The closing contacts' cuts (a third of the pile's iterations) are the next lever | S | Medium | ADR-0017 |
 | **The sandbox scenes' 2–3 ms target**: at the end of `lag-fix` (2026-10-18) the worst ticks are the bridge's 32.8 ms (p99 4.9), the rock pile's 18.2 (14.2), the crash's 19.0 (3.0), the stacks' 6.3 (1.8); gated in CI (work) and `cargo xtask perf` (time) | The levers within the design are measured and taken or rejected (ADR-0017): parallel contact evaluation within a group loses on this machine (rayon's wake-ups, cores shared by two threads). What is left is a different method: subcycling struck regions (above), and a large pile's contact solve split into pieces large enough for the cores, coupled by an outer iteration. Weeks of work: deferred by the user | S | Large | ADR-0017 |
 | **The line search at planet scale**: 500 km from the origin the objective rounds at about 10⁻⁷ J, and steps stop short where a decrease that small cannot be seen | Within tolerance where it stops; an objective summed as differences from the step's start would see it | R | Medium | this list (F6) |
+| **Structures' solves are bound by memory when many step at once**: eight 5,000-beam bridges, one per core, each step 8.2 ms against 5.2 alone (F7.6; 12.8 before it): the factor's 12 MB is read four times a step, and the four reference bridges with the domains' data fill the dev machine's 96 MB L3 (a min-spec CPU has a third of it) | F7.6 took what is exact (compact indices, flows built only when needed, members' hot fields first: ADR-0021); an f32 factor halves the traffic but changes trajectories (rejected again, ADR-0004); less fill needs another ordering (nested dissection already, ADR-0004) | S | Medium | ADR-0021 |
+| **Large networks' first steps**: a 20,000-node thermal hall's first step takes 20.7 ms (its 11,000-node island's ordering and analysis 8 ms, a thousand small islands' first factorisations), 5,000 pipes' cost estimate 9 ms (a symbolic analysis on the tick thread, to pick their rate); once when built or loaded, and an edit of an island's topology pays its analysis again | Building a network's solvers beside the ticks (as the pipes' steps run) and swapping them in a fixed tick later; F7.6 built the islands in parallel and made the ordering linear at hubs | S | Medium | ADR-0021 |
+| **Fine-grained parallel loops when waking threads is expensive**: in a Linux container on the development machine (Docker Desktop's WSL2 VM, 16 vCPUs) a 5,000-beam bridge steps in 6.0 ms on one thread, 4.5 on four and 14.8 on sixteen (Windows on the same machine: 5.6, 1.9, 1.8); the reference tick projects to 28.8 ms there. Single-threaded work is as fast as on Windows (the rate solver faster), and every stress hash is the same | A virtual machine's thread wake-ups (CI's Linux VMs were no worse than its Windows ones); a server on such a VM would need coarser parallel grains or fewer threads, chosen by measuring the wake-up cost at start | S | Medium | `docs/physics/f7-validation.md` |
+| **One profile clock per process**: a hosting client's profiler shows the server's ticks (its loop holds the clock), the client's own threads' spans inside them | Spans are not tagged with the clock they belong to; a second clock per thread pool would be needed | S | Small | ADR-0021 |
 | **Budgets close on a heat-soaked machine**: late in a long `cargo xtask perf` run the 10k-node DC circuit projects to 0.99 ms (0.86 cool), the 20k-node thermal step to 1.51 ms (budget 1.5; 1.28 cool), the 1,000 aero panels to 0.199 ms (0.2) | Each meets its budget measured on its own, as every budget is | S | Small | ADR-0011 (F6.8), ADR-0010, ADR-0014, ADR-0016 |
 | **Settling stacks cost 3–6 % more** since rigid bodies' contacts are relinearised each iteration (piles 4–8 times less) | The pile's gain; the stacks' matrices barely change near convergence and are not made again there | S | Small | ADR-0005 (F6, Newton) |
 
@@ -132,6 +136,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
+| **The streamer's update has rare slow frames**: in the stress flyover (1,200 frames) its p99 is 0.7 ms, but about one run in three has one frame of 4–7 ms, at no fixed frame, while its workers keep every core but two busy | Not reproducible at a frame (scheduling or the queue's lock with fourteen workers); gated at half a 60 Hz frame (8 ms). Fewer workers while the camera moves fast, or a lock-free queue, would tell | S | Small | ADR-0021 |
 | **Small edits vanish at a distance**: brushes under half a cell leave coarse chunks (a 2 m hole is invisible beyond about 250 m) | Level-of-detail cost | R, G | Medium | ADR-0006 |
 | **Ground contacts cost more than plane contacts** (a large crate samples a few hundred surface points near the ground) | Correctness first | S | Medium | ADR-0006 |
 | **The sea is drawn as the datum's ellipsoid** (the true equipotential differs by metres) | Simple per-pixel intersection | R | Small | ADR-0014; `sea.wgsl` |
@@ -162,6 +167,25 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Numbers as text** (`tostring`, `string.format`, reading numbers) go through the C library's `snprintf` and `strtod`, correctly rounded on glibc, MSVC since 2015 and macOS but not our own | They agree on every supported platform | R | Medium | ADR-0015 |
 | **Saving a script's functions and coroutines**: only its `memory` data survives a save, and it starts again from its source | A Lua state's insides cannot be saved portably | G | Large | ADR-0015 |
 | **Messages between controllers** other than wires (radio, buses) | Wires first | G | Medium | ADR-0015 |
+
+## Data and mods
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **The physics sandbox's members use the solver's built-in S235** (`section::STEEL_S235`), not the packs' steel: a mod's steel changes the heat scenes, not the bridge | The part catalog that builds members from the packs' materials is G2 | G | Small | ADR-0018 |
+| **A running server reloading its packs**: a server's data is fixed for its run (its world and its clients must agree) | Changing a running world's planet under its players' edits has no right answer; a restart applies changes | G | Medium | ADR-0018 |
+| **Signed or checksummed packs** for public servers: the content hash identifies data, it does not authenticate it | Not needed while servers are authoritative and private | G | Medium | ADR-0018 |
+
+## Simulation LOD
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **Far awake bodies that never rest** stay simulated in full (parking needs rest) | None in the sandbox does; freezing or railing moving bodies on a planet would be unrealistic | S | Small | ADR-0019 |
+| **Probing an abstract machine costs 15–27 % of running it in full while its slow states change** (the powerhouse's masses warming over hours; the plan aimed at 2 %; 0.3 % once steady) | Black-box rates follow coupled thermal states only with a probe every few minutes; a model-based abstract self (each domain's own slow linear dynamics, the thermal network's conductances as the rates' dependence) is a design of its own | S | Medium | ADR-0020 |
+| **Machines sharing stocks** (a tank two machines draw from) in the world | The rate solver shares stocks; the world's machines are not connected until G2's building | G | Medium | ADR-0020 |
+| **The first minutes of a machine's warm-up** are followed less closely abstract (6 % on heat stocks still small) | The predictor has no history yet | R | Small | ADR-0020 |
+| **A machine's insides beyond its fast states** (its platform's motion, a circuit's and pipes' internal states) are rebuilt at rest when a save is loaded | They settle in seconds; saving every domain's state portably is larger | R | Medium | ADR-0020 |
+| **Terrain edits far from players under parked islands**: edits need a player within 500 m, inside the active range; a future long-range edit (an explosion, a landslide) must wake what stands there first | No such edit exists yet | R, G | Small | ADR-0019 |
 
 ## Elsewhere
 

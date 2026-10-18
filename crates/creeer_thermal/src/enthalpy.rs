@@ -135,6 +135,21 @@ impl Enthalpy {
         }
     }
 
+    /// The temperature (K) at which its specific enthalpy is `h` (J/kg), from `guess`:
+    /// Newton on H(T), which rises everywhere (its capacity is positive), to rounding.
+    pub fn temperature(&self, h: f64, guess: f64) -> f64 {
+        let mut t = guess;
+        for _ in 0..60 {
+            let (ht, c) = self.state(t);
+            let step = (h - ht) / c;
+            t += step;
+            if step.abs() <= 1e-12 * t.abs() {
+                break;
+            }
+        }
+        t
+    }
+
     /// Where its melting starts and ends (K), if it melts.
     pub fn melting(&self) -> Option<(f64, f64)> {
         self.melt.map(|(lo, hi, _)| (lo, hi))

@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 fn terrain() -> Arc<Terrain> {
-    let path = crate::data_path("planets/home.ron");
-    Arc::new(Terrain::new(Planet::load(&path).expect("loads")))
+    Arc::new(Terrain::new(
+        Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("loads"),
+    ))
 }
 
 fn streamer(terrain: &Arc<Terrain>) -> Streamer<usize> {

@@ -130,4 +130,6 @@ fn state_hash_is_identical_on_every_platform() {
 // 0x300d_52cf_aa59_26ad.
 // And for rate-lifted flow's rate terms kept for a step and its Newton started from where it
 // last ended (rounding only: every node within 1e-15 m), after 0xcba9_cb79_18fa_1347.
-const GOLDEN_STRUCTURE_HASH: u64 = 0x2e18_685c_2719_049e;
+// And for a member's end-moment pairs split from where its last split left them (F7.6;
+// rounding only: every node within 1.4e-15 m, `split_tests.rs`), after 0x2e18_685c_2719_049e.
+const GOLDEN_STRUCTURE_HASH: u64 = 0x5c89_54c2_3b9a_8b6b;

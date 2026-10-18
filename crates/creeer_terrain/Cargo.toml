@@ -7,8 +7,10 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_data.workspace = true
 creeer_materials.workspace = true
 creeer_math.workspace = true
+rayon.workspace = true
 ron.workspace = true
 serde.workspace = true
 

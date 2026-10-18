@@ -4,7 +4,7 @@ use crate::Planet;
 use crate::elevation::fibonacci_sphere;
 
 fn home() -> Planet {
-    Planet::load(&crate::data_path("planets/home.ron")).expect("home.ron loads")
+    Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron loads")
 }
 
 #[test]

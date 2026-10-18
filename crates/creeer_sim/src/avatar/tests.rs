@@ -1,5 +1,5 @@
 //! The avatar rolls at the speed asked for, stops, jumps about a metre (and only from the
-//! ground), climbs a walkable slope, and rests asleep when left alone.
+//! ground), climbs a walkable slope, and rests asleep when left alone (on a slope too).
 
 use super::*;
 use creeer_physics::world::shape::StaticShape;
@@ -110,5 +110,30 @@ fn it_climbs_a_walkable_slope_and_not_a_cliff() {
         } else {
             assert!(climbed < 0.0, "{climbed} m up {degrees}°");
         }
+    }
+}
+
+/// Left alone on a slope it can stand on, it stands: its legs hold it against gravity's
+/// pull along the ground (a pushed ball alone would creep downhill for ever), and it sleeps.
+#[test]
+fn it_stands_still_on_a_slope_and_sleeps() {
+    for degrees in [7.0f64, 15.0, 30.0] {
+        let tilt = degrees.to_radians();
+        let normal = DVec3::new(
+            creeer_math::det::sin(tilt),
+            creeer_math::det::cos(tilt),
+            0.0,
+        );
+        let mut world = on_ground(normal);
+        run(&mut world, DVec3::ZERO, false, 60);
+        let start = world.bodies[0].structure.position[0];
+        run(&mut world, DVec3::ZERO, false, 300);
+        let crept = (world.bodies[0].structure.position[0] - start).length();
+        assert!(crept < 0.01, "{degrees}°: crept {crept} m in 5 s");
+        assert!(
+            world.bodies[0].sleep.asleep,
+            "{degrees}°: awake at {}",
+            velocity(&world)
+        );
     }
 }

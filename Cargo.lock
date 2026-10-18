@@ -567,6 +567,7 @@ version = "0.0.1"
 dependencies = [
  "creeer_chem",
  "creeer_core",
+ "creeer_data",
  "creeer_electric",
  "creeer_fluids",
  "creeer_logic",
@@ -593,6 +594,14 @@ name = "creeer_core"
 version = "0.0.1"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "creeer_data"
+version = "0.0.1"
+dependencies = [
+ "ron",
+ "serde",
 ]
 
 [[package]]
@@ -631,6 +640,7 @@ dependencies = [
 name = "creeer_materials"
 version = "0.0.1"
 dependencies = [
+ "creeer_data",
  "creeer_math",
  "ron",
  "serde",
@@ -659,6 +669,7 @@ dependencies = [
 name = "creeer_net"
 version = "0.0.1"
 dependencies = [
+ "creeer_core",
  "creeer_math",
  "renet",
  "renet_netcode",
@@ -676,6 +687,7 @@ name = "creeer_orbit"
 version = "0.0.1"
 dependencies = [
  "approx",
+ "creeer_data",
  "creeer_math",
  "proptest",
  "rayon",
@@ -687,8 +699,19 @@ dependencies = [
 name = "creeer_physics"
 version = "0.0.1"
 dependencies = [
+ "creeer_core",
  "creeer_materials",
  "creeer_math",
+ "rayon",
+]
+
+[[package]]
+name = "creeer_rates"
+version = "0.0.1"
+dependencies = [
+ "creeer_math",
+ "creeer_network",
+ "proptest",
  "rayon",
 ]
 
@@ -711,12 +734,14 @@ name = "creeer_server"
 version = "0.0.1"
 dependencies = [
  "creeer_core",
+ "creeer_data",
  "creeer_materials",
  "creeer_math",
  "creeer_net",
  "creeer_physics",
  "creeer_sim",
  "creeer_terrain",
+ "rayon",
  "renet",
  "renet_netcode",
 ]
@@ -726,6 +751,7 @@ name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
  "creeer_chem",
+ "creeer_data",
  "creeer_electric",
  "creeer_fluids",
  "creeer_logic",
@@ -734,6 +760,7 @@ dependencies = [
  "creeer_mech",
  "creeer_orbit",
  "creeer_physics",
+ "creeer_rates",
  "creeer_terrain",
  "creeer_thermal",
  "rayon",
@@ -743,8 +770,10 @@ dependencies = [
 name = "creeer_terrain"
 version = "0.0.1"
 dependencies = [
+ "creeer_data",
  "creeer_materials",
  "creeer_math",
+ "rayon",
  "ron",
  "serde",
 ]
@@ -765,14 +794,18 @@ version = "0.0.1"
 dependencies = [
  "creeer_chem",
  "creeer_core",
+ "creeer_data",
  "creeer_electric",
  "creeer_fluids",
  "creeer_logic",
  "creeer_materials",
  "creeer_math",
  "creeer_mech",
+ "creeer_net",
  "creeer_orbit",
  "creeer_physics",
+ "creeer_rates",
+ "creeer_server",
  "creeer_sim",
  "creeer_terrain",
  "creeer_thermal",

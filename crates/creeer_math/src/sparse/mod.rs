@@ -15,6 +15,8 @@ mod chol;
 mod lu;
 mod matrix;
 mod order;
+#[cfg(test)]
+mod order_tests;
 mod scalar;
 #[cfg(test)]
 mod tests;

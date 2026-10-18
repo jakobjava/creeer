@@ -12,7 +12,9 @@ use std::sync::OnceLock;
 fn terrain() -> &'static Terrain {
     static TERRAIN: OnceLock<Terrain> = OnceLock::new();
     TERRAIN.get_or_init(|| {
-        Terrain::new(Planet::load(&crate::data_path("planets/home.ron")).expect("home.ron"))
+        Terrain::new(
+            Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
+        )
     })
 }
 
@@ -238,7 +240,9 @@ fn no_triangle_turns_over() {
 fn level_gradients_are_exact() {
     use crate::edits::{Brush, Edit};
     use crate::levels::LevelField;
-    let t = Terrain::new(Planet::load(&crate::data_path("planets/home.ron")).expect("home.ron"));
+    let t = Terrain::new(
+        Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
+    );
     let p = hills(&t, 3);
     let radius = 6.0;
     t.edit(Edit::Dig(Brush::Sphere { center: p, radius }));
@@ -309,7 +313,9 @@ fn folds(m: &TerrainMesh) -> usize {
 #[test]
 fn tunnel_rims_keep_their_shape() {
     use crate::edits::{Brush, Edit};
-    let t = Terrain::new(Planet::load(&crate::data_path("planets/home.ron")).expect("home.ron"));
+    let t = Terrain::new(
+        Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
+    );
     let ground = hills(&t, 2);
     let up = ground.normalize();
     let east = up.any_orthonormal_vector();

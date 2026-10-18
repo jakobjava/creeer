@@ -16,6 +16,9 @@ pub mod gas;
 pub use carry::{of_mixture, temperature};
 #[cfg(test)]
 mod carry_tests;
+mod dry;
+#[cfg(test)]
+mod dry_tests;
 #[cfg(test)]
 mod gas_tests;
 mod links;

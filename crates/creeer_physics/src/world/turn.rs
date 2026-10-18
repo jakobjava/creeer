@@ -32,6 +32,7 @@ impl World {
     /// the turn it made, and redone from the start with the substeps that turn needs when a
     /// box turned more than twice [`MAX_TURN`] per substep.
     pub fn step(&mut self) {
+        let _scope = creeer_core::profile::scope("physics");
         let boxes = |bodies: &[Body]| -> Vec<(usize, NodeId)> {
             bodies
                 .iter()

@@ -1,0 +1,9 @@
+// An example mod (F7.1, ADR-0018), and the tests' fixture: it adds a material, replaces one
+// of the base pack's, adds a mineral and a rock, and adds a planet. Copy it to start a mod:
+// put it in a directory of packs (`mods/` beside `data/`, or `--mods <dir>`).
+Pack(
+    name: "example",
+    version: "0.1.0",
+    description: "Basalt and chromite, and a small dry moon to find them on.",
+    requires: ["base"],
+)

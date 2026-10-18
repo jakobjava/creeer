@@ -122,8 +122,14 @@ impl Lab {
         }
     }
 
+    /// Forgets what it loaded, so it loads the current data when next opened.
+    pub fn reload(&mut self) {
+        self.loaded = None;
+    }
+
     fn load() -> Box<Loaded> {
-        let table = SpeciesTable::reference();
+        let table = SpeciesTable::from_data(&crate::content::data())
+            .unwrap_or_else(|_| SpeciesTable::reference());
         let ellingham = crate::lab_ellingham::lines(&table);
         let relaxation = Relaxation::new(&table);
         let furnace = Furnace::new(&table);

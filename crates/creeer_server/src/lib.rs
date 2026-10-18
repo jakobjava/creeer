@@ -6,6 +6,7 @@
 pub mod client;
 pub mod host;
 pub mod predicted;
+mod profiling;
 pub mod replicate;
 pub mod server;
 pub mod session;

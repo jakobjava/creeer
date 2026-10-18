@@ -37,8 +37,9 @@ pub fn read_save(path: &Path) -> Result<Save, String> {
 }
 
 impl Server {
-    /// The world as a save.
-    pub fn save(&self) -> Save {
+    /// The world as a save (its machines' catching up taken in first).
+    pub fn save(&mut self) -> Save {
+        self.world.join_machines();
         self.world.to_save()
     }
 
@@ -54,8 +55,10 @@ impl Server {
                 save.planet, self.world.planet
             ));
         }
+        self.world.join_machines();
         let terrain = std::sync::Arc::clone(&self.world.terrain);
-        self.world = ServerWorld::from_save(save, terrain);
+        let data = std::sync::Arc::clone(&self.world.data);
+        self.world = ServerWorld::from_save(data, save, terrain);
         self.restart_sessions();
         Ok(())
     }

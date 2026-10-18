@@ -12,8 +12,9 @@ use std::sync::Arc;
 const DT: f64 = 1.0 / 60.0;
 
 fn terrain() -> Arc<Terrain> {
-    let path = creeer_terrain::data_path("planets/home.ron");
-    Arc::new(Terrain::new(Planet::load(&path).expect("home.ron loads")))
+    Arc::new(Terrain::new(
+        Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron loads"),
+    ))
 }
 
 /// A surface point on land whose slope lies in `degrees`, and the ground normal there.

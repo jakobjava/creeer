@@ -1,9 +1,9 @@
 //! The solar-system definition file (`data/systems/*.ron`): what the generator may make, with
 //! every quantity written with its unit and converted to SI here.
 
+use creeer_data::Data;
 use creeer_math::units::{Dimension, parse_as};
 use serde::Deserialize;
-use std::path::Path;
 
 /// A problem in a definition file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -237,18 +237,16 @@ struct PlanetBulk {
 }
 
 impl Params {
-    /// Loads a definition; `data` is the data directory the file names are relative to.
-    pub fn load(path: &Path, data: &Path) -> Result<Self, DefError> {
-        let read = |p: &Path| {
-            std::fs::read_to_string(p).map_err(|e| DefError(format!("{}: {e}", p.display())))
-        };
-        let def: SystemDef = ron::from_str(&read(path)?)
-            .map_err(|e| DefError(format!("{}: {e}", path.display())))?;
-        let home_path = data.join(&def.home.planet);
+    /// Loads definition file `path` of `data`; the file names in it are paths in the packs.
+    pub fn load(data: &Data, path: &str) -> Result<Self, DefError> {
+        let read = |p: &str| data.file(p).map_err(|e| DefError(e.to_string()));
+        let def: SystemDef =
+            ron::from_str(read(path)?).map_err(|e| DefError(format!("{path}: {e}")))?;
+        let home_path = def.home.planet.as_str();
         let bulk: PlanetBulk = ron::Options::default()
             .without_recursion_limit()
-            .from_str(&read(&home_path)?)
-            .map_err(|e| DefError(format!("{}: {e}", home_path.display())))?;
+            .from_str(read(home_path)?)
+            .map_err(|e| DefError(format!("{home_path}: {e}")))?;
         Self::from_def(def, bulk)
     }
 

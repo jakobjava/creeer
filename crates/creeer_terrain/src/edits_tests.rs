@@ -5,7 +5,7 @@ use creeer_math::glam::DVec3;
 use std::collections::{HashMap, HashSet};
 
 fn home() -> Terrain {
-    Terrain::new(Planet::load(&crate::data_path("planets/home.ron")).expect("loads"))
+    Terrain::new(Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("loads"))
 }
 
 /// A point `depth` metres under the surface somewhere on the planet, and the local up.

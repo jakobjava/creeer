@@ -68,12 +68,39 @@ impl RockTable {
         }
         let mineral_defs: Vec<MineralDef> = ron::from_str(minerals).map_err(err("minerals"))?;
         let rock_defs: Vec<RockDef> = ron::from_str(rocks).map_err(err("rocks"))?;
+        Self::from_defs(plain(mineral_defs), plain(rock_defs))
+    }
+
+    /// The minerals and rocks of every pack of `data` (tables `minerals` and `rocks`).
+    pub fn from_data(data: &creeer_data::Data) -> Result<Self, DataError> {
+        use creeer_data::merge::ron_list;
+        let minerals = (data.table("minerals", "geology/minerals.ron"))
+            .merge_traced(ron_list, |m: &MineralDef| &m.name)
+            .map_err(|e| DataError(e.to_string()))?;
+        let rocks = (data.table("rocks", "geology/rocks.ron"))
+            .merge_traced(ron_list, |r: &RockDef| &r.name)
+            .map_err(|e| DataError(e.to_string()))?;
+        Self::from_defs(minerals, rocks)
+    }
+
+    /// The table from its entries, each with where it came from (`"pack: path: "` in errors).
+    fn from_defs(
+        mineral_defs: Vec<(MineralDef, String)>,
+        rock_defs: Vec<(RockDef, String)>,
+    ) -> Result<Self, DataError> {
+        let at = |origin: &str| {
+            if origin.is_empty() {
+                String::new()
+            } else {
+                format!("{origin}: ")
+            }
+        };
         let mut table = Self::default();
-        for m in mineral_defs {
-            let formula = Formula::parse(&m.formula)
-                .map_err(|e| DataError(format!("mineral {}: {e}", m.name)))?;
-            let density = parse_as(&m.density, Dimension::DENSITY)
-                .map_err(|e| DataError(format!("mineral {}: {e}", m.name)))?;
+        for (m, origin) in mineral_defs {
+            let context = |e: String| DataError(format!("{}mineral {}: {e}", at(&origin), m.name));
+            let formula = Formula::parse(&m.formula).map_err(|e| context(e.to_string()))?;
+            let density =
+                parse_as(&m.density, Dimension::DENSITY).map_err(|e| context(e.to_string()))?;
             if table.minerals.iter().any(|x| x.name == m.name) {
                 return Err(DataError(format!("mineral {} defined twice", m.name)));
             }
@@ -83,8 +110,9 @@ impl RockTable {
                 density,
             });
         }
-        for r in rock_defs {
-            let context = |what: String| DataError(format!("rock {}: {what}", r.name));
+        for (r, origin) in rock_defs {
+            let context =
+                |what: String| DataError(format!("{}rock {}: {what}", at(&origin), r.name));
             if table.rock(&r.name).is_some() {
                 return Err(context("defined twice".into()));
             }
@@ -156,4 +184,9 @@ fn parse_color(text: &str) -> Option<[u8; 3]> {
     let hex = text.strip_prefix('#').filter(|h| h.len() == 6)?;
     let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
     Some([byte(0)?, byte(2)?, byte(4)?])
+}
+
+/// Entries with no origin (a file read on its own).
+fn plain<T>(defs: Vec<T>) -> Vec<(T, String)> {
+    defs.into_iter().map(|d| (d, String::new())).collect()
 }

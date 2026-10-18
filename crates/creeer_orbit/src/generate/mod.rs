@@ -18,10 +18,10 @@ mod tests;
 use crate::body::Body;
 use crate::ephemeris::Ephemeris;
 use crate::rails::{Group, Particle};
+use creeer_data::Data;
 use creeer_math::glam::DVec3;
 pub use def::{DefError, Params};
 use rng::Rng;
-use std::path::Path;
 
 /// A body with its start state (inertial, barycentric, at t = 0).
 #[derive(Clone, Debug, PartialEq)]
@@ -91,8 +91,8 @@ pub fn generate(params: &Params) -> Result<Generated, GenerateError> {
 }
 
 /// Loads a definition file and generates its system.
-pub fn generate_file(path: &Path, data: &Path) -> Result<Generated, GenerateError> {
-    let params = Params::load(path, data).map_err(GenerateError::Definition)?;
+pub fn generate_file(data: &Data, path: &str) -> Result<Generated, GenerateError> {
+    let params = Params::load(data, path).map_err(GenerateError::Definition)?;
     generate(&params)
 }
 

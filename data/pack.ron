@@ -1,0 +1,7 @@
+// The base pack: everything the game ships with. Mods are packs of their own, loaded after
+// it (docs/adr/0018-data-packs.md).
+Pack(
+    name: "base",
+    version: "0.0.1",
+    description: "Creëer's own data: materials, species, geology, planets and systems.",
+)

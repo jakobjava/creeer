@@ -15,8 +15,21 @@
 use crate::cube::CubeCoord;
 use crate::elevation::Elevation;
 use creeer_math::glam::DVec3;
+use rayon::prelude::*;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+thread_local! {
+    /// Whether this thread generates tiles by itself (`generate_serially_here`).
+    static SERIAL: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Makes this thread generate height tiles by itself, not on the thread pool: a terrain
+/// streamer's worker, given a core of its own (the pool's cores are the simulation's).
+pub fn generate_serially_here() {
+    SERIAL.with(|s| s.set(true));
+}
 
 /// Cells per tile edge.
 pub const TILE_CELLS: usize = 64;
@@ -100,26 +113,37 @@ pub struct HeightTile {
 
 impl HeightTile {
     /// Samples the elevation for `key`.
+    ///
+    /// Its rows in parallel on the thread pool (each sample on its own: the same heights on
+    /// any number of threads), unless this thread generates by itself
+    /// ([`generate_serially_here`]): a tile is about 3 ms of noise, and a body reaching new
+    /// ground generates it within its tick (eight avatars of a loaded save: 23 ms).
     pub fn generate(elevation: &Elevation, key: TileKey) -> Self {
         let (s0, t0) = key.origin();
         let step = cell(key.level);
         let spacing = level_spacing(elevation.radius, key.level);
-        let mut heights = Vec::with_capacity(SIDE * SIDE);
-        let (mut min, mut max) = (f64::MAX, f64::MIN);
-        for b in 0..SIDE {
-            for a in 0..SIDE {
-                let c = CubeCoord {
-                    face: key.face,
-                    s: s0 + (index(a) - 1.0) * step,
-                    t: t0 + (index(b) - 1.0) * step,
-                };
-                #[allow(clippy::cast_possible_truncation)] // heights of km fit f32 to < 1 mm
-                let h = elevation.height(c.direction(), spacing) as f32;
-                min = min.min(f64::from(h));
-                max = max.max(f64::from(h));
-                heights.push(h);
-            }
-        }
+        let row = |b: usize| -> Vec<f32> {
+            (0..SIDE)
+                .map(|a| {
+                    let c = CubeCoord {
+                        face: key.face,
+                        s: s0 + (index(a) - 1.0) * step,
+                        t: t0 + (index(b) - 1.0) * step,
+                    };
+                    #[allow(clippy::cast_possible_truncation)] // km fit f32 to < 1 mm
+                    let h = elevation.height(c.direction(), spacing) as f32;
+                    h
+                })
+                .collect()
+        };
+        let rows: Vec<Vec<f32>> = if SERIAL.with(Cell::get) {
+            (0..SIDE).map(row).collect()
+        } else {
+            (0..SIDE).into_par_iter().map(row).collect()
+        };
+        let heights = rows.concat();
+        let min = heights.iter().fold(f64::MAX, |m, h| m.min(f64::from(*h)));
+        let max = heights.iter().fold(f64::MIN, |m, h| m.max(f64::from(*h)));
         Self {
             key,
             heights,

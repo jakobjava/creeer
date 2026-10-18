@@ -38,7 +38,7 @@ impl Game {
             }
             None => (end, None),
         };
-        let mut client = Connection::memory(end, name);
+        let mut client = Connection::memory(end, name, creeer_data::Data::base().hash());
         client.attach_terrain(terrain());
         self.clients.push((client, relay));
         self.clients.len() - 1
@@ -204,6 +204,23 @@ fn a_name_in_use_or_too_long_is_refused_and_told_why() {
 }
 
 #[test]
+fn a_client_with_other_data_is_refused_and_told_the_servers_packs() {
+    let mut game = Game::new(world());
+    let end = game.server.connect_memory();
+    let mut other = Connection::memory(end, "bea", creeer_data::Data::base().hash() ^ 1);
+    other.attach_terrain(terrain());
+    game.clients.push((other, None));
+    game.run(20, still);
+    let Status::Refused(why) = game.clients[0].0.status() else {
+        panic!("joined: {:?}", game.clients[0].0.status())
+    };
+    assert!(
+        why.contains("data differs") && why.contains("base 0.0.1"),
+        "{why}"
+    );
+}
+
+#[test]
 fn a_player_who_comes_again_gets_their_avatar_back() {
     let mut game = Game::new(world());
     game.join("ada", None);
@@ -253,7 +270,7 @@ fn a_saved_world_loaded_again_is_told_to_every_player() {
 fn a_player_joins_over_udp() {
     let mut server = Server::new(world());
     let at = server.listen("127.0.0.1:0".parse().unwrap()).unwrap();
-    let mut client = Connection::udp(at, "ada").unwrap();
+    let mut client = Connection::udp(at, "ada", creeer_data::Data::base().hash()).unwrap();
     client.attach_terrain(terrain());
     let start = std::time::Instant::now();
     while client.status() != &Status::Joined || client.kinds.is_empty() {
@@ -271,4 +288,33 @@ fn a_player_joins_over_udp() {
     assert_eq!(server.players(), vec!["ada"]);
     let avatar = client.welcome.as_ref().unwrap().avatar;
     assert!(matches!(&client.kinds[&avatar], Kind::Avatar { .. }));
+}
+
+#[test]
+fn a_client_that_asks_is_sent_the_servers_profile_once_a_second() {
+    let mut w = world();
+    crates(&mut w, 4, 8.0);
+    let mut game = Game::new(w);
+    game.join("ada", None);
+    game.run(30, still);
+    assert!(game.clients[0].0.profile.is_none(), "not asked");
+    game.clients[0].0.watch_profile(true);
+    game.run(150, still);
+    let report = game.clients[0].0.profile.clone().expect("a report");
+    assert!(!report.durations.is_empty() && report.durations.len() <= 600);
+    let names = &report.worst.names;
+    // (The longest spans: in a test run, other tests' servers fill the same frames.)
+    for phase in ["server tick", "physics"] {
+        assert!(names.iter().any(|n| n == phase), "{phase} in {names:?}");
+    }
+    // Asked no more: profiling stops (as far as this server wants it).
+    game.clients[0].0.watch_profile(false);
+    game.run(10, still);
+    assert!(game.server.profiling.watchers.is_empty());
+    // (Reports queued before may still come, paced by its budget: other tests' servers
+    // stepping meanwhile fill them; none after.)
+    game.run(240, still);
+    game.clients[0].0.profile = None;
+    game.run(130, still);
+    assert!(game.clients[0].0.profile.is_none());
 }

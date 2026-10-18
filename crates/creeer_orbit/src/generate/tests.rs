@@ -2,15 +2,10 @@ use super::*;
 use crate::analysis::hill_radius;
 use crate::body::BodyKind;
 use crate::kepler::Elements;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
-fn data() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data")
-}
-
 fn params() -> Params {
-    Params::load(&data().join("systems/default.ron"), &data()).expect("default.ron loads")
+    Params::load(&creeer_data::Data::base(), "systems/default.ron").expect("default.ron loads")
 }
 
 /// The default system, generated once for all tests.

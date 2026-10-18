@@ -130,6 +130,7 @@ pub fn step_group_with(
     coupling: &mut dyn Coupling,
     scheme: Option<Scheme>,
 ) {
+    let _scope = creeer_core::profile::scope("structure step");
     let start = Instant::now();
     let Some((_, first)) = members.first() else {
         return;
@@ -260,6 +261,7 @@ pub fn step_group_with(
         if yielding.broke > 0 {
             v.refactor(s);
         }
+        v.plastic_work += yielding.work;
         v.last_yielding = yielding;
     }
     members[0].1.timings.total = start.elapsed();
