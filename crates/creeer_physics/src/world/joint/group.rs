@@ -18,7 +18,7 @@ pub(crate) struct Joints {
     pub(crate) list: Vec<(usize, Joint)>,
     /// Each joint's sides: mass and inertia (kg, kg·m²; infinite for the world), and whether
     /// it is a rigid body (its blocks then go in its 6×6 matrix, else in its structure's).
-    sides: Vec<[(f64, f64, bool); 2]>,
+    pub(super) sides: Vec<[(f64, f64, bool); 2]>,
     /// Each joint's penalties for the step: points, turns (N/m, N·m/rad).
     stiffness: Vec<(f64, f64)>,
     beta: f64,
@@ -28,7 +28,7 @@ pub(crate) struct Joints {
     /// per joint between two bodies), and structures' nodes' translations.
     pub(crate) rigid: Vec<[[f64; 6]; 6]>,
     pub(crate) cross: Vec<NodeCoupling>,
-    nodes: Vec<(usize, usize, DMat3)>,
+    pub(super) nodes: Vec<(usize, usize, DMat3)>,
     /// The group's struts (`strut.rs`): their terms ride with the joints'.
     pub(crate) struts: Vec<super::strut::GroupStrut>,
 }
@@ -76,27 +76,6 @@ fn drive_energy(
         }
     }
     total
-}
-
-/// Adds w·u·vᵀ, skipping the rows' zeros (a gap's row is three of six: its axis, and its
-/// turn across the axis).
-fn outer(m6: &mut [[f64; 6]; 6], u: &Row, v: &Row, w: f64) {
-    for (row, &ur) in m6.iter_mut().zip(u) {
-        if ur == 0.0 {
-            continue;
-        }
-        let wu = w * ur;
-        for (x, &vc) in row.iter_mut().zip(v) {
-            if vc != 0.0 {
-                *x += wu * vc;
-            }
-        }
-    }
-}
-
-fn translation(u: &Row, w: f64) -> DMat3 {
-    let t = DVec3::new(u[0], u[1], u[2]);
-    DMat3::from_cols(t * t.x, t * t.y, t * t.z) * w
 }
 
 impl Joints {
@@ -149,7 +128,7 @@ impl Joints {
     /// scalar, coefficient, weight) for every scalar it uses, the coefficient the energy's
     /// derivative by it and the weight its Gauss–Newton stiffness; and the energy, stored
     /// (constraints hold none: they are ideal) and in all.
-    fn terms(
+    pub(super) fn terms(
         &self,
         states: &[MemberState<'_>],
         rows: bool,
@@ -316,84 +295,5 @@ impl Joints {
             self.make_blocks(states);
         }
         moved
-    }
-
-    /// The Gauss–Newton blocks at `states`.
-    pub(crate) fn make_blocks(&mut self, states: &[MemberState<'_>]) {
-        let timer = crate::profile::start();
-        let members = (self.list.iter())
-            .flat_map(|(_, j)| [Some(j.a.0), j.b.map(|b| b.0)])
-            .chain(
-                self.struts
-                    .iter()
-                    .flat_map(|g| [Some(g.strut.a.0), g.strut.b.map(|b| b.0)]),
-            )
-            .flatten()
-            .max()
-            .map_or(0, |m| m + 1);
-        let mut rigid = vec![[[0.0; 6]; 6]; members];
-        let mut nodes: Vec<(usize, usize, DMat3)> = Vec::new();
-        // One cross block per joint between two bodies (merged by their nodes where used).
-        let slots: Vec<Option<usize>> = (self.list.iter())
-            .scan(0, |n, (_, j)| {
-                Some(j.b.map(|_| {
-                    *n += 1;
-                    *n - 1
-                }))
-            })
-            .collect();
-        let mut cross: Vec<NodeCoupling> = (self.list.iter())
-            .filter_map(|(_, j)| j.b.map(|b| (j.a, b, [[0.0; 6]; 6])))
-            .collect();
-        let sides = &self.sides;
-        self.terms(states, true, |j, s, _, w| {
-            if w == 0.0 {
-                return;
-            }
-            let joint = &self.list[j].1;
-            for (side, row, rigid_side) in [
-                (Some(joint.a), &s.a, sides[j][0].2),
-                (joint.b, &s.b, sides[j][1].2),
-            ] {
-                let Some((m, n)) = side else { continue };
-                if rigid_side {
-                    outer(&mut rigid[m], row, row, w);
-                } else {
-                    nodes.push((m, n, translation(row, w)));
-                }
-            }
-            if let Some(slot) = slots[j] {
-                outer(&mut cross[slot].2, &s.a, &s.b, w);
-            }
-        });
-        // The struts' alike (their cross blocks after the joints').
-        self.strut_terms(states, |k, s, _, w| {
-            if w == 0.0 {
-                return;
-            }
-            let [(a, rigid_a), (b, rigid_b)] = self.strut_sides(k);
-            for (side, row, rigid_side) in [(a, &s.a, rigid_a), (b, &s.b, rigid_b)] {
-                let Some((m, n)) = side else { continue };
-                if rigid_side {
-                    outer(&mut rigid[m], row, row, w);
-                } else {
-                    nodes.push((m, n, translation(row, w)));
-                }
-            }
-            if let (Some(a), Some(b)) = (a, b) {
-                let mut m6 = [[0.0; 6]; 6];
-                outer(&mut m6, &s.a, &s.b, w);
-                cross.push((a, b, m6));
-            }
-        });
-        (self.rigid, self.cross, self.nodes) = (rigid, cross, nodes);
-        timer.stop(crate::profile::Slot::JointTerms);
-    }
-
-    /// The translation blocks at the nodes of member `member`.
-    pub(crate) fn node_blocks(&self, member: usize) -> impl Iterator<Item = (usize, DMat3)> + '_ {
-        (self.nodes.iter())
-            .filter(move |(m, _, _)| *m == member)
-            .map(|&(_, n, b)| (n, b))
     }
 }

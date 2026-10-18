@@ -14,6 +14,7 @@
 //! Bodies joined are stepped in one group, sleep and wake together, and do not collide with
 //! each other unless the joint says so.
 
+mod blocks;
 mod group;
 mod project;
 mod rows;
