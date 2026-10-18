@@ -342,6 +342,7 @@ impl Server {
     }
 
     fn send(&mut self) {
+        let changed = self.world.take_changed();
         let world = &self.world;
         let at = world
             .ids()
@@ -353,21 +354,32 @@ impl Server {
         let changes = self.shapes.changes(bodies, world.tick);
         let seconds = f64::from(SEND_EVERY) * DT;
         for session in self.sessions.values_mut().filter(|s| s.player.is_some()) {
+            for id in &changed {
+                session.forget(*id);
+            }
             session.update_view(world, &grid, &mut self.shapes);
             for (id, change) in &changes {
                 session.plastic(*id, change);
             }
             session.send(&mut self.renet, world, seconds, self.net_tick);
             // Its own character as only the server knows it (G1.2): a few bytes a round.
-            if let Some(i) = session.avatar.and_then(|a| world.index(a)) {
-                let gas = creeer_sim::character::gas(&world.world.bodies[i]);
-                let own = to_bytes(&ServerMessage::Own { gas });
+            if let Some(avatar) = session.avatar
+                && world.index(avatar).is_some()
+            {
+                let person = world.person(avatar);
+                let own = to_bytes(&ServerMessage::Own {
+                    gas: world.gas(avatar),
+                    health: person.map_or(1.0, |p| p.health),
+                    fallen: person.is_some_and(crate::world::people::Person::fallen),
+                });
                 self.renet.send_message(session.client, UNRELIABLE, own);
             }
         }
     }
 }
 
+#[cfg(test)]
+mod people_tests;
 #[cfg(test)]
 mod play_tests;
 #[cfg(test)]

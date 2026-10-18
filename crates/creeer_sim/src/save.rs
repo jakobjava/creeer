@@ -1,7 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
-//! **Version 8** (G1.1): as version 7, the physics world keeping its joints (`WRLD`; ADR-0022).
+//! **Version 8** (G1): as version 7, the physics world keeping its joints (`WRLD`; ADR-0022), and
+//! an optional section `PEOP`: players' characters as people, their health and a fallen one's
+//! ragdoll (G1.2d; ADR-0023).
 //!
 //! **Version 7** (F7): as version 6, with an optional section `MACH`: the world's machines,
 //! each as its abstract self keeps it (`save/machines.rs`).
@@ -46,7 +48,9 @@ use creeer_physics::world::{Body, World};
 use creeer_terrain::edits::Edits;
 
 mod machines;
+mod people;
 pub use machines::SavedMachine;
+pub use people::SavedPerson;
 
 /// The version this game writes.
 pub const VERSION: u32 = 8;
@@ -78,6 +82,8 @@ pub struct Save {
     pub parked: Vec<Vec<ParkedBody>>,
     /// The world's machines (`crate::abstraction`).
     pub machines: Vec<SavedMachine>,
+    /// Players' characters as people (`crate::character`): health, a fallen one's ragdoll.
+    pub people: Vec<SavedPerson>,
 }
 
 /// A body parked far from every player, with what the world keeps of it.
@@ -135,7 +141,8 @@ impl Save {
         let sections = 4
             + u64::from(!self.water.is_empty())
             + u64::from(!self.parked.is_empty())
-            + u64::from(!self.machines.is_empty());
+            + u64::from(!self.machines.is_empty())
+            + u64::from(!self.people.is_empty());
         w.varint(sections);
         let mut meta = Writer::new();
         meta.put(&self.planet);
@@ -165,6 +172,9 @@ impl Save {
         if !self.machines.is_empty() {
             section(&mut w, b"MACH", &machines::machine_bytes(&self.machines));
         }
+        if !self.people.is_empty() {
+            section(&mut w, b"PEOP", &people::people_bytes(&self.people));
+        }
         w.finish()
     }
 
@@ -193,6 +203,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         water: Vec::new(),
         parked: Vec::new(),
         machines: Vec::new(),
+        people: Vec::new(),
     })
 }
 
@@ -204,7 +215,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         return Err(SaveError::Newer(version));
     }
     let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
-    let (mut surr, mut park, mut mach) = (None, None, None);
+    let (mut surr, mut park, mut mach, mut peop) = (None, None, None, None);
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -216,6 +227,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"SURR" => surr = Some(body),
             b"PARK" => park = Some(body),
             b"MACH" => mach = Some(body),
+            b"PEOP" => peop = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -263,6 +275,17 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         Some(bytes) => machines::machines_from(bytes)?,
         None => Vec::new(),
     };
+    let people = match peop {
+        Some(bytes) => people::people_from(bytes)?,
+        None => Vec::new(),
+    };
+    // A fallen person's segments are bodies of the world (a ragdoll is never parked).
+    let live = |id: &u32| entities.iter().any(|e| e.0 == *id);
+    if !people.iter().all(|p| p.parts.iter().all(live)) {
+        return Err(SaveError::Damaged(
+            "a fallen person's segments are not in the world".into(),
+        ));
+    }
     Ok(Save {
         planet,
         tick,
@@ -273,6 +296,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         water,
         parked,
         machines,
+        people,
     })
 }
 

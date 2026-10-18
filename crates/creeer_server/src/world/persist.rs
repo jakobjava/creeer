@@ -33,6 +33,7 @@ impl ServerWorld {
             .unzip();
         this.surroundings.restore(water);
         this.reindex();
+        this.restore_people(&save.people);
         for island in save.parked {
             let bodies = (island.into_iter())
                 .map(|p| {
@@ -89,6 +90,7 @@ impl ServerWorld {
             water: self.surroundings.water(),
             parked,
             machines,
+            people: self.saved_people(),
         }
     }
 }

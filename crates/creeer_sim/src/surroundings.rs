@@ -85,34 +85,9 @@ impl Surroundings {
             if self.spared.get(index).copied().unwrap_or(false) {
                 continue;
             }
-            for (node, shape) in &body.shapes {
-                let air = match shape {
-                    Shape::Sphere { radius } => AeroShape::Sphere {
-                        diameter: 2.0 * radius,
-                    },
-                    Shape::Box { half } => {
-                        let surface = 8.0 * (half.x * half.y + half.y * half.z + half.z * half.x);
-                        AeroShape::Bluff {
-                            area: surface / 4.0,
-                            drag: BLUFF,
-                        }
-                    }
-                    Shape::Hull(hull) => AeroShape::Bluff {
-                        area: hull_surface(hull) / 4.0,
-                        drag: BLUFF,
-                    },
-                };
-                self.frames.push(Airframe::new(
-                    index,
-                    *node,
-                    Surface {
-                        shape: air,
-                        offset: DVec3::ZERO,
-                    },
-                ));
-                self.floaters
-                    .push(Floater::new(index, *node, shape.clone(), BLUFF));
-            }
+            let (frames, floaters) = surfaces(index, body);
+            self.frames.extend(frames);
+            self.floaters.extend(floaters);
             if let Some(k) = self.expected.iter().position(|(b, _)| *b == index) {
                 let (_, water) = self.expected.swap_remove(k);
                 let mine = self.floaters.iter_mut().filter(|f| f.body == index);
@@ -131,6 +106,22 @@ impl Surroundings {
             }
         }
         self.known = world.bodies.len();
+    }
+
+    /// Body `index` of `world` was replaced by another (a character by its fallen ragdoll's
+    /// pelvis, and back): its surfaces are the new body's, in its place among the others (a
+    /// save's water is in their order), with no water moving with them.
+    pub fn renew(&mut self, index: usize, world: &World) {
+        if index >= self.known || self.spared.get(index).copied().unwrap_or(false) {
+            return;
+        }
+        let (frames, floaters) = surfaces(index, &world.bodies[index]);
+        self.frames.retain(|f| f.body != index);
+        let at = self.frames.partition_point(|f| f.body < index);
+        self.frames.splice(at..at, frames);
+        self.floaters.retain(|f| f.body != index);
+        let at = self.floaters.partition_point(|f| f.body < index);
+        self.floaters.splice(at..at, floaters);
     }
 
     /// The water moving with each floating shape (kg of added mass), for a save.
@@ -222,4 +213,38 @@ fn hull_surface(hull: &creeer_physics::world::hull::Hull) -> f64 {
             0.5 * twice.length()
         })
         .sum()
+}
+
+/// Body `index`'s surfaces: the air's on each of its shapes, the sea's on each.
+fn surfaces(index: usize, body: &creeer_physics::world::Body) -> (Vec<Airframe>, Vec<Floater>) {
+    body.shapes
+        .iter()
+        .map(|(node, shape)| {
+            let air = match shape {
+                Shape::Sphere { radius } => AeroShape::Sphere {
+                    diameter: 2.0 * radius,
+                },
+                Shape::Box { half } => {
+                    let surface = 8.0 * (half.x * half.y + half.y * half.z + half.z * half.x);
+                    AeroShape::Bluff {
+                        area: surface / 4.0,
+                        drag: BLUFF,
+                    }
+                }
+                Shape::Hull(hull) => AeroShape::Bluff {
+                    area: hull_surface(hull) / 4.0,
+                    drag: BLUFF,
+                },
+            };
+            let frame = Airframe::new(
+                index,
+                *node,
+                Surface {
+                    shape: air,
+                    offset: DVec3::ZERO,
+                },
+            );
+            (frame, Floater::new(index, *node, shape.clone(), BLUFF))
+        })
+        .unzip()
 }

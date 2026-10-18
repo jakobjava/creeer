@@ -170,6 +170,11 @@ impl Structure {
         &self.mass
     }
 
+    /// Rotational inertia of node `node` in its rest frame (kg·m²).
+    pub fn inertia_of(&self, node: NodeId) -> DMat3 {
+        self.inertia[node]
+    }
+
     /// Displacement of `node` from its rest position (m).
     pub fn displacement(&self, node: NodeId) -> DVec3 {
         self.position[node] - self.rest[node]

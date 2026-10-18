@@ -84,6 +84,7 @@ pub(super) fn scene() -> Save {
         water: Vec::new(),
         parked: Vec::new(),
         machines: Vec::new(),
+        people: Vec::new(),
     }
 }
 

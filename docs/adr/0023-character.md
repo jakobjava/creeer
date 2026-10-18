@@ -47,9 +47,33 @@
   - BDF2 takes part of a force switched on with it: a full tank burnt held fell 0.6 % short of Tsiolkovsky's Δv and never recovered, while Newmark's impulses are exact (to six digits). Recorded for contact groups in general in `docs/future-improvements.md`.
   - Standing, BDF2 is needed twice over: for momentum with a body the legs push, and for the client's prediction. A prediction set back to the server's state cannot know Newmark's carried acceleration: stepped free on the ground, 8 % of its corrections were over a centimetre (the test allows 5 %).
 
-### Not yet (G1.2's next slices)
+### The ragdoll and injury (G1.2d)
 
-The ragdoll and injury, prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
+- **Knocked down** (`character::ragdoll::knocked`): leaning past 45°, or jolted by more than 2 m/s in a step beyond what gravity and its own loads explain.
+  - People keep their feet by stepping after pushes that move their centre at 1–1.5 m/s, not after 2. Walking into a wall is not such a jolt; running into it, or landing on the hips from 3 m, is.
+  - The jolt, not the contacts' forces: an impact's impulse is the impact law's, outside them, so on the terrain a 10 m fall read as no force at all.
+- **The ragdoll** (`ragdoll::fall`): fifteen boxes on fourteen joints (ADR-0022) with a person's mass fractions (de Leva 1996, the suit spread alike, the backpack on the torso), a person's joint ranges, and damping 2 N·m·s/rad.
+  - The body becomes its pelvis, at the same index and entity, so whatever knows the character finds it.
+  - The handover keeps momentum and angular momentum exactly: the segments are placed with their centre of mass on the body's, at its velocity, turning at the spin that gives their inertia the body's angular momentum.
+- **Injury from mechanics** (`character::injury`): an impact's harm follows from the deceleration of the part struck, not from the height fallen.
+  - A part's impact is its velocity change beyond gravity and its own loads, summed over the steps it lasts (`Strikes`: taken step by step, a 20 m fall was not fatal).
+  - Its pulse lasts half a period of the part on a person's stiffness (τ = π·√(m/k): the head behind a helmet's liner 4·10⁵ N/m, the body through hips, back and shoulders 10⁶), and at least as long as it was seen to last.
+  - The head: HIC of a half-sine, and Prasad and Mertz's curve (as NHTSA uses it) for the chance of a serious injury. The rest: the peak against the torso's tolerance, from 30 g to 90 g.
+  - When the character falls, the impact it is in so far is the body's; its segments take the rest.
+- **People on the server** (`creeer_server::world::people`): each player's character has a health (a share of a whole one), healed 1/600 a second.
+  - A knocked-down character falls as its ragdoll, whose segments become entities of their own (the avatar's id is the pelvis).
+  - Lying still (under 0.1 m/s and 0.3 rad/s) for 2 s, it stands up again where it lies. Dead, it lies for 5 s, and its player stands whole at the spawn point, its tank full.
+  - A ragdoll is never parked (simulation LOD): it stands up first, or is taken away.
+  - The world's air and sea renew a body replaced in place (`Surroundings::renew`).
+- **What the player is told.** `ServerMessage::Own` carries health and whether the character is down beside its gas.
+  - Clients now take `Own` in from the unreliable channel: before, only snapshots were read there, and the gas never reached the prediction.
+  - Down, the client draws its avatar as the server has it and stops predicting it. Up again, it is predicted afresh from the next snapshot, with no correction slid through from where it fell.
+  - An entity that became something else (a character fallen, or up again) is despawned for every client that has it and spawned anew as it is now.
+- **Saves.** The `PEOP` section holds the people: health, a fallen one's segments (they must be bodies of the world), how long it has lain still and been dead.
+
+### Not yet (G1.2's next slice)
+
+Prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
 
 ## Validation (G1.2a)
 
@@ -67,7 +91,22 @@ The ragdoll and injury, prediction of bodies near the player. Climbing needs som
 | A hover at its weight's thrust | lasts gas·Isp/m (2.0 s) within 5 %; holds itself up (lighter, it rises a little) |
 | Attitude jets | a spin of 1.1 rad/s damped below a fifth in 2 s |
 | At sea (the home planet's) | floats with its centre at the surface (−0.01 m), at rest; swims at 0.68 m/s; rises 0.1 m when asked |
+| The ragdoll's handover | momentum and angular momentum within 10⁻⁹; its segments weigh what the body did |
+| A ragdoll fallen | comes to rest on the ground within 10 s, its joints shut within 1 mm; stands up with its mass |
+| Falls onto rock | 1 m: unhurt, standing; 3 m: unhurt, down; 10 m: half its health (0.51); 20 m: killed |
+| A fall on the terrain (server) | down, hurt; stands up after 2 s still, where it fell, its segments gone, healing |
+| Killed | stands whole at the spawn point after 5 s, its tank full |
+| Saved down | loads down, with its health and segments, and stands up as it would have |
+| The player's view | told it is down and hurt; its ragdoll drawn as the server has it; up again, a character predicted within 5 cm |
 
 ## Cost
 
-The play scene *crowd* (8 characters walking, jumping and dropping crates among each other): 0.74 ms p50, 2.2 ms p99, 4.1 ms worst on the server; its slow ticks are contact groups (P1, G1.8).
+The play scene *crowd* (8 characters walking, jumping and dropping crates among each other): 0.74 ms p50, 2.2 ms p99, 4.1 ms worst on the server before G1.2d.
+
+With G1.2d, crates and characters running into each other knock them down. The scene is then 1.6 ms p50, 11.9 ms p99 and 58 ms worst. Its slow ticks are the ragdolls' groups on the ground, measured on one ragdoll:
+- the step takes about 16 Newton iterations, against 3 to 5 for a well-conditioned one;
+- each joint refresh gains about a third (all three refreshes allowed are taken);
+- the early iterations are cut short where the first open contact closes;
+- an iteration costs about 80 µs.
+
+That is P1's work (the large group's contact solve), brought forward from G1.8 to come next.

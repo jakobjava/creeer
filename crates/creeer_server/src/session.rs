@@ -115,6 +115,16 @@ impl Session {
         self.edits_told = 0;
         self.inputs = InputQueue::default();
     }
+    /// Entity `id` became something else (a character fallen, or up again): if the client
+    /// has it, it is despawned, to be spawned as it is now with the view's next update.
+    pub fn forget(&mut self, id: EntityId) {
+        if self.pending.remove(&id) {
+            self.outbox.retain(|q| q.spawns != Some(id));
+        } else if self.spawned.remove(&id) {
+            self.queue(&ServerMessage::Despawn(id));
+        }
+    }
+
     /// Whether the client has (or is about to have) entity `id`.
     pub fn has(&self, id: EntityId) -> bool {
         self.spawned.contains(&id) || self.pending.contains(&id)
@@ -161,7 +171,7 @@ impl Session {
         came.sort_unstable();
         for id in came {
             let Some(i) = world.index(id) else { continue };
-            let kind = shapes.kind(id, &world.world.bodies[i], world.player(i), world.tick);
+            let kind = shapes.kind(id, &world.world.bodies[i], world.drawn_as(i), world.tick);
             self.outbox.push_back(Queued {
                 bytes: to_bytes(&ServerMessage::Spawn(id, kind)),
                 spawns: Some(id),

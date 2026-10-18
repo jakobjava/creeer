@@ -121,6 +121,13 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
             ui.label(format!(
                 "altitude {altitude:.1} m · {latitude:.2}° lat, {longitude:.2}° lon"
             ));
+            let c = &view.session.connection;
+            ui.label(format!(
+                "health {:.0} % · jetpack gas {:.2} kg{}",
+                c.health * 100.0,
+                c.gas,
+                if c.fallen { " · down" } else { "" }
+            ));
             let (bodies, asleep, _) = snapshot.counts;
             let net = view.session.connection.network();
             ui.label(format!(

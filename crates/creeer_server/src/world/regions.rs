@@ -82,7 +82,9 @@ impl ServerWorld {
 
     /// Takes out every resting island farther than [`lod::PARK`] from every centre.
     fn park(&mut self, centres: &[DVec3]) {
-        let islands = lod::to_park(&self.world, centres);
+        let mut islands = lod::to_park(&self.world, centres);
+        // A fallen person's ragdoll stays: it stands up, or is taken away.
+        islands.retain(|members| !members.iter().any(|&i| self.in_ragdoll(self.ids[i])));
         if islands.is_empty() {
             return;
         }

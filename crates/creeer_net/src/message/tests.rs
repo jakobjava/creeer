@@ -80,7 +80,11 @@ fn server_messages_read_back() {
         back(&ServerMessage::Spawn(EntityId(3), kind));
     }
     back(&ServerMessage::Despawn(EntityId(1 << 30)));
-    back(&ServerMessage::Own { gas: 2.25 });
+    back(&ServerMessage::Own {
+        gas: 2.25,
+        health: 0.75,
+        fallen: true,
+    });
     back(&ServerMessage::Edits {
         first: 17,
         log: vec![9; 300],

@@ -366,6 +366,12 @@ pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
 mod tests;
 
 #[cfg(test)]
+mod fall_tests;
+/// Injury from impacts.
+pub mod injury;
+#[cfg(test)]
 mod jet_tests;
+/// A character fallen: its ragdoll.
+pub mod ragdoll;
 #[cfg(test)]
 mod swim_tests;

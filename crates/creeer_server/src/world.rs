@@ -73,6 +73,10 @@ pub struct ServerWorld {
     /// The characters' legs' reactions on what they stand on, for this step alone
     /// (`creeer_sim::character::release`).
     reactions: Vec<character::Reaction>,
+    /// The players' characters as people (G1.2d), by their avatars, and the entities that
+    /// became something else since the sessions were last told (`people.rs`).
+    people: std::collections::BTreeMap<EntityId, people::Person>,
+    changed: Vec<EntityId>,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -139,6 +143,8 @@ impl ServerWorld {
             machines: Vec::new(),
             next_machine: 1,
             reactions: Vec::new(),
+            people: std::collections::BTreeMap::new(),
+            changed: Vec::new(),
         }
     }
 
@@ -164,6 +170,14 @@ impl ServerWorld {
     /// The player whose avatar body `index` is.
     pub fn player(&self, index: usize) -> Option<&str> {
         self.players[index].as_deref()
+    }
+
+    /// The player whose character body `index` is drawn as (none for a fallen one's pelvis:
+    /// it is drawn as the segment it is).
+    pub fn drawn_as(&self, index: usize) -> Option<&str> {
+        let player = self.players[index].as_deref()?;
+        let fallen = (self.people.get(&self.ids[index])).is_some_and(people::Person::fallen);
+        (!fallen).then_some(player)
     }
 
     /// The point of the ground under (or over) `p`, along the vertical.
@@ -197,6 +211,9 @@ impl ServerWorld {
         self.lift_clear(index);
         self.index.insert(id, self.ids.len());
         self.ids.push(id);
+        if player.is_some() {
+            self.people.insert(id, people::Person::default());
+        }
         self.players.push(player);
         id
     }
@@ -249,6 +266,10 @@ impl ServerWorld {
 
     /// Steers avatar `id` by `input` for the next step.
     pub fn steer(&mut self, id: EntityId, input: &AvatarInput) {
+        // A fallen character is its ragdoll: there is nothing to steer.
+        if self.people.get(&id).is_some_and(people::Person::fallen) {
+            return;
+        }
         if let Some(i) = self.index(id) {
             let at = self.world.bodies[i].structure.position[0];
             let water = self.surroundings.sea.as_ref().map(|sea| sea.depth(at));
@@ -267,82 +288,6 @@ impl ServerWorld {
         }
     }
 
-    /// Does what a player asks, `by` their avatar (none: the host itself, unchecked).
-    ///
-    /// # Errors
-    /// What was refused, and why.
-    pub fn apply(&mut self, command: &Command, by: Option<EntityId>) -> Result<(), String> {
-        let _scope = profile::scope("command");
-        let near = by
-            .and_then(|id| self.index(id))
-            .map(|i| self.world.bodies[i].structure.position[0]);
-        let within = |p: DVec3| -> Result<(), String> {
-            if !p.is_finite() {
-                return Err("a point that is not finite".into());
-            }
-            match near {
-                Some(a) if (p - a).length() > REACH => Err(format!("beyond reach ({REACH} m)")),
-                _ => Ok(()),
-            }
-        };
-        match command {
-            Command::Crate(at) => {
-                within(*at)?;
-                let mut body = Body::rigid(
-                    Shape::Box {
-                        half: DVec3::splat(0.5),
-                    },
-                    200.0,
-                    *at,
-                    DT,
-                );
-                body.structure.orientation[0] = upright(*at);
-                body.friction = 0.7;
-                self.add(body, None);
-            }
-            Command::Ball(at) => {
-                within(*at)?;
-                let mut body = Body::rigid(Shape::Sphere { radius: 0.4 }, 300.0, *at, DT);
-                body.friction = 0.7;
-                body.restitution = 0.3;
-                self.add(body, None);
-            }
-            Command::Frame(at) => {
-                within(*at)?;
-                self.add(frame(*at), None);
-            }
-            Command::Powerhouse(at) => {
-                within(*at)?;
-                self.place_powerhouse(*at);
-            }
-            Command::Edit(bytes) => {
-                let edits = Edits::from_bytes(bytes).map_err(|e| e.to_string())?;
-                let [edit] = edits.log() else {
-                    return Err("an edit command holds one edit".into());
-                };
-                let (lo, hi) = edit.brush().bounds();
-                within((lo + hi) * 0.5)?;
-                check(edit)?;
-                self.terrain.edit(*edit);
-                // Bodies resting on removed ground must fall.
-                self.world
-                    .wake_near((lo + hi) * 0.5, (hi - lo).length() * 0.5 + 1.0);
-            }
-            Command::Clear => {
-                self.flush();
-                while let Some(key) = self.parked.find(|_| true) {
-                    self.unpark(key);
-                }
-                let players = &self.players;
-                let map = self.world.retain_bodies(|i, _| players[i].is_some());
-                self.surroundings.retain(&map);
-                (self.ids, self.players) = (kept(&map, &self.ids), kept(&map, &self.players));
-                self.reindex();
-            }
-        }
-        Ok(())
-    }
-
     /// One step.
     pub fn step(&mut self) {
         let scope = profile::scope("machines");
@@ -351,8 +296,12 @@ impl ServerWorld {
         let scope = profile::scope("surroundings");
         self.surroundings.push(&mut self.world);
         drop(scope);
+        self.people_before();
         self.world.step();
         character::release(&mut self.world, &mut self.reactions);
+        let scope = profile::scope("people");
+        self.people_after();
+        drop(scope);
         let _scope = profile::scope("surroundings");
         self.surroundings.settle(&mut self.world, DT);
         self.tick += 1;
@@ -368,31 +317,17 @@ fn kept<T: Clone>(map: &[Option<usize>], v: &[T]) -> Vec<T> {
         .collect()
 }
 
-/// Whether an edit is one a tool makes.
-fn check(edit: &Edit) -> Result<(), String> {
-    match *edit.brush() {
-        Brush::Sphere { center, radius } if center.is_finite() && radius <= MOST_BRUSH => Ok(()),
-        Brush::Capsule { a, b, radius }
-            if a.is_finite()
-                && b.is_finite()
-                && radius <= MOST_BRUSH
-                && (b - a).length() <= MOST_TUNNEL =>
-        {
-            Ok(())
-        }
-        _ => Err(format!(
-            "a brush larger than a tool's ({MOST_BRUSH} m, tunnels {MOST_TUNNEL} m)"
-        )),
-    }
-}
-
 #[cfg(test)]
 mod lod_tests;
 #[cfg(test)]
 mod machine_tests;
 pub mod machines;
+pub mod people;
 mod persist;
 mod regions;
 pub use regions::Tag;
+mod commands;
+#[cfg(test)]
+mod people_tests;
 #[cfg(test)]
 pub(crate) mod tests;

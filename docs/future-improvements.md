@@ -44,7 +44,16 @@ Limits that later work already lifted are not listed. Examples: members that cou
 |---|---|---|---|---|
 | **A ball's twist measured about A's axis**: it loses meaning as the swing nears 90° (B's reference along A's axis), and its stops are let go there | A swing–twist split with exact derivatives is a measure of its own; ragdolls' twist stops sit within it | R | Small | ADR-0022 |
 | **Joints pressed between stiff contacts hold within 1 % of their force**, not to a micrometre (a ragdoll's feet on the ground: up to tenths of a millimetre) | Each refresh of the multipliers gains little against stiffness a hundred times the penalty; stiffer penalties were slower and rang (ADR-0022, measured) | R | Medium | ADR-0022 |
-| **A ragdoll on the ground costs 1.4 ms p50** (15 worst): its fifteen bodies are one group, whose contact solve takes twice the iterations | The large group's contact solve is P1's (G1.8) | S | Large | ADR-0022; `docs/g1-plan.md` |
+| **A ragdoll on the ground costs 1.4 ms p50** (15 worst): its fifteen bodies are one group, whose contact solve takes twice the iterations. With G1.2d's falls, the *crowd* scene's knocked-down players take it to 11.9 ms p99 and 58 ms worst | The large group's contact solve is P1's, **brought forward to come next** after G1.2d (ADR-0023's cost) | S | Large | ADR-0022, ADR-0023; `docs/g1-plan.md` |
+
+### Characters
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **Injury by body region**: a ragdoll's segments' harms are summed, each judged against the torso's tolerance (the head by HIC), not scored by region (AIS per region, an injury severity score) | Calibrated on falls onto rock as the sum; regions need their own tolerances and consequences (a broken leg slows you), which are G9's needs | R | Medium | ADR-0023; `character/injury.rs` |
+| **Soft ground's yielding** in injuries: every ground counts as rock (stiffer than a person) | Soil's give is not modelled in contacts | R | Medium | ADR-0023; `character/injury.rs` |
+| **Keeping one's feet by stepping**: a character is knocked down by a jolt over 2 m/s or a lean past 45°, not by a model of balance recovery | Its legs are one spring under the hip, with no steps to recover with | R | Medium | ADR-0023; `character/ragdoll.rs` |
+| **Getting up**: a ragdoll at rest becomes the standing character at once | Needs a driven ragdoll (the joints' drives, G1.1) pushing itself up | G | Medium | ADR-0023; `world/people.rs` |
 
 ### Gravity and orbits
 

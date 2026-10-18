@@ -63,7 +63,9 @@ The physics has contacts and welded members, but no articulation. The ragdoll ne
 
 **In progress.**
 - **G1.2a done** (2026-10-18): the body (a box from the knees up, 105 kg), its legs (a spring from the hip to the ground a ray finds: `World::ray`, new), walking within the friction cone, balance within the body's strength, reactions on what it stands on (and both stepped as held, so momentum is kept), sleep. The server and the client's prediction use it; protocol 5 (`Kind::Character`). The decisions differ from the plan below: a box instead of a capsule (cost), and no leg compliance from a separate body (a ray-found spring instead).
-- **Next:** swimming, the jetpack and EVA, the ragdoll and injury, prediction of nearby bodies.
+- **G1.2b done** (2026-10-18): swimming (buoyancy and drag are the sea's own; a stroke of at most 80 N). **G1.2c done:** the jetpack (cold nitrogen, Isp 70 s, 1.5 kN, a 3 kg tank that is the body's mass; attitude jets), the character held (BDF2) while standing and free in the air.
+- **G1.2d done** (2026-10-18): knocked down (a lean past 45° or a jolt over 2 m/s), the ragdoll (15 segments, momentum kept exactly), injury from mechanics (pulses on a person's stiffness, HIC for the head), people on the server (health, falling, standing up, death and respawn), the player told (`Own`: health, down), saves (`PEOP`). Its cost on the ground took *crowd* to 58 ms worst: **P1 (G1.8) is brought forward and comes next**, before G1.2e.
+- **Next:** P1, then G1.2e: prediction of nearby bodies.
 - **Climbing** waits for something to climb: G2's ladders and handholds.
 
 It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and are measured, not assumed.
@@ -216,7 +218,7 @@ The MCP lets Claude build and change models in your running Blender, export them
 
 ## Order and dependencies
 
-G1.0 → G1.1 → G1.2 → G1.3, then G1.4 → G1.5 and G1.6 (in either order) → G1.7 → G1.8 → G1.9 → G1.10.
+G1.0 → G1.1 → G1.2a–d → G1.8 (P1, brought forward: the ragdoll on the ground needs it) → G1.2e → G1.3, then G1.4 → G1.5 and G1.6 (in either order) → G1.7 → G1.9 → G1.10.
 
 - **Joints come before the character**, because the ragdoll, carrying and ladders need them.
 - **The look comes before the content**, so the tools, items and trees are modelled in the style from the start.

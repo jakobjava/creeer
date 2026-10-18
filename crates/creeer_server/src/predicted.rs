@@ -30,6 +30,8 @@ pub struct Predicted {
     pub corrections: Corrections,
     /// The jetpack's gas as the server last told it (kg): its mass is the body's.
     gas: f64,
+    /// Whether the character is down (its ragdoll is the server's alone: not predicted).
+    fallen: bool,
 }
 
 /// How far a prediction was corrected.
@@ -59,6 +61,7 @@ impl Predicted {
             reconciled: None,
             corrections: Corrections::default(),
             gas: character::TANK,
+            fallen: false,
         }
     }
 
@@ -85,7 +88,7 @@ impl Predicted {
     /// A new input (one a tick): kept, applied to the avatar at once, and returned to be sent.
     pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         let input = self.log.push(walk, jump, thrust);
-        if !self.world.bodies.is_empty() {
+        if !self.fallen && !self.world.bodies.is_empty() {
             Self::step(&mut self.world, &mut self.around, &input);
         }
         input
@@ -94,6 +97,16 @@ impl Predicted {
     /// The jetpack's gas, as the server tells it (kg): set at the next correction.
     pub fn set_gas(&mut self, gas: f64) {
         self.gas = gas;
+    }
+
+    /// Whether the character is down, as the server tells it. Up again, it is predicted afresh
+    /// from the next snapshot (no correction from where it fell).
+    pub fn set_fallen(&mut self, fallen: bool) {
+        if self.fallen && !fallen && !self.world.bodies.is_empty() {
+            self.world.remove_body(0);
+            self.smoothing = Smoothing::default();
+        }
+        self.fallen = fallen;
     }
 
     /// The inputs to send this tick.
@@ -105,7 +118,7 @@ impl Predicted {
     /// the avatar is set to it and the inputs since are applied again (if the snapshot is
     /// newer than the last one it was set to).
     pub fn reconcile(&mut self, tick: u32, state: &BodyState, last_input: u32) {
-        if self.reconciled.is_some_and(|t| t >= tick) {
+        if self.fallen || self.reconciled.is_some_and(|t| t >= tick) {
             return;
         }
         self.reconciled = Some(tick);

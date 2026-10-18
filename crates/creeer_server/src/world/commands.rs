@@ -1,0 +1,101 @@
+//! What players ask of the world: crates, balls, frames and machines put down, terrain dug and
+//! filled, the world cleared, each checked against the limits (`world.rs`).
+
+use super::*;
+
+impl ServerWorld {
+    /// Does what a player asks, `by` their avatar (none: the host itself, unchecked).
+    ///
+    /// # Errors
+    /// What was refused, and why.
+    pub fn apply(&mut self, command: &Command, by: Option<EntityId>) -> Result<(), String> {
+        let _scope = profile::scope("command");
+        let near = by
+            .and_then(|id| self.index(id))
+            .map(|i| self.world.bodies[i].structure.position[0]);
+        let within = |p: DVec3| -> Result<(), String> {
+            if !p.is_finite() {
+                return Err("a point that is not finite".into());
+            }
+            match near {
+                Some(a) if (p - a).length() > REACH => Err(format!("beyond reach ({REACH} m)")),
+                _ => Ok(()),
+            }
+        };
+        match command {
+            Command::Crate(at) => {
+                within(*at)?;
+                let mut body = Body::rigid(
+                    Shape::Box {
+                        half: DVec3::splat(0.5),
+                    },
+                    200.0,
+                    *at,
+                    DT,
+                );
+                body.structure.orientation[0] = upright(*at);
+                body.friction = 0.7;
+                self.add(body, None);
+            }
+            Command::Ball(at) => {
+                within(*at)?;
+                let mut body = Body::rigid(Shape::Sphere { radius: 0.4 }, 300.0, *at, DT);
+                body.friction = 0.7;
+                body.restitution = 0.3;
+                self.add(body, None);
+            }
+            Command::Frame(at) => {
+                within(*at)?;
+                self.add(frame(*at), None);
+            }
+            Command::Powerhouse(at) => {
+                within(*at)?;
+                self.place_powerhouse(*at);
+            }
+            Command::Edit(bytes) => {
+                let edits = Edits::from_bytes(bytes).map_err(|e| e.to_string())?;
+                let [edit] = edits.log() else {
+                    return Err("an edit command holds one edit".into());
+                };
+                let (lo, hi) = edit.brush().bounds();
+                within((lo + hi) * 0.5)?;
+                check(edit)?;
+                self.terrain.edit(*edit);
+                // Bodies resting on removed ground must fall.
+                self.world
+                    .wake_near((lo + hi) * 0.5, (hi - lo).length() * 0.5 + 1.0);
+            }
+            Command::Clear => {
+                self.stand_all();
+                self.flush();
+                while let Some(key) = self.parked.find(|_| true) {
+                    self.unpark(key);
+                }
+                let players = &self.players;
+                let map = self.world.retain_bodies(|i, _| players[i].is_some());
+                self.surroundings.retain(&map);
+                (self.ids, self.players) = (kept(&map, &self.ids), kept(&map, &self.players));
+                self.reindex();
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Whether an edit is one a tool makes.
+fn check(edit: &Edit) -> Result<(), String> {
+    match *edit.brush() {
+        Brush::Sphere { center, radius } if center.is_finite() && radius <= MOST_BRUSH => Ok(()),
+        Brush::Capsule { a, b, radius }
+            if a.is_finite()
+                && b.is_finite()
+                && radius <= MOST_BRUSH
+                && (b - a).length() <= MOST_TUNNEL =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "a brush larger than a tool's ({MOST_BRUSH} m, tunnels {MOST_TUNNEL} m)"
+        )),
+    }
+}

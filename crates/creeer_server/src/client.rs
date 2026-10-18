@@ -75,6 +75,10 @@ pub struct Connection {
     pub profile: Option<creeer_net::message::ProfileReport>,
     /// The jetpack's gas, as the server last told it (kg).
     pub gas: f64,
+    /// Its health (a share of a whole one), and whether it is down (its ragdoll, drawn as the
+    /// server has it: not predicted), as the server last told them.
+    pub health: f64,
+    pub fallen: bool,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -116,6 +120,8 @@ impl Connection {
             machines: Vec::new(),
             profile: None,
             gas: creeer_sim::character::TANK,
+            health: 1.0,
+            fallen: false,
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),
@@ -223,8 +229,11 @@ impl Connection {
             }
         }
         while let Some(bytes) = self.renet.receive_message(UNRELIABLE) {
-            if let Ok(ServerMessage::Snapshot(snapshot)) = from_bytes::<ServerMessage>(&bytes) {
-                self.snapshot(&snapshot);
+            // (Its own character's state comes this way too, with every round.)
+            if let Ok(m @ (ServerMessage::Snapshot(_) | ServerMessage::Own { .. })) =
+                from_bytes::<ServerMessage>(&bytes)
+            {
+                self.handle(m);
             }
         }
         let newest = self.receiver.newest().map(|s| s.tick);
@@ -311,6 +320,9 @@ impl Connection {
     pub fn poses(&self) -> BTreeMap<EntityId, Pose> {
         let mut poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
         poses.retain(|id, _| self.kinds.contains_key(id));
+        if self.fallen {
+            return poses;
+        }
         if let (Some(w), Some(pose)) = (
             &self.welcome,
             self.predicted.as_ref().and_then(Predicted::pose),
@@ -330,6 +342,12 @@ impl Connection {
 
     /// The player's own avatar as drawn, once it has come.
     pub fn avatar(&self) -> Option<Pose> {
+        if self.fallen {
+            // Down: its pelvis as the server has it.
+            let pelvis = self.welcome.as_ref()?.avatar;
+            let poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
+            return poses.get(&pelvis).copied();
+        }
         self.predicted.as_ref()?.pose()
     }
 
