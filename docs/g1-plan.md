@@ -18,7 +18,7 @@ plan.md's G1: the character (G1.1), interaction (G1.2), mining with real composi
 
 ## Art direction: Factorio's vibe in 3D
 
-What makes Factorio's look, and how Creëer carries it into 3D. This is written up as `docs/art/style.md` in G1.3 and checked against every asset after that.
+What makes Factorio's look, and how Creëer carries it into 3D: a summary. The rules themselves (palette, limits, checks) are in **`docs/art-style.md`**, the authority, which every asset is checked against.
 
 - **Readability over realism of surface.** You can tell what a thing is, and what it is made of, at a glance from the play camera. Colour belongs to the material: rocks already carry their colours in `rocks.ron`, and parts take the colour of their material. Silhouettes are distinct: no two tools share an outline.
 - **A grounded, earthy, industrial palette.** The terrain is muted and earthy (as it is now). Objects sit slightly brighter and more saturated than the ground they stand on, so they read against it. Saturated accents are saved for what matters: hazard yellow and black, glowing hot metal, a player's own colour.
@@ -80,7 +80,10 @@ It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and a
 
 The look first, so that everything after it is made in the style.
 
-- **`docs/art/style.md`**: the art direction above, made concrete: the palette (with the materials' colours), value ranges for ground against objects, bevel widths, how much wear goes on edges, the icon camera, and the UI's colours.
+- **`docs/art-style.md` made real** (§11 there):
+  - its palette moves into data (`data/art/palette.ron`), tested against the file's tables;
+  - its automated style checks run in CI (contrast, chroma, silhouettes, player colours, forbidden effects);
+  - the style board (`--style-board`) and its golden images.
 - **Blender for authored models.** The Blender MCP is set up here (below, "Blender MCP"). Authored assets are the character, tools, the landing pod, bags and crates. Everything procedural stays procedural: terrain, trees, structures and decoratives come from code.
 - **Pipeline.** `.blend` sources live in `art/`, exported glTF binaries (`.glb`) in the base pack (`data/models/`). The renderer loads glTF meshes (the `gltf` crate, pinned). A mesh's material slots name palette materials (`"steel"`, `"suit"`, `"player_accent"`) instead of carrying textures, so a mod can recolour a material once. The validator checks every model: it loads, its material names exist, it stays under its triangle budget, and it is the right size in metres.
 - **Renderer additions.**
@@ -160,7 +163,7 @@ G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock p
 
 ### G1.9 HUD, the UI theme and first vitals
 
-- **The theme.** The egui theme from `docs/art/style.md`, used by every window (the sandboxes' too).
+- **The theme.** The egui theme from `docs/art-style.md` §10, used by every window (the sandboxes' too).
 - **HUD.**
   - health per body region;
   - the suit's readouts, measured from the surroundings (pressure, temperature, O₂ outside; the suit's own consumption comes in G9);
