@@ -5,6 +5,8 @@
 //! - `ragdoll_bench`: whole runs. Chaotic, so judged as a family: the time in all, the worst
 //!   tick, how many lie asleep at the end, and when (how long things move is physics, not
 //!   speed: compare builds with the next two).
+//! - `ragdoll_rest_bench`: 24 whole runs over a grid of drops, for whether ragdolls come to
+//!   rest (seven cases are too few: a change moved the restlessness from case to case).
 //! - `ragdoll_states_written` and `ragdoll_states_stepped`: every state after the fall written
 //!   once (`RAGDOLL_STATES=<file>`), then stepped once each by any build: the same states for
 //!   all.
@@ -102,6 +104,33 @@ fn ragdoll_bench() {
     }
     eprintln!(
         "ragdoll bench: {total:.0} ms in all, worst tick {worst:.1} ms, {asleep} of 7 asleep"
+    );
+}
+
+/// A family of 24 cases for judging whether ragdolls come to rest (seven chaotic cases moved
+/// their restlessness from one to another with every change): the crate dropped over a grid
+/// of places about the head, ten seconds each. The time in all, how many rest (all their
+/// bodies asleep) by the end, and the median tick they rest from.
+#[test]
+#[ignore = "a bench, run by hand"]
+fn ragdoll_rest_bench() {
+    let (mut total, mut worst) = (0.0, 0.0f64);
+    let mut rested = Vec::new();
+    for x in [-0.35, -0.15, 0.05, 0.25] {
+        for z in [-0.3, 0.0, 0.3] {
+            for y in [0.0, 0.8] {
+                let (t, w, s) = case(Some(DVec3::new(x, y, z)), &mut Vec::new());
+                (total, worst) = (total + t, worst.max(w));
+                rested.extend(s);
+            }
+        }
+    }
+    rested.sort_unstable();
+    let median = rested.get(rested.len() / 2).copied();
+    eprintln!(
+        "rest bench: {total:.0} ms in all, worst tick {worst:.1} ms, {} of 24 at rest, \
+         median from tick {median:?}",
+        rested.len()
     );
 }
 

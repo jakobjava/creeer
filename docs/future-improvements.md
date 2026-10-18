@@ -32,7 +32,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
 | **One integrator** instead of Newmark, BDF2 and backward Euler switched per group and step around an energy guard: a smooth part that cannot gain energy, impacts within the same solve (nonsmooth generalized-α; Moreau–Jean with an energy-consistent impact law) | The largest change; needs its own survey and ADR | R, S | Very large | Review W1 |
-| **Contacts persistent across steps, their set following the iterate** (no frozen manifold, no world-wide turn substeps, no found-anew surplus) | **Next in P1**: measured as most of the ragdolls' cost (three of seven bench cases never rest: 1.4–2 J found anew each step at the same pose, a jitter of millimetres for good) | R, S | Large | Review W2, W8; ADR-0024 |
+| **Contacts persistent across steps, their set following the iterate** (no frozen manifold, no world-wide turn substeps, no found-anew surplus) | Large; measured in P1 (ADR-0024): a see-saw of one ragdoll case (1.4–2 J found anew each step at the same pose, a jitter of millimetres) is one of its defects, but kept crossed edges alone did not help, and resting is not the ragdolls' cost | R, S | Large | Review W2, W8; ADR-0024 |
 | **Friction by a semismooth Newton** (Alart–Curnier) within the step instead of lagged refreshes | P1 | R, S | Large | Review W3; ADR-0017 |
 | **Property tests with random orientations** for every contact and joint law; an energy audit per step naming the term that gained | Next, before more solver work | R | Small | Review W9 |
 | **Every explicit coupling checked against its stability criterion** (springs k·h² ≪ m, dashpots c·h ≪ m, added mass) | Next | R, S | Small | Review W7 |
@@ -63,6 +63,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
+| **A ragdoll's passive joint resistance** (its joints have viscous damping only: under a crate a ragdoll slumps on as slowly as the damping lets it, 0.14 rad in 7 s, and never rests) | The torques must come from biomechanics (passive joint moments), not be chosen for speed; measured with one torque for all, they cost more in the moving steps than they save at rest (ADR-0024) | R | Small | ADR-0024 |
 | **Injury by region, fully**: regions are judged (head by HIC, torso by deceleration, limbs by their bones' breaking loads), but their harms are summed into one health, a break is a fixed fifth of it, and nothing is scored as AIS per region or an injury severity score | Injuries need consequences (a broken leg slows you), which are G9's needs | R | Medium | ADR-0023; `character/injury.rs` |
 | **Soft ground's yielding** in injuries: every ground counts as rock (stiffer than a person) | Soil's give is not modelled in contacts | R | Medium | ADR-0023; `character/injury.rs` |
 | **Keeping one's feet by stepping**: a character is knocked down by a jolt over 2 m/s or a lean past 45°, not by a model of balance recovery | Its legs are one spring under the hip, with no steps to recover with | R | Medium | ADR-0023; `character/ragdoll.rs` |
