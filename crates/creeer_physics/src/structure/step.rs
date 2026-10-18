@@ -340,23 +340,23 @@ impl ImplicitSolver {
             s,
             Some((&self.acceleration, &self.angular_acceleration, self.h)),
         );
-        let (x_hat, rotations, tau, h) = (&w.x_hat, &w.rotations, w.tau, w.h);
         let beta = w.beta;
+        w.flow_step = (w.h, beta);
+        let (x_hat, rotations, tau) = (&w.x_hat, &w.rotations, w.tau);
         s.elements
             .par_iter()
             .zip(&mut w.s_hat)
-            .zip(w.caps.par_iter_mut().zip(&mut w.scaled))
+            .zip(w.limits.par_iter_mut().zip(&mut w.built))
             .with_min_len(128)
-            .for_each(|((e, s_hat), (caps, scaled))| {
+            .for_each(|((e, s_hat), (limits, built))| {
                 *s_hat = e.measures(x_hat[e.a], rotations[e.a], x_hat[e.b], rotations[e.b]);
                 // The elastic part at x̂: x̂ continues the plastic flow too.
                 for (s, rate) in s_hat.iter_mut().zip(&e.flow_rate) {
                     *s -= tau * rate;
                 }
-                // Plastic capacities for this step, from the axial force at its start.
-                *caps = e.capacities(s_hat, h);
-                let gamma = e.material.damping / beta;
-                *scaled = caps.map(|f| f.scaled(1.0 + gamma));
+                // The step's plastic limits, from the axial force at its start (`StepFlows`).
+                *limits = e.limits(s_hat, e.material.damping / beta);
+                *built = false;
             });
     }
 }

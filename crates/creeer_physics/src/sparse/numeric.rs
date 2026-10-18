@@ -127,8 +127,8 @@ pub(super) fn forward(f: &Factor<'_>, tree: &Dissection, lo: usize, x: &mut [DVe
     for j in separator {
         let mut b = x[j - lo];
         let range = f.sym.row_ptr[j]..f.sym.row_ptr[j + 1];
-        for (&(k, _), l) in f.sym.row_entry[range.clone()].iter().zip(&f.rows[range]) {
-            b -= *l * x[k - lo];
+        for (&k, l) in f.sym.row_col[range.clone()].iter().zip(&f.rows[range]) {
+            b -= *l * x[k as usize - lo];
         }
         x[j - lo] = f.diag_inv[j] * b;
     }
@@ -147,8 +147,8 @@ pub(super) fn backward(f: &Factor<'_>, tree: &Dissection, lo: usize, x: &mut [DV
         let xj = f.diag_inv[j].transpose() * x[j - lo];
         x[j - lo] = xj;
         let range = f.sym.row_ptr[j]..f.sym.row_ptr[j + 1];
-        for (&(k, _), l) in f.sym.row_entry[range.clone()].iter().zip(&f.rows[range]) {
-            x[k - lo] -= l.transpose() * xj;
+        for (&k, l) in f.sym.row_col[range.clone()].iter().zip(&f.rows[range]) {
+            x[k as usize - lo] -= l.transpose() * xj;
         }
     }
     if let Some((left, right)) = halves {

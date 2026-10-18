@@ -105,32 +105,37 @@ impl Stiffness {
             .sum::<f64>()
     }
 }
-
 /// A beam between nodes `a` and `b`.
+///
+/// In C order, what every evaluation reads first (ends, lengths, axes, stiffness, plastic
+/// part, then the material for its damping): with many structures stepping at once a step
+/// waits on memory, and these fields scattered among the section's and material's took
+/// twice the cache lines.
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub(crate) struct Element {
     pub a: usize,
     pub b: usize,
     pub rest_length: f64,
+    /// Its thermal elongation (m): the length its temperature adds to its rest length (set
+    /// by [`super::Structure::set_temperature`]).
+    pub thermal: f64,
     /// Rest axes: along the member, and the section's y and z (right-handed). Nodes start
     /// unrotated, so these are also the axes in each node's own frame.
     pub axis: DVec3,
     pub y: DVec3,
     pub z: DVec3,
     pub stiffness: Stiffness,
-    pub section: Section,
-    pub material: Material,
     /// Permanent (plastic) part of each deformation measure; the measures returned are the
     /// elastic remainder.
     pub plastic: [f64; MEASURES],
+    pub material: Material,
     /// Rate of `plastic` in the last step (per second): the damping's velocity reference
     /// continues the plastic flow as the scheme continues the motion.
     pub flow_rate: [f64; MEASURES],
     /// Accumulated equivalent plastic strain.
     pub plastic_strain: f64,
-    /// Its thermal elongation (m): the length its temperature adds to its rest length (set
-    /// by [`super::Structure::set_temperature`]).
-    pub thermal: f64,
+    pub section: Section,
     /// Broken members carry nothing.
     pub broken: bool,
     /// A half of a split member: its share of the member's crookedness is already in its

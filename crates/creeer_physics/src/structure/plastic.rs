@@ -35,6 +35,7 @@
 use super::Structure;
 use super::element::{Element, MEASURES, Stiffness};
 use super::flow::Flow;
+use super::step_flows::StepFlows;
 use rayon::prelude::*;
 
 /// What happened to the members in one check.
@@ -59,19 +60,7 @@ impl Element {
     /// elastic measures `s` at its start: capacities from the flow stress after the plastic
     /// strain so far (`Material::flow_stress`), hardening and strain rate (`flow.rs`).
     pub(crate) fn capacities(&self, s: &[f64; MEASURES], h: f64) -> [Flow; MEASURES] {
-        let (sec, sy) = (
-            &self.section,
-            self.material.flow_stress(self.plastic_strain),
-        );
-        let n_p = sy * sec.area;
-        let force = self.stiffness.apply(s);
-        let axial = force[0];
-        let room = (1.0 - (axial / n_p) * (axial / n_p)).max(0.0);
-        let (my, mz) = (
-            sy * sec.plastic_modulus[0] * room,
-            sy * sec.plastic_modulus[1] * room,
-        );
-        let caps = [n_p, sy / 3f64.sqrt() * sec.plastic_torsion, my, my, mz, mz];
+        let (caps, force) = self.capacity_values(s);
         let per = self.per_unit();
         std::array::from_fn(|m| {
             let flow = Flow::new(caps[m], &self.material, self.plastic_strain, per[m], h);
@@ -85,6 +74,47 @@ impl Element {
         })
     }
 
+    /// The capacities alone (N, N·m) for elastic measures `s`, and the forces K·s.
+    fn capacity_values(&self, s: &[f64; MEASURES]) -> ([f64; MEASURES], [f64; MEASURES]) {
+        let (sec, sy) = (
+            &self.section,
+            self.material.flow_stress(self.plastic_strain),
+        );
+        let n_p = sy * sec.area;
+        let force = self.stiffness.apply(s);
+        let axial = force[0];
+        let room = (1.0 - (axial / n_p) * (axial / n_p)).max(0.0);
+        let (my, mz) = (
+            sy * sec.plastic_modulus[0] * room,
+            sy * sec.plastic_modulus[1] * room,
+        );
+        let caps = [n_p, sy / 3f64.sqrt() * sec.plastic_torsion, my, my, mz, mz];
+        (caps, force)
+    }
+
+    /// What each measure carries before it flows in a step from elastic measures `s_hat`,
+    /// with damping `gamma`: the capacities over 1 + γ, the scaled flows' (`Flow::scaled`)
+    /// bit for bit.
+    pub(crate) fn limits(&self, s_hat: &[f64; MEASURES], gamma: f64) -> [f64; MEASURES] {
+        self.capacity_values(s_hat).0.map(|c| c / (1.0 + gamma))
+    }
+
+    /// Whether measures `s` split with no plastic part at all: what `plastic_split_from`
+    /// finds, by its own comparisons, for every measure within its limit (its first sweeps
+    /// with nothing flowing), without the flows.
+    fn elastic_at(&self, s: &[f64; MEASURES], limits: &[f64; MEASURES]) -> bool {
+        // `Flow::increment_from`'s test: nothing flows at or below the threshold (NaN flows).
+        let within = |x: f64, m: usize, k: f64| x.abs() <= limits[m] / k;
+        let k = |m: usize, n: usize| self.stiffness.entry(m, n);
+        (0..2).all(|m| k(m, m) <= 0.0 || within(s[m], m, k(m, m)))
+            && [2, 4].into_iter().all(|pair| {
+                let (k11, k12) = (k(pair, pair), k(pair, pair + 1));
+                k11 <= 0.0
+                    || within(s[pair] + k12 / k11 * (s[pair + 1] - 0.0), pair, k11)
+                        && within(s[pair + 1] + k12 / k11 * (s[pair] - 0.0), pair + 1, k11)
+            })
+    }
+
     /// Equivalent plastic strain per unit of each measure: axial strain; torsional shear
     /// strain over √3; a hinge rotation θ strains the outer fibre by about θ/2 over a hinge
     /// length of the section depth.
@@ -96,14 +126,18 @@ impl Element {
 
     /// The plastic part p* that minimises the elasto-plastic potential at measures `s`, each
     /// measure's rate-lifted flow started from `guess` and leaving its own there
-    /// (`Flow::increment_from`).
+    /// (`Flow::increment_from`); `flows` the step's scaled flows.
     pub(crate) fn plastic_split_from(
         &self,
         s: &[f64; MEASURES],
-        flows: &[Flow; MEASURES],
+        flows: &mut StepFlows<'_>,
         guess: &mut [f64; MEASURES],
     ) -> [f64; MEASURES] {
         crate::profile::add(crate::profile::Slot::Splits, 1);
+        if self.elastic_at(s, flows.limits) {
+            return [0.0; MEASURES];
+        }
+        let flows = &flows.get(self)[1];
         let k = |m: usize, n: usize| self.stiffness.entry(m, n);
         let mut p = [0.0; MEASURES];
         for m in 0..2 {
@@ -137,44 +171,38 @@ impl Element {
     }
 
     /// The plastic increment p* that minimises ψ (see the module docs) at measures `s`,
-    /// with damping `gamma` = c/β relative to the measures `s_hat`, `scaled` the member's
-    /// flows with their work divided by 1 + γ (`Flow::scaled`, `Work::scaled`).
+    /// with damping `gamma` = c/β relative to the measures `s_hat`, `flows` the member's in
+    /// the step (their work divided by 1 + γ: `Flow::scaled`, `Work::flows`).
     pub(crate) fn damped_split(
         &self,
         s: &[f64; MEASURES],
         s_hat: &[f64; MEASURES],
         gamma: f64,
-        scaled: &[Flow; MEASURES],
+        flows: &mut StepFlows<'_>,
         guess: &mut [f64; MEASURES],
     ) -> [f64; MEASURES] {
         let shift = gamma / (1.0 + gamma);
         let v = std::array::from_fn(|m| s[m] - shift * s_hat[m]);
-        self.plastic_split_from(&v, scaled, guess)
+        self.plastic_split_from(&v, flows, guess)
     }
 
     /// The potential ψ (elastic, damping and plastic work of the step), the stored elastic
-    /// energy, and the member forces K·(s − p*) + γ·K·(s − p* − ŝ); `flows` and `scaled` the
-    /// member's flows and the same divided by 1 + γ.
+    /// energy, and the member forces K·(s − p*) + γ·K·(s − p* − ŝ); `flows` the member's in
+    /// the step.
     pub(crate) fn elastoplastic(
         &self,
         s: &[f64; MEASURES],
         s_hat: &[f64; MEASURES],
         gamma: f64,
-        (flows, scaled): (&[Flow; MEASURES], &[Flow; MEASURES]),
+        flows: &mut StepFlows<'_>,
         guess: &mut [f64; MEASURES],
     ) -> (f64, f64, [f64; MEASURES]) {
-        let p = self.damped_split(s, s_hat, gamma, scaled, guess);
+        let p = self.damped_split(s, s_hat, gamma, flows, guess);
         let elastic: [f64; MEASURES] = std::array::from_fn(|m| s[m] - p[m]);
         let rate: [f64; MEASURES] = std::array::from_fn(|m| elastic[m] - s_hat[m]);
         let stored = self.stiffness.energy(&elastic, &elastic);
         let damping = gamma * self.stiffness.energy(&rate, &rate);
-        // Only measures that flowed: 0·∞ would be NaN for members that never yield.
-        let dissipated: f64 = p
-            .iter()
-            .zip(flows)
-            .filter(|(p, _)| **p != 0.0)
-            .map(|(p, f)| f.work(p.abs()))
-            .sum();
+        let dissipated = flows.work(self, &p);
         let (spring, dashpot) = (self.stiffness.apply(&elastic), self.stiffness.apply(&rate));
         let force = std::array::from_fn(|m| spring[m] + gamma * dashpot[m]);
         (stored + damping + dissipated, stored, force)
@@ -205,14 +233,10 @@ impl Structure {
         let outcomes: Vec<(Yielding, bool)> = self
             .elements
             .par_iter_mut()
-            .zip(
-                work.caps
-                    .par_iter()
-                    .zip(work.scaled.par_iter().zip(&work.s_hat)),
-            )
+            .zip(&work.s_hat)
             .enumerate()
             .with_min_len(128)
-            .map(|(index, (e, (caps, (scaled, s_hat))))| {
+            .map(|(index, (e, s_hat))| {
                 if e.broken {
                     return (Yielding::default(), false);
                 }
@@ -220,7 +244,16 @@ impl Structure {
                 let gamma = e.material.damping / work.beta;
                 // From where the step's last evaluation left each measure's flow.
                 let mut guess = work.flow_guess.get(index).copied().unwrap_or_default();
-                let p = e.damped_split(&s, s_hat, gamma, scaled, &mut guess);
+                // The step's flows if it built them (a copy: rare), else built here if needed.
+                let (mut flows, mut built) = if work.built[index] {
+                    (work.flows[index], true)
+                } else {
+                    ([[Flow::NEVER; MEASURES]; 2], false)
+                };
+                let mut step = StepFlows::of(work, index, (&mut flows, &mut built));
+                let p = e.damped_split(&s, s_hat, gamma, &mut step, &mut guess);
+                // (Before the member changes: the flows are the step's start's.)
+                let dissipated = step.work(e, &p);
                 e.flow_rate = p.map(|p| p / work.h);
                 // Compressed enough to be split (`buckling.rs`), on its elastic part.
                 let wants = splits && e.wants_split(&std::array::from_fn(|m| s[m] - p[m]));
@@ -241,13 +274,7 @@ impl Structure {
                     yielded: 1,
                     broke: usize::from(broke),
                     flowing: usize::from(strain > FLOWING),
-                    // Only measures that flowed: 0·∞ would be NaN.
-                    work: p
-                        .iter()
-                        .zip(caps)
-                        .filter(|(p, _)| **p != 0.0)
-                        .map(|(p, f)| f.work(p.abs()))
-                        .sum(),
+                    work: dissipated,
                 };
                 (y, wants && !broke)
             })

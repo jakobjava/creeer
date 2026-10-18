@@ -51,6 +51,7 @@ pub mod shapes;
 mod solver;
 pub mod statics;
 mod step;
+mod step_flows;
 #[cfg(test)]
 mod validation_tests;
 

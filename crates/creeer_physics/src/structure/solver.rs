@@ -171,12 +171,19 @@ pub(super) struct Work {
     pub frame_torque: Vec<DVec3>,
     /// Element measures at (x̂, q̂), for damping.
     pub s_hat: Vec<[f64; MEASURES]>,
-    /// How every element flows plastically during this step (`flow.rs`).
-    pub caps: Vec<[super::flow::Flow; MEASURES]>,
-    /// The same with their work divided by 1 + γ, as the member's series damper sees them
-    /// (`plastic.rs`), found once a step (copied anew at every evaluation, the flows cost a
-    /// 5k-member bridge 5 % of its step).
-    pub scaled: Vec<[super::flow::Flow; MEASURES]>,
+    /// What each element's measures carry before they flow in this step: its capacities over
+    /// 1 + γ, as the member's series damper sees them (`Element::limits`). Below them a member
+    /// is elastic, and its evaluation reads nothing else of its flows.
+    pub limits: Vec<[f64; MEASURES]>,
+    /// How each element flows plastically during this step (`flow.rs`), and the same with
+    /// their work divided by 1 + γ: built when a measure first passes its limit in the step
+    /// (`StepFlows`), where `built` says so. Built for every member at every step, 1.2 kB a
+    /// member, they were most of what a bridge's step moved through memory, and with several
+    /// structures stepping at once memory is what a step waits for.
+    pub flows: Vec<[[super::flow::Flow; MEASURES]; 2]>,
+    pub built: Vec<bool>,
+    /// The step and β the limits were found with, to build the flows with.
+    pub flow_step: (f64, f64),
     /// Each element's rate-lifted flows as its last evaluation in this step found them (w per
     /// measure, `Flow::increment_from`): where the next one's Newton starts. Emptied as each
     /// substep begins, so a step does not depend on the steps before it (a loaded world goes on
@@ -275,8 +282,10 @@ impl ImplicitSolver {
                 coriolis: vec![DVec3::ZERO; n],
                 frame_torque: vec![DVec3::ZERO; n],
                 s_hat: vec![[0.0; MEASURES]; structure.element_count()],
-                caps: vec![[super::flow::Flow::NEVER; MEASURES]; structure.element_count()],
-                scaled: vec![[super::flow::Flow::NEVER; MEASURES]; structure.element_count()],
+                // Until a step sets them: members that never flow.
+                limits: vec![[f64::INFINITY; MEASURES]; structure.element_count()],
+                flows: vec![[[super::flow::Flow::NEVER; MEASURES]; 2]; structure.element_count()],
+                built: vec![true; structure.element_count()],
                 rotations: vec![DMat3::IDENTITY; n],
                 direction: vec![DVec3::ZERO; 2 * n],
                 trial_x: vec![DVec3::ZERO; n],
@@ -332,6 +341,9 @@ impl ImplicitSolver {
         self.previous_load.clone_from(&s.load);
         self.previous_torque.clone_from(&s.torque);
         let w = &mut self.work;
+        // Its evaluation goes on with the last step's flows, made from the measures replaced
+        // below.
+        w.build_flows(s);
         w.x_star.clone_from(&s.position);
         w.q_star.clone_from(&s.orientation);
         for i in 0..n {
