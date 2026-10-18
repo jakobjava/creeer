@@ -66,8 +66,8 @@ The physics has contacts and welded members, but no articulation. The ragdoll ne
 - **G1.2a done** (2026-10-18): the body (a box from the knees up, 105 kg), its legs (a spring from the hip to the ground a ray finds: `World::ray`, new), walking within the friction cone, balance within the body's strength, reactions on what it stands on (and both stepped as held, so momentum is kept), sleep. The server and the client's prediction use it; protocol 5 (`Kind::Character`). The decisions differ from the plan below: a box instead of a capsule (cost), and no leg compliance from a separate body (a ray-found spring instead).
 - **G1.2b done** (2026-10-18): swimming (buoyancy and drag are the sea's own; a stroke of at most 80 N). **G1.2c done:** the jetpack (cold nitrogen, Isp 70 s, 1.5 kN, a 3 kg tank that is the body's mass; attitude jets), the character held (BDF2) while standing and free in the air.
 - **G1.2d done** (2026-10-18): knocked down (a lean past 45° or a jolt over 2 m/s), the ragdoll (15 segments, momentum kept exactly), injury from mechanics (pulses on a person's stiffness, HIC for the head), people on the server (health, falling, standing up, death and respawn), the player told (`Own`: health, down), saves (`PEOP`). Its cost on the ground took *crowd* to 58 ms worst: **P1 (G1.8) is brought forward and comes next**, before G1.2e.
-- **P1 in progress** (ADR-0024): the legs became a strut solved in the step (a stiff load on a light body was the crowd's 58 ms tick), falls corrected (injury by region, the ragdoll laid out with the legs it has). Open: a ragdoll under a crate converges slowly; *crowd's* CI work gate fails until it does (committed so by the user's choice, 2026-10-18).
-- **Next:** P1's convergence work, then G1.2e: prediction of nearby bodies.
+- **P1's first pass done** (ADR-0024, "Outcome of the first pass"): the legs became a strut solved in the step (a stiff load on a light body was the crowd's 58 ms tick), falls corrected (injury by region, the ragdoll laid out with the legs it has), about 8 % off a ragdoll's step by exact, profile-found changes. The contact core's redesigns (friction within Newton with the joint tree, contacts that persist) go back to G1.8, where they were planned. Open: *crowd's* CI work gate (the user's decision).
+- **Next:** G1.2e: prediction of nearby bodies.
 - **Climbing** waits for something to climb: G2's ladders and handholds.
 
 It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and are measured, not assumed.
@@ -169,6 +169,8 @@ The look first, so that everything after it is made in the style.
 
 G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock pile's worst tick (18.2 ms, ADR-0017) is measured again here on the real scenes, then cut.
 
+**Its first pass, brought forward after G1.2d, has ended** (ADR-0024, "Outcome of the first pass", 2026-10-18): the legs' struts, and about 8 % off a ragdoll's step by exact, profile-found changes. Measured on the way, and the facts this milestone starts from: the joint tree alone is 6.5 % slower, as friction refreshes with the joints (the refreshes, 35–43 % of a ragdoll's iterations, wait on both); a see-saw between a face and crossed edges keeps some ragdolls under a crate from resting; a ragdoll slumps on for want of passive joint resistance. What follows is what remains, at its place in the order.
+
 **Revised 2026-10-18, after its survey of prior work** (ADR-0024, "What others found"; the survey came late, after weeks on methods the literature had settled):
 1. **Ragdolls as one articulated body in reduced coordinates** (the root's pose and the joints' angles), within the implicit step, beside the maximal-coordinate joints of ADR-0022 that stay for loops, grabs and machines (RedMax's hybrid). First as a measurement against the recorded ragdoll states, then built if it pays.
 2. **Friction updated within Newton's iterations**, for realism (no friction on stale normal forces) and iterations.
@@ -225,7 +227,7 @@ The MCP lets Claude build and change models in your running Blender, export them
 
 ## Order and dependencies
 
-G1.0 → G1.1 → G1.2a–d → G1.8 (P1, brought forward: the ragdoll on the ground needs it) → G1.2e → G1.3, then G1.4 → G1.5 and G1.6 (in either order) → G1.7 → G1.9 → G1.10.
+G1.0 → G1.1 → G1.2a–d → G1.8's first pass (P1, brought forward: the ragdoll on the ground needed it) → G1.2e → G1.3, then G1.4 → G1.5 and G1.6 (in either order) → G1.7 → G1.9 → G1.10.
 
 - **Joints come before the character**, because the ragdoll, carrying and ladders need them.
 - **The look comes before the content**, so the tools, items and trees are modelled in the style from the start.

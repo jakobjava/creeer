@@ -105,6 +105,7 @@ And most of the time is the active phase (the crate's impact, the fall, the sett
 | **Crossed edges kept from step to step** (a persistent manifold for edges, after Gregorius 2015 and Bullet: each step's crossed edges kept in their bodies' frames; where a pair's contacts are crossed edges again, the last step's that still cross within its margin added; at most four a pair) | The 24-case rest bench: 18 of 24 at rest against 17, 25.4 s against 23.6, worst tick 56 ms against 55. Also where the pair's contact is a face patch: 15 of 24, 24.3 s. The see-saw case itself then rocked between a face patch (the forearm's edge on the shank's face, two corners pressed) and crossed edges at the face's border | No gain, a cost. A fixed preference cannot settle face against edge (ADR-0005: rocks needed the edge, this forearm the face), nor hysteresis (rocks crept). Patch: `docs/adr/0024/crossed-edges.patch` (against 60a2218) |
 | **The joints' blocks' outer products over each row's nonzeros** (found once, then an index loop) | Bit-identical; the joint terms 0.99 s → 1.39 s on the ragdoll states (with the `profile` feature) | The 36-entry loop the compiler makes of the plain form is faster than indexing with bounds checks. Kept instead (bit-identical, in `joint/blocks.rs`): the blocks' buffers reused (0.95 s) and the loop dense and branch-free (0.93 s): a joint's blocks are arithmetic, about 170 scalars a call with three 6×6 products each |
 | Pitfalls found building it (each in the patch, fixed) | The trapezoid on exact constraints rings: the joint's force twice its mean and none on alternate steps, undamped, and the velocities with it (Cardona and Géradin 1989). Carrying the step's mean instead (one force a step, as Gonzalez 1999's energy–momentum method) ends it but is half a step late (a double pendulum 2.3·10⁻³ rad off against 1.75·10⁻³); the mean taken on half a step, (3·mₙ − mₙ₋₁)/2, is second order and quiet. Carrying none (RATTLE's split) or the bodies' own means: force and torque from different poses, angular momentum 1.5 % off in 2 s. BDF2 for trees instead: 10 % off. Gauss–Newton's reduced matrix lacks the forward kinematics' curvature under the step's forces (RedMax's geometric stiffness): 500 iterations of steps cut to a three-hundredth until L-BFGS ran in the tree's coordinates. A free tree's root not at its centre of mass: momentum off 3·10⁻⁹ by the kinematics' second order (a centroidal base fixes it) | Recorded for when it is tried again |
+| **The joint system's buffers kept from one iteration to the next** (`structure/rigid_system.rs`: nine allocations an iteration, found by the profile's heap stacks) | Bit-identical; 5,143–5,258 ms against 4,856–4,965 (three interleaved pairs) | Slower. Patch: `docs/adr/0024/rigid-system-buffers.patch` (against a8a0a1e) |
 | **Friction in the ragdoll's joints** (a measurement of the slump: one Coulomb torque for every joint, ADR-0022's joint friction) | The 24-case rest bench: 1 N·m 20 at rest, 27.8 s, worst 119 ms; 2 N·m 20, 27.0 s, 59 ms; 5 N·m 22, 20.4 s, 50 ms; none 17, 23.6 s, 55 ms | Rest comes, but the friction makes the moving steps dearer; the right torques are the body's passive joint resistance, to be taken from biomechanics, not chosen for speed. 14 % at best: not the ragdolls' cost |
 | Legs ignoring supports lighter than 10 or 50 kg (a measurement, not a fix) | *crowd* worst 58 → 51 ms, p99 11.9 → 13.7 | Not realistic (a boot on a hand presses it down), and the remaining slow ticks are the ragdolls' own steps |
 
@@ -158,3 +159,25 @@ Sources: arxiv.org/html/2605.15875v1; doi.org/10.1145/3355621; graphics.cs.utah.
 - The rock pile's targets (worst ≤ 5 ms, p99 ≤ 2 ms).
 - `rayon_bound_tests.rs`: an ignored measurement, kept as this ADR's evidence.
 - G1.2e (prediction of nearby bodies) after P1.
+
+## Outcome of the first pass (2026-10-18)
+
+P1 was brought forward from G1.8 to make the game fast enough to finish G1.2. Its gates (*crowd* p99 ≤ 2 ms, worst ≤ 5 ms) ask for five to ten times less work in a crate-on-ragdoll tick, and nothing measured here offers that: each lever is worth 15–35 % at best, and the exact optimisations are down to a few percent each. The first pass ends here; the contact core's redesigns go back to G1.8.
+
+**Kept** (each bit-identical: the ragdoll states take 35,580 iterations before and after; times on the ragdoll states, interleaved runs):
+
+| Change | Found by | Gain |
+|---|---|---|
+| Struts: the legs' load solved in the step | the crowd's 58 ms tick | the bug behind the worst ticks (above) |
+| A face's layer measured for its energy alone in the face's line search (`contact/layer.rs`) | a sampled profile (WPR): `Layer::at` 11 % of the time | 3 % |
+| A state's contact geometry looked up without building its key (`contact/geometry.rs`) | the profile's heap stacks (allocation and copies 14 % of the time) | 3.5 % |
+| A small structure's node terms summed on its own thread (`structure/objective.rs`) | the same | 2 % |
+| The joints' blocks in their own file, buffers reused, the outer product dense (`joint/blocks.rs`) | the phase profile | 1 % |
+
+About 8 % in all (5,276 → about 4,900 ms). Realism is untouched: nothing was loosened. A crate-on-ragdoll tick costs about 1–2 ms a ragdoll while it moves and about 30 ms as the crate strikes; separate ragdolls run on separate cores.
+
+**Rejected or set aside**, each with its numbers in the tables above and its patch beside this ADR: the joint tree (6.5 % slower alone: friction refreshes with the joints), crossed edges kept from step to step (no gain on 24 cases), friction in the ragdoll's joints (rest, but 14 % at most; its torques want biomechanics), the joints' outer product by index (slower), the joint system's buffers reused (`rigid-system-buffers.patch`: bit-identical, 6 % slower: 5,143–5,258 ms against 4,856–4,965).
+
+**Back to G1.8** (`docs/g1-plan.md`), each from the facts measured here: friction within Newton's iterations together with the joint tree (the refreshes wait on both: 35–43 % of a ragdoll's iterations), contacts whose description follows the iterate and persists (the see-saw, the found-anew surplus), the ragdoll's passive joint resistance from biomechanics, the rock pile's targets, large groups across cores.
+
+**Open:** *crowd*'s CI work gate (4,730 iterations against 490) and its time gates: the user decides (re-set to the measured value with a justification, or kept failing as a known item).
