@@ -50,12 +50,12 @@ const BLOCKING: Diode = Diode {
 const TANK: (f64, f64, f64) = (30.0, 25.0, 5.0);
 const BASIN: (f64, f64, f64) = (30.0, 0.0, 1.0);
 
-fn pipes() -> (Pipes, [usize; 4]) {
+fn pipes(upper_tank: (f64, f64, f64)) -> (Pipes, [usize; 4]) {
     let mut p = Pipes::new(Liquid::WATER_20C, G);
     let tank = |(area, floor, depth): (f64, f64, f64)| {
         (floor, NodeKind::Tank { area, floor }, floor + depth)
     };
-    let (z, kind, head) = tank(TANK);
+    let (z, kind, head) = tank(upper_tank);
     let upper = p.node(z, kind, head);
     let foot = p.node(0.5, NodeKind::Junction { demand: 0.0 }, 0.5);
     let inlet = p.node(0.5, NodeKind::Junction { demand: 0.0 }, 0.5);
@@ -186,7 +186,12 @@ fn platform() -> (World, creeer_math::glam::DMat3) {
 impl Powerhouse {
     /// The powerhouse at rest, its valve half open, its controller holding [`SPEED`].
     pub fn new() -> Self {
-        let (pipes, [upper, lower, valve, turbine]) = pipes();
+        Self::with_tank(TANK.0, TANK.2)
+    }
+
+    /// The same with an upper tank of plan area `area` (m²) holding `depth` (m) of water.
+    pub fn with_tank(area: f64, depth: f64) -> Self {
+        let (pipes, [upper, lower, valve, turbine]) = pipes((area, TANK.1, depth));
         let (d, frictions, runner, rotor) = drivetrain();
         let mut circuit = Circuit::new();
         let plus = circuit.node();
@@ -254,6 +259,7 @@ impl Powerhouse {
             time: 0.0,
             start: Stores::default(),
             moved: super::Moved::default(),
+            air: 0.0,
         };
         house.start = house.stores();
         house

@@ -183,6 +183,38 @@ impl Network {
         self.received[node].add(joules);
     }
 
+    /// Sets mass node `node`'s stored heat to `joules` (from 20 °C) from outside (a machine
+    /// written back from abstract mode, F7.4); the books count the change as imported (or
+    /// exported).
+    ///
+    /// # Panics
+    /// If the node is not a mass.
+    pub fn set_stored(&mut self, node: NodeId, joules: f64) {
+        let NodeKind::Mass { mass, enthalpy } = &self.kinds[node] else {
+            panic!("only a mass stores heat")
+        };
+        let (mass, h) = (*mass, joules / mass);
+        if (mass * self.enthalpy[node]).to_bits() == joules.to_bits() {
+            return; // as it is: nothing changes
+        }
+        let change = mass * (h - self.enthalpy[node]);
+        self.temperature[node] = enthalpy.temperature(h, self.temperature[node]);
+        self.enthalpy[node] = h;
+        if change >= 0.0 {
+            self.ledger.import(change);
+        } else {
+            self.ledger.export(-change);
+        }
+    }
+
+    /// A mass node's stored heat (J, from 20 °C).
+    pub fn stored_in(&self, node: NodeId) -> f64 {
+        match &self.kinds[node] {
+            NodeKind::Mass { mass, .. } => mass * self.enthalpy[node],
+            NodeKind::Fixed => 0.0,
+        }
+    }
+
     /// A mass node's specific enthalpy (J/kg, from 20 °C).
     pub fn specific_enthalpy(&self, node: NodeId) -> f64 {
         self.enthalpy[node]

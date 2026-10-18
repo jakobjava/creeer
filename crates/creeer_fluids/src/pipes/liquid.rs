@@ -7,7 +7,7 @@
 //! there, until the flows stop moving and no one-way link wants to switch.
 
 use super::friction::Hint;
-use super::links::{efficiency, law, law_from, one_way, passable};
+use super::links::{efficiency, law, law_from, passable};
 use super::{LinkKind, Network, NodeKind, PipeReport};
 use creeer_math::sparse::{Assembly, Cholesky, Csc};
 // (`Cholesky` kept between steps: `solve.rs` preconditions with it.)
@@ -77,12 +77,12 @@ impl Solver {
 }
 
 impl Network {
-    /// Advances the network by `dt` seconds: its flows to the heads now, its tanks filling
-    /// or emptying. Returns how Newton went.
+    /// One step of `dt` seconds with the tanks `dry` (empty: their links carry water only
+    /// into them), as [`Network::step`] takes them.
     ///
     /// # Panics
     /// If its system is not positive definite (impossible: every law's slope is positive).
-    pub fn step(&mut self, dt: f64) -> PipeReport {
+    pub(crate) fn step_once(&mut self, dt: f64, dry: &[bool]) -> PipeReport {
         let mut solver = self.solver.take().unwrap_or_else(|| Solver::new(self));
         let n = solver.assembly.n();
         // (Buffers kept between steps: a small network's step is a few microseconds, and its
@@ -206,25 +206,7 @@ impl Network {
                 moved = moved.max((q - link.flow).abs());
                 largest = largest.max(q.abs());
                 link.flow = q;
-                if one_way(link) {
-                    if link.open && q < 0.0 {
-                        (link.open, link.flow) = (false, 0.0);
-                        switched = true;
-                    } else if !link.open {
-                        // Shut: would it push forward? A check valve if the head ahead is
-                        // lower; a pump if its shut-off head beats the lift.
-                        let push = match link.kind {
-                            LinkKind::Pump { shutoff, speed, .. } => {
-                                speed * speed * shutoff + drive
-                            }
-                            _ => drive,
-                        };
-                        if push > 0.0 {
-                            link.open = true;
-                            switched = true;
-                        }
-                    }
-                }
+                switched |= super::dry::switch(link, drive, super::dry::allowed(link, dry));
             }
             // Converged when the flows stopped moving, or are converging quadratically (as
             // Newton's method does near its root) to where the next move would be below that:

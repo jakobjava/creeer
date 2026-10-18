@@ -757,6 +757,7 @@ dependencies = [
  "creeer_mech",
  "creeer_orbit",
  "creeer_physics",
+ "creeer_rates",
  "creeer_terrain",
  "creeer_thermal",
  "rayon",

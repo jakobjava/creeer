@@ -7,6 +7,9 @@
 //! F6: electric machines on drivetrains (`drive`): circuit and shaft solved as one.
 //! F6: turbines on drivetrains (`hydro`): the water's torque on a runner every tick.
 
+pub mod abstraction;
+#[cfg(test)]
+mod abstraction_tests;
 pub mod aero;
 #[cfg(test)]
 mod aero_tests;

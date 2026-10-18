@@ -350,7 +350,12 @@ impl Network {
             if b - a <= 1e-13 * b.max(1.0) {
                 break;
             }
-            let c = (b - fb * (b - a) / (fb - fa)).clamp(a, b);
+            let c = b - fb * (b - a) / (fb - fa);
+            let c = if c.is_finite() {
+                c.clamp(a, b)
+            } else {
+                0.5 * (a + b)
+            };
             let c = if c <= a || c >= b { 0.5 * (a + b) } else { c };
             let fc = at(c);
             if fc >= 0.0 {

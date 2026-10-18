@@ -138,6 +138,30 @@ impl Network {
         self.segments
     }
 
+    /// Advances to `until` (s) or to the first event, whichever comes first; returns it.
+    pub fn advance_to_event(&mut self, until: f64) -> Option<Event> {
+        while self.time < until {
+            let left = until - self.time;
+            let (h, event) = self.segment(left);
+            self.segments += 1;
+            self.time = if h >= left { until } else { self.time + h };
+            if event.is_some() {
+                return event;
+            }
+        }
+        None
+    }
+
+    /// Sets its time (s): the time an outside full simulation took (a probe).
+    pub fn set_time(&mut self, time: f64) {
+        self.time = time;
+    }
+
+    /// Its processes.
+    pub fn processes(&self) -> &[Process] {
+        &self.processes
+    }
+
     /// Advances to `until` (s), or to where a process goes stale (the last event then);
     /// returns what happened on the way.
     pub fn advance(&mut self, until: f64) -> Vec<Event> {
