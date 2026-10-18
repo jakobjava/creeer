@@ -83,6 +83,24 @@ impl Layer {
         (energy, gradient, hessian)
     }
 
+    /// Ψ(σ) alone, as [`Self::at`] sums it (a line search's trials: the gradients and
+    /// Hessians they built and dropped were a ninth of a ragdoll's step).
+    pub fn energy(&self, sigma: DVec3) -> f64 {
+        if self
+            .points
+            .iter()
+            .all(|&(_, a)| a.dot(sigma) <= self.law.reach)
+        {
+            let l = self.quadratic * self.law.limit;
+            return 0.5 * sigma.dot(l * sigma);
+        }
+        let mut energy = 0.0;
+        for &(w, a) in &self.points {
+            energy += w * self.law.at(a.dot(sigma)).0;
+        }
+        energy
+    }
+
     /// Whether the layer is quadratic between `from` and `to` (no point beyond its reach).
     pub fn linear(&self, from: DVec3, to: DVec3) -> bool {
         let d = self.law.reach;
