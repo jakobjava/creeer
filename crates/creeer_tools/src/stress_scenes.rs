@@ -116,30 +116,7 @@ pub fn cars() -> Scene {
     let world = std::sync::Arc::new(std::sync::Mutex::new(world));
     let (state, seen) = (std::sync::Arc::clone(&world), std::sync::Arc::clone(&world));
     Scene {
-        tick: Box::new(move |_| {
-            let mut w = world.lock().expect("world");
-            let (e0, p0, f0) = (
-                w.energy(),
-                w.bodies.iter().map(|b| b.solver.plastic_work).sum::<f64>(),
-                w.bodies.iter().map(|b| b.solver.fallbacks).sum::<u32>(),
-            );
-            w.step();
-            let (e1, p1, f1) = (
-                w.energy(),
-                w.bodies.iter().map(|b| b.solver.plastic_work).sum::<f64>(),
-                w.bodies.iter().map(|b| b.solver.fallbacks).sum::<u32>(),
-            );
-            if std::env::var_os("CARS_TRACE").is_some() {
-                eprintln!(
-                    "SCRATCH energy {:.1} -> {:.1} kJ (lost {:.1}), plastic +{:.3} kJ, fallbacks +{}",
-                    e0 / 1e3,
-                    e1 / 1e3,
-                    (e0 - e1) / 1e3,
-                    (p1 - p0) / 1e3,
-                    f1 - f0
-                );
-            }
-        }),
+        tick: Box::new(move |_| world.lock().expect("world").step()),
         hash: Box::new(move || hash(state.lock().expect("world").to_bytes())),
         // What the crash did: the plastic work, the members buckled and broken, the motion
         // left of the 1,350 kJ the cars started with (ground friction takes the most).
@@ -152,9 +129,10 @@ pub fn cars() -> Scene {
                 .map(|b| b.structure.members().iter().filter(|m| m.3).count())
                 .sum();
             let moving: f64 = bodies.iter().map(|b| b.structure.node_energy().0).sum();
+            let asleep = bodies.iter().filter(|b| b.sleep.asleep).count();
             Notes {
                 text: format!(
-                    "plastic work {:.1} kJ, {split} members buckled, {broken} broken, {:.1} kJ of motion left",
+                    "plastic work {:.1} kJ, {split} members buckled, {broken} broken, {:.1} kJ of motion left, {asleep} of 10 asleep",
                     work / 1e3,
                     moving / 1e3
                 ),

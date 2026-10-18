@@ -1,7 +1,7 @@
 //! `creeer_tools stress [--short] [--check | --save-golden] [--metrics <file>] [--only <name>]`
 //! (F7.5, plan.md §5): the stress scenarios, headless, each with its tick percentiles (p50,
 //! p99, worst; the first tick, which takes the setup, apart) and a hash of its state at the
-//! end. `STRESS_TRACE=1` lists the ticks over 10 ms (with the physics phases when built with
+//! end. `STRESS_TRACE=<ms>` lists the ticks over that (10 ms if not a number; with the physics phases when built with
 //! `--features creeer_physics/profile`).
 //!
 //! - `--short`: the lengths CI runs (on every OS, so the hashes compare platforms at scale);
@@ -30,7 +30,8 @@ type Build = fn(u32) -> Scene;
 
 /// A scenario: its name, what it is, how to build it, its ticks (full, short), and the
 /// ceilings of its worst tick and of its first (ms, on the development machine at full
-/// length, gated by `--gate`: about a quarter above what they measured, 2026-10-18).
+/// length, gated by `--gate`: about a quarter above what they measured at the end of F7.6,
+/// 2026-10-18).
 struct Scenario {
     name: &'static str,
     what: &'static str,
@@ -46,8 +47,8 @@ const SCENARIOS: [Scenario; 5] = [
         what: "50,000 beams under moving loads",
         build: |_| beams(),
         ticks: (600, 60),
-        worst: 27.0,
-        first: 26.0,
+        worst: 21.0,
+        first: 20.0,
     },
     Scenario {
         name: "cars",
@@ -62,23 +63,23 @@ const SCENARIOS: [Scenario; 5] = [
         what: "every domain's reference load and 100 powerhouses",
         build: |_| factory(),
         ticks: (600, 60),
-        worst: 8.0,
-        first: 50.0,
+        worst: 6.5,
+        first: 47.0,
     },
     Scenario {
         name: "server",
         what: "8 players, 100,000 parked, 10 abstract machines",
         build: |_| server(),
         ticks: (1200, 120),
-        worst: 8.5,
-        first: 35.0,
+        worst: 8.1,
+        first: 7.5,
     },
     Scenario {
         name: "flyover",
         what: "from orbit to the ground, the terrain streamed",
         build: flyover,
         ticks: (1200, 240),
-        worst: 2.0,
+        worst: 2.5,
         first: 1.0,
     },
 ];
@@ -95,7 +96,9 @@ pub fn run(args: &[String]) -> ExitCode {
     let gate = flag("--gate") && !short;
     let only = value("--only");
     // Ticks over 10 ms, with the physics phases when built with `creeer_physics/profile`.
-    let trace = std::env::var_os("STRESS_TRACE").is_some();
+    let trace = std::env::var("STRESS_TRACE")
+        .ok()
+        .map(|ms| ms.parse::<f64>().unwrap_or(10.0) / 1e3);
     let golden = std::fs::read_to_string(GOLDEN).unwrap_or_default();
     let (mut lines, mut metrics, mut failed) = (String::new(), String::new(), false);
     for Scenario {
@@ -135,7 +138,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 stats.push(took);
             }
             let spent = creeer_physics::profile::take();
-            if trace && took.as_secs_f64() > 0.01 {
+            if trace.is_some_and(|s| took.as_secs_f64() > s) {
                 let phases: Vec<String> = creeer_physics::profile::NAMES
                     .iter()
                     .filter(|(s, _)| spent[*s as usize] > 0)

@@ -331,3 +331,8 @@ The sandbox's rock pile and stacks lagged: the physics ran slower than real time
 ## Amended in F7 (2026-10-18): removing bodies keeps the contacts' energies
 
 `World::retain_bodies`, `remove_body` and the new `take_bodies` (simulation LOD, ADR-0019) renumber the elastic energy the last step left in the contacts (`world::left`), as they already renumbered the friction anchors, instead of clearing it for every body: contacts of the bodies taken out go, the rest follow their bodies' new indices. Before, any removal (a cleared world, a vessel packed) made every resting stack's contacts be found anew without the record the energy guard holds them to.
+
+## Amended in F7.6 (2026-10-18): splits start where they left off; books kept across splits
+
+- **A member's end-moment pairs** are split by coordinate descent starting where the member's last split in the step left them (they started from nought: 14 sweeps a split in a crash). The same minimum, to rounding (`split_tests.rs`); the cars' impact tick 134 → 91 ms (ADR-0021).
+- **A buckling split kept the solver's books at nought:** the new solver began `iterations_total` and the plastic work again (now `ImplicitSolver::plastic_work`). Kept: the crash scene's worst tick counts its 495 Newton iterations (207 before); the crash's plastic work is booked whole.
