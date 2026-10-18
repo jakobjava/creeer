@@ -73,7 +73,13 @@ fn players() -> Box<dyn FnMut(u32) + Send> {
             let (sin, cos) = (creeer_math::det::sin(angle), creeer_math::det::cos(angle));
             let walk = DVec3::new(cos, 0.0, sin) * 3.0;
             let index = first + k as usize;
-            character::steer(&mut world, index, (walk, false), DVec3::Y, &mut reactions);
+            character::steer(
+                &mut world,
+                index,
+                (walk, false),
+                (DVec3::Y, None),
+                &mut reactions,
+            );
         }
         world.step();
         character::release(&mut world, &mut reactions);

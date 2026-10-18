@@ -53,6 +53,12 @@ const BALANCE: (f64, f64, f64) = (5000.0, 640.0, 600.0);
 const YAW_DAMPING: f64 = 200.0;
 /// How fast it leaves the ground in a jump (m/s: 0.4 m high).
 pub const JUMP_SPEED: f64 = 2.8;
+/// A swimmer's thrust at most (N): a person's, about 60–100 N sprinting.
+const SWIM_MOST: f64 = 80.0;
+/// The torque a swimmer keeps upright with at most (N·m).
+const SWIM_BALANCE: f64 = 100.0;
+/// How far above the surface its centre may be and it still swim (m): its body in the water.
+const SWIMS_ABOVE: f64 = 0.4;
 
 /// The body's box: from its knees (0.5 m above the feet) to the top of its helmet, as wide
 /// and deep as a person in a suit (half extents, m). A box, not a rounded hull: two
@@ -115,13 +121,14 @@ pub struct Footing {
 }
 
 /// Steers character `index` for the next step: towards `walk` (m/s along the ground; `up`
-/// the local vertical), jumping if asked and standing. Its reactions on the bodies it stands
-/// on go into `reactions` (take them off after the step: [`release`]).
+/// the local vertical), jumping if asked and standing (swimming up, in water). `water` is
+/// how deep its centre is under the sea's surface (m; none: no sea). Its reactions on the
+/// bodies it stands on go into `reactions` (take them off after the step: [`release`]).
 pub fn steer(
     world: &mut World,
     index: usize,
     (walk, jump): (DVec3, bool),
-    up: DVec3,
+    (up, water): (DVec3, Option<f64>),
     reactions: &mut Vec<Reaction>,
 ) -> Footing {
     let (x, q, v, w) = {
@@ -208,6 +215,25 @@ pub fn steer(
                 world.apply_impulse(other, node, -impulse, hit.point);
             }
         }
+    } else if water.is_some_and(|depth| depth > -SWIMS_ABOVE) {
+        // Swimming: towards the velocity asked for, up while asked to rise, within a
+        // swimmer's thrust; the sea's buoyancy and drag are its own (`surroundings.rs`).
+        let along = |u: DVec3| u - up * u.dot(up);
+        let mut stroke = (along(walk) - along(v)) * (MASS / RESPONSE);
+        if jump {
+            stroke += up * SWIM_MOST;
+        }
+        if stroke.length() > SWIM_MOST {
+            stroke = stroke.normalize() * SWIM_MOST;
+        }
+        force = stroke;
+        // A swimmer keeps upright too, more weakly.
+        let tilt = (q * DVec3::Y).cross(up);
+        let (k, c, _) = BALANCE;
+        torque = tilt * k - w * c;
+        if torque.length() > SWIM_BALANCE {
+            torque = torque.normalize() * SWIM_BALANCE;
+        }
     }
     let s = &mut world.bodies[index].structure;
     s.load[0] = force;
@@ -236,3 +262,6 @@ pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod swim_tests;

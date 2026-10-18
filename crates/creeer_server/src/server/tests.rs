@@ -39,7 +39,7 @@ impl Game {
             None => (end, None),
         };
         let mut client = Connection::memory(end, name, creeer_data::Data::base().hash());
-        client.attach_terrain(terrain());
+        client.attach_terrain(terrain(), &creeer_data::Data::base());
         self.clients.push((client, relay));
         self.clients.len() - 1
     }
@@ -208,7 +208,7 @@ fn a_client_with_other_data_is_refused_and_told_the_servers_packs() {
     let mut game = Game::new(world());
     let end = game.server.connect_memory();
     let mut other = Connection::memory(end, "bea", creeer_data::Data::base().hash() ^ 1);
-    other.attach_terrain(terrain());
+    other.attach_terrain(terrain(), &creeer_data::Data::base());
     game.clients.push((other, None));
     game.run(20, still);
     let Status::Refused(why) = game.clients[0].0.status() else {
@@ -271,7 +271,7 @@ fn a_player_joins_over_udp() {
     let mut server = Server::new(world());
     let at = server.listen("127.0.0.1:0".parse().unwrap()).unwrap();
     let mut client = Connection::udp(at, "ada", creeer_data::Data::base().hash()).unwrap();
-    client.attach_terrain(terrain());
+    client.attach_terrain(terrain(), &creeer_data::Data::base());
     let start = std::time::Instant::now();
     while client.status() != &Status::Joined || client.kinds.is_empty() {
         assert!(

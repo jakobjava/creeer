@@ -168,9 +168,15 @@ impl Connection {
 
     /// Gives it the terrain of the planet it plays on (the one the welcome names): the edits
     /// so far are applied to it, and the avatar is predicted on it from now on.
-    pub fn attach_terrain(&mut self, terrain: Arc<Terrain>) {
+    pub fn attach_terrain(&mut self, terrain: Arc<Terrain>, data: &creeer_data::Data) {
         terrain.set_edits(self.edits.clone());
-        self.predicted = Some(Predicted::new(Arc::clone(&terrain)));
+        // The planet's air and sea, as the server's world has them (its packs are this one's).
+        let around = creeer_materials::species::SpeciesTable::from_data(data)
+            .ok()
+            .and_then(|species| {
+                creeer_sim::surroundings::Surroundings::of(terrain.planet(), &species).ok()
+            });
+        self.predicted = Some(Predicted::new(Arc::clone(&terrain), around));
         self.terrain = Some(terrain);
     }
 

@@ -22,9 +22,18 @@
 - **Sleep.** Asleep and asked for nothing, a character keeps its loads as they were. Its legs' force taken again from where it rests differs from the one it fell asleep under in its last bits, and a changed load wakes a body: it never slept, and was never parked.
 - **Protocol 5.** A character is `Kind::Character { player }`: its shape is the game's. Clients draw its box and two legs until G1.3's suit.
 
+### Swimming (G1.2b)
+
+- **The sea and the air act on characters** as on every body (`creeer_sim::surroundings`: buoyancy, drag, added mass). They were spared before, because their players' machines predicted them without; the client's prediction now steps in the same air and sea, built from its own packs, which the server checked are its own (`Connection::attach_terrain`).
+  - Lifts *avatars in water* (`docs/future-improvements.md`).
+- **Swimming.** With no ground under its legs and its body in the water (its centre less than 0.4 m above the surface), a character swims: towards the velocity asked for, and up while asked to rise, within a swimmer's thrust (80 N; a person sprints at 60–100 N), keeping upright with at most 100 N·m.
+  - The water's own forces do the rest: a person in a sealed suit (105 kg in 0.21 m³) floats with half the body under, and swims at 0.68 m/s, where 80 N meets the drag.
+  - In shallow water its legs reach the bottom, and it wades.
+- **Drowning** comes with G9's needs; until then the suit is sealed.
+
 ### Not yet (G1.2's next slices)
 
-Swimming, the jetpack and EVA thrusters, the ragdoll and injury, prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
+The jetpack and EVA thrusters, the ragdoll and injury, prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
 
 ## Validation (G1.2a)
 
@@ -37,7 +46,8 @@ Swimming, the jetpack and EVA thrusters, the ragdoll and injury, prediction of b
 | Jump | rises v²/2g within 8 cm (2.8 m/s: 0.40 m) |
 | Landing | 0.5 m on the legs (under 4 g, no body contact); 4 m strikes (over twice that) |
 | Sleep | an idle character falls asleep, stays asleep, and wakes when asked to walk |
-| Rays | planes, turned boxes, balls, hulls, a body skipped, the ground (a sphere planet) against analytic distances |
+| Rays | planes, turned boxes, balls, hulls, a body skipped, the ground (a sphere planet) against analytic distances; a leg's ray within 4 density evaluations (safeguarded Newton: bisection took 25) |
+| At sea (the home planet's) | floats with its centre at the surface (−0.01 m), at rest; swims at 0.68 m/s; rises 0.1 m when asked |
 
 ## Cost
 

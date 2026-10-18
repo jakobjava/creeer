@@ -74,9 +74,6 @@ impl ServerWorld {
     /// Puts a parked body back into the world.
     fn put_back(&mut self, body: creeer_physics::world::Body, tag: Tag) {
         let index = self.world.put_back(body);
-        if tag.player.is_some() {
-            self.surroundings.spare(index);
-        }
         self.surroundings.expect(index, tag.water);
         self.index.insert(tag.id, self.ids.len());
         self.ids.push(tag.id);

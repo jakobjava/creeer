@@ -55,7 +55,7 @@ impl PlanetSession {
         let end = server.connect_memory();
         let mut connection = Connection::memory(end, PLAYER, data.hash());
         let terrain = load_terrain(&data, PLANET)?;
-        connection.attach_terrain(Arc::clone(&terrain));
+        connection.attach_terrain(Arc::clone(&terrain), &data);
         let session = Self {
             connection,
             host: Some(Host::spawn(server)),
@@ -93,7 +93,7 @@ impl PlanetSession {
             .map(|w| w.planet.clone())
             .unwrap_or_default();
         let terrain = load_terrain(&data, &planet)?;
-        connection.attach_terrain(Arc::clone(&terrain));
+        connection.attach_terrain(Arc::clone(&terrain), &data);
         let session = Self {
             connection,
             host: None,

@@ -31,11 +31,6 @@ impl ServerWorld {
             .into_iter()
             .map(|(id, p)| (EntityId(id), p))
             .unzip();
-        for (index, player) in this.players.iter().enumerate() {
-            if player.is_some() {
-                this.surroundings.spare(index);
-            }
-        }
         this.surroundings.restore(water);
         this.reindex();
         for island in save.parked {

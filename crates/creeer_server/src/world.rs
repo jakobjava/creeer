@@ -60,8 +60,8 @@ pub struct ServerWorld {
     next_id: u32,
     /// Where avatars first appear: on land, on the ground.
     spawn: DVec3,
-    /// The planet's air and sea on its bodies (F6.6; avatars spared: their players'
-    /// machines predict them without).
+    /// The planet's air and sea on its bodies (F6.6), characters too (G1.2: their players'
+    /// machines predict them in the same).
     surroundings: Surroundings,
     /// Resting islands far from every player (F7.2, `creeer_sim::lod`).
     parked: creeer_sim::lod::Parked<regions::Tag>,
@@ -194,9 +194,6 @@ impl ServerWorld {
         let id = EntityId(self.next_id);
         self.next_id += 1;
         let index = self.world.add(body);
-        if player.is_some() {
-            self.surroundings.spare(index);
-        }
         self.lift_clear(index);
         self.index.insert(id, self.ids.len());
         self.ids.push(id);
@@ -253,9 +250,16 @@ impl ServerWorld {
     /// Steers avatar `id` by `input` for the next step.
     pub fn steer(&mut self, id: EntityId, input: &AvatarInput) {
         if let Some(i) = self.index(id) {
-            let up = self.world.bodies[i].structure.position[0].normalize();
+            let at = self.world.bodies[i].structure.position[0];
+            let water = self.surroundings.sea.as_ref().map(|sea| sea.depth(at));
             let act = (input.walk, input.jump);
-            character::steer(&mut self.world, i, act, up, &mut self.reactions);
+            character::steer(
+                &mut self.world,
+                i,
+                act,
+                (at.normalize(), water),
+                &mut self.reactions,
+            );
         }
     }
 

@@ -128,7 +128,6 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Heat exchange of pipes with their surroundings**, and friction heat into the fluid (content is carried adiabatically; a valve's and a turbine's losses stay the water's, unrouted to any thermal node) | Not needed by the integration's books, which count them as the water's friction | R | Medium | ADR-0014, ADR-0016 |
 | **Swirl carried out of a turbine** into its tailrace: the casing takes the runner's reaction, as if the water left without swirl | The water's angular momentum is not a state of a pipe network | R | Small | ADR-0016 |
 | **Two-phase pipe flow** (steam lines) | Planned for G4/G5 | R, G | Large | `docs/f6-plan.md` (Decisions) |
-| **Avatars in water**: players' avatars are spared the air and the sea (they walk on the seabed) | Their players' machines predict them without fluids | G | Medium | ADR-0014; `creeer_sim::surroundings` |
 | **The sea in the solar-system view** (only the planet view draws it) | The system view's body frames need its axis | G | Small | `system_view.rs` |
 
 ## Chemistry

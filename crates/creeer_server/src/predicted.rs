@@ -1,5 +1,5 @@
 //! The player's own avatar as the client predicts it: alone on the terrain in a physics world
-//! of the client's, steered by each input as it is made (`creeer_net::predict`), and set
+//! of the client's, in the planet's air and sea as the server's is (swimming is predicted), steered by each input as it is made (`creeer_net::predict`), and set
 //! back to the server's state whenever a snapshot says where the server has it, the inputs
 //! the server has not yet applied applied again. What the server knows and the client does
 //! not (a crate it rolled into) shows as a correction, which the drawn avatar slides through.
@@ -11,6 +11,7 @@ use creeer_net::message::AvatarInput;
 use creeer_net::predict::{InputLog, Smoothing, reconcile};
 use creeer_net::quant::BodyState;
 use creeer_physics::world::World;
+use creeer_sim::surroundings::Surroundings;
 use creeer_sim::{TerrainGround, character, planet_gravity};
 use creeer_terrain::Terrain;
 use std::sync::Arc;
@@ -19,6 +20,8 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct Predicted {
     world: World,
+    /// The planet's air and sea on it (as on the server's).
+    around: Option<Surroundings>,
     log: InputLog,
     smoothing: Smoothing,
     /// The tick of the snapshot it was last set back to.
@@ -39,14 +42,16 @@ pub struct Corrections {
 }
 
 impl Predicted {
-    /// A prediction on `terrain` (the avatar comes with the first snapshot that has it).
-    pub fn new(terrain: Arc<Terrain>) -> Self {
+    /// A prediction on `terrain`, in `around` (the avatar comes with the first snapshot that
+    /// has it).
+    pub fn new(terrain: Arc<Terrain>, around: Option<Surroundings>) -> Self {
         let mut world = World::new(DT);
         world.planet = Some(planet_gravity(terrain.planet()));
         world.static_friction = 0.7;
         world.ground = Some(Arc::new(TerrainGround(terrain)));
         Self {
             world,
+            around,
             log: InputLog::default(),
             smoothing: Smoothing::default(),
             reconciled: None,
@@ -54,19 +59,27 @@ impl Predicted {
         }
     }
 
-    fn step(world: &mut World, input: &AvatarInput) {
-        let up = world.bodies[0].structure.position[0].normalize();
+    fn step(world: &mut World, around: &mut Option<Surroundings>, input: &AvatarInput) {
+        let at = world.bodies[0].structure.position[0];
+        let water = (around.as_ref().and_then(|a| a.sea.as_ref())).map(|sea| sea.depth(at));
         let mut reactions = Vec::new();
-        character::steer(world, 0, (input.walk, input.jump), up, &mut reactions);
+        let act = (input.walk, input.jump);
+        character::steer(world, 0, act, (at.normalize(), water), &mut reactions);
+        if let Some(a) = around.as_mut() {
+            a.push(world);
+        }
         world.step();
         character::release(world, &mut reactions);
+        if let Some(a) = around.as_mut() {
+            a.settle(world, DT);
+        }
     }
 
     /// A new input (one a tick): kept, applied to the avatar at once, and returned to be sent.
     pub fn input(&mut self, walk: DVec3, jump: bool) -> AvatarInput {
         let input = self.log.push(walk, jump);
         if !self.world.bodies.is_empty() {
-            Self::step(&mut self.world, &input);
+            Self::step(&mut self.world, &mut self.around, &input);
         }
         input
     }
@@ -101,7 +114,15 @@ impl Predicted {
         s.velocity[0] = state.velocity();
         s.angular_velocity[0] = state.spin();
         body.solver.reset_history(&body.structure);
-        self.world = reconcile(world, last_input, &mut self.log, Self::step);
+        let around = self.around.take();
+        (self.world, self.around) = reconcile(
+            (world, around),
+            last_input,
+            &mut self.log,
+            |(w, a), input| {
+                Self::step(w, a, input);
+            },
+        );
         if let Some(before) = before {
             let after = self.world.bodies[0].structure.position[0];
             self.smoothing.corrected(before, after);

@@ -74,6 +74,7 @@ impl Play {
     /// If they have not joined within [`JOINING`] ticks.
     pub fn new(world: ServerWorld, scene: &str, players: &[&str], terrain: &Arc<Terrain>) -> Self {
         let content = world.data.hash();
+        let play_data = std::sync::Arc::clone(&world.data);
         let mut server = Server::new(world);
         let joined = (players.iter().enumerate())
             .map(|(k, name)| {
@@ -81,7 +82,7 @@ impl Play {
                 let link = SimulatedLink::new(Conditions::default(), 7 + k as u64);
                 let (relay, end) = Relay::new(end, link);
                 let mut client = Connection::memory(end, name, content);
-                client.attach_terrain(Arc::clone(terrain));
+                client.attach_terrain(Arc::clone(terrain), &play_data);
                 (client, relay)
             })
             .collect();
