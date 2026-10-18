@@ -52,6 +52,16 @@ Seven cases of ten seconds: a character knocked down by a 200 kg crate dropped f
 - Where it goes: the objective 2.9 s (26 µs a line-search trial, 1.5 trials an iteration), the contacts' laws 1.8 s and the joints' terms 1.3 s across objective, residual and matrix; 43 % of the iterations follow a refresh, and the joints ask for 93 % of the refreshes (with friction in 71 %, alone in 22 %; friction alone 6 %).
 - After the fixes below (5.29 s): an iteration costs about 73 µs: the objective 32 µs (1.36 trials of 23 µs), the Gauss–Newton matrix about 25 µs (the coupling's blocks, which the `relinearise` slot does not time, and its factorisation 7.6 µs), the residual 10 µs, the rest about 6 µs. Nothing dominates: the contacts' laws 1.1 s, the joints' terms 1.0 s, the contacts' geometry 0.4 s, a group step's setup 68 µs. 13 iterations a step, 43 % after a refresh.
 
+### Why the joints' share was not theirs (measured 2026-10-18)
+
+What moved in each refresh of the ragdoll bench's states (5.29 s, 35,580 iterations; `Coupling::update_lag`):
+
+| Nothing (converged) | The joints alone | Friction alone | Both |
+|---|---|---|---|
+| 2,967 | 1,505 | 389 | 5,000 |
+
+The joints take part in 94 % of the refreshes that go on, which is the 93 % above; but friction's normal forces moved in 78 % of them too. Taking either away leaves most refreshes: the joint tree took the joints' and the refreshes' iterations fell by 8 %. Both must go for the refreshes to go: friction within Newton's iterations first, then the tree again.
+
 ### Found and fixed on the way
 
 - **The energy guard measured turning contacts unturned.** A contact whose normal turns with a body (a face's) or with two edges got its start (the bodies' orientations, the edges' sign) only when its step began, after the guard had measured the contacts: with the identity for a start, each normal was turned by its body's whole orientation. Found on a ragdoll's foot under a crate's edge: 6 mm apart, measured 4 mm deep, 21 J found every step, and the guard took it from the motion (it stopped the foot dead every other step, and the group never slept). A turning contact now starts where it is found, and again at each substep before the guard measures. Every physics test as before; it holds wherever bodies are turned, which most tests' are not.
@@ -74,6 +84,8 @@ Seven cases of ten seconds: a character knocked down by a 200 kg crate dropped f
 |---|---|---|
 | **A ragdoll of 11 segments** (hands merged into forearms, feet into shanks: masses and inertias kept; no wrists, no ankles) | The bench's whole runs: 4.05 s against 5.41, worst tick 19 ms against 30, as many asleep | A quarter to a third, not the factor the gates need; a change to the character the user decides on |
 | Turn substeps per island instead of for the whole world (a fast-turning box makes every group and the contact detection substep, up to 16 times) | In the crowd's worst tick, the groups that did not need them cost 4.7 ms of 63 | The flung hand's group cost 42 ms of it; struts remove the cause. Still worth doing: listed in G1.8 |
+| **Jointed trees stepped in their joint coordinates** (P1's item 1, built as planned below; its joints exact, its direction L-BFGS on Jᵀ·H·J in the tree's coordinates) | Joint tests all pass, several better: a tumbling pair's angular momentum 5·10⁻⁶ and 1.5·10⁻⁵ off (240 and 60 Hz) against 5·10⁻⁵, its joints holding to rounding. The ragdoll bench's states (written anew for the format): 5,335 ms against 5,010, iterations 52,201 against 56,681, refreshes' iterations 18,414 against 20,050; its dense reduced solve and assembly 968 ms against the joint solve's 446 | Slower, and the refreshes it was to end stayed: friction refreshes with the joints (below, *Why the joints' share was not theirs*). Set aside until friction is solved within Newton's iterations, then measured again on top of it. Patch: `docs/adr/0024/joint-tree.patch` (against 42d6733) |
+| Pitfalls found building it (each in the patch, fixed) | The trapezoid on exact constraints rings: the joint's force twice its mean and none on alternate steps, undamped, and the velocities with it (Cardona and Géradin 1989). Carrying the step's mean instead (one force a step, as Gonzalez 1999's energy–momentum method) ends it but is half a step late (a double pendulum 2.3·10⁻³ rad off against 1.75·10⁻³); the mean taken on half a step, (3·mₙ − mₙ₋₁)/2, is second order and quiet. Carrying none (RATTLE's split) or the bodies' own means: force and torque from different poses, angular momentum 1.5 % off in 2 s. BDF2 for trees instead: 10 % off. Gauss–Newton's reduced matrix lacks the forward kinematics' curvature under the step's forces (RedMax's geometric stiffness): 500 iterations of steps cut to a three-hundredth until L-BFGS ran in the tree's coordinates. A free tree's root not at its centre of mass: momentum off 3·10⁻⁹ by the kinematics' second order (a centroidal base fixes it) | Recorded for when it is tried again |
 | Legs ignoring supports lighter than 10 or 50 kg (a measurement, not a fix) | *crowd* worst 58 → 51 ms, p99 11.9 → 13.7 | Not realistic (a boot on a hand presses it down), and the remaining slow ticks are the ragdolls' own steps |
 
 ## What others found (research, 2026-10-18)
@@ -111,10 +123,11 @@ Sources: arxiv.org/html/2605.15875v1; doi.org/10.1145/3355621; graphics.cs.utah.
 - A line search's trial places the tree's bodies by forward kinematics from its root (a child's orientation its parent's times the joint's turned relative orientation, its centre hung from the joint's point): its joints hold exactly, so their constraints' terms vanish and are not refreshed.
 - Joints that close loops stay ADR-0022's; limits, damping, friction and drives stay energies of the joints.
 - Expected from the measurements: the joints' 93 % share of the refreshes gone, their penalty's stiffness out of the matrix. Measured against `ragdoll_states_stepped` before it is kept.
+- **Built and measured: set aside** (*Measured and set aside*): 6.5 % slower, as friction refreshes with the joints (*Why the joints' share was not theirs*). Tried again once friction no longer lags.
 
 ### 2. Then, each with its own prior work recorded before it is built
 
-- Friction within Newton's iterations (Alart–Curnier; the 2024 barrier-augmented Lagrangian), for its realism defect and its iterations.
+- Friction within Newton's iterations (Alart–Curnier; the 2024 barrier-augmented Lagrangian), for its realism defect and its iterations: now first, as the refreshes measured wait on it.
 - The contact set persistent across steps (feature identities, as engines keep manifolds), which also ends the world-wide turn substeps.
 - Large groups split across cores by consensus ADMM (Distributed ABD), for piles.
 

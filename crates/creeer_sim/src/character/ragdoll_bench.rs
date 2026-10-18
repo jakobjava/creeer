@@ -126,7 +126,8 @@ fn ragdoll_states_written() {
 }
 
 /// Each state of `RAGDOLL_STATES` stepped once: the time in all, the worst step, the Newton
-/// iterations (each step's most of any body) in all.
+/// iterations (each step's most of any body) in all, and the slowest eight (ms, state,
+/// iterations). `ONLY=<state>` steps that one alone (with the `profile` feature, its phases).
 #[test]
 #[ignore = "a bench, run by hand"]
 fn ragdoll_states_stepped() {
@@ -139,21 +140,26 @@ fn ragdoll_states_stepped() {
         .collect();
     let _ = creeer_physics::profile::take();
     let (mut total, mut worst, mut its) = (0.0, 0.0f64, 0u64);
-    for state in &states {
+    let mut slow: Vec<(f64, usize, u32)> = Vec::new();
+    let only: Option<usize> = std::env::var("ONLY").ok().map(|s| s.parse().unwrap());
+    for (k, state) in states.iter().enumerate() {
+        if only.is_some_and(|o| o != k) {
+            continue;
+        }
         let mut world = World::from_bytes(state).unwrap();
         let start = std::time::Instant::now();
         world.step();
         let ms = start.elapsed().as_secs_f64() * 1e3;
         (total, worst) = (total + ms, worst.max(ms));
-        its += u64::from(
-            world
-                .bodies
-                .iter()
-                .map(|b| b.solver.last_iterations)
-                .max()
-                .unwrap_or(0),
-        );
+        let most = (world.bodies.iter())
+            .map(|b| b.solver.last_iterations)
+            .max()
+            .unwrap_or(0);
+        its += u64::from(most);
+        slow.push((ms, k, most));
     }
+    slow.sort_by(|a, b| b.0.total_cmp(&a.0));
+    eprintln!("slowest {:?}", &slow[..slow.len().min(8)]);
     eprintln!("{n} states stepped: {total:.0} ms in all, worst {worst:.2} ms, {its} iterations");
     let spent = creeer_physics::profile::take();
     let phases: Vec<String> = (creeer_physics::profile::NAMES.iter())

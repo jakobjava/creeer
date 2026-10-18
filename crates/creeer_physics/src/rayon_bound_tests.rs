@@ -41,7 +41,10 @@ fn a_parallel_region_in_a_newton_iterations_rhythm() {
             let mut s = 0.0;
             for _ in 0..iterations {
                 for _ in 0..3 {
-                    s += (0..pieces).into_par_iter().map(|i| spin(per, i as f64)).sum::<f64>();
+                    s += (0..pieces)
+                        .into_par_iter()
+                        .map(|i| spin(per, i as f64))
+                        .sum::<f64>();
                     s += spin(gap_us * 1000, s);
                 }
             }
