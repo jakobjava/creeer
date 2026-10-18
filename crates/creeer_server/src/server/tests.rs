@@ -110,7 +110,7 @@ fn a_player_joins_sees_the_world_and_walks_in_it() {
     let client = &game.clients[0].0;
     assert_eq!(client.status(), &Status::Joined);
     let avatar = client.welcome.as_ref().unwrap().avatar;
-    assert!(matches!(&client.kinds[&avatar], Kind::Avatar { player, .. } if player == "ada"));
+    assert!(matches!(&client.kinds[&avatar], Kind::Character { player } if player == "ada"));
     let boxes = client
         .kinds
         .values()
@@ -176,7 +176,7 @@ fn what_one_player_does_the_other_sees() {
         let avatars = client
             .kinds
             .values()
-            .filter(|k| matches!(k, Kind::Avatar { .. }))
+            .filter(|k| matches!(k, Kind::Character { .. }))
             .count();
         assert_eq!(avatars, 2);
     }
@@ -287,7 +287,7 @@ fn a_player_joins_over_udp() {
     }
     assert_eq!(server.players(), vec!["ada"]);
     let avatar = client.welcome.as_ref().unwrap().avatar;
-    assert!(matches!(&client.kinds[&avatar], Kind::Avatar { .. }));
+    assert!(matches!(&client.kinds[&avatar], Kind::Character { .. }));
 }
 
 #[test]

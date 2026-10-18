@@ -11,7 +11,7 @@ use creeer_net::message::AvatarInput;
 use creeer_net::predict::{InputLog, Smoothing, reconcile};
 use creeer_net::quant::BodyState;
 use creeer_physics::world::World;
-use creeer_sim::{TerrainGround, avatar, planet_gravity};
+use creeer_sim::{TerrainGround, character, planet_gravity};
 use creeer_terrain::Terrain;
 use std::sync::Arc;
 
@@ -56,8 +56,10 @@ impl Predicted {
 
     fn step(world: &mut World, input: &AvatarInput) {
         let up = world.bodies[0].structure.position[0].normalize();
-        avatar::steer(world, 0, (input.walk, input.jump), up);
+        let mut reactions = Vec::new();
+        character::steer(world, 0, (input.walk, input.jump), up, &mut reactions);
         world.step();
+        character::release(world, &mut reactions);
     }
 
     /// A new input (one a tick): kept, applied to the avatar at once, and returned to be sent.
@@ -85,7 +87,11 @@ impl Predicted {
         let before = self.world.bodies.first().map(|b| b.structure.position[0]);
         let mut world = std::mem::replace(&mut self.world, World::new(DT));
         if world.bodies.is_empty() {
-            world.add(avatar::body(state.position(), DT));
+            world.add(character::body(
+                state.position(),
+                state.position().normalize(),
+                DT,
+            ));
         }
         let body = &mut world.bodies[0];
         body.wake();

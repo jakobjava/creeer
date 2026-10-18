@@ -26,12 +26,7 @@ pub const SHAPE_EVERY: u64 = 6;
 /// What a client draws a body as (`player` whose avatar it is).
 pub fn kind(body: &Body, player: Option<&str>) -> Kind {
     if let Some(player) = player {
-        let radius = match body.shapes.first() {
-            Some((_, Shape::Sphere { radius })) => *radius,
-            _ => creeer_sim::avatar::RADIUS,
-        };
-        return Kind::Avatar {
-            radius,
+        return Kind::Character {
             player: player.to_owned(),
         };
     }

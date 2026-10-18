@@ -80,9 +80,10 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 }
 
 /// Each scene's most work in a tick at CI's length (Newton iterations summed over its
-/// bodies), a tenth above what it measured (2026-10-18: crowd 467), brought down as the
+/// bodies), a tenth above what it measured (2026-10-18: crowd 446, its players characters),
+/// brought down as the
 /// solver needs fewer.
-const WORK: [(&str, u64); 1] = [("crowd", 515)];
+const WORK: [(&str, u64); 1] = [("crowd", 490)];
 
 #[test]
 #[ignore = "measures the work ceilings"]

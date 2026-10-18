@@ -61,6 +61,11 @@ The physics has contacts and welded members, but no articulation. The ragdoll ne
 
 ### G1.2 The character (`creeer_sim::character`, ADR-0023)
 
+**In progress.**
+- **G1.2a done** (2026-10-18): the body (a box from the knees up, 105 kg), its legs (a spring from the hip to the ground a ray finds: `World::ray`, new), walking within the friction cone, balance within the body's strength, reactions on what it stands on (and both stepped as held, so momentum is kept), sleep. The server and the client's prediction use it; protocol 5 (`Kind::Character`). The decisions differ from the plan below: a box instead of a capsule (cost), and no leg compliance from a separate body (a ray-found spring instead).
+- **Next:** swimming, the jetpack and EVA, the ragdoll and injury, prediction of nearby bodies.
+- **Climbing** waits for something to climb: G2's ladders and handholds.
+
 It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and are measured, not assumed.
 
 - **Standing and walking.** The body is one rigid body: torso and legs as a capsule, with the mass and inertia of a person (body segment data, de Leva 1996) plus the suit and whatever is carried.

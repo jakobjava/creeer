@@ -49,6 +49,7 @@ mod pile_tests;
 #[cfg(test)]
 mod planet_tests;
 mod query;
+pub mod ray;
 mod sat;
 mod save;
 pub mod shape;
@@ -91,6 +92,11 @@ pub struct Body {
     pub sleep: sleep::Sleep,
     /// Whether its last step was an impact in which members still flowed plastically.
     crushing: bool,
+    /// Stepped as a body in contact is (BDF2), even touching nothing: a character standing on
+    /// its legs, and what its legs push in a step. Their loads are equal and opposite, and keep
+    /// momentum only under one scheme (Newmark averages a load over the step's two ends,
+    /// BDF2 takes the end's: a character walking on a crate on ice gave the pair 2.8 kg·m/s).
+    pub held: bool,
 }
 
 impl Body {
@@ -140,6 +146,7 @@ impl Body {
             surface: Surface::STEEL,
             sleep: sleep::Sleep::default(),
             crushing: false,
+            held: false,
         }
     }
 }

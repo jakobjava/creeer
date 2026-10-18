@@ -40,8 +40,7 @@ fn bodies_are_drawn_as_what_they_are() {
     assert_eq!(kind(&ball, None), Kind::Body(NetShape::Sphere(0.4)));
     assert_eq!(
         kind(&ball, Some("ada")),
-        Kind::Avatar {
-            radius: 0.4,
+        Kind::Character {
             player: "ada".into()
         }
     );

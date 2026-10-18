@@ -38,10 +38,8 @@ pub struct Frame {
 pub enum Kind {
     /// A rigid body.
     Body(Shape),
-    /// A player's avatar (a ball of this radius), and whose it is.
-    Avatar {
-        /// Its radius (m).
-        radius: f64,
+    /// A player's character (its shape is the game's: `creeer_sim::character`), and whose.
+    Character {
         /// The player's name.
         player: String,
     },
@@ -78,9 +76,8 @@ impl Encode for Kind {
                 w.u8(2);
                 w.put(corners);
             }
-            Self::Avatar { radius, player } => {
+            Self::Character { player } => {
                 w.u8(3);
-                w.f64(*radius);
                 w.put(player);
             }
             Self::Structure(frame) => {
@@ -109,10 +106,7 @@ impl Decode for Kind {
             0 => Self::Body(Shape::Box(r.get()?)),
             1 => Self::Body(Shape::Sphere(r.finite()?)),
             2 => Self::Body(Shape::Hull(r.get()?)),
-            3 => Self::Avatar {
-                radius: r.finite()?,
-                player: r.get()?,
-            },
+            3 => Self::Character { player: r.get()? },
             4 => {
                 let radius = r.finite()?;
                 let nodes: Vec<DVec3> = r.get()?;

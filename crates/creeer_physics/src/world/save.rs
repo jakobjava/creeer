@@ -129,6 +129,8 @@ impl Encode for Body {
         w.put(&self.sleep.still);
         w.put(&self.sleep.load);
         w.put(&self.crushing);
+        // (Version 8 on.)
+        w.put(&self.held);
     }
 }
 
@@ -160,6 +162,7 @@ impl Decode for Body {
             surface,
             sleep,
             crushing: r.get()?,
+            held: if r.version() >= 8 { r.get()? } else { false },
         })
     }
 }

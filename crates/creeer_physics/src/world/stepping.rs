@@ -120,6 +120,7 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
         let mut structures: Vec<_> = bodies.iter_mut().map(|b| &mut b.structure).collect();
         impact::prestop(&mut structures, (&contacts.list, &gaps), h);
     }
+    let held = bodies.iter().any(|b| b.held);
     let mut members: Vec<_> = bodies
         .iter_mut()
         .map(|b| (&mut b.structure, &mut b.solver))
@@ -132,8 +133,8 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
     // bodies keep Newmark.
     let scheme = if impact {
         Some(Scheme::BackwardEuler)
-    } else if contacts.list.is_empty() && !contacts.joints.limited() {
-        // (A joint's stops are stepped as contacts are.)
+    } else if contacts.list.is_empty() && !contacts.joints.limited() && !held {
+        // (A joint's stops are stepped as contacts are, and bodies held: `Body::held`.)
         None
     } else {
         Some(Scheme::Bdf2)

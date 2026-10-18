@@ -14,6 +14,7 @@ pub mod aero;
 #[cfg(test)]
 mod aero_tests;
 pub mod avatar;
+pub mod character;
 pub mod content;
 #[cfg(test)]
 mod content_tests;

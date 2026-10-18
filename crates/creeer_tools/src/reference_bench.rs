@@ -59,21 +59,24 @@ fn bridges() -> Box<dyn FnMut(u32) + Send> {
 
 /// Eight players walking circles round a yard of crates (ten stacks of ten).
 fn players() -> Box<dyn FnMut(u32) + Send> {
-    use creeer_sim::avatar;
+    use creeer_sim::character;
     let mut world: World = crate::world_bench::stacks();
     let first = world.bodies.len();
     for k in 0..8 {
-        let at = DVec3::new(f64::from(k) * 16.0, avatar::RADIUS, 30.0);
-        world.add(avatar::body(at, DT));
+        let feet = DVec3::new(f64::from(k) * 16.0, 0.02, 30.0);
+        world.add(character::body(feet, DVec3::Y, DT));
     }
+    let mut reactions = Vec::new();
     Box::new(move |tick| {
         for k in 0..8 {
             let angle = f64::from(tick) * DT * 0.5 + f64::from(k);
             let (sin, cos) = (creeer_math::det::sin(angle), creeer_math::det::cos(angle));
             let walk = DVec3::new(cos, 0.0, sin) * 3.0;
-            avatar::steer(&mut world, first + k as usize, (walk, false), DVec3::Y);
+            let index = first + k as usize;
+            character::steer(&mut world, index, (walk, false), DVec3::Y, &mut reactions);
         }
         world.step();
+        character::release(&mut world, &mut reactions);
     })
 }
 

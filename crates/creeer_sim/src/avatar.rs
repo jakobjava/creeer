@@ -1,4 +1,5 @@
-//! A player's avatar: for now a ball the player rolls about, the test avatar of F5's
+//! F5's test avatar, kept for the save fixtures that hold one (players are characters since
+//! G1.2: `character.rs`): a ball the player rolls about, the test avatar of F5's
 //! prediction (plan.md). It is a body of the physics world like any other: the player only
 //! pushes it, with a force at its centre, and the world does the rest (it rolls, it is
 //! stopped by walls and pushed by crates, friction and slopes act on it as on a crate).

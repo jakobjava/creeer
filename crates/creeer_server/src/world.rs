@@ -16,7 +16,7 @@ use creeer_net::message::{AvatarInput, Command};
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::{Body, World};
 use creeer_sim::surroundings::Surroundings;
-use creeer_sim::{TerrainGround, avatar, planet_gravity};
+use creeer_sim::{TerrainGround, character, planet_gravity};
 use creeer_terrain::edits::{Brush, Edit, Edits};
 use creeer_terrain::{Planet, Terrain};
 use std::collections::HashMap;
@@ -70,6 +70,9 @@ pub struct ServerWorld {
     /// Its machines (F7.4), and the next id for one.
     machines: Vec<machines::Placed>,
     next_machine: u32,
+    /// The characters' legs' reactions on what they stand on, for this step alone
+    /// (`creeer_sim::character::release`).
+    reactions: Vec<character::Reaction>,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -135,6 +138,7 @@ impl ServerWorld {
             returning: std::collections::VecDeque::new(),
             machines: Vec::new(),
             next_machine: 1,
+            reactions: Vec::new(),
         }
     }
 
@@ -242,15 +246,16 @@ impl ServerWorld {
         // Side by side, two metres apart, a little above the ground.
         #[allow(clippy::cast_precision_loss)] // a few
         let along = self.players.iter().flatten().count() as f64 * 2.0;
-        let at = self.spawn + east * along + up * (avatar::RADIUS + 0.3);
-        self.add(avatar::body(at, DT), Some(player.to_owned()))
+        let feet = self.ground_under(self.spawn + east * along) + up * 0.05;
+        self.add(character::body(feet, up, DT), Some(player.to_owned()))
     }
 
     /// Steers avatar `id` by `input` for the next step.
     pub fn steer(&mut self, id: EntityId, input: &AvatarInput) {
         if let Some(i) = self.index(id) {
             let up = self.world.bodies[i].structure.position[0].normalize();
-            avatar::steer(&mut self.world, i, (input.walk, input.jump), up);
+            let act = (input.walk, input.jump);
+            character::steer(&mut self.world, i, act, up, &mut self.reactions);
         }
     }
 
@@ -339,6 +344,7 @@ impl ServerWorld {
         self.surroundings.push(&mut self.world);
         drop(scope);
         self.world.step();
+        character::release(&mut self.world, &mut self.reactions);
         let _scope = profile::scope("surroundings");
         self.surroundings.settle(&mut self.world, DT);
         self.tick += 1;

@@ -166,8 +166,19 @@ impl PlanetSession {
             let (p, q) = (pose.position, pose.orientation);
             match kind {
                 Kind::Body(Shape::Box(half)) => out.boxes.push((p, q, *half)),
-                Kind::Body(Shape::Sphere(radius)) | Kind::Avatar { radius, .. } => {
-                    out.spheres.push((p, *radius))
+                Kind::Body(Shape::Sphere(radius)) => out.spheres.push((p, *radius)),
+                // A character (until G1.3's suit): its torso a box, its legs two beams down
+                // to where its feet stand.
+                Kind::Character { .. } => {
+                    let (centre, hip) = creeer_sim::character::heights();
+                    let up = q * creeer_math::glam::DVec3::Y;
+                    out.boxes.push((p, q, creeer_sim::character::torso()));
+                    for side in [-0.1, 0.1] {
+                        let across = q * creeer_math::glam::DVec3::X * side;
+                        let (hip, feet) = (p + up * (hip - centre), p - up * centre);
+                        out.beams
+                            .push((hip + across, feet + across, 0.07, 0.0, false));
+                    }
                 }
                 // The sandbox makes no rocks: a hull is drawn as the ball around it.
                 Kind::Body(Shape::Hull(corners)) => {

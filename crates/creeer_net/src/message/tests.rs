@@ -70,8 +70,7 @@ fn server_messages_read_back() {
         Kind::Body(Shape::Box(DVec3::splat(0.5))),
         Kind::Body(Shape::Sphere(0.4)),
         Kind::Body(Shape::Hull(vec![DVec3::X, DVec3::Y, DVec3::Z, DVec3::ZERO])),
-        Kind::Avatar {
-            radius: 0.4,
+        Kind::Character {
             player: "ada".into(),
         },
         Kind::Structure(frame),
