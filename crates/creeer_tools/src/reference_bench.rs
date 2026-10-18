@@ -76,7 +76,7 @@ fn players() -> Box<dyn FnMut(u32) + Send> {
             character::steer(
                 &mut world,
                 index,
-                (walk, false),
+                character::Intent::walk(walk, false),
                 (DVec3::Y, None),
                 &mut reactions,
             );

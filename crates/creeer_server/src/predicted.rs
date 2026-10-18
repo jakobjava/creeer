@@ -28,6 +28,8 @@ pub struct Predicted {
     reconciled: Option<u32>,
     /// How far it was corrected each time it was set back (m).
     pub corrections: Corrections,
+    /// The jetpack's gas as the server last told it (kg): its mass is the body's.
+    gas: f64,
 }
 
 /// How far a prediction was corrected.
@@ -56,6 +58,7 @@ impl Predicted {
             smoothing: Smoothing::default(),
             reconciled: None,
             corrections: Corrections::default(),
+            gas: character::TANK,
         }
     }
 
@@ -63,7 +66,11 @@ impl Predicted {
         let at = world.bodies[0].structure.position[0];
         let water = (around.as_ref().and_then(|a| a.sea.as_ref())).map(|sea| sea.depth(at));
         let mut reactions = Vec::new();
-        let act = (input.walk, input.jump);
+        let act = character::Intent {
+            walk: input.walk,
+            jump: input.jump,
+            thrust: input.thrust,
+        };
         character::steer(world, 0, act, (at.normalize(), water), &mut reactions);
         if let Some(a) = around.as_mut() {
             a.push(world);
@@ -76,12 +83,17 @@ impl Predicted {
     }
 
     /// A new input (one a tick): kept, applied to the avatar at once, and returned to be sent.
-    pub fn input(&mut self, walk: DVec3, jump: bool) -> AvatarInput {
-        let input = self.log.push(walk, jump);
+    pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
+        let input = self.log.push(walk, jump, thrust);
         if !self.world.bodies.is_empty() {
             Self::step(&mut self.world, &mut self.around, &input);
         }
         input
+    }
+
+    /// The jetpack's gas, as the server tells it (kg): set at the next correction.
+    pub fn set_gas(&mut self, gas: f64) {
+        self.gas = gas;
     }
 
     /// The inputs to send this tick.
@@ -113,6 +125,8 @@ impl Predicted {
         s.orientation[0] = state.orientation();
         s.velocity[0] = state.velocity();
         s.angular_velocity[0] = state.spin();
+        body.solver
+            .set_mass(&mut body.structure, 0, character::DRY + self.gas);
         body.solver.reset_history(&body.structure);
         let around = self.around.take();
         (self.world, self.around) = reconcile(

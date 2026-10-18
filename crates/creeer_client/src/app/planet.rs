@@ -65,7 +65,10 @@ impl Running {
             self.fly.look(&mut self.camera);
             let speed = if self.fly.running() { RUN } else { WALK };
             let walk = planet.walk(&self.camera, self.fly.walk_axes(), speed);
-            planet.session.update(dt, (walk, self.fly.jumping()));
+            let thrust = planet.thrust(walk, self.fly.thrusting());
+            planet
+                .session
+                .update(dt, (walk, self.fly.jumping(), thrust));
             planet.follow(&mut self.camera);
         } else {
             // Flying speed follows the height above the ground: the wheel sets how many
@@ -74,7 +77,7 @@ impl Running {
             self.fly.speed = base * planet.altitude(self.camera.position).max(2.0) / 10.0;
             self.fly.update(&mut self.camera, dt);
             self.fly.speed = base;
-            planet.session.update(dt, (DVec3::ZERO, false));
+            planet.session.update(dt, (DVec3::ZERO, false, DVec3::ZERO));
             planet.constrain_camera(&mut self.camera);
         }
         planet.advance_day(dt);

@@ -31,9 +31,25 @@
   - In shallow water its legs reach the bottom, and it wades.
 - **Drowning** comes with G9's needs; until then the suit is sealed.
 
+### The jetpack (G1.2c)
+
+- **Cold nitrogen.** Isp 70 s (NASA's MMU and SAFER packs), at most 1.5 kN, from a 3 kg tank (two 6 l bottles at 300 bar).
+  - On a planet that is honest and short: hovering a 105 kg person takes 1.5 kg/s, so the tank lifts it for 2 s (Δv 19.9 m/s in all). Better propellants are G8's.
+- **The gas is the body's mass** above its dry 102 kg: nothing else to keep or save.
+  - A step's burn is its push over the exhaust's speed (Isp·g₀).
+  - The body steps with half of it spent (the mean mass: Tsiolkovsky to second order) and ends the step without it.
+  - Its momentum's share leaves with the gas.
+  - `character::refill` fills the tank (the pod, G1.6).
+- **Attitude jets** damp the body's spin while it thrusts (at most 30 N·m from a pair at 0.3 m, paid in gas): EVA in free fall holds still.
+- **The input.** `AvatarInput.thrust`: a fraction of the most push, in the world's frame, delta-coded as the walk is. In the client it is held Ctrl while walking: up, leaning the way WASD goes.
+- **The tank's level.** The server tells each player their character's gas with every snapshot round (`ServerMessage::Own`), for the HUD (G1.9) and for the prediction, which sets its body's mass from it at each correction.
+- **Held standing, free in the air.** A character is stepped as held (BDF2) while its legs stand on anything, and free (Newmark) in the air.
+  - BDF2 takes part of a force switched on with it: a full tank burnt held fell 0.6 % short of Tsiolkovsky's Δv and never recovered, while Newmark's impulses are exact (to six digits). Recorded for contact groups in general in `docs/future-improvements.md`.
+  - Standing, BDF2 is needed twice over: for momentum with a body the legs push, and for the client's prediction. A prediction set back to the server's state cannot know Newmark's carried acceleration: stepped free on the ground, 8 % of its corrections were over a centimetre (the test allows 5 %).
+
 ### Not yet (G1.2's next slices)
 
-The jetpack and EVA thrusters, the ragdoll and injury, prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
+The ragdoll and injury, prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.
 
 ## Validation (G1.2a)
 
@@ -47,6 +63,9 @@ The jetpack and EVA thrusters, the ragdoll and injury, prediction of bodies near
 | Landing | 0.5 m on the legs (under 4 g, no body contact); 4 m strikes (over twice that) |
 | Sleep | an idle character falls asleep, stays asleep, and wakes when asked to walk |
 | Rays | planes, turned boxes, balls, hulls, a body skipped, the ground (a sphere planet) against analytic distances; a leg's ray within 4 density evaluations (safeguarded Newton: bisection took 25) |
+| A full tank burnt in free fall | Δv = Isp·g₀·ln(105/102) = 19.899 m/s within 10⁻⁵; empty, no more push |
+| A hover at its weight's thrust | lasts gas·Isp/m (2.0 s) within 5 %; holds itself up (lighter, it rises a little) |
+| Attitude jets | a spin of 1.1 rad/s damped below a fifth in 2 s |
 | At sea (the home planet's) | floats with its centre at the surface (−0.01 m), at rest; swims at 0.68 m/s; rises 0.1 m when asked |
 
 ## Cost

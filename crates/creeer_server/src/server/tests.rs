@@ -52,7 +52,7 @@ impl Game {
             }
             client.update(STEP);
             let (walk, jump) = input(k);
-            client.input(walk, jump);
+            client.input(walk, jump, DVec3::ZERO);
             client.flush();
             if let Some(relay) = relay {
                 relay.pump(self.now);
@@ -280,7 +280,7 @@ fn a_player_joins_over_udp() {
             client.status()
         );
         client.update(STEP);
-        client.input(DVec3::ZERO, false);
+        client.input(DVec3::ZERO, false, DVec3::ZERO);
         client.flush();
         server.tick();
         std::thread::sleep(Duration::from_millis(2));

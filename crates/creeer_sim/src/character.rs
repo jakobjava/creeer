@@ -21,8 +21,20 @@ use creeer_math::glam::{DQuat, DVec3};
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::{Body, World};
 
-/// A person (80 kg) in a work suit with its backpack (25 kg).
-pub const MASS: f64 = 105.0;
+/// A person (80 kg) in a work suit with its backpack (22 kg), without the jetpack's gas.
+pub const DRY: f64 = 102.0;
+/// The jetpack's nitrogen, full (kg): two 6 l bottles at 300 bar.
+pub const TANK: f64 = 3.0;
+/// The whole, the tank full.
+pub const MASS: f64 = DRY + TANK;
+/// Cold nitrogen's specific impulse (s): NASA's MMU and SAFER packs, about 70.
+pub const ISP: f64 = 70.0;
+/// The jetpack's most thrust (N): a little over its wearer's weight, for a second or two.
+pub const THRUST_MOST: f64 = 1500.0;
+/// Its attitude jets: their damping of spin (N·m·s/rad), most torque (N·m), and lever (m).
+const ATTITUDE: (f64, f64, f64) = (60.0, 30.0, 0.3);
+/// Standard gravity (m/s²), of the specific impulse.
+const G0: f64 = 9.806_65;
 /// From the feet to the top of the helmet, standing (m).
 pub const HEIGHT: f64 = 1.85;
 /// The hip's height above the feet, standing (m).
@@ -95,7 +107,6 @@ pub fn body(feet: DVec3, up: DVec3, dt: f64) -> Body {
     body.structure.orientation[0] = turn;
     body.friction = BOOTS;
     body.restitution = 0.0;
-    body.held = true;
     body.solver.reset_history(&body.structure);
     body
 }
@@ -109,6 +120,40 @@ pub struct Reaction {
     pub torque: DVec3,
     /// Whether the body was stepped as held (`Body::held`) before it was pushed.
     pub held: bool,
+    /// The body's mass after the step (a jetpack's gas spent in it), if it changes.
+    pub mass: Option<f64>,
+}
+
+/// What a player asks of their character for one step.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Intent {
+    /// Where to walk (m/s along the ground; or swim).
+    pub walk: DVec3,
+    /// Jump if standing (swim up, in water).
+    pub jump: bool,
+    /// The jetpack's push, as a fraction of its most (world frame; length at most 1).
+    pub thrust: DVec3,
+}
+
+impl Intent {
+    /// Walking (or jumping), no thrust.
+    pub fn walk(walk: DVec3, jump: bool) -> Self {
+        Self {
+            walk,
+            jump,
+            thrust: DVec3::ZERO,
+        }
+    }
+}
+
+/// The gas left in a character's jetpack (kg).
+pub fn gas(body: &Body) -> f64 {
+    (body.structure.masses()[0] - DRY).max(0.0)
+}
+
+/// Fills a character's jetpack (at its pod, G1.6).
+pub fn refill(body: &mut Body) {
+    body.solver.set_mass(&mut body.structure, 0, MASS);
 }
 
 /// How a character stands after [`steer`].
@@ -127,10 +172,11 @@ pub struct Footing {
 pub fn steer(
     world: &mut World,
     index: usize,
-    (walk, jump): (DVec3, bool),
+    intent: Intent,
     (up, water): (DVec3, Option<f64>),
     reactions: &mut Vec<Reaction>,
 ) -> Footing {
+    let (walk, jump) = (intent.walk, intent.jump);
     let (x, q, v, w) = {
         let s = &world.bodies[index].structure;
         (
@@ -145,7 +191,7 @@ pub fn steer(
     // Asleep and asked for nothing: it stands as it fell asleep. (Its legs' force taken
     // again from where it rests differs from the force it fell asleep under in its last
     // bits, and a changed load wakes a body: it never slept, and was never parked.)
-    if world.bodies[index].sleep.asleep && walk == DVec3::ZERO && !jump {
+    if world.bodies[index].sleep.asleep && intent == Intent::default() {
         return Footing {
             legs: world.bodies[index].structure.load[0],
             ground: hit.map(|h| h.normal),
@@ -202,6 +248,7 @@ pub fn steer(
                 force: -force,
                 torque: -torque - (hit.point - s.position[node]).cross(force),
                 held: world.bodies[b].held,
+                mass: None,
             });
         }
         footing = Footing {
@@ -235,9 +282,28 @@ pub fn steer(
             torque = torque.normalize() * SWIM_BALANCE;
         }
     }
+    if let Some((push, hold, mass)) = jetpack(world, index, intent.thrust, w) {
+        force += push;
+        torque += hold;
+        reactions.push(Reaction {
+            body: index,
+            node: 0,
+            force: DVec3::ZERO,
+            torque: DVec3::ZERO,
+            held: true,
+            mass: Some(mass),
+        });
+    }
     let s = &mut world.bodies[index].structure;
     s.load[0] = force;
     s.torque[0] = torque;
+    // Standing, it is stepped as held (BDF2), and so is another body its legs push: equal and
+    // opposite loads keep momentum only under one scheme, and a client's prediction, set back to
+    // the server's state, cannot know Newmark's carried acceleration (8 % of its corrections
+    // were over a centimetre stepped free on the ground). In the air it steps free (Newmark),
+    // whose impulses are exact: BDF2 takes part of a force switched on with it (a full tank
+    // burnt held fell 0.6 % short of Tsiolkovsky's Δv; free, it is exact to six digits).
+    world.bodies[index].held = footing.ground.is_some();
     if let Some(r) = mine.filter(|r: &Reaction| r.body != index) {
         // Stepped as the character is: equal and opposite loads keep momentum only so.
         world.bodies[r.body].held = true;
@@ -249,6 +315,39 @@ pub fn steer(
     footing
 }
 
+/// The jetpack for a step: its push (`thrust` as a fraction of its most, while gas lasts)
+/// and its attitude jets' hold on the spin `w`, and the body's mass after the step. The gas
+/// they spend is the push over its exhaust's speed (Isp·g₀); the body steps with half the
+/// step's gas spent (the mean mass over the step: Tsiolkovsky's Δv to second order) and ends
+/// it without the step's.
+fn jetpack(
+    world: &mut World,
+    index: usize,
+    thrust: DVec3,
+    w: DVec3,
+) -> Option<(DVec3, DVec3, f64)> {
+    let body = &mut world.bodies[index];
+    let (mass, gas) = (body.structure.masses()[0], gas(body));
+    if thrust == DVec3::ZERO || gas <= 0.0 {
+        return None;
+    }
+    let exhaust = ISP * G0;
+    let (damping, most, arm) = ATTITUDE;
+    let mut push = thrust.clamp_length_max(1.0) * THRUST_MOST;
+    let mut hold = (-w * damping).clamp_length_max(most);
+    // Kilograms a step: the push's, and the attitude jets' (a pair at their lever).
+    let dt = world.dt();
+    let mut burn = (push.length() + hold.length() / arm) / exhaust * dt;
+    if burn > gas {
+        (push, hold) = (push * (gas / burn), hold * (gas / burn));
+        burn = gas;
+    }
+    let body = &mut world.bodies[index];
+    body.solver
+        .set_mass(&mut body.structure, 0, mass - 0.5 * burn);
+    Some((push, hold, mass - burn))
+}
+
 /// Takes the step's reactions off the bodies they were put on.
 pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
     for r in reactions.drain(..) {
@@ -256,6 +355,9 @@ pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
             body.take_load(r.node, r.force);
             body.structure.torque[r.node] -= r.torque;
             body.held = r.held;
+            if let Some(mass) = r.mass {
+                body.solver.set_mass(&mut body.structure, r.node, mass);
+            }
         }
     }
 }
@@ -263,5 +365,7 @@ pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod jet_tests;
 #[cfg(test)]
 mod swim_tests;

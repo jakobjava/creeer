@@ -25,6 +25,7 @@ fn a_recording_reads_back_as_written() {
                 Act {
                     walk: DVec3::new(0.1, -2.0, 1.0 / 3.0),
                     jump: true,
+                    thrust: DVec3::new(0.0, 0.7, 0.2),
                     commands: vec![Command::Crate(DVec3::X), Command::Edit(edits.to_bytes())],
                 },
                 Act::default(),

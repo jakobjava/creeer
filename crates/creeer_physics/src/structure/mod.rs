@@ -36,6 +36,7 @@ mod heat_tests;
 mod hessian_check;
 pub mod history;
 mod lbfgs;
+mod mass;
 mod minimise;
 mod objective;
 mod plastic;

@@ -29,6 +29,8 @@ fn client_messages_read_back() {
         seq,
         walk: DVec3::new(1.5, 0.0, -0.25),
         jump: seq % 2 == 0,
+        // Thrust coming and going (on alternate thirds).
+        thrust: DVec3::new(0.0, if seq % 3 == 0 { 0.5 } else { 0.0 }, -0.25),
     };
     back(&ClientMessage::Hello {
         protocol: crate::PROTOCOL_VERSION,
@@ -78,6 +80,7 @@ fn server_messages_read_back() {
         back(&ServerMessage::Spawn(EntityId(3), kind));
     }
     back(&ServerMessage::Despawn(EntityId(1 << 30)));
+    back(&ServerMessage::Own { gas: 2.25 });
     back(&ServerMessage::Edits {
         first: 17,
         log: vec![9; 300],
@@ -136,6 +139,7 @@ fn inputs_cost_a_byte_or_two_each() {
                 seq,
                 walk,
                 jump: seq == 104,
+                thrust: DVec3::ZERO,
             }
             .quantised()
         })

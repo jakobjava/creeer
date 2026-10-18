@@ -73,6 +73,8 @@ pub struct Connection {
     pub machines: Vec<creeer_net::message::MachineView>,
     /// The server's profile, as its last report gave it (while asked for: `watch_profile`).
     pub profile: Option<creeer_net::message::ProfileReport>,
+    /// The jetpack's gas, as the server last told it (kg).
+    pub gas: f64,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -113,6 +115,7 @@ impl Connection {
             broken: BTreeMap::new(),
             machines: Vec::new(),
             profile: None,
+            gas: creeer_sim::character::TANK,
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),
@@ -239,65 +242,20 @@ impl Connection {
         }
     }
 
-    fn handle(&mut self, message: ServerMessage) {
-        match message {
-            ServerMessage::Welcome {
-                client,
-                avatar,
-                planet,
-                ..
-            } => {
-                self.status = Status::Joined;
-                self.welcome = Some(Welcome {
-                    client,
-                    avatar,
-                    planet,
-                });
-            }
-            ServerMessage::Refused(why) => self.status = Status::Refused(why),
-            ServerMessage::Spawn(id, kind) => {
-                self.broken.remove(&id);
-                self.kinds.insert(id, kind);
-            }
-            ServerMessage::Despawn(id) => {
-                self.kinds.remove(&id);
-                self.broken.remove(&id);
-            }
-            ServerMessage::Edits { first, log } => self.edited(first, &log),
-            ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),
-            ServerMessage::Snapshot(snapshot) => self.snapshot(&snapshot),
-            ServerMessage::Machines(list) => self.machines = list,
-            ServerMessage::Profile(report) => self.profile = Some(report),
-        }
-    }
-
-    fn snapshot(&mut self, bytes: &[u8]) {
-        let Ok(snapshot) = self.receiver.read(bytes) else {
-            return;
-        };
-        let (tick, last_input) = (snapshot.tick, snapshot.last_input);
-        let mine = self
-            .welcome
-            .as_ref()
-            .and_then(|w| snapshot.states.get(&w.avatar))
-            .copied();
-        if let (Some(state), Some(p)) = (mine, &mut self.predicted) {
-            p.reconcile(tick, &state, last_input);
-        }
-    }
-
-    /// One client tick of input: walk at `walk` (m/s, along the ground), jump or not. It
-    /// moves the predicted avatar at once and goes to the server (with the last few).
-    pub fn input(&mut self, walk: DVec3, jump: bool) {
+    /// One client tick of input: walk at `walk` (m/s, along the ground), jump or not, the
+    /// jetpack's `thrust` (a fraction of its most). It moves the predicted avatar at once and
+    /// goes to the server (with the last few).
+    pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) {
         let Some(p) = &mut self.predicted else { return };
         if let Some((acts, commands)) = &mut self.recording {
             acts.push(Act {
                 walk,
                 jump,
+                thrust,
                 commands: std::mem::take(commands),
             });
         }
-        let input = p.input(walk, jump);
+        let input = p.input(walk, jump, thrust);
         if input.seq % INPUT_EVERY != 0 {
             return;
         }
@@ -397,3 +355,4 @@ impl Connection {
 }
 
 mod apply;
+mod receive;

@@ -126,7 +126,7 @@ impl Play {
             for command in &act.commands {
                 client.command(command.clone());
             }
-            client.input(act.walk, act.jump);
+            client.input(act.walk, act.jump, act.thrust);
             client.flush();
             relay.pump(self.now);
         }

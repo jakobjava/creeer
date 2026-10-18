@@ -97,7 +97,7 @@ fn play(up: Pipe<Vec<AvatarInput>>, down: Pipe<(u32, Toy, u32)>, ticks: u32) -> 
             0.0,
             3.0 * (rng.next() - 0.5),
         );
-        let input = log.push(walk, now % 50 == 7);
+        let input = log.push(walk, now % 50 == 7, DVec3::ZERO);
         step(&mut predicted, &input);
         up.send(now, log.to_send());
         // The server: what came, one input applied, a snapshot.
@@ -156,7 +156,7 @@ fn on_a_lossy_jittery_link_the_prediction_is_rarely_corrected() {
 fn the_queue_ignores_repeats_sorts_late_ones_and_holds_back_a_fast_client() {
     let mut log = InputLog::default();
     let inputs: Vec<AvatarInput> = (0..30)
-        .map(|i| log.push(DVec3::X * f64::from(i), false))
+        .map(|i| log.push(DVec3::X * f64::from(i), false, DVec3::ZERO))
         .collect();
     let mut queue = InputQueue::default();
     queue.receive(&[inputs[1]]);
@@ -188,7 +188,9 @@ fn the_buffer_shrinks_again_on_a_link_that_got_better() {
     let mut queue = InputQueue::default();
     // A burst of lateness: the buffer grows to its most.
     for _ in 0..MOST_BUFFER {
-        let late: Vec<AvatarInput> = (0..8).map(|_| log.push(DVec3::X, false)).collect();
+        let late: Vec<AvatarInput> = (0..8)
+            .map(|_| log.push(DVec3::X, false, DVec3::ZERO))
+            .collect();
         queue.receive(&late);
         for _ in 0..12 {
             queue.take();
@@ -197,7 +199,7 @@ fn the_buffer_shrinks_again_on_a_link_that_got_better() {
     assert_eq!(queue.target(), MOST_BUFFER);
     // Then a steady link, one input a tick: it settles back.
     for _ in 0..u32::try_from(MOST_BUFFER).unwrap() * SETTLE + 10 {
-        queue.receive(&[log.push(DVec3::X, false)]);
+        queue.receive(&[log.push(DVec3::X, false, DVec3::ZERO)]);
         queue.take();
     }
     assert!(queue.target() <= BUFFER + 1, "{}", queue.target());
@@ -226,6 +228,7 @@ fn an_input_is_predicted_with_what_the_server_is_told() {
         seq: 3,
         walk: DVec3::new(1.234_567_89, 0.0, -2.0 / 3.0),
         jump: true,
+        thrust: DVec3::new(0.123_4, -1.0 / 3.0, 0.0),
     };
     let sent: AvatarInput =
         crate::message::from_bytes(&crate::message::to_bytes(&input.quantised())).unwrap();

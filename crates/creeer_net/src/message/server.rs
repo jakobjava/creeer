@@ -58,6 +58,9 @@ pub enum ServerMessage {
     Machines(Vec<MachineView>),
     /// The server's profile, to a client that asked for it (`ClientMessage::Profile`).
     Profile(super::ProfileReport),
+    /// The player's own character as only the server knows it (G1.2): its jetpack's gas (kg),
+    /// for the HUD and the prediction. Sent with every snapshot round.
+    Own { gas: f64 },
 }
 
 /// A machine as a panel shows it.
@@ -149,6 +152,10 @@ impl Encode for ServerMessage {
                 w.u8(8);
                 w.put(report);
             }
+            Self::Own { gas } => {
+                w.u8(9);
+                w.f64(*gas);
+            }
             Self::Snapshot(bytes) => {
                 w.u8(6);
                 w.raw(bytes);
@@ -217,6 +224,7 @@ impl Decode for ServerMessage {
                 Self::Machines(list)
             }
             8 => Self::Profile(r.get()?),
+            9 => Self::Own { gas: r.finite()? },
             _ => return Err(r.error("unknown server message")),
         })
     }

@@ -18,8 +18,11 @@ pub struct AvatarInput {
     /// Where to walk, in the physics world's frame (its length the speed asked for, m/s;
     /// the part along the ground's normal is ignored).
     pub walk: DVec3,
-    /// Jump, if standing on something.
+    /// Jump, if standing on something (swim up, in water).
     pub jump: bool,
+    /// The thrusters' push asked for (G1.2c), in the physics world's frame, as a fraction of
+    /// the most they push (its length at most 1).
+    pub thrust: DVec3,
 }
 
 /// What a client asks the world for (reliable).
@@ -66,22 +69,27 @@ pub enum ClientMessage {
 /// Numbered one past the input before it (its number is not written).
 /// Steps of an input's walk per m/s (8 mm/s: finer than any hand on a stick).
 pub const WALK_SCALE: f64 = 128.0;
+/// Steps of an input's thrust per its most (1 %).
+pub const THRUST_SCALE: f64 = 100.0;
 
 const JUMP: u8 = 1;
 const SAME_WALK: u8 = 2;
 const NEXT: u8 = 4;
+const THRUST: u8 = 8;
 
 /// Writes inputs, each against the one before it: its number only if it is not the next, and
-/// its walk only if it changed (a byte for an input that walks on as before).
+/// its walk and thrust only if they changed (a byte for an input that goes on as before).
 fn write_inputs(w: &mut Writer, inputs: &[AvatarInput]) {
     w.varint(inputs.len() as u64);
-    let (mut seq, mut walk) = (0u32, Quantised::default());
+    let (mut seq, mut walk, mut thrust) = (0u32, Quantised::default(), Quantised::default());
     for input in inputs {
         let now = Quantised::new(input.walk, WALK_SCALE);
+        let push = Quantised::new(input.thrust, THRUST_SCALE);
         let next = seq != 0 && input.seq == seq.wrapping_add(1);
         let flags = if input.jump { JUMP } else { 0 }
             | if now == walk { SAME_WALK } else { 0 }
-            | if next { NEXT } else { 0 };
+            | if next { NEXT } else { 0 }
+            | if push == thrust { 0 } else { THRUST };
         w.u8(flags);
         if !next {
             w.varint(u64::from(input.seq.wrapping_sub(seq)));
@@ -89,16 +97,19 @@ fn write_inputs(w: &mut Writer, inputs: &[AvatarInput]) {
         if now != walk {
             now.write(w, walk);
         }
-        (seq, walk) = (input.seq, now);
+        if push != thrust {
+            push.write(w, thrust);
+        }
+        (seq, walk, thrust) = (input.seq, now, push);
     }
 }
 
 fn read_inputs(r: &mut Reader<'_>) -> Result<Vec<AvatarInput>, DecodeError> {
-    let (mut seq, mut walk) = (0u32, Quantised::default());
+    let (mut seq, mut walk, mut thrust) = (0u32, Quantised::default(), Quantised::default());
     (0..r.count(1)?)
         .map(|_| {
             let flags = r.u8()?;
-            if flags & !(JUMP | SAME_WALK | NEXT) != 0 {
+            if flags & !(JUMP | SAME_WALK | NEXT | THRUST) != 0 {
                 return Err(r.error("unknown input flags"));
             }
             let step = if flags & NEXT != 0 {
@@ -113,10 +124,14 @@ fn read_inputs(r: &mut Reader<'_>) -> Result<Vec<AvatarInput>, DecodeError> {
             if flags & SAME_WALK == 0 {
                 walk = Quantised::read(r, walk)?;
             }
+            if flags & THRUST != 0 {
+                thrust = Quantised::read(r, thrust)?;
+            }
             Ok(AvatarInput {
                 seq,
                 walk: walk.value(WALK_SCALE),
                 jump: flags & JUMP != 0,
+                thrust: thrust.value(THRUST_SCALE),
             })
         })
         .collect()

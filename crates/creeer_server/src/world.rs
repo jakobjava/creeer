@@ -252,7 +252,11 @@ impl ServerWorld {
         if let Some(i) = self.index(id) {
             let at = self.world.bodies[i].structure.position[0];
             let water = self.surroundings.sea.as_ref().map(|sea| sea.depth(at));
-            let act = (input.walk, input.jump);
+            let act = character::Intent {
+                walk: input.walk,
+                jump: input.jump,
+                thrust: input.thrust,
+            };
             character::steer(
                 &mut self.world,
                 i,

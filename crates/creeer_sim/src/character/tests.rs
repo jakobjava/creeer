@@ -24,7 +24,14 @@ fn ground(normal: DVec3, mu: f64) -> World {
 fn run(world: &mut World, index: usize, n: usize, act: impl Fn(usize) -> (DVec3, bool)) {
     let mut reactions = Vec::new();
     for k in 0..n {
-        steer(world, index, act(k), (DVec3::Y, None), &mut reactions);
+        let (walk, jump) = act(k);
+        steer(
+            world,
+            index,
+            Intent::walk(walk, jump),
+            (DVec3::Y, None),
+            &mut reactions,
+        );
         world.step();
         release(world, &mut reactions);
     }
@@ -135,7 +142,7 @@ fn it_jumps_as_high_as_its_legs_push() {
         steer(
             &mut world,
             c,
-            (DVec3::ZERO, k == 0),
+            Intent::walk(DVec3::ZERO, k == 0),
             (DVec3::Y, None),
             &mut reactions,
         );
@@ -161,7 +168,7 @@ fn a_step_down_lands_on_the_legs_and_a_fall_on_the_body() {
             steer(
                 &mut world,
                 c,
-                (DVec3::ZERO, false),
+                Intent::default(),
                 (DVec3::Y, None),
                 &mut reactions,
             );

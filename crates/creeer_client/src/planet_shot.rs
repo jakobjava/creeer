@@ -28,13 +28,13 @@ fn play(view: &mut PlanetView, seconds: f64) -> Result<(), String> {
             return Err("the hosted server did not welcome the client".into());
         }
         view.session
-            .update(step.as_secs_f64(), (DVec3::ZERO, false));
+            .update(step.as_secs_f64(), (DVec3::ZERO, false, DVec3::ZERO));
         std::thread::sleep(step);
     }
     let start = Instant::now();
     while start.elapsed().as_secs_f64() < seconds {
         view.session
-            .update(step.as_secs_f64(), (DVec3::ZERO, false));
+            .update(step.as_secs_f64(), (DVec3::ZERO, false, DVec3::ZERO));
         std::thread::sleep(step);
     }
     Ok(())
@@ -160,7 +160,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut lighting = sky.lighting(camera.position, sun, &Lighting::default());
     lighting.shadow_distance = 250.0;
     let mut scene = Scene::default();
-    view.session.update(0.0, (DVec3::ZERO, false));
+    view.session.update(0.0, (DVec3::ZERO, false, DVec3::ZERO));
     let snapshot = view.snapshot();
     physics_view::draw(
         &mut scene,

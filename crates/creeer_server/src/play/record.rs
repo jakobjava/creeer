@@ -14,6 +14,8 @@ pub struct Act {
     pub walk: DVec3,
     /// Jump, if standing.
     pub jump: bool,
+    /// The jetpack's thrust (a fraction of its most).
+    pub thrust: DVec3,
     /// Commands, in the order asked.
     pub commands: Vec<Command>,
 }
@@ -43,9 +45,9 @@ pub struct Recording {
 /// The first bytes of a recording file.
 const MAGIC: &[u8; 8] = b"CREEPLAY";
 /// Its format's version.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 /// The fewest bytes an act takes (its walk, its jump, its count of commands).
-const ACT_BYTES: usize = 26;
+const ACT_BYTES: usize = 50;
 
 impl Encode for Act {
     fn encode(&self, w: &mut Writer) {
@@ -54,6 +56,9 @@ impl Encode for Act {
             w.f64(x);
         }
         w.u8(u8::from(self.jump));
+        for x in self.thrust.to_array() {
+            w.f64(x);
+        }
         w.varint(self.commands.len() as u64);
         for c in &self.commands {
             w.bytes_with_length(&to_bytes(&ClientMessage::Command(c.clone())));
@@ -72,6 +77,10 @@ impl Decode for Act {
             1 => true,
             _ => return Err(r.error("not a flag")),
         };
+        let mut thrust = [0.0; 3];
+        for x in &mut thrust {
+            *x = r.f64()?;
+        }
         let commands = (0..r.count(1)?)
             .map(
                 |_| match from_bytes::<ClientMessage>(r.bytes_with_length()?) {
@@ -83,6 +92,7 @@ impl Decode for Act {
         Ok(Self {
             walk: DVec3::from_array(walk),
             jump,
+            thrust: DVec3::from_array(thrust),
             commands,
         })
     }

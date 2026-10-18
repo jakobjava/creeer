@@ -38,7 +38,13 @@ fn swim(
     for _ in 0..n {
         let at = world.bodies[*c].structure.position[0];
         let water = around.sea.as_ref().map(|sea| sea.depth(at));
-        steer(world, *c, act, (*up, water), &mut reactions);
+        steer(
+            world,
+            *c,
+            Intent::walk(act.0, act.1),
+            (*up, water),
+            &mut reactions,
+        );
         around.push(world);
         world.step();
         release(world, &mut reactions);

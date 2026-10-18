@@ -35,12 +35,15 @@ pub const SETTLE: u32 = 600;
 pub const QUEUED: usize = 10;
 
 impl AvatarInput {
-    /// The input as it arrives at the server: its walk to [`crate::message::WALK_SCALE`].
+    /// The input as it arrives at the server: its walk to [`crate::message::WALK_SCALE`], its
+    /// thrust to [`crate::message::THRUST_SCALE`].
     #[must_use]
     pub fn quantised(self) -> Self {
         Self {
             walk: Quantised::new(self.walk, crate::message::WALK_SCALE)
                 .value(crate::message::WALK_SCALE),
+            thrust: Quantised::new(self.thrust, crate::message::THRUST_SCALE)
+                .value(crate::message::THRUST_SCALE),
             ..self
         }
     }
@@ -55,12 +58,13 @@ pub struct InputLog {
 
 impl InputLog {
     /// A new input: walk at `walk` (m/s), jump or not. Numbered, quantised and kept.
-    pub fn push(&mut self, walk: DVec3, jump: bool) -> AvatarInput {
+    pub fn push(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         self.next += 1;
         let input = AvatarInput {
             seq: self.next,
             walk,
             jump,
+            thrust,
         }
         .quantised();
         self.inputs.push_back(input);

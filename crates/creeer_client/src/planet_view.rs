@@ -217,6 +217,15 @@ impl PlanetView {
             * speed
     }
 
+    /// The jetpack's thrust asked for (a fraction of its most): up, leaning the way `walk` goes,
+    /// while `on`.
+    pub fn thrust(&self, walk: DVec3, on: bool) -> DVec3 {
+        let Some(avatar) = self.session.connection.avatar().filter(|_| on) else {
+            return DVec3::ZERO;
+        };
+        (avatar.position.normalize() + walk.normalize_or_zero() * 0.4).clamp_length_max(1.0)
+    }
+
     /// Puts the camera behind and above the avatar, looking the way it looks, never in the
     /// ground.
     pub fn follow(&self, camera: &mut Camera) {

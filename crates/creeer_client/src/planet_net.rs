@@ -108,15 +108,15 @@ impl PlanetSession {
     }
 
     /// A frame of `dt` seconds passed: takes in what the server sent, and runs the client's
-    /// ticks due (each the player's input `walk`, `jump` for its avatar).
-    pub fn update(&mut self, dt: f64, (walk, jump): (DVec3, bool)) {
+    /// ticks due (each the player's input `walk`, `jump` and `thrust` for its avatar).
+    pub fn update(&mut self, dt: f64, (walk, jump, thrust): (DVec3, bool, DVec3)) {
         self.connection.update(Duration::from_secs_f64(dt));
         let tick = 1.0 / f64::from(TICK_RATE);
         // A frame of a slow machine catches up at most a quarter of a second.
         self.behind = (self.behind + dt).min(0.25);
         while self.behind >= tick {
             self.behind -= tick;
-            self.connection.input(walk, jump);
+            self.connection.input(walk, jump, thrust);
             self.connection.flush();
         }
     }

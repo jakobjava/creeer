@@ -358,6 +358,12 @@ impl Server {
                 session.plastic(*id, change);
             }
             session.send(&mut self.renet, world, seconds, self.net_tick);
+            // Its own character as only the server knows it (G1.2): a few bytes a round.
+            if let Some(i) = session.avatar.and_then(|a| world.index(a)) {
+                let gas = creeer_sim::character::gas(&world.world.bodies[i]);
+                let own = to_bytes(&ServerMessage::Own { gas });
+                self.renet.send_message(session.client, UNRELIABLE, own);
+            }
         }
     }
 }
