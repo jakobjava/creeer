@@ -50,6 +50,7 @@ Seven cases of ten seconds: a character knocked down by a 200 kg crate dropped f
 - **Whole runs** (`ragdoll_bench`) are chaotic: any change moves how long things move. They judge the physics (do they settle?), not speed.
 - **Speed is judged on the same states** (`ragdoll_states_written`, then `ragdoll_states_stepped` by each build): about 4,000 states after the falls, each stepped once. Repeatable to the millisecond: 7.18 s, worst 28 ms, 46,784 iterations (1.8 ms and 11.7 iterations a ragdoll step).
 - Where it goes: the objective 2.9 s (26 µs a line-search trial, 1.5 trials an iteration), the contacts' laws 1.8 s and the joints' terms 1.3 s across objective, residual and matrix; 43 % of the iterations follow a refresh, and the joints ask for 93 % of the refreshes (with friction in 71 %, alone in 22 %; friction alone 6 %).
+- After the fixes below (5.29 s): an iteration costs about 73 µs: the objective 32 µs (1.36 trials of 23 µs), the Gauss–Newton matrix about 25 µs (the coupling's blocks, which the `relinearise` slot does not time, and its factorisation 7.6 µs), the residual 10 µs, the rest about 6 µs. Nothing dominates: the contacts' laws 1.1 s, the joints' terms 1.0 s, the contacts' geometry 0.4 s, a group step's setup 68 µs. 13 iterations a step, 43 % after a refresh.
 
 ### Found and fixed on the way
 
@@ -71,5 +72,6 @@ Seven cases of ten seconds: a character knocked down by a 200 kg crate dropped f
 
 | What | Measured | Why not first |
 |---|---|---|
+| **A ragdoll of 11 segments** (hands merged into forearms, feet into shanks: masses and inertias kept; no wrists, no ankles) | The bench's whole runs: 4.05 s against 5.41, worst tick 19 ms against 30, as many asleep | A quarter to a third, not the factor the gates need; a change to the character the user decides on |
 | Turn substeps per island instead of for the whole world (a fast-turning box makes every group and the contact detection substep, up to 16 times) | In the crowd's worst tick, the groups that did not need them cost 4.7 ms of 63 | The flung hand's group cost 42 ms of it; struts remove the cause. Still worth doing: listed in G1.8 |
 | Legs ignoring supports lighter than 10 or 50 kg (a measurement, not a fix) | *crowd* worst 58 → 51 ms, p99 11.9 → 13.7 | Not realistic (a boot on a hand presses it down), and the remaining slow ticks are the ragdolls' own steps |
