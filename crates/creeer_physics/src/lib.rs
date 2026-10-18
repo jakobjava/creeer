@@ -5,6 +5,8 @@
 
 pub mod gravity;
 pub mod profile;
+#[cfg(test)]
+mod rayon_bound_tests;
 pub mod rotation;
 pub mod so3;
 pub mod sparse;

@@ -75,3 +75,20 @@ Seven cases of ten seconds: a character knocked down by a 200 kg crate dropped f
 | **A ragdoll of 11 segments** (hands merged into forearms, feet into shanks: masses and inertias kept; no wrists, no ankles) | The bench's whole runs: 4.05 s against 5.41, worst tick 19 ms against 30, as many asleep | A quarter to a third, not the factor the gates need; a change to the character the user decides on |
 | Turn substeps per island instead of for the whole world (a fast-turning box makes every group and the contact detection substep, up to 16 times) | In the crowd's worst tick, the groups that did not need them cost 4.7 ms of 63 | The flung hand's group cost 42 ms of it; struts remove the cause. Still worth doing: listed in G1.8 |
 | Legs ignoring supports lighter than 10 or 50 kg (a measurement, not a fix) | *crowd* worst 58 → 51 ms, p99 11.9 → 13.7 | Not realistic (a boot on a hand presses it down), and the remaining slow ticks are the ragdolls' own steps |
+
+## What others found (research, 2026-10-18)
+
+Before building the split of a large group across cores, the literature on the same problem (stiff contacts, large mass ratios, articulated bodies):
+
+| Work | What it does | What it means here |
+|---|---|---|
+| Distributed Affine Body Dynamics with Adaptive Consensus (arXiv 2605.15875, SIGGRAPH 2026) | IPC-type minimisation split into regions, each solved by Newton, joined by consensus ADMM on shared bodies with a per-body adaptive penalty (ρ from the body's mass, residual balancing) | Pays at hundreds to tens of thousands of bodies (about 6× on 8 workers for 29,760 spheres); 10–92 ADMM iterations a frame; finer partitions need more; mass and stiffness contrast slows it (1.85× the iterations). Right for large piles, not for a ragdoll's group of 16 bodies at a mass ratio of 300 |
+| Schur complement-based substructuring of stiff multibody systems with contact (Peiret et al., ACM TOG 2019) | Subsystems solved by direct solvers, the interface's impulses by the Schur complement: exact, real time at large mass ratios | Makes the linear solve exact and parallel; here the linear solve is about 1 % of a ragdoll's step |
+| Augmented Vertex Block Descent (Giles, Diaz, Yuksel, SIGGRAPH 2025) | Per-body block descent with an augmented Lagrangian for hard contacts and joints; GPU, few iterations | Plausible at low iteration counts, converged only with many: below this project's accuracy (ADR-0004 rejected VBD for the same reason) |
+| PhysX articulations; MuJoCo (Todorov et al.); Featherstone's methods | Jointed trees in reduced coordinates: the root's pose and the joints' angles | Joints exact by construction (no multipliers to refresh: the joints ask for 93 % of a ragdoll's refreshes here), a sixth of the unknowns, large mass ratios tolerated. The usual objection, closed loops, is answered by the next |
+| RedMax (Wang, Weidner, Baxter, Hwang, Kaufman, Sueda, ACM TOG 2019) | Reduced coordinates for the tree, maximal-coordinate constraints where loops close and for contact; implicit integration (BDF1/BDF2 in its later, differentiable version), near-linear solves | A hybrid that keeps this world's joints (ADR-0022) for loops and grabs while ragdolls step in reduced coordinates |
+| Barrier-Augmented Lagrangian for GPU-based elastodynamic contact (arXiv 2407.00046, 2024) | Friction updated inside each inexact Newton iteration (fully implicit) instead of lagged | Fewer Newton iterations than IPC's lagged friction there: the same lever as friction on fresh normal forces (ADR-0017's C) |
+
+Sources: arxiv.org/html/2605.15875v1; doi.org/10.1145/3355621; graphics.cs.utah.edu/research/projects/avbd; docs.omniverse.nvidia.com (PhysX articulations); people.engr.tamu.edu/sueda/projects/redmax; arxiv.org/pdf/2407.00046.
+
+**Measured here:** parallel regions within one Newton iteration (three regions of 20 µs, 10 µs of serial work between, 16 threads): 65 µs an iteration against 99 serially, at best 1.5×; with regions of 10 µs, no gain (`rayon_bound_tests.rs`).
