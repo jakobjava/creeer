@@ -1,9 +1,9 @@
 //! Project automation, run through the `cargo xtask` alias (see `.cargo/config.toml`).
 //!
 //! - `cargo xtask ci`: formatting check, clippy with warnings as errors, all tests.
-//! - `cargo xtask perf [--save-baseline]`: runs the performance spikes in release mode,
-//!   checks their budgets and compares against `perf/baseline.txt` (fails on a regression of
-//!   more than 10 %, plan.md §5).
+//! - `cargo xtask perf [--save-baseline]`: runs the performance spikes, the sandbox's scenes
+//!   and the stress scenarios in release mode, checks their budgets, ceilings and hashes, and
+//!   compares against `perf/baseline.txt` (fails on a regression of more than 10 %, plan.md §5).
 
 use std::collections::BTreeMap;
 use std::env;
@@ -96,7 +96,21 @@ fn perf(save_baseline: bool) -> ExitCode {
         "--metrics",
         LATEST,
     ]);
-    let budgets_ok = budgets_ok && scenes_ok;
+    println!("==> running the stress scenarios (release build)");
+    let stress_ok = cargo(&[
+        "run",
+        "--quiet",
+        "--release",
+        "--package",
+        "creeer_tools",
+        "--",
+        "stress",
+        "--check",
+        "--gate",
+        "--metrics",
+        LATEST,
+    ]);
+    let budgets_ok = budgets_ok && scenes_ok && stress_ok;
     let Some(latest) = read_metrics(Path::new(LATEST)) else {
         eprintln!("xtask perf: no metrics were written to {LATEST}");
         return ExitCode::FAILURE;

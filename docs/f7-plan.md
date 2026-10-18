@@ -73,6 +73,8 @@ plan.md's exit criteria for F7: simulation LOD (active / abstract / on rails), t
 
 ### F7.5 Stress scenarios on three operating systems (`creeer_tools stress`)
 
+**Done** (2026-10-18): `creeer_tools stress` runs the five, each with its first tick (the setup) apart from its p50, p99 and worst; hashes at CI's and full lengths in `tests/scenarios/stress.txt`, the same on every run; CI's `stress` job checks them on the three OSes; `cargo xtask perf` runs the full lengths with their hashes, the worst and first ticks gated by ceilings (about a quarter above what they measured) and the p50s against the baseline. Measured at full length: beams 18.4 ms p50, 20.5 worst; cars 0.4 / 134 (the impact); factory 1.7 / 4.5, first 40.4; server 0.8 / 6.3, first 26.5; flyover 0.34 / 0.9, 238 meshes a second, along the ground at 300 m/s never behind, each finer level a frame or two after it is wanted on the way down, the longest wait 51 ms (the start, nothing built). Found on the way: a car scenario starting inside its wall (moved). For F7.6: the cars' impact tick, the factory's and the loaded server's first ticks (the thermal hall's and the pipes' first factorisations: 23 and 9 ms).
+
 plan.md §5's stress scenarios, headless, each logging its tick percentiles (p50, p99, worst) and a **state hash** at the end:
 
 - **a large factory:** the reference load's machines across all domains, with a hundred powerhouses (half abstract);

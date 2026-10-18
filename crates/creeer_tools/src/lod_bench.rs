@@ -23,7 +23,7 @@ const PASS_BUDGET_MS: f64 = 0.1;
 const WAKE_BUDGET_MS: f64 = 2.0;
 
 /// A point `east` and `north` metres from the spawn along the ground, `height` above it.
-fn place(w: &ServerWorld, east: f64, north: f64, height: f64) -> DVec3 {
+pub(crate) fn place(w: &ServerWorld, east: f64, north: f64, height: f64) -> DVec3 {
     let up = w.spawn().normalize();
     let (e, n) = creeer_terrain::geology::deposits::tangent_frame(up);
     let at = w.ground_under(w.spawn() + e * east + n * north);
@@ -44,7 +44,7 @@ fn crate_body(at: DVec3) -> Body {
 }
 
 /// The world: 8 players 300 m apart, 50 crates in a yard by each, settled.
-fn world() -> (ServerWorld, Vec<EntityId>) {
+pub(crate) fn world() -> (ServerWorld, Vec<EntityId>) {
     let data = Data::base();
     let terrain = load_terrain(&data, "planets/home.ron").expect("home.ron");
     let mut w = ServerWorld::new(data, terrain, "planets/home.ron");
@@ -64,7 +64,7 @@ fn world() -> (ServerWorld, Vec<EntityId>) {
 
 /// Parked yards: `yards` of `per` crates, each 10 m from the next, spread round the planet
 /// beyond the players' reach (their ground found once a yard: parked, they are not stepped).
-fn yards(w: &ServerWorld, yards: u32, per: u32, first_id: u32) -> Vec<Vec<ParkedBody>> {
+pub(crate) fn yards(w: &ServerWorld, yards: u32, per: u32, first_id: u32) -> Vec<Vec<ParkedBody>> {
     let mut template = World::new(DT);
     template.planet = w.world.planet.clone();
     let mut id = first_id;
@@ -96,7 +96,7 @@ fn yards(w: &ServerWorld, yards: u32, per: u32, first_id: u32) -> Vec<Vec<Parked
     islands
 }
 
-fn walk(w: &mut ServerWorld, players: &[EntityId], tick: u64) {
+pub(crate) fn walk(w: &mut ServerWorld, players: &[EntityId], tick: u64) {
     for (k, &id) in players.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
         let angle = tick as f64 * DT * 0.3 + k as f64;
@@ -112,7 +112,7 @@ fn walk(w: &mut ServerWorld, players: &[EntityId], tick: u64) {
     }
 }
 
-fn centres(w: &ServerWorld, players: &[EntityId]) -> Vec<DVec3> {
+pub(crate) fn centres(w: &ServerWorld, players: &[EntityId]) -> Vec<DVec3> {
     (players.iter())
         .filter_map(|&id| w.index(id))
         .map(|i| w.world.bodies[i].structure.position[0])

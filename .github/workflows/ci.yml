@@ -46,3 +46,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Spike measurements
         run: cargo run --release -p creeer_tools -- bench-spikes --report-only
+
+  stress:
+    # The stress scenarios at CI's lengths (F7.5): their state hashes must equal the goldens
+    # on every OS (determinism across platforms at scale). Their times are reported only.
+    name: stress (${{ matrix.os }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Stress scenarios
+        run: cargo run --release -p creeer_tools -- stress --short --check

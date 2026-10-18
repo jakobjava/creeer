@@ -21,6 +21,10 @@ mod rates_bench;
 mod reference_bench;
 mod solvers;
 mod spikes;
+mod stress;
+mod stress_flyover;
+mod stress_scenes;
+mod stress_world;
 mod terrain_bench;
 mod thermal_bench;
 mod validate;
@@ -36,6 +40,9 @@ commands:
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech, chem,
       fluids, logic, reference, lod, rates)
+  stress [--short] [--check | --save-golden] [--metrics <file>] [--only <name>]
+      the stress scenarios (beams, cars, factory, server, flyover): tick percentiles
+      and state hashes (checked against tests/scenarios/stress.txt)
   validate [--data <dir>] [--mods <dir>]
       load and check every data pack as the game merges them
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
@@ -68,6 +75,7 @@ fn main() -> ExitCode {
             }
         }
         Some("validate") => validate::run(&args[1..]),
+        Some("stress") => stress::run(&args[1..]),
         Some("image-diff") => match (args.get(1), args.get(2)) {
             (Some(a), Some(b)) => image_diff::run(a.as_ref(), b.as_ref()),
             _ => usage(),
