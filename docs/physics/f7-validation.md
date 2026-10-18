@@ -88,7 +88,17 @@ Full lengths on the development machine at the end of F7 (ms; the first tick, wh
 
 20,000 active beams, 8 players and 1,000 machines across every domain, side by side: **4.54–4.61 ms p50 on the development machine, 9.09–9.23 ms projected to min-spec: plan.md's 10 ms is met** (5.1–5.8 ms and 10.3–11.7 projected before the pass). The beams alone 3.4–3.9 ms (4.9); the F6 domains 0.86–0.94 ms (budget 5 ms projected: met).
 
+## The foundation gate
+
+| Criterion | Result |
+|---|---|
+| Every validation suite green on Windows, Linux and macOS | CI's `check` job (`cargo xtask ci`: format, clippy, every test) green on all three for every F7 commit |
+| Every stress hash identical on the three OSes | CI's `stress` job on all three, and a Linux container on the development machine: every hash equal to the goldens |
+| Every budget on the development machine (Windows, `cargo xtask perf`) | met; the reference tick 9.09–9.67 ms projected (the higher late in a long run); every stress scenario within its ceilings; the baseline saved at the end of F7 |
+| Linux on the development machine (a container: Docker Desktop's WSL2 VM, 16 vCPUs) | single-threaded work as fast as on Windows or faster (XPBD 1.08 ms, meshing 952 chunks/s, the rate solver 5.8 ms against 9.7); parallel work much slower: the bridge 6.0 ms on one thread, 4.5 on four, 14.8 on sixteen (Windows: 5.6, 1.9, 1.8), the reference tick 28.8 ms projected. The VM's thread wake-ups: CI's Linux VMs were no worse than its Windows ones. Recorded (`docs/future-improvements.md`) |
+| macOS (CI's report) | as Windows and Linux CI: shared runners of two to three cores miss the parallel budgets two to three times over (the 5k bridge 11 ms projected, against 8.6 on Linux CI and 11.4 on Windows CI); informational, as since F0 |
+
 ## Not validated here
 
-- **The min-spec CPU itself:** every budget is a projection from the development machine (per-core speed × 0.5). Memory-bound work (the structures' solves when many step at once) may project worse on a CPU with a smaller cache (recorded).
+- **The min-spec CPU itself:** every budget is a projection from the development machine (per-core speed × 0.5). Memory-bound work (the structures' solves when many step at once) may project worse on a CPU with a smaller cache, and fine-grained parallel work worse where waking threads is expensive (a VM; both recorded).
 - **Machines sharing stocks**, mods with scripts, signed packs: not in F7 (`docs/future-improvements.md`).

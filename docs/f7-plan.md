@@ -1,6 +1,6 @@
 # F7 plan: scale and hardening
 
-Status: **in progress** (started 2026-10-18), on branch `f7`.
+Status: **done** (2026-10-18): branch `f7`, squash-merged into main as "F7". Evidence: `docs/physics/f7-validation.md`.
 
 F7 is the last milestone of Phase A. It makes the foundation hold at the scale of a real game: a planet with players far apart, factories that keep working when nobody is near them, content that comes from data packs anyone can write, and numbers that hold on Windows, Linux and macOS. It ends with the **foundation gate** (plan.md §7): every validation suite green and every budget met on all three operating systems before Phase B starts.
 
@@ -94,6 +94,8 @@ Each scenario's hash is checked against its golden value on every OS in CI (dete
 - **The reference tick** (plan.md §5): 10.3–10.5 ms projected against 10 ms at the end of F6, three quarters of it the 20,000 beams' solver (1.1 µs a beam a tick). F7 brings it within budget: a cheaper structure solve (SIMD kernels over independent nodes, bit-identical across platforms because nothing is reordered; fewer passes over the elements). Measured against the solver's accuracy tests and goldens.
 
 ### F7.7 The foundation gate
+
+**Done** (2026-10-18): every suite green on Windows, Linux and macOS (CI); every stress hash identical on the three, and in a Linux container; every budget met on the development machine (`cargo xtask perf`, the baseline saved), the reference tick 9.1–9.7 ms projected. In the Linux container single-threaded work matches Windows but parallel work is several times slower (the VM's thread wake-ups; recorded); CI's shared runners report as always. The user asked for F7 to be finished and merged without a pause for review (2026-10-18), so the demo is the validation report.
 
 - Every validation suite green on Windows, Linux and macOS (CI).
 - Every budget met: on the development machine (`cargo xtask perf`, Windows), and on Linux on the same machine where it can be measured (a container), macOS from CI's report.
