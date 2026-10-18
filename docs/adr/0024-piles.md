@@ -94,3 +94,33 @@ Before building the split of a large group across cores, the literature on the s
 Sources: arxiv.org/html/2605.15875v1; doi.org/10.1145/3355621; graphics.cs.utah.edu/research/projects/avbd; docs.omniverse.nvidia.com (PhysX articulations); people.engr.tamu.edu/sueda/projects/redmax; arxiv.org/pdf/2407.00046.
 
 **Measured here:** parallel regions within one Newton iteration (three regions of 20 µs, 10 µs of serial work between, 16 threads): 65 µs an iteration against 99 serially, at best 1.5×; with regions of 10 µs, no gain (`rayon_bound_tests.rs`).
+
+## P1's plan from here (2026-10-18)
+
+### 1. Jointed trees stepped in their joint coordinates
+
+**Prior work** (above, and for this item):
+- RedMax (Wang et al. 2019; S. Sueda's notes, `github.com/sueda/redmax`, *Analytically Differentiable Articulated Rigid Body Dynamics*, 2021): maximal and reduced coordinates joined by the Jacobian J (maximal twists from joint rates), the reduced mass Jᵀ·M·J, forces Jᵀ·f; implicit BDF1/BDF2 by Newton in reduced coordinates; constraints only where loops close.
+- Embedded IPC (2024) for the same mapping in an incremental potential: ∇_q E = Jᵀ·∇_x E, ∇²_q E = Jᵀ·∇²_x E·J (exact there, as its map is linear).
+- Rigid-IPC (Ferguson et al. 2021): an incremental potential written in rigid bodies' own poses.
+- Drake's SAP (Castro, Permenter, Han, IEEE T-RO 2022) and MuJoCo solve articulated robots in generalized coordinates by Newton in a few iterations (SAP: 3–5 a step in steady state). Their velocity-level, linearised time-stepping is not taken: this engine's step is a position-level energy minimisation that carries its structures, plasticity and material contact laws.
+
+**Adapted here:**
+- The bodies stay what they are (rigid bodies, entities, saves, replication). In a group of rigid bodies alone, the spanning tree of its joints is found; each Newton step is taken in the tree's coordinates: its root's translation and turn, and each tree joint's turn (a hinge's one, a ball's three, in the child's frame).
+- The step's direction solves (Jᵀ·H·J)·δq = Jᵀ·r, with H the group's present matrix (the rigid bodies' blocks and their couplings), J the tree's Jacobian (a body's twist from its ancestors' joints' turns and the root's), other rigid bodies of the group keeping their six coordinates.
+- A line search's trial places the tree's bodies by forward kinematics from its root (a child's orientation its parent's times the joint's turned relative orientation, its centre hung from the joint's point): its joints hold exactly, so their constraints' terms vanish and are not refreshed.
+- Joints that close loops stay ADR-0022's; limits, damping, friction and drives stay energies of the joints.
+- Expected from the measurements: the joints' 93 % share of the refreshes gone, their penalty's stiffness out of the matrix. Measured against `ragdoll_states_stepped` before it is kept.
+
+### 2. Then, each with its own prior work recorded before it is built
+
+- Friction within Newton's iterations (Alart–Curnier; the 2024 barrier-augmented Lagrangian), for its realism defect and its iterations.
+- The contact set persistent across steps (feature identities, as engines keep manifolds), which also ends the world-wide turn substeps.
+- Large groups split across cores by consensus ADMM (Distributed ABD), for piles.
+
+### Open items (kept until each is closed)
+
+- *crowd*'s CI work gate (4,730 iterations against 490) and its time gates.
+- The rock pile's targets (worst ≤ 5 ms, p99 ≤ 2 ms).
+- `rayon_bound_tests.rs`: an ignored measurement, kept as this ADR's evidence.
+- G1.2e (prediction of nearby bodies) after P1.
