@@ -15,6 +15,10 @@ Status: written 2026-10-18, before G1. Its palette and checks are implemented in
 7. **Dense and lived-in.** The ground between things is never empty: pebbles, grass, bushes and fallen branches are everywhere.
 8. **Real where physics speaks.** Hot metal glows at its real temperature, and water, air and sunlight are the simulation's own (ADR-0003). Stylisation lives in surfaces, palette and shapes, never in contradicting the physics.
 
+## 1b. References before making
+
+Before a kind of asset, shader, effect or UI is made, study how others did it: Factorio's own art and its developers' write-ups (the FFF blog), and stylised 3D games with readable, material-led looks. Note what was taken from where (in the asset's ADR or this file's changelog). The style is ours; the craft is learned from those who did it first (plan.md §1, principle 12).
+
 ## 2. The physical shape comes first
 
 The drawn shape matches the simulated shape: a member drawn 20 cm thick is 20 cm thick in the solver. Only details smaller than **2 cm** may be exaggerated for readability: bolt heads, handles, rivets, weld beads, up to 1.5× their real size. Proportions of bodies, members and parts are real.
@@ -184,3 +188,4 @@ In Factorio's spirit, not a copy of it.
 ## Changelog
 
 - 2026-10-18: written, before G1 (the user: "i want a factorio like vibe art style wise").
+- 2026-10-18: §1b, references before making (the user: "proper research is really important: record that in all docs").

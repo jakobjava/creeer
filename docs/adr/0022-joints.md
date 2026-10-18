@@ -47,7 +47,7 @@ Also: joining two bodies resets their solvers' history (an impulse, as an impact
 
 | What | Measured | Why rejected |
 |---|---|---|
-| Reduced coordinates (a separate articulated-body solver) | Not built | Joints must step jointly with contacts and structures, close loops (a ladder held with two hands), and grab anything; a second solver beside the minimisation would split every group with joints. The double pendulum's RK4 in its two angles is the reference instead |
+| Reduced coordinates (a separate articulated-body solver) | Not built | Joints must step jointly with contacts and structures, close loops (a ladder held with two hands), and grab anything; a second solver beside the minimisation would split every group with joints. The double pendulum's RK4 in its two angles is the reference instead | **Revisited (P1):** rejected without a survey of prior work. RedMax (2019) steps the tree in reduced coordinates inside one implicit step with maximal-coordinate constraints where loops close; PhysX and MuJoCo use reduced coordinates for exactly the ragdolls and humanoids that converge slowly here. See the amendment below |
 | BDF2 for jointed groups (as contacts) | 0.82 J of 1.6 lost in 3 s at 60 Hz | BDF2's numerical damping at ωh = 0.14 |
 | The constraint force at the step's end only, kept out of Newmark's carried acceleration (SHAKE-like) | Energy fell steadily | Its direction is the end state's, not the start's as in RATTLE: dissipative |
 | A stiffer penalty (×10⁴), or stiffened to 10× the contacts on a joint's bodies | Ragdoll 2.4 and 2.5 ms p50 against 1.6; three accuracy tests failed (×10⁴) | Stiff, ringing modes; more refreshes, not fewer |
@@ -55,6 +55,14 @@ Also: joining two bodies resets their solvers' history (an impulse, as an impact
 | Joints' blocks kept within a step (not remade at each iteration) | 0.134 against 0.149 ms | Two accuracy tests failed: the minimisation stops at different states |
 | A hold of 10⁻⁷ m | Every step of a ragdoll took the three refreshes allowed | Below what the solver's tolerance lets a gap settle to |
 | The multipliers refreshed by Newton's method, by the step's matrix (P1) | Quadratic on its own; on a falling ragdoll iterations unchanged, +18 % time | Friction's normal forces refresh with them and reopen the joints: ADR-0024, its patch kept |
+
+## Amended in P1 (2026-10-18): prior work, not surveyed when this was decided
+
+This decision was made without a survey of prior work (now required: plan.md §1, principle 12; `docs/adr/README.md`). Done in P1 (ADR-0024), it found:
+- **Reduced coordinates are the standard for jointed trees** (PhysX articulations, MuJoCo, Featherstone's methods): joints exact by construction, a sixth of the unknowns, large mass ratios tolerated. Here a ragdoll's joints ask for 93 % of its steps' refreshes, and its steps cost 13 Newton iterations.
+- **The objection to them (closed loops, grabbing) has a published answer**: RedMax (Wang et al., ACM TOG 2019) keeps reduced coordinates for the tree and maximal-coordinate constraints where loops close and for contact, in one implicit step.
+
+So the joints of this ADR stay, for loops, grabs and machines, and P1 evaluates ragdolls as one articulated body in reduced coordinates beside them (ADR-0024).
 
 ## Validation
 

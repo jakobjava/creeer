@@ -37,10 +37,11 @@ Environment: Windows 11, RTX 4070 SUPER, git installed, **Rust not installed yet
    - **Abstract:** unloaded factories run as rate equations with buffers, so factories keep producing while you're away.
    - **On rails:** distant vessels are propagated with orbital mechanics only.
 7. **SI units internally.** The data loader parses unit strings such as `"7850 kg/m^3"`.
-8. **Every important decision gets an ADR** (Architecture Decision Record in `docs/adr/`), backed by a spike or benchmark wherever possible.
+8. **Every important decision gets an ADR** (Architecture Decision Record in `docs/adr/`, conventions in `docs/adr/README.md`), backed by a survey of prior work (principle 12) and by a spike or benchmark wherever possible.
 9. **Simulation and rendering are decoupled.** The simulation runs on its own threads at a fixed rate. The renderer interpolates between the last two simulation states, so frame rate never depends on simulation load, and a slow tick never causes a stutter.
 10. **Portable by construction.** Only pure-Rust or cross-compiling dependencies are used. `wgpu` translates to Vulkan, DX12 and Metal. Nothing platform-specific lives outside a small `platform` module.
 11. **Realistic and fast at once.** Every sandbox scene runs in real time with room to spare: its worst tick is gated by a test (§6), measured with the physics crate's `profile` feature when it is not. A scene that lags is a bug, fixed before new work starts.
+12. **Research before building.** Before designing a solver, a system, a performance package or a look, survey how others have solved it: published papers (SIGGRAPH, TOG, arXiv), other engines' documentation (PhysX, MuJoCo, Havok, Jolt, Bullet), open-source code and shipped games. The survey goes into the ADR's **Prior work** section (`docs/adr/README.md`) with its sources, and the design starts from what it found; a method is built from first principles only where the survey shows nothing fits. Skipping it cost weeks in P1 (2026-10-18, ADR-0024): the ragdolls' slowness had a known answer (reduced coordinates, RedMax 2019) that ADR-0022 had rejected without looking, and P1's planned method (a group split across cores) was shown by published results not to pay for groups that small.
 
 ## 2. Tech stack (Rust)
 
@@ -239,7 +240,7 @@ creeer/
 - **Benchmarks** (`criterion`) with a performance budget per milestone, tracked for regressions.
 - **Real-time gates:** every sandbox scene's worst tick (not only its typical one) is tested against a budget of a few milliseconds on the development machine. Speed-ups are checked against the physics validation suite, and a change of rounding is proved as such before golden hashes are regenerated.
 - **Headless scenario runner:** scripted scenarios (dropping a car from 10 m, a bridge under load, a rocket to orbit) with checked outcomes.
-- **Process:** an ADR before each major decision, validation reports in `docs/physics/`, and at the end of each milestone a demo for the user plus a review before the next one starts.
+- **Process:** a survey of prior work before each design (§1, principle 12), an ADR before each major decision (with that survey as its Prior work section), validation reports in `docs/physics/`, and at the end of each milestone a demo for the user plus a review before the next one starts.
 
 ## 7. Roadmap
 
@@ -280,6 +281,7 @@ Revised 2026-10-18, before G1, with the user's answers: the physics' deferred sp
 5. **Realism debts are paid when gameplay reaches them.** Each milestone lists the items of `docs/future-improvements.md` its gameplay would expose, and lifts them. One that is not lifted is recorded there again, with the user's decision.
 6. **Playtest at every milestone's end.** The user plays the milestone's demo (and from G4 with others, on a rented server). The feedback is taken in before the next milestone starts.
 7. **Process as in Phase A.** Branch `gN`, small commits per sub-milestone passing `cargo xtask ci`, a squash-merge at the end; ADRs for decisions; a validation report in `docs/physics/` where physics changed.
+8. **Research first, in every milestone and package** (§1, principle 12). Each `gN-plan.md` and each performance package starts with a survey of prior work (papers, engines, games) for what it builds; its findings decide the method, and it is recorded in the ADR's Prior work section. A sub-milestone's design is not started before its survey is written.
 
 #### When the physics gets faster: the performance track
 
@@ -287,7 +289,7 @@ The levers within the solvers' present design were measured and taken or rejecte
 
 | Package | What | Lands in | Why then | Target (development machine) |
 |---|---|---|---|---|
-| **P1: piles** | A large group's contact solve split into pieces big enough for the cores, coupled by an outer iteration. With it: friction on fresh normal forces (no contact's friction on a normal force more than 5 % off its own), edge contacts and face patches made consistent (no rattling rocks kept awake), per-group turn substeps, cheaper faces over curved ground | **G1** | Felled logs, mined boulders and dropped items pile up on terrain | Rock pile worst 18.2 → ≤ 5 ms, p99 14.2 → ≤ 2; 50 crates on terrain no slower than on a plane ×1.2 |
+| **P1: piles** | Revised after its survey of prior work (ADR-0024, 2026-10-18): jointed bodies (ragdolls) stepped as one articulated body in reduced coordinates within the implicit step, joints in maximal coordinates kept for loops and grabs (RedMax's hybrid); friction updated within Newton's iterations; a large group's contact solve split across cores by consensus ADMM where groups have hundreds of bodies (piles). With it: friction on fresh normal forces (no contact's friction on a normal force more than 5 % off its own), edge contacts and face patches made consistent (no rattling rocks kept awake), per-group turn substeps, cheaper faces over curved ground | **G1** | Felled logs, mined boulders and dropped items pile up on terrain | Rock pile worst 18.2 → ≤ 5 ms, p99 14.2 → ≤ 2; 50 crates on terrain no slower than on a plane ×1.2 |
 | **P2: the structure solve** | SIMD kernels with runtime AVX2/NEON dispatch, fewer passes over the elements, less memory traffic when many structures step at once | **G2** | Buildings put the reference load's 20,000 beams into real play | Reference tick ≤ 8 ms projected (today 9.1–9.7, a thin margin); eight 5,000-beam bridges at once ≤ 1.3× one alone (today 1.6×) |
 | **P3: struck structures** | Subcycling the struck region: its joints in short steps, the rest of the structure in the tick's, energy exact where they meet | **G2** | Collapsing buildings and loads dropped on structures are G2's core | Bridge struck 32.8 → ≤ 5 ms; crash 19.0 → ≤ 5; every crush, crash and impact test within its present tolerance |
 | **P4: networks beside the tick** | A network's ordering, analysis and first factorisation built on worker threads and swapped in at a fixed tick; the same for an edit of an island's topology | **G3** (drivetrains), **G4** (grids, heat) | Players build and edit networks while they run | No tick > 5 ms when a 20,000-node network is built, loaded or edited (today 20.7 ms) |

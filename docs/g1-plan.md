@@ -15,6 +15,7 @@ plan.md's G1: the character (G1.1), interaction (G1.2), mining with real composi
 5. **Cheap until touched.** A forest is scenery: instanced, static and costless per tick. A tree becomes a physics structure only when something cuts it, strikes it or leans on it. The same goes for loose boulders. Cost follows the players (F7).
 6. **Factorio's vibe in 3D** (below, "Art direction"). Readable first: every material has its own colour, silhouettes are clear, objects are grounded by soft shadows and ambient occlusion, and shapes are chunky and believable. Every new thing in G1 is built in this style from its first version: no programmer art left at the end.
 7. **Gated play scenes** (plan.md, Phase B): every scene's worst tick ≤ 5 ms on the development machine (aim 2–3 ms), its p99 ≤ 2 ms, and its bandwidth ≤ 256 kbit/s per client.
+8. **Research before each sub-milestone's design** (plan.md §1, principle 12; added 2026-10-18). Every sub-milestone from here on starts by surveying how others solved what it builds: papers, engines, games (for G1.3, how Factorio and other stylised 3D games achieve their look; for G1.5, how games and simulators model digging and granular material; for G1.7, tree and wood fracture models). The survey goes into its ADR's Prior work section before any design. P1 learned this the hard way (ADR-0024).
 
 ## Art direction: Factorio's vibe in 3D
 
@@ -167,6 +168,11 @@ The look first, so that everything after it is made in the style.
 ### G1.8 P1: piles (ADR-0024; performance track)
 
 G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock pile's worst tick (18.2 ms, ADR-0017) is measured again here on the real scenes, then cut.
+
+**Revised 2026-10-18, after its survey of prior work** (ADR-0024, "What others found"; the survey came late, after weeks on methods the literature had settled):
+1. **Ragdolls as one articulated body in reduced coordinates** (the root's pose and the joints' angles), within the implicit step, beside the maximal-coordinate joints of ADR-0022 that stay for loops, grabs and machines (RedMax's hybrid). First as a measurement against the recorded ragdoll states, then built if it pays.
+2. **Friction updated within Newton's iterations**, for realism (no friction on stale normal forces) and iterations.
+3. **The split across cores** (below) for large piles, by consensus ADMM with a per-body adaptive penalty, as published work does for hundreds of bodies and more; not for a ragdoll's group of tens.
 
 - **A large group's contact solve split across cores.** The group is partitioned into pieces large enough to be worth a core (hundreds of contacts each), each solved by Newton on its own, coupled by an outer iteration on the forces across the cuts until the whole is the same minimum as solved at once (the same tolerance: ADR-0005's convergence check, unchanged). The partition follows the contact graph and is kept from step to step (no repartitioning noise).
 - **Fixed with it:**

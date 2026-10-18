@@ -78,6 +78,8 @@ Seven cases of ten seconds: a character knocked down by a 200 kg crate dropped f
 
 ## What others found (research, 2026-10-18)
 
+**This survey should have come first**, before P1's first measurement: it settled in an hour what weeks of building had circled (reduced coordinates for ragdolls; a split across cores only for large groups). Surveys of prior work are now required before every design (plan.md §1, principle 12; `docs/adr/README.md`).
+
 Before building the split of a large group across cores, the literature on the same problem (stiff contacts, large mass ratios, articulated bodies):
 
 | Work | What it does | What it means here |
