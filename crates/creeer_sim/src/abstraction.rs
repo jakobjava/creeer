@@ -21,6 +21,7 @@
 //!   those of its last probe (settled for nearly these stocks).
 
 mod probe;
+pub mod snapshot;
 
 use creeer_rates::{Event, Network, Process, Stock, StockId};
 
@@ -68,6 +69,13 @@ pub trait Machine {
     fn tick(&mut self);
     /// Its tick (s).
     fn dt(&self) -> f64;
+    /// Its fast states (a shaft's speed, a controller's memory) as bytes, for a save: a
+    /// machine built anew with them goes on running instead of starting from rest.
+    fn fast(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    /// Writes back what [`Machine::fast`] gave.
+    fn set_fast(&mut self, _bytes: &[u8]) {}
 }
 
 /// How a machine is run now.
@@ -85,6 +93,8 @@ struct Stretch {
     trends: Vec<Trend>,
     at: f64,
     began: f64,
+    /// When it is to end (its clock's trusted box).
+    ends: f64,
 }
 
 /// A machine with its abstract self.
@@ -104,6 +114,12 @@ pub struct Abstract<M> {
     /// The largest rate each stock has had: what its changes are measured against (a mass
     /// come to its balance has a rate of nearly nothing, which any noise changes wholly).
     scale: Vec<f64>,
+    /// The stocks at the ends of its last three windows while active, and the ticks since the
+    /// last (leaving needs no probe: those rates are measured already).
+    recent: Vec<Vec<f64>>,
+    since: u64,
+    /// Whether the next stretch must begin with a probe (the last ran in full to its end).
+    unmeasured: bool,
     /// Probes run, and the full ticks they took.
     pub probes: u32,
     pub probe_ticks: u64,
@@ -130,6 +146,9 @@ impl<M: Machine> Abstract<M> {
             stretch: None,
             measured: None,
             scale: Vec::new(),
+            recent: Vec::new(),
+            since: 0,
+            unmeasured: false,
             probes: 0,
             probe_ticks: 0,
             events: Vec::new(),
@@ -149,6 +168,44 @@ impl<M: Machine> Abstract<M> {
         debug_assert_eq!(self.mode, Mode::Active);
         self.machine.tick();
         self.time += self.machine.dt();
+        self.since += 1;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let window = (WINDOW / self.machine.dt()).round() as u64;
+        if self.since >= window {
+            self.since = 0;
+            if self.recent.len() == 3 {
+                self.recent.remove(0);
+            }
+            self.recent.push(self.machine.amounts());
+        }
+    }
+
+    /// Goes abstract now if it is steady, from the rates of its last two windows run in full
+    /// (no probe: the world ran them anyway); returns whether it went. A machine never steady
+    /// stays active, as a body never at rest does.
+    pub fn try_leave(&mut self) -> bool {
+        if self.mode == Mode::Abstract {
+            return true;
+        }
+        let Ok(windows) = <[Vec<f64>; 3]>::try_from(self.recent.clone()) else {
+            return false;
+        };
+        if !probe::steady(&windows) {
+            return false;
+        }
+        let [a0, a1, a2] = windows;
+        let rates: Vec<f64> = (a2.iter().zip(&a0))
+            .map(|(x, y)| (x - y) / (2.0 * WINDOW))
+            .collect();
+        #[allow(clippy::cast_precision_loss)]
+        let at = self.time - self.since as f64 * self.machine.dt() - WINDOW;
+        self.mode = Mode::Abstract;
+        let now = self.machine.amounts();
+        self.scale = rates.iter().map(|r| r.abs()).collect();
+        self.measured = Some((at, rates.clone(), a1));
+        let trends = vec![Trend::Time(0.0); rates.len()];
+        self.start(&now, &rates, &trends, at, SHORTEST);
+        true
     }
 
     /// The stocks' amounts now.
@@ -185,19 +242,26 @@ impl<M: Machine> Abstract<M> {
         }
         self.mode = Mode::Abstract;
         self.stretch = None;
-        self.probe(false);
+        self.probe(false, f64::INFINITY);
     }
 
     /// Advances abstract time to `until` (s), measured again whenever a stretch ends.
+    /// It never goes past `until`: a probe due with less time left than one takes is run in
+    /// full to `until` instead (exactly), and the next advance begins with a probe.
     pub fn advance(&mut self, until: f64) {
         while self.time < until {
+            if self.unmeasured {
+                self.unmeasured = false;
+                self.probe(false, until);
+                continue;
+            }
             let event = self.network.advance_to_event(until);
             self.time = self.network.time();
             if let Some(e) = event {
                 self.events.push(e);
                 if self.time < until {
                     // A stretch's own end is its clock gone stale; a bound, a new regime.
-                    self.probe(matches!(e, Event::Stale { .. }));
+                    self.probe(matches!(e, Event::Stale { .. }), until);
                 }
             }
         }

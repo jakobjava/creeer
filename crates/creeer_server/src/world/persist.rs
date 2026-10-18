@@ -7,7 +7,8 @@ use creeer_net::entity::EntityId;
 use creeer_physics::world::World;
 use creeer_sim::lod::Island;
 use creeer_sim::planet_gravity;
-use creeer_sim::save::{ParkedBody, Save};
+use creeer_sim::powerhouse::Powerhouse;
+use creeer_sim::save::{ParkedBody, Save, SavedMachine};
 use creeer_terrain::Terrain;
 use std::sync::Arc;
 
@@ -50,6 +51,10 @@ impl ServerWorld {
                 .collect();
             this.parked.park(Island::new(bodies));
         }
+        this.next_machine = save.machines.iter().map(|m| m.id + 1).max().unwrap_or(1);
+        this.machines = (save.machines.iter())
+            .map(|m| super::machines::Placed::restored(m, Powerhouse::new()))
+            .collect();
         this
     }
 
@@ -62,6 +67,18 @@ impl ServerWorld {
         if !self.returning.is_empty() {
             parked.push(self.returning.iter().map(parked_body).collect());
         }
+        // Machines catching up are not kept (`Server::save` takes them in first).
+        let machines = (self.machines.iter())
+            .filter_map(|m| {
+                m.house().map(|h| SavedMachine {
+                    id: m.id,
+                    kind: "powerhouse".into(),
+                    at: m.at,
+                    born: m.born,
+                    snapshot: h.snapshot(),
+                })
+            })
+            .collect();
         Save {
             planet: self.planet.clone(),
             tick: self.tick,
@@ -76,6 +93,7 @@ impl ServerWorld {
                 .collect(),
             water: self.surroundings.water(),
             parked,
+            machines,
         }
     }
 }

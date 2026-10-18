@@ -69,6 +69,8 @@ pub struct Connection {
     pub kinds: BTreeMap<EntityId, Kind>,
     /// The members of structures that are broken.
     pub broken: BTreeMap<EntityId, BTreeSet<u32>>,
+    /// The world's machines as the server last told them (F7.4).
+    pub machines: Vec<creeer_net::message::MachineView>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -104,6 +106,7 @@ impl Connection {
             welcome: None,
             kinds: BTreeMap::new(),
             broken: BTreeMap::new(),
+            machines: Vec::new(),
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),
@@ -115,8 +118,7 @@ impl Connection {
         }
     }
 
-    /// Joins as `name`, with data of hash `content`, through the in-process connection `end`
-    /// (`Server::connect_memory`).
+    /// Joins as `name` (data of hash `content`) through `end` (`Server::connect_memory`).
     pub fn memory(end: MemoryEnd, name: &str, content: u64) -> Self {
         let mut renet = RenetClient::new(config());
         renet.set_connected();
@@ -237,11 +239,11 @@ impl Connection {
             ServerMessage::Edits { first, log } => self.edited(first, &log),
             ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),
             ServerMessage::Snapshot(snapshot) => self.snapshot(&snapshot),
+            ServerMessage::Machines(list) => self.machines = list,
         }
     }
 
-    /// Edits from the `first`-th on: the client keeps the edits before it, and these
-    /// replace the rest.
+    /// Edits from the `first`-th on: those before it kept, these replacing the rest.
     fn edited(&mut self, first: u64, log: &[u8]) {
         let Ok(part) = Edits::from_bytes(log) else {
             return;

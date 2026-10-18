@@ -1,6 +1,7 @@
 //! Every message reads back as written, and bytes that are no message are refused.
 
 use super::*;
+use crate::entity::{EntityId, Kind};
 use crate::entity::{Frame, Shape};
 
 fn back<T: Encode + Decode + PartialEq + std::fmt::Debug>(m: &T) {
@@ -44,6 +45,7 @@ fn client_messages_read_back() {
         Command::Edit(vec![1, 2, 3, 250]),
         Command::Clear,
         Command::Frame(DVec3::new(0.5, 0.25, 0.125)),
+        Command::Powerhouse(DVec3::new(4.0, -2.5, 1e5)),
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -102,6 +104,17 @@ fn server_messages_read_back() {
         },
     ));
     back(&ServerMessage::Snapshot(vec![1, 2, 3]));
+    back(&ServerMessage::Machines(vec![
+        MachineView {
+            id: 3,
+            at: DVec3::new(1.0, 2.0, 3.0),
+            mode: 1,
+            water: 140.5,
+            hydrogen: 21.25,
+            time: 3600.0,
+        };
+        2
+    ]));
 }
 
 #[test]

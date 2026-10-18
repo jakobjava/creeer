@@ -182,6 +182,7 @@ pub fn run(report: &mut Report) {
         ),
     );
     wake(report, &save);
+    machines(report, &save);
 }
 
 /// A player walks up to a parked yard of 1,000 crates (resting on the ground, in ten
@@ -248,5 +249,65 @@ fn wake(report: &mut Report, save: &creeer_sim::save::Save) {
     report.budget(
         projected <= WAKE_BUDGET_MS,
         format!("waking 1,000 parked crates projected to min-spec: +{projected:.2} ms <= {WAKE_BUDGET_MS} ms"),
+    );
+}
+
+/// 1,000 abstract powerhouses far from the players (restored from one's snapshot): what they
+/// add to a tick when none is due.
+fn machines(report: &mut Report, save: &creeer_sim::save::Save) {
+    use creeer_sim::abstraction::Abstract;
+    use creeer_sim::powerhouse::Powerhouse;
+    use creeer_sim::save::SavedMachine;
+    let mut one = Abstract::new(Powerhouse::new());
+    while !one.try_leave() {
+        for _ in 0..600 {
+            one.tick();
+        }
+    }
+    let snapshot = one.snapshot();
+    let with = |n: u32| {
+        let mut s = save.clone();
+        s.parked.clear();
+        s.machines = (0..n)
+            .map(|k| SavedMachine {
+                id: k + 1,
+                kind: "powerhouse".into(),
+                at: DVec3::new(0.0, 0.0, 600_000.0 + f64::from(k)),
+                born: s.tick,
+                snapshot: snapshot.clone(),
+            })
+            .collect();
+        let data = Data::base();
+        let terrain = load_terrain(&data, "planets/home.ron").expect("home.ron");
+        ServerWorld::from_save(data, s, terrain)
+    };
+    let (mut none, mut many) = (with(0), with(1000));
+    let players: Vec<EntityId> = none.avatars();
+    let mut stats = [TimingStats::new(600), TimingStats::new(600)];
+    for tick in 0..600u64 {
+        for (k, w) in [&mut none, &mut many].into_iter().enumerate() {
+            walk(w, &players, tick);
+            let start = Instant::now();
+            let c = centres(w, &players);
+            w.regions(&c);
+            w.step();
+            stats[k].push(start.elapsed());
+        }
+    }
+    let extra = p(&stats[1], 50.0) - p(&stats[0], 50.0);
+    println!(
+        "  1,000 abstract powerhouses: tick {:.3} p50 against {:.3} without (extra {extra:.3})",
+        p(&stats[1], 50.0),
+        p(&stats[0], 50.0)
+    );
+    report.metric(
+        "lod_1000_abstract_machines_extra_ms",
+        extra.max(0.0),
+        Better::Info,
+    );
+    let projected = extra / MIN_SPEC_CORE_FACTOR;
+    report.budget(
+        projected <= 0.05,
+        format!("1,000 abstract machines projected to min-spec: +{projected:.3} ms <= 0.05 ms"),
     );
 }

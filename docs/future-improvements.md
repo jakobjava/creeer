@@ -176,6 +176,10 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
 | **Far awake bodies that never rest** stay simulated in full (parking needs rest) | None in the sandbox does; freezing or railing moving bodies on a planet would be unrealistic | S | Small | ADR-0019 |
+| **Probing an abstract machine costs 15–27 % of running it in full while its slow states change** (the powerhouse's masses warming over hours; the plan aimed at 2 %; 0.3 % once steady) | Black-box rates follow coupled thermal states only with a probe every few minutes; a model-based abstract self (each domain's own slow linear dynamics, the thermal network's conductances as the rates' dependence) is a design of its own | S | Medium | ADR-0020 |
+| **Machines sharing stocks** (a tank two machines draw from) in the world | The rate solver shares stocks; the world's machines are not connected until G2's building | G | Medium | ADR-0020 |
+| **The first minutes of a machine's warm-up** are followed less closely abstract (6 % on heat stocks still small) | The predictor has no history yet | R | Small | ADR-0020 |
+| **A machine's insides beyond its fast states** (its platform's motion, a circuit's and pipes' internal states) are rebuilt at rest when a save is loaded | They settle in seconds; saving every domain's state portably is larger | R | Medium | ADR-0020 |
 | **Terrain edits far from players under parked islands**: edits need a player within 500 m, inside the active range; a future long-range edit (an explosion, a landslide) must wake what stands there first | No such edit exists yet | R, G | Small | ADR-0019 |
 
 ## Elsewhere

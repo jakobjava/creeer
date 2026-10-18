@@ -5,7 +5,8 @@
 
 use super::Powerhouse;
 use crate::abstraction::{Machine, StockDef};
-use creeer_fluids::pipes::NodeKind;
+use creeer_fluids::pipes::{LinkKind, NodeKind};
+use creeer_math::codec::{DecodeError, Reader, Writer};
 
 /// The species the reactor's stocks are (moles).
 const SPECIES: [&str; 3] = ["H2", "O2", "H2O(L)"];
@@ -97,5 +98,38 @@ impl Machine for Powerhouse {
 
     fn dt(&self) -> f64 {
         super::DT
+    }
+
+    fn fast(&self) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.f64(self.trains[0].speed(self.runner));
+        w.f64(self.trains[0].speed(self.machine[0].node));
+        w.f64(self.readings().valve);
+        w.bytes_with_length(&self.controls.logic.to_bytes());
+        w.finish()
+    }
+
+    fn set_fast(&mut self, bytes: &[u8]) {
+        let mut r = Reader::new(bytes);
+        let read = |r: &mut Reader<'_>| -> Result<(f64, f64, f64, Vec<u8>), DecodeError> {
+            Ok((
+                r.f64()?,
+                r.f64()?,
+                r.f64()?,
+                r.bytes_with_length()?.to_vec(),
+            ))
+        };
+        let Ok((runner, rotor, valve, logic)) = read(&mut r) else {
+            return; // nothing kept: it starts from rest
+        };
+        let (r0, r1) = (self.runner, self.machine[0].node);
+        self.trains[0].set_speed(r0, runner);
+        self.trains[0].set_speed(r1, rotor);
+        if let LinkKind::Valve { opening, .. } = &mut self.pipes.links[self.valve].kind {
+            *opening = valve;
+        }
+        if let Ok(net) = creeer_logic::Network::from_bytes(&logic) {
+            self.controls.logic = net;
+        }
     }
 }

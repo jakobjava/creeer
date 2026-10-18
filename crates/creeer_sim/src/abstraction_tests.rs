@@ -158,3 +158,96 @@ fn writing_its_own_amounts_back_changes_nothing() {
         );
     }
 }
+
+/// Leaving from its own last windows run in full (as the world leaves a machine nobody is
+/// near): no probe then, and what it makes is still what it makes in full.
+#[test]
+fn leaving_from_its_own_windows_needs_no_probe() {
+    let mut a = Abstract::new(house());
+    let mut waited = 0;
+    loop {
+        a.tick();
+        waited += 1;
+        if waited >= ticks(120.0) && a.try_leave() {
+            break;
+        }
+        assert!(waited < ticks(1200.0), "never steady");
+    }
+    assert_eq!((a.mode(), a.probes), (Mode::Abstract, 0));
+    let left = a.time();
+    a.advance(2400.0);
+    let (whole, _) = full(house, 2400.0);
+    let got = a.amounts();
+    for k in 0..got.len() {
+        let error = (got[k] - whole[k]).abs() / whole[k].abs().max(if k < 2 { 1.0 } else { 1e-9 });
+        assert!(
+            error < 0.01,
+            "stock {k}: {} against {} (left at {left} s)",
+            got[k],
+            whole[k]
+        );
+    }
+}
+
+/// Saved and restored (built anew, its stocks written in), an abstract machine goes on as it
+/// was: the same stocks to its stretch's end, and within 1 % of the full run after it.
+#[test]
+fn an_abstract_machine_saved_and_restored_goes_on() {
+    let (mut a, _) = abstracted(house, 600.0, 120.0);
+    let snapshot = a.snapshot();
+    let mut back = Abstract::restore(house(), &snapshot);
+    assert_eq!(back.snapshot(), snapshot);
+    let end = snapshot.stretch.as_ref().expect("a stretch").ends;
+    a.advance(end - 1.0);
+    back.advance(end - 1.0);
+    assert_eq!(a.amounts(), back.amounts());
+    back.advance(1500.0);
+    a.advance(1500.0);
+    let (whole, _) = full(house, 1500.0);
+    let got = back.amounts();
+    for k in 0..got.len() {
+        let error = (got[k] - whole[k]).abs() / whole[k].abs().max(if k < 2 { 1.0 } else { 1e-9 });
+        assert!(error < 0.01, "stock {k}: {} against {}", got[k], whole[k]);
+    }
+}
+
+/// The abstract machine against the full one every 150 s (a diagnostic: `--ignored`).
+#[test]
+#[ignore = "diagnostic: prints the errors along the way"]
+fn errors_along_the_way() {
+    let mut full = house();
+    let mut a = Abstract::new(house());
+    for _ in 0..ticks(120.0) {
+        full.tick();
+        a.tick();
+    }
+    a.leave();
+    let mut t = 120.0;
+    for k in 1..=15 {
+        let until = 120.0 + 150.0 * f64::from(k);
+        while t < until - 1e-9 {
+            full.tick();
+            t += DT;
+        }
+        a.advance(until);
+        let (f, b) = (full.amounts(), a.amounts());
+        let e: Vec<String> = (2..10)
+            .map(|i| format!("{:+.1e}", b[i] / f[i] - 1.0))
+            .collect();
+        eprintln!("t {until:.0}: {}", e.join(" "));
+    }
+}
+
+#[test]
+#[ignore = "diagnostic: when a powerhouse from rest is first steady"]
+fn when_is_it_steady() {
+    let mut a = Abstract::new(Powerhouse::new());
+    for k in 0..ticks(1200.0) {
+        a.tick();
+        if k % 600 == 0 && a.try_leave() {
+            eprintln!("steady after {} s", a.time());
+            return;
+        }
+    }
+    eprintln!("not steady in 1200 s");
+}

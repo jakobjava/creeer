@@ -47,9 +47,24 @@ impl<M: Machine> Abstract<M> {
     }
 
     /// Measures the machine from the abstract stocks, corrects the stretch that ended (if it
-    /// ran to its own end: `drifted`), and starts the next stretch.
-    pub(super) fn probe(&mut self, drifted: bool) {
+    /// ran to its own end: `drifted`), and starts the next stretch; never past `until`.
+    pub(super) fn probe(&mut self, drifted: bool, until: f64) {
         let begun = self.time;
+        if until - begun < SETTLE + 2.0 * WINDOW {
+            // Too little time left to measure: in full to `until`, measured when it goes on.
+            let amounts = self.amounts();
+            self.machine.set_amounts(&amounts);
+            let end = self.run(until - begun);
+            self.time = until;
+            for (k, &s) in self.ids.iter().enumerate() {
+                self.network.set_amount(s, end[k]);
+            }
+            self.network.set_amount(self.clock, until);
+            self.network.set_time(until);
+            self.stretch = None;
+            self.unmeasured = true;
+            return;
+        }
         let events = self.events.len();
         let amounts = self.amounts();
         self.machine.set_amounts(&amounts);
@@ -57,7 +72,7 @@ impl<M: Machine> Abstract<M> {
         self.run(SETTLE);
         let mut a = [self.machine.amounts(), self.run(WINDOW), self.run(WINDOW)];
         let mut waited = SETTLE + 2.0 * WINDOW;
-        while !steady(&a) && waited < LONGEST_PROBE {
+        while !steady(&a) && waited < LONGEST_PROBE && self.time + WINDOW <= until {
             a.rotate_left(1);
             a[2] = self.run(WINDOW);
             waited += WINDOW;
@@ -104,12 +119,6 @@ impl<M: Machine> Abstract<M> {
         }
         self.measured = Some((at, rates.clone(), middle));
         self.start(&end, &rates, &trends, at, length);
-        self.stretch = Some(Stretch {
-            rates,
-            trends,
-            at,
-            began: self.time,
-        });
     }
 
     /// Adds `fix` to `end`, scaled whole (keeping what it conserves) so that no stock passes
@@ -150,7 +159,14 @@ impl<M: Machine> Abstract<M> {
 
     /// The next stretch: from the stocks `end`, the rates `rates` at `at` changing by
     /// `slope`, trusted for `length` seconds.
-    fn start(&mut self, end: &[f64], rates: &[f64], trends: &[Trend], at: f64, length: f64) {
+    pub(super) fn start(
+        &mut self,
+        end: &[f64],
+        rates: &[f64],
+        trends: &[Trend],
+        at: f64,
+        length: f64,
+    ) {
         let mut flows: Vec<Flow> = (0..rates.len())
             .filter(|&k| rates[k] != 0.0 || trends[k] != Trend::Time(0.0))
             .map(|k| Flow {
@@ -179,12 +195,19 @@ impl<M: Machine> Abstract<M> {
         } else {
             self.network.set_process(ProcessId(0), process);
         }
+        self.stretch = Some(Stretch {
+            rates: rates.to_vec(),
+            trends: trends.to_vec(),
+            at,
+            began: self.time,
+            ends: self.time + length,
+        });
     }
 }
 
 /// Whether the rates over two windows (amounts `a` at their ends) agree: within [`STEADY`]
 /// of each other, or moving less than 10⁻⁶ of the stock over a window.
-fn steady(a: &[Vec<f64>; 3]) -> bool {
+pub(super) fn steady(a: &[Vec<f64>; 3]) -> bool {
     (0..a[0].len()).all(|k| {
         let (d1, d2) = (a[1][k] - a[0][k], a[2][k] - a[1][k]);
         let bend = (d1 - d2).abs();

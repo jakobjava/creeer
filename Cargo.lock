@@ -739,6 +739,7 @@ dependencies = [
  "creeer_physics",
  "creeer_sim",
  "creeer_terrain",
+ "rayon",
  "renet",
  "renet_netcode",
 ]

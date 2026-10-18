@@ -30,6 +30,7 @@ impl ServerWorld {
                 }
             }
             self.park(centres);
+            self.machine_regions(centres);
         }
         self.wake();
     }

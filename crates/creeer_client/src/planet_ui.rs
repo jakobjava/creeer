@@ -92,6 +92,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                     view.send(Command::Clear);
                 }
             });
+            machines(ui, view, camera);
             let edits = view.session.connection.edits.len();
             if view.session.hosted() && Path::new(WORLD_FILE).exists() {
                 ui.small(format!("{edits} edits · saved world: {WORLD_FILE}"));
@@ -187,5 +188,31 @@ pub fn crosshair(ctx: &egui::Context) {
     for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)] {
         let d = egui::vec2(dx, dy) * 8.0;
         painter.line_segment([center - d, center + d], stroke);
+    }
+}
+
+/// The world's machines (F7.4): each one's mode (active near a player, abstract beyond
+/// 3 km of every player, caught up when one comes near), distance, water and hydrogen.
+fn machines(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
+    let list = &view.session.connection.machines;
+    if list.is_empty() {
+        return;
+    }
+    ui.separator();
+    for m in list {
+        let mode = match m.mode {
+            0 => "active",
+            1 => "abstract",
+            _ => "catching up",
+        };
+        let distance = (m.at - camera.position).length();
+        ui.small(format!(
+            "powerhouse {} · {mode} · {:.1} km · tank {:.1} m³ · H₂ {:.1} mol · {:.0} min",
+            m.id,
+            distance / 1e3,
+            m.water,
+            m.hydrogen,
+            m.time / 60.0
+        ));
     }
 }

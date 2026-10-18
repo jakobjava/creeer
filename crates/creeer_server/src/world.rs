@@ -66,6 +66,9 @@ pub struct ServerWorld {
     parked: creeer_sim::lod::Parked<regions::Tag>,
     /// Parked bodies found near a player, on their way back (a few each tick).
     returning: std::collections::VecDeque<(Body, regions::Tag)>,
+    /// Its machines (F7.4), and the next id for one.
+    machines: Vec<machines::Placed>,
+    next_machine: u32,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -129,6 +132,8 @@ impl ServerWorld {
             surroundings,
             parked: creeer_sim::lod::Parked::default(),
             returning: std::collections::VecDeque::new(),
+            machines: Vec::new(),
+            next_machine: 1,
         }
     }
 
@@ -291,6 +296,10 @@ impl ServerWorld {
                 within(*at)?;
                 self.add(frame(*at), None);
             }
+            Command::Powerhouse(at) => {
+                within(*at)?;
+                self.place_powerhouse(*at);
+            }
             Command::Edit(bytes) => {
                 let edits = Edits::from_bytes(bytes).map_err(|e| e.to_string())?;
                 let [edit] = edits.log() else {
@@ -321,6 +330,7 @@ impl ServerWorld {
 
     /// One step.
     pub fn step(&mut self) {
+        self.tick_machines();
         self.surroundings.push(&mut self.world);
         self.world.step();
         self.surroundings.settle(&mut self.world, DT);
@@ -357,6 +367,9 @@ fn check(edit: &Edit) -> Result<(), String> {
 
 #[cfg(test)]
 mod lod_tests;
+#[cfg(test)]
+mod machine_tests;
+pub mod machines;
 mod persist;
 mod regions;
 pub use regions::Tag;

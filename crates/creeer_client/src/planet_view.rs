@@ -39,17 +39,20 @@ pub enum Tool {
     Ball,
     /// Put down a steel frame.
     Frame,
+    /// Build a powerhouse (its tank, turbine, generator and cells: F6.8's machine).
+    Powerhouse,
 }
 
 impl Tool {
     /// All tools with their names.
-    pub const ALL: [(Self, &'static str); 6] = [
+    pub const ALL: [(Self, &'static str); 7] = [
         (Self::Dig, "dig"),
         (Self::Fill, "fill"),
         (Self::Tunnel, "tunnel"),
         (Self::Crate, "crate"),
         (Self::Ball, "ball"),
         (Self::Frame, "frame"),
+        (Self::Powerhouse, "powerhouse"),
     ];
 }
 
@@ -316,6 +319,7 @@ impl PlanetView {
             Tool::Ball => return self.send(Command::Ball(hit + up * 2.0)),
             // The server lifts it clear of the ground (on a slope, of its corners too).
             Tool::Frame => return self.send(Command::Frame(hit)),
+            Tool::Powerhouse => return self.send(Command::Powerhouse(hit)),
         };
         self.session.edit(edit);
     }

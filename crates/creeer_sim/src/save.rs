@@ -1,6 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 7** (F7): as version 6, with an optional section `MACH`: the world's machines,
+//! each as its abstract self keeps it (`save/machines.rs`).
+//!
 //! **Version 6** (F7): as version 5, with an optional section `PARK`: the islands of bodies
 //! parked far from every player (`crate::lod`), as a physics world of their bodies in island
 //! order, then for each island its number of bodies, and for each body its entity id, whose
@@ -40,8 +43,11 @@ use creeer_math::codec::{DecodeError, Reader, Writer};
 use creeer_physics::world::{Body, World};
 use creeer_terrain::edits::Edits;
 
+mod machines;
+pub use machines::SavedMachine;
+
 /// The version this game writes.
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 7;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -68,6 +74,8 @@ pub struct Save {
     pub water: Vec<f64>,
     /// The islands parked far from every player (`crate::lod`).
     pub parked: Vec<Vec<ParkedBody>>,
+    /// The world's machines (`crate::abstraction`).
+    pub machines: Vec<SavedMachine>,
 }
 
 /// A body parked far from every player, with what the world keeps of it.
@@ -122,7 +130,10 @@ impl Save {
         let mut w = Writer::new();
         w.raw(MAGIC);
         w.u32(VERSION);
-        let sections = 4 + u64::from(!self.water.is_empty()) + u64::from(!self.parked.is_empty());
+        let sections = 4
+            + u64::from(!self.water.is_empty())
+            + u64::from(!self.parked.is_empty())
+            + u64::from(!self.machines.is_empty());
         w.varint(sections);
         let mut meta = Writer::new();
         meta.put(&self.planet);
@@ -148,6 +159,9 @@ impl Save {
         }
         if !self.parked.is_empty() {
             section(&mut w, b"PARK", &park_bytes(&self.parked, self.world.dt()));
+        }
+        if !self.machines.is_empty() {
+            section(&mut w, b"MACH", &machines::machine_bytes(&self.machines));
         }
         w.finish()
     }
@@ -176,6 +190,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         entities: Vec::new(),
         water: Vec::new(),
         parked: Vec::new(),
+        machines: Vec::new(),
     })
 }
 
@@ -187,7 +202,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         return Err(SaveError::Newer(version));
     }
     let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
-    let (mut surr, mut park) = (None, None);
+    let (mut surr, mut park, mut mach) = (None, None, None);
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -198,6 +213,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"ENTS" => ents = Some(body),
             b"SURR" => surr = Some(body),
             b"PARK" => park = Some(body),
+            b"MACH" => mach = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -241,6 +257,10 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         }
         s.end()?;
     }
+    let machines = match mach {
+        Some(bytes) => machines::machines_from(bytes)?,
+        None => Vec::new(),
+    };
     Ok(Save {
         planet,
         tick,
@@ -250,6 +270,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         entities,
         water,
         parked,
+        machines,
     })
 }
 
@@ -309,5 +330,7 @@ fn park_from(bytes: &[u8], version: u32) -> Result<Vec<Vec<ParkedBody>>, SaveErr
     Ok(parked)
 }
 
+#[cfg(test)]
+mod machine_tests;
 #[cfg(test)]
 mod tests;

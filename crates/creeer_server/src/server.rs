@@ -23,6 +23,8 @@ use std::time::Duration;
 
 /// The longest name a player may have (characters).
 pub const LONGEST_NAME: usize = 32;
+/// Ticks between the machines' list sent to every client (F7.4).
+pub const MACHINES_EVERY: u32 = 60;
 /// Ticks a refused client is given to hear why before it is disconnected.
 const CLOSE_AFTER: u64 = 30;
 
@@ -156,6 +158,12 @@ impl Server {
         self.world.regions(&centres);
         self.world.step();
         self.net_tick += 1;
+        if self.net_tick.is_multiple_of(MACHINES_EVERY) {
+            let views = ServerMessage::Machines(self.world.machine_views());
+            for session in self.sessions.values_mut().filter(|s| s.player.is_some()) {
+                session.queue(&views);
+            }
+        }
         if self.net_tick.is_multiple_of(SEND_EVERY) {
             self.send();
         }

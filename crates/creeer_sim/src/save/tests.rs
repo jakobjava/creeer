@@ -83,12 +83,13 @@ fn scene() -> Save {
         entities: vec![(1, None), (2, None), (5, Some("ada".into())), (8, None)],
         water: Vec::new(),
         parked: Vec::new(),
+        machines: Vec::new(),
     }
 }
 
 /// The scene with its first two bodies parked as one island and its last alone, the water
 /// moving with a floater of the first (F7.2: version 6).
-fn parked_scene() -> Save {
+pub(super) fn parked_scene() -> Save {
     let mut save = scene();
     let (bodies, _) = save.world.take_bodies(|i, _| i != 2);
     let mut bodies = bodies.into_iter();
@@ -120,7 +121,8 @@ fn write_v6_fixture() {
 #[test]
 fn the_version_6_fixture_keeps_parked_islands() {
     let save = Save::from_bytes(V6).unwrap();
-    assert_eq!(save.to_bytes(), V6);
+    // Written as version 7 (no machines): the same bytes but the version's.
+    assert_eq!(save.to_bytes()[12..], V6[12..]);
     assert_eq!(save.to_bytes(), parked_scene().to_bytes());
     let sizes: Vec<usize> = save.parked.iter().map(Vec::len).collect();
     assert_eq!(sizes, [2, 1]);
@@ -234,10 +236,10 @@ fn the_version_4_fixture_reads_as_it_was_saved() {
 fn the_version_5_fixture_reads_as_it_was_saved() {
     let save = Save::from_bytes(V5).unwrap();
     assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
-    // Written as version 6 (nothing parked): the same bytes but the version's.
+    // Written as this version (nothing parked, no machines): the same bytes but the version's.
     let again = save.to_bytes();
     assert_eq!(again[12..], V5[12..]);
-    assert_eq!(again[8..12], 6u32.to_le_bytes());
+    assert_eq!(again[8..12], VERSION.to_le_bytes());
 }
 
 #[test]

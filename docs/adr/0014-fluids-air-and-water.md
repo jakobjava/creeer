@@ -92,3 +92,7 @@
 
 - The structure solver takes velocity-dependent loads and added mass from any domain through two general hooks. Neither is saved: each is set before every step by whatever exerts it.
 - A pipe network's rate is a property of its structure, and couplings that need every tick take it from the machine's curve.
+
+## Amended in F7 (2026-10-18): tanks run dry
+
+A tank had no notion of empty: its head fell past its floor (the powerhouse drained to −0.045 m, water from nowhere). As EPANET does, a tank down to its floor is dry: its links carry water only into it (each a check valve towards it, opening again when the head beyond would fill it), and a step in which a tank would run dry is cut where it does (the step's fraction found by the secant method, then the rest stepped dry): `pipes/dry.rs`. Tests: a tank over a drop runs dry at its floor when Torricelli says, to the tick, and stays dry; it fills again by Torricelli when the head beyond rises.
