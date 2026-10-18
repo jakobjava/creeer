@@ -64,17 +64,37 @@ fn key(states: &[MemberState<'_>]) -> Vec<f64> {
     key
 }
 
+/// Whether `key` is `states`' (compared in place: building the key to compare was the
+/// largest of a ragdoll's step's allocations, a sixth of its time on the heap).
+#[allow(clippy::float_cmp)] // the very same state
+fn is_key(key: &[f64], states: &[MemberState<'_>]) -> bool {
+    let mut k = key.iter();
+    let mut next = |v: f64| k.next() == Some(&v);
+    for s in states {
+        for p in s.position {
+            if !(next(p.x) && next(p.y) && next(p.z)) {
+                return false;
+            }
+        }
+        for q in s.orientation {
+            if !(next(q.x) && next(q.y) && next(q.z) && next(q.w)) {
+                return false;
+            }
+        }
+    }
+    k.next().is_none()
+}
+
 impl Contacts {
     /// The contacts' geometry at `states`, measured once per state.
     pub(super) fn geometry(&self, states: &[MemberState<'_>]) -> Geometry {
-        let key = key(states);
         let mut kept = self.kept.0.lock().unwrap_or_else(PoisonError::into_inner);
-        #[allow(clippy::float_cmp)] // the very same state
         if let Some((k, geometry)) = kept.as_ref()
-            && *k == key
+            && is_key(k, states)
         {
             return geometry.clone();
         }
+        let key = key(states);
         let at: Vec<Geo> = (0..self.list.len())
             .map(|i| self.gap_and_slip(i, states))
             .collect();
