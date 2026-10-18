@@ -36,6 +36,9 @@ use super::Structure;
 use super::element::{Element, MEASURES, Stiffness};
 use super::flow::Flow;
 use super::step_flows::StepFlows;
+
+/// Where a member's next split starts: each measure's rate-lifted flow w, then its p.
+pub(crate) type Guess = [f64; 2 * MEASURES];
 use rayon::prelude::*;
 
 /// What happened to the members in one check.
@@ -131,10 +134,11 @@ impl Element {
         &self,
         s: &[f64; MEASURES],
         flows: &mut StepFlows<'_>,
-        guess: &mut [f64; MEASURES],
+        guess: &mut Guess,
     ) -> [f64; MEASURES] {
         crate::profile::add(crate::profile::Slot::Splits, 1);
         if self.elastic_at(s, flows.limits) {
+            guess[MEASURES..].fill(0.0);
             return [0.0; MEASURES];
         }
         let flows = &flows.get(self)[1];
@@ -152,6 +156,9 @@ impl Element {
             if k11 <= 0.0 {
                 continue;
             }
+            // From where the last split left the pair.
+            p[pair + 1] = guess[MEASURES + pair + 1];
+            p[pair] = guess[MEASURES + pair];
             for _ in 0..24 {
                 crate::profile::add(crate::profile::Slot::Sweeps, 1);
                 let x = s[pair] + k12 / k11 * (s[pair + 1] - p[pair + 1]);
@@ -167,6 +174,7 @@ impl Element {
                 }
             }
         }
+        guess[MEASURES..].copy_from_slice(&p);
         p
     }
 
@@ -179,7 +187,7 @@ impl Element {
         s_hat: &[f64; MEASURES],
         gamma: f64,
         flows: &mut StepFlows<'_>,
-        guess: &mut [f64; MEASURES],
+        guess: &mut Guess,
     ) -> [f64; MEASURES] {
         let shift = gamma / (1.0 + gamma);
         let v = std::array::from_fn(|m| s[m] - shift * s_hat[m]);
@@ -195,7 +203,7 @@ impl Element {
         s_hat: &[f64; MEASURES],
         gamma: f64,
         flows: &mut StepFlows<'_>,
-        guess: &mut [f64; MEASURES],
+        guess: &mut Guess,
     ) -> (f64, f64, [f64; MEASURES]) {
         let p = self.damped_split(s, s_hat, gamma, flows, guess);
         let elastic: [f64; MEASURES] = std::array::from_fn(|m| s[m] - p[m]);

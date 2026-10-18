@@ -206,3 +206,31 @@ fn profiles_read_back() {
     }));
     assert!(from_bytes::<ServerMessage>(&bytes).is_err());
 }
+
+#[test]
+fn a_busy_ticks_report_stays_small() {
+    use creeer_core::profile::{Frame as Ticked, Span};
+    let names: Vec<String> = (0..40).map(|k| format!("phase {k}")).collect();
+    let threads: Vec<String> = (0..16).map(|k| format!("thread {k}")).collect();
+    let spans = (0..5000u64)
+        .map(|k| Span {
+            name: (k % 40) as u16,
+            thread: (k % 16) as u16,
+            depth: (k % 4) as u8,
+            start: k * 3_000,
+            end: k * 3_000 + 1_000 + (k * 7_919) % 90_000,
+        })
+        .collect();
+    let frame = Ticked {
+        tick: 1,
+        duration: 16_000_000,
+        names,
+        threads,
+        spans,
+    };
+    let frames = vec![frame; 60];
+    let report = ProfileReport::of(&frames).expect("frames");
+    assert_eq!(report.worst.spans.len(), super::profile::MOST_SPANS);
+    let bytes = to_bytes(&ServerMessage::Profile(report)).len();
+    assert!(bytes < 4_000, "{bytes} bytes a second");
+}

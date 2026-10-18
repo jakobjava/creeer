@@ -8,6 +8,7 @@
 use super::Structure;
 use super::element::MEASURES;
 use super::flow::Flow;
+use super::plastic::Guess;
 use super::solver::Work;
 use super::step_flows::StepFlows;
 use crate::so3;
@@ -24,7 +25,7 @@ fn element_terms(
     s: &Structure,
     index: usize,
     measures: &[f64; MEASURES],
-    guess: &mut [f64; MEASURES],
+    guess: &mut Guess,
     (flows, built): (&mut [[Flow; MEASURES]; 2], &mut bool),
 ) -> ([f64; MEASURES], f64, f64) {
     let e = &s.elements[index];
@@ -83,7 +84,7 @@ impl Work {
         let mut element_force = std::mem::take(&mut self.element_force);
         let mut element_energy = std::mem::take(&mut self.element_energy);
         let mut guesses = std::mem::take(&mut self.flow_guess);
-        guesses.resize(s.elements.len(), [0.0; MEASURES]);
+        guesses.resize(s.elements.len(), [0.0; 2 * MEASURES]);
         let mut flows = std::mem::take(&mut self.flows);
         let mut built = std::mem::take(&mut self.built);
         let this = &*self;

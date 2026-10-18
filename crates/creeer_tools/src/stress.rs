@@ -54,7 +54,7 @@ const SCENARIOS: [Scenario; 5] = [
         what: "10 cars crashing",
         build: |_| cars(),
         ticks: (300, 120),
-        worst: 180.0,
+        worst: 115.0,
         first: 2.0,
     },
     Scenario {

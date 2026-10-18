@@ -50,6 +50,29 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// The frame with its `most` longest spans only (in their order), and only the names and
+    /// threads they use: what a report sends (a busy server's tick has thousands of spans).
+    pub fn longest(&self, most: usize) -> Frame {
+        let mut order: Vec<usize> = (0..self.spans.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(self.spans[i].end - self.spans[i].start));
+        order.truncate(most);
+        order.sort_unstable();
+        let mut out = Frame {
+            tick: self.tick,
+            duration: self.duration,
+            ..Frame::default()
+        };
+        for i in order {
+            let s = self.spans[i];
+            out.spans.push(Span {
+                name: index_of(&mut out.names, &self.names[usize::from(s.name)]),
+                thread: index_of(&mut out.threads, &self.threads[usize::from(s.thread)]),
+                ..s
+            });
+        }
+        out
+    }
+
     /// Total time (ns) of each name's outermost spans on each thread, most first: where
     /// the frame went (a span inside one of the same name is not counted twice).
     pub fn totals(&self) -> Vec<(&str, u64)> {

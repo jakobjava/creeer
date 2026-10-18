@@ -5,6 +5,10 @@ use super::{read_text, text};
 use creeer_core::profile::{Frame, Span};
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 
+/// Spans a report carries at most (its longest tick's longest): about 3 kB a second, a tenth
+/// of a client's budget (`channel::BYTES_PER_SECOND`), while it is asked for.
+pub const MOST_SPANS: usize = 300;
+
 /// What a report carries.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProfileReport {
@@ -23,7 +27,7 @@ impl ProfileReport {
                 .iter()
                 .map(|f| u32::try_from(f.duration / 1000).unwrap_or(u32::MAX))
                 .collect(),
-            worst: worst.clone(),
+            worst: worst.longest(MOST_SPANS),
         })
     }
 }

@@ -261,6 +261,7 @@ pub fn step_group_with(
         if yielding.broke > 0 {
             v.refactor(s);
         }
+        v.plastic_work += yielding.work;
         v.last_yielding = yielding;
     }
     members[0].1.timings.total = start.elapsed();

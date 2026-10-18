@@ -71,12 +71,10 @@ pub struct ImplicitSolver {
     pub(super) scheme: Scheme,
     pub(super) substeps: u32,
     pub(super) h: f64,
-    /// Newton iterations per step at most: a safety net only (default 500). Steps always
-    /// iterate until converged; see `tolerance`.
+    /// Newton iterations per step at most: a safety net only (default 500; see `tolerance`).
     pub max_iterations: u32,
-    /// A step stops once the estimated remaining error is below this (m, or rad for
-    /// rotations). Chosen so that the motion matches the fully converged solution
-    /// (test `default_tolerance_matches_the_converged_solution`).
+    /// A step stops once the estimated remaining error is below this (m, or rad): the motion
+    /// matches the fully converged one (`default_tolerance_matches_the_converged_solution`).
     pub tolerance: f64,
     /// Newton iterations used by the last step (summed over substeps).
     pub last_iterations: u32,
@@ -85,8 +83,9 @@ pub struct ImplicitSolver {
     pub iterations_total: u64,
     /// Where the time of the last step went.
     pub timings: Timings,
-    /// Plastic flow and fracture in the last step.
+    /// Plastic flow and fracture in the last step, and the plastic work of all (J, not saved).
     pub last_yielding: super::Yielding,
+    pub plastic_work: f64,
     /// When to re-linearise (default [`Refactoring::WhenSlow`]).
     pub refactoring: Refactoring,
     /// Factorisations computed so far.
@@ -188,7 +187,7 @@ pub(super) struct Work {
     /// measure, `Flow::increment_from`): where the next one's Newton starts. Emptied as each
     /// substep begins, so a step does not depend on the steps before it (a loaded world goes on
     /// bit for bit).
-    pub flow_guess: Vec<[f64; MEASURES]>,
+    pub flow_guess: Vec<super::plastic::Guess>,
     pub rotations: Vec<DMat3>,
     /// Newton direction (translation blocks, then rotation blocks).
     pub direction: Vec<DVec3>,
@@ -234,6 +233,7 @@ impl ImplicitSolver {
             iterations_total: 0,
             timings: Timings::default(),
             last_yielding: super::Yielding::default(),
+            plastic_work: 0.0,
             refactoring: Refactoring::WhenSlow,
             factorisations: 0,
             factor_orientation: vec![DQuat::IDENTITY; n],

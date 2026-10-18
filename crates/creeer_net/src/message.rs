@@ -247,7 +247,7 @@ pub fn from_bytes<T: Decode>(bytes: &[u8]) -> Result<T, DecodeError> {
     Ok(message)
 }
 
-mod profile;
+pub(crate) mod profile;
 mod server;
 pub use profile::ProfileReport;
 pub use server::{MachineView, Plastic, ServerMessage};

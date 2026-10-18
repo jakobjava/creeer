@@ -108,3 +108,32 @@ fn totals_count_a_name_inside_itself_once() {
     };
     assert_eq!(frame.totals(), vec![("step", 90), ("solve", 20)]);
 }
+
+#[test]
+fn a_frames_longest_spans_keep_their_order_names_and_threads() {
+    let span = |name, thread, start, end| Span {
+        name,
+        thread,
+        depth: 0,
+        start,
+        end,
+    };
+    let frame = Frame {
+        tick: 3,
+        duration: 100,
+        names: vec!["a".into(), "b".into(), "c".into()],
+        threads: vec!["main".into(), "worker".into()],
+        spans: vec![
+            span(0, 0, 0, 5),
+            span(2, 1, 0, 60),
+            span(1, 0, 10, 20),
+            span(2, 0, 30, 80),
+        ],
+    };
+    let short = frame.longest(2);
+    assert_eq!((short.tick, short.duration), (3, 100));
+    assert_eq!(short.names, ["c"]);
+    assert_eq!(short.threads, ["worker", "main"]);
+    assert_eq!(short.spans, [span(0, 0, 0, 60), span(0, 1, 30, 80)]);
+    assert_eq!(frame.longest(10).totals(), frame.totals());
+}
