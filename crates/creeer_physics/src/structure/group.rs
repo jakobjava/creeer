@@ -130,6 +130,7 @@ pub fn step_group_with(
     coupling: &mut dyn Coupling,
     scheme: Option<Scheme>,
 ) {
+    let _scope = creeer_core::profile::scope("structure step");
     let start = Instant::now();
     let Some((_, first)) = members.first() else {
         return;

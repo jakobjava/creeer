@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_core.workspace = true
 creeer_math.workspace = true
 renet.workspace = true
 renet_netcode.workspace = true

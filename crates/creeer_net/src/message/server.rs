@@ -56,6 +56,8 @@ pub enum ServerMessage {
     /// Every machine of the world and how it is run (F7.4): sent now and then, to every
     /// client (a machine nobody is near is abstract, beyond every client's view).
     Machines(Vec<MachineView>),
+    /// The server's profile, to a client that asked for it (`ClientMessage::Profile`).
+    Profile(super::ProfileReport),
 }
 
 /// A machine as a panel shows it.
@@ -143,6 +145,10 @@ impl Encode for ServerMessage {
                     w.f64(m.time);
                 }
             }
+            Self::Profile(report) => {
+                w.u8(8);
+                w.put(report);
+            }
             Self::Snapshot(bytes) => {
                 w.u8(6);
                 w.raw(bytes);
@@ -210,6 +216,7 @@ impl Decode for ServerMessage {
                 }
                 Self::Machines(list)
             }
+            8 => Self::Profile(r.get()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

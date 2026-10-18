@@ -289,3 +289,31 @@ fn a_player_joins_over_udp() {
     let avatar = client.welcome.as_ref().unwrap().avatar;
     assert!(matches!(&client.kinds[&avatar], Kind::Avatar { .. }));
 }
+
+#[test]
+fn a_client_that_asks_is_sent_the_servers_profile_once_a_second() {
+    let mut w = world();
+    crates(&mut w, 4, 8.0);
+    let mut game = Game::new(w);
+    game.join("ada", None);
+    game.run(30, still);
+    assert!(game.clients[0].0.profile.is_none(), "not asked");
+    game.clients[0].0.watch_profile(true);
+    game.run(150, still);
+    let report = game.clients[0].0.profile.clone().expect("a report");
+    assert!(!report.durations.is_empty() && report.durations.len() <= 600);
+    let names = &report.worst.names;
+    for phase in ["server tick", "network in", "regions", "physics: detect"] {
+        assert!(names.iter().any(|n| n == phase), "{phase} in {names:?}");
+    }
+    // Asked no more: profiling stops (as far as this server wants it).
+    game.clients[0].0.watch_profile(false);
+    game.run(10, still);
+    assert!(game.server.profiling.watchers.is_empty());
+    // (Reports queued before may still come, paced by its budget: other tests' servers
+    // stepping meanwhile fill them; none after.)
+    game.run(240, still);
+    game.clients[0].0.profile = None;
+    game.run(130, still);
+    assert!(game.clients[0].0.profile.is_none());
+}

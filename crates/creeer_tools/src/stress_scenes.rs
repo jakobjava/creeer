@@ -153,7 +153,8 @@ pub fn factory() -> Scene {
                 houses.lock().expect("houses").0 = std::mem::take(&mut active);
                 first = false;
             }
-            for (_, part) in &mut parts {
+            for (name, part) in &mut parts {
+                let _scope = creeer_core::profile::scope(name);
                 part(tick);
             }
             houses

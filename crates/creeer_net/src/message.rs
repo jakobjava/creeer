@@ -59,6 +59,8 @@ pub enum ClientMessage {
     },
     /// A command.
     Command(Command),
+    /// Send the server's profile (once a second), or stop (F7.6).
+    Profile(bool),
 }
 
 /// Numbered one past the input before it (its number is not written).
@@ -188,6 +190,10 @@ impl Encode for ClientMessage {
                     }
                 }
             }
+            Self::Profile(on) => {
+                w.u8(3);
+                w.u8(u8::from(*on));
+            }
         }
     }
 }
@@ -213,6 +219,11 @@ impl Decode for ClientMessage {
                 5 => Command::Powerhouse(r.get()?),
                 _ => return Err(r.error("unknown command")),
             }),
+            3 => Self::Profile(match r.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(r.error("not a flag")),
+            }),
             _ => return Err(r.error("unknown client message")),
         })
     }
@@ -236,7 +247,9 @@ pub fn from_bytes<T: Decode>(bytes: &[u8]) -> Result<T, DecodeError> {
     Ok(message)
 }
 
+mod profile;
 mod server;
+pub use profile::ProfileReport;
 pub use server::{MachineView, Plastic, ServerMessage};
 
 #[cfg(test)]

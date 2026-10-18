@@ -6,6 +6,7 @@
 //! tool makes one, and nothing is placed at a point that is not finite.
 
 use crate::things::{frame, upright};
+use creeer_core::profile;
 use creeer_data::Data;
 use creeer_materials::species::SpeciesTable;
 use creeer_math::glam::DVec3;
@@ -258,6 +259,7 @@ impl ServerWorld {
     /// # Errors
     /// What was refused, and why.
     pub fn apply(&mut self, command: &Command, by: Option<EntityId>) -> Result<(), String> {
+        let _scope = profile::scope("command");
         let near = by
             .and_then(|id| self.index(id))
             .map(|i| self.world.bodies[i].structure.position[0]);
@@ -330,9 +332,14 @@ impl ServerWorld {
 
     /// One step.
     pub fn step(&mut self) {
+        let scope = profile::scope("machines");
         self.tick_machines();
+        drop(scope);
+        let scope = profile::scope("surroundings");
         self.surroundings.push(&mut self.world);
+        drop(scope);
         self.world.step();
+        let _scope = profile::scope("surroundings");
         self.surroundings.settle(&mut self.world, DT);
         self.tick += 1;
     }

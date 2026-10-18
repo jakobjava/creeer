@@ -10,6 +10,7 @@
 use crate::replicate::Shapes;
 use crate::session::Session;
 use crate::world::{DT, ServerWorld};
+use creeer_core::profile;
 use creeer_net::PROTOCOL_VERSION;
 use creeer_net::channel::{RELIABLE, SEND_EVERY, TICK_RATE, UNRELIABLE, config};
 use creeer_net::interest::Grid;
@@ -56,6 +57,7 @@ pub struct Server {
     /// Ticks since the server started: what snapshots are numbered by (the world's own
     /// tick goes back when a save is loaded; a connection's must not).
     net_tick: u32,
+    profiling: crate::profiling::Profiling,
 }
 
 impl std::fmt::Debug for Server {
@@ -81,6 +83,7 @@ impl Server {
             events: Vec::new(),
             next_memory: 1,
             net_tick: 0,
+            profiling: crate::profiling::Profiling::default(),
         }
     }
 
@@ -121,6 +124,8 @@ impl Server {
 
     /// One tick.
     pub fn tick(&mut self) {
+        let scope = profile::scope("server tick");
+        let network = profile::scope("network in");
         let dt = Duration::from_secs_f64(DT);
         self.renet.update(dt);
         if let Some(udp) = &mut self.udp
@@ -136,6 +141,7 @@ impl Server {
         }
         self.connections();
         self.receive();
+        drop(network);
         let mut steered = std::collections::HashSet::new();
         for session in self.sessions.values_mut() {
             if let Some(avatar) = session.avatar {
@@ -158,6 +164,7 @@ impl Server {
         self.world.regions(&centres);
         self.world.step();
         self.net_tick += 1;
+        let sending = profile::scope("network out");
         if self.net_tick.is_multiple_of(MACHINES_EVERY) {
             let views = ServerMessage::Machines(self.world.machine_views());
             for session in self.sessions.values_mut().filter(|s| s.player.is_some()) {
@@ -175,6 +182,13 @@ impl Server {
         self.closing = keep;
         for (id, _) in close {
             self.renet.disconnect(id);
+        }
+        drop(sending);
+        drop(scope);
+        for (client, report) in self.profiling.end_tick(u64::from(self.net_tick)) {
+            if let Some(session) = self.sessions.get_mut(&client) {
+                session.queue(&report);
+            }
         }
         // In process, the server is the transport: it sends, and removes the connections it
         // disconnected or whose client is gone.
@@ -222,6 +236,7 @@ impl Server {
                     self.sessions.insert(client_id, Session::new(client_id));
                 }
                 ServerEvent::ClientDisconnected { client_id, .. } => {
+                    self.profiling.watch(client_id, false);
                     // Its avatar stays where it is, for when the player comes again.
                     if let Some(player) = self.sessions.remove(&client_id).and_then(|s| s.player) {
                         self.events.push(Event::Left(player));
@@ -256,6 +271,11 @@ impl Server {
                         };
                         if let Err(why) = result {
                             self.events.push(Event::CommandRefused(player, why));
+                        }
+                    }
+                    Ok(ClientMessage::Profile(on)) => {
+                        if self.sessions.get(&id).is_some_and(|s| s.player.is_some()) {
+                            self.profiling.watch(id, on);
                         }
                     }
                     Ok(ClientMessage::Inputs { .. }) | Err(_) => {}

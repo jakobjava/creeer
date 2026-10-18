@@ -8,13 +8,14 @@
 //! - `--check`: fails if a hash differs from `tests/scenarios/stress.txt`;
 //! - `--save-golden`: writes the hashes there;
 //! - `--metrics`: appends p50s, worst and first ticks for `cargo xtask perf`;
+//! - `--profile`: where the first tick and the worst went (`creeer_core::profile`);
 //! - `--gate`: fails if a worst or first tick (or a scenario's own gauge, the flyover's longest
 //!   wait for detail) is over its ceiling (full lengths only).
 
 use crate::stress_flyover::flyover;
 use crate::stress_scenes::{Scene, beams, cars, factory};
 use crate::stress_world::server;
-use creeer_core::TimingStats;
+use creeer_core::{TimingStats, profile};
 use std::fmt::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
@@ -116,10 +117,18 @@ pub fn run(args: &[String]) -> ExitCode {
         // The first tick apart: it takes the scenario's setup (first factorisations, a load's
         // first regions), the others are what it costs to keep running.
         let (mut stats, mut first) = (TimingStats::new(ticks as usize), 0.0);
+        // `--profile`: every tick cut into a frame (the tool's clock before any other).
+        let wanted = flag("--profile").then(profile::want);
+        let mut clock = wanted.as_ref().and_then(|_| profile::clock(3));
+        let mut seen = 0;
+        let _ = profile::frames_since(&mut seen);
         for tick in 0..ticks {
             let start = Instant::now();
             (scene.tick)(tick);
             let took = start.elapsed();
+            if let Some(c) = &mut clock {
+                c.end_tick(u64::from(tick));
+            }
             if tick == 0 {
                 first = took.as_secs_f64() * 1e3;
             } else {
@@ -153,6 +162,10 @@ pub fn run(args: &[String]) -> ExitCode {
         if !notes.text.is_empty() {
             println!("         {}", notes.text);
         }
+        if clock.take().is_some() {
+            print_profile(&profile::frames_since(&mut seen));
+        }
+        drop(wanted);
         let mut gauges = vec![
             ("worst_ms", p(&stats, 100.0), worst),
             ("first_ms", first, first_ceiling),
@@ -209,5 +222,27 @@ pub fn run(args: &[String]) -> ExitCode {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+/// Where the first tick and the worst of the others went (`--profile`).
+fn print_profile(frames: &[profile::Frame]) {
+    let worst = frames.iter().skip(1).max_by_key(|f| f.duration);
+    for (what, frame) in [("first", frames.first()), ("worst", worst)] {
+        let Some(frame) = frame else {
+            continue;
+        };
+        let parts: Vec<String> = frame
+            .totals()
+            .iter()
+            .take(10)
+            .map(|(name, ns)| format!("{name} {:.2}", *ns as f64 / 1e6))
+            .collect();
+        println!(
+            "         {what} tick ({}, {:.2} ms): {}",
+            frame.tick,
+            frame.duration as f64 / 1e6,
+            parts.join(", ")
+        );
     }
 }

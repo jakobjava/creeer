@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_core.workspace = true
 creeer_materials.workspace = true
 creeer_math.workspace = true
 rayon.workspace = true

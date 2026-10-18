@@ -669,6 +669,7 @@ dependencies = [
 name = "creeer_net"
 version = "0.0.1"
 dependencies = [
+ "creeer_core",
  "creeer_math",
  "renet",
  "renet_netcode",
@@ -698,6 +699,7 @@ dependencies = [
 name = "creeer_physics"
 version = "0.0.1"
 dependencies = [
+ "creeer_core",
  "creeer_materials",
  "creeer_math",
  "rayon",
@@ -771,6 +773,7 @@ dependencies = [
  "creeer_data",
  "creeer_materials",
  "creeer_math",
+ "rayon",
  "ron",
  "serde",
 ]

@@ -148,6 +148,7 @@ impl World {
         setup.stop(crate::profile::Slot::PassSetup);
         work.par_iter_mut()
             .for_each(|(bodies, contacts, anchors, group)| {
+                let _scope = creeer_core::profile::scope("physics: group");
                 let timer = crate::profile::start();
                 stepping::step(bodies, contacts, dt);
                 *anchors = anchor::after_step(bodies, group, contacts);

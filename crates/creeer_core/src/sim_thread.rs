@@ -165,6 +165,8 @@ impl<S: Simulation> Drop for SimThread<S> {
 fn run<S: Simulation>(sim: &mut S, clock: &mut FixedClock, shared: &Shared<S::Snapshot>) {
     let mut last = Instant::now();
     let mut current = Arc::clone(&lock(&shared.latest).current);
+    // The profile's clock, held while anyone wants a profile and nobody else holds it.
+    let mut frames: Option<crate::profile::Clock> = None;
     while !shared.stop.load(Ordering::Relaxed) {
         let now = Instant::now();
         let ticks = clock.advance(now - last);
@@ -173,13 +175,25 @@ fn run<S: Simulation>(sim: &mut S, clock: &mut FixedClock, shared: &Shared<S::Sn
         let mut previous = None;
         for _ in 0..ticks {
             let start = Instant::now();
+            let scope = crate::profile::scope("simulation tick");
             sim.step(clock.dt());
+            drop(scope);
             let extra = shared.extra_tick_delay_us.load(Ordering::Relaxed);
             if extra > 0 {
                 thread::sleep(Duration::from_micros(extra));
             }
             lock(&shared.tick_times).push(start.elapsed());
             previous = Some(std::mem::replace(&mut current, Arc::new(sim.snapshot())));
+            if crate::profile::enabled() {
+                frames = frames
+                    .filter(crate::profile::Clock::holds)
+                    .or_else(|| crate::profile::clock(1));
+                if let Some(f) = &mut frames {
+                    f.end_tick(clock.tick());
+                }
+            } else {
+                frames = None;
+            }
         }
         if let Some(previous) = previous {
             *lock(&shared.latest) = Published {

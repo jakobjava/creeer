@@ -159,3 +159,50 @@ fn inputs_cost_a_byte_or_two_each() {
     w.varint(0);
     assert!(from_bytes::<ClientMessage>(&w.finish()).is_err());
 }
+
+#[test]
+fn profiles_read_back() {
+    use creeer_core::profile::{Frame as Ticked, Span};
+    back(&ClientMessage::Profile(true));
+    back(&ClientMessage::Profile(false));
+    let frame = |tick, duration| Ticked {
+        tick,
+        duration,
+        names: vec!["physics: group".into(), "machines".into()],
+        threads: vec!["server".into(), "thread 3".into()],
+        spans: vec![
+            Span {
+                name: 1,
+                thread: 0,
+                depth: 0,
+                start: 10,
+                end: 2_000,
+            },
+            Span {
+                name: 0,
+                thread: 1,
+                depth: 2,
+                start: 3_000,
+                end: 9_000_000,
+            },
+        ],
+    };
+    let frames = [
+        frame(7, 16_000_000),
+        frame(8, 21_500_000),
+        frame(9, 16_700_000),
+    ];
+    let report = ProfileReport::of(&frames).expect("frames");
+    assert_eq!(report.durations, vec![16_000, 21_500, 16_700]);
+    assert_eq!(report.worst.tick, 8);
+    back(&ServerMessage::Profile(report));
+    assert!(ProfileReport::of(&[]).is_none());
+    // A span naming what the frame does not have is refused.
+    let mut bad = frame(1, 1);
+    bad.spans[0].name = 5;
+    let bytes = to_bytes(&ServerMessage::Profile(ProfileReport {
+        durations: vec![1],
+        worst: bad,
+    }));
+    assert!(from_bytes::<ServerMessage>(&bytes).is_err());
+}

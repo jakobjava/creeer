@@ -23,15 +23,22 @@ impl ServerWorld {
     /// [`lod::PARK`] parked; every tick up to [`lod::WAKE_PER_TICK`] bodies of the islands
     /// found are put back.
     pub fn regions(&mut self, centres: &[DVec3]) {
+        let _scope = creeer_core::profile::scope("regions");
         if self.tick.is_multiple_of(lod::PERIOD) {
+            let scope = creeer_core::profile::scope("regions: wake");
             for key in self.parked.near(centres, lod::ACTIVE) {
                 if let Some(island) = self.parked.take(key) {
                     self.returning.extend(island.bodies);
                 }
             }
+            drop(scope);
+            let scope = creeer_core::profile::scope("regions: park");
             self.park(centres);
+            drop(scope);
+            let _scope = creeer_core::profile::scope("regions: machines");
             self.machine_regions(centres);
         }
+        let _scope = creeer_core::profile::scope("regions: put back");
         self.wake();
     }
 

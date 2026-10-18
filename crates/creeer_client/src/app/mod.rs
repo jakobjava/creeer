@@ -48,6 +48,8 @@ struct Running {
     controls: crate::control_panel::ControlPanel,
     /// The powerhouse (F6.8).
     powerhouse: crate::powerhouse_panel::PowerhousePanel,
+    /// The profiler window (F9).
+    profiler: crate::profiler_ui::ProfilerWindow,
     /// The planet sandbox, when it is open (instead of the tech demo).
     planet: Option<crate::planet_view::PlanetView>,
     /// The solar-system sandbox, when it is open.
@@ -110,8 +112,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } if !response.consumed => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
-                    if !(pressed && !event.repeat && (app.system_key(code) || app.planet_key(code)))
-                    {
+                    if !(pressed && !event.repeat && app.key(code)) {
                         app.fly.key(code, pressed);
                     }
                 }
@@ -228,6 +229,7 @@ impl Running {
             water: crate::water_bench::WaterBench::new(),
             controls: crate::control_panel::ControlPanel::new(),
             powerhouse: crate::powerhouse_panel::PowerhousePanel::new(),
+            profiler: crate::profiler_ui::ProfilerWindow::default(),
             planet: None,
             system: None,
             meshes,
@@ -366,6 +368,7 @@ impl Running {
             self.water.window(ui.ctx());
             self.controls.window(ui.ctx());
             self.powerhouse.window(ui.ctx());
+            self.profiler.window(ui.ctx(), None);
             if let Some(heatmap) = self.settings.overlay.heatmap() {
                 let (title, unit) = self.settings.overlay.label();
                 heatmap_legend(ui.ctx(), &heatmap, title, unit);

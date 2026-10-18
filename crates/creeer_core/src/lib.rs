@@ -1,6 +1,9 @@
-//! Core runtime: fixed-tick clock, simulation thread, timing statistics.
+//! Core runtime: fixed-tick clock, simulation thread, timing statistics, the profiler.
 
 pub mod clock;
+pub mod profile;
+#[cfg(test)]
+mod profile_tests;
 pub mod sim_thread;
 pub mod stats;
 

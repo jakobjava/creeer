@@ -226,6 +226,7 @@ impl World {
     fn step_once(&mut self) {
         profile::add(Slot::WorldSteps, 1);
         let timer = profile::start();
+        let scope = creeer_core::profile::scope("physics: detect");
         self.wake_disturbed();
         // Contacts between an awake and a sleeping body wake the sleeper, which may touch
         // further sleepers: detect until nothing new wakes (a hit at the top of a sleeping
@@ -248,11 +249,15 @@ impl World {
             }
         };
         timer.stop(Slot::Detect);
+        drop(scope);
         let timer = profile::start();
+        let scope = creeer_core::profile::scope("physics: groups");
         let anchors = std::mem::take(&mut self.anchors);
         let stepped = self.pass(&found, &anchors);
         timer.stop(Slot::Pass);
+        drop(scope);
         let timer = profile::start();
+        let _scope = creeer_core::profile::scope("physics: after");
         self.contacts.clear();
         self.groups.clear();
         self.left = Left::default();

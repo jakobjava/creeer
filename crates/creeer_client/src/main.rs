@@ -59,6 +59,9 @@ mod planet_shot;
 mod planet_ui;
 mod planet_view;
 mod powerhouse_panel;
+mod profiler_ui;
+#[cfg(test)]
+mod profiler_ui_tests;
 mod sandbox;
 mod system_bench;
 mod system_cmd;

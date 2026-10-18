@@ -10,6 +10,7 @@ publish = false
 creeer_data.workspace = true
 creeer_materials.workspace = true
 creeer_math.workspace = true
+rayon.workspace = true
 ron.workspace = true
 serde.workspace = true
 

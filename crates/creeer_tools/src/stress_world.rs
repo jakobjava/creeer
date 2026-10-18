@@ -41,7 +41,9 @@ pub fn server() -> Scene {
         tick: Box::new(move |tick| {
             let mut w = w.lock().expect("world");
             let t = u64::from(tick);
+            let scope = creeer_core::profile::scope("players walk");
             walk(&mut w, &players, t);
+            drop(scope);
             let c = centres(&w, &players);
             // Every two seconds one player drops a crate; every ten one digs.
             let who = (tick / 120) as usize % players.len();
