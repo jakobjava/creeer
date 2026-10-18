@@ -60,6 +60,9 @@ impl World {
         let mut found = Vec::new();
         // Sleeping bodies need no contacts among themselves or with fixed geometry.
         let asleep = |body: usize| self.bodies[body].sleep.asleep;
+        // Bodies joined do not collide with each other, unless their joint says so.
+        let unjoined = self.unjoined_pairs();
+        let joined = |a: usize, b: usize| unjoined.binary_search(&(a.min(b), a.max(b))).is_ok();
         for (i, a) in items.iter().enumerate() {
             for b in &items[i + 1..] {
                 if b.pose.position.x - b.reach > a.pose.position.x + a.reach {
@@ -67,6 +70,7 @@ impl World {
                 }
                 if a.body == b.body
                     || (asleep(a.body) && asleep(b.body))
+                    || (!unjoined.is_empty() && joined(a.body, b.body))
                     || (a.pose.position - b.pose.position).length() > a.reach + b.reach
                 {
                     continue;

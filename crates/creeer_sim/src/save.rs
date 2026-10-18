@@ -1,6 +1,8 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 8** (G1.1): as version 7, the physics world keeping its joints (`WRLD`; ADR-0022).
+//!
 //! **Version 7** (F7): as version 6, with an optional section `MACH`: the world's machines,
 //! each as its abstract self keeps it (`save/machines.rs`).
 //!
@@ -47,7 +49,7 @@ mod machines;
 pub use machines::SavedMachine;
 
 /// The version this game writes.
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 8;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -330,6 +332,8 @@ fn park_from(bytes: &[u8], version: u32) -> Result<Vec<Vec<ParkedBody>>, SaveErr
     Ok(parked)
 }
 
+#[cfg(test)]
+mod joint_tests;
 #[cfg(test)]
 mod machine_tests;
 #[cfg(test)]

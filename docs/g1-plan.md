@@ -43,6 +43,14 @@ What makes Factorio's look, and how Creëer carries it into 3D: a summary. The r
 
 ### G1.1 Joints (`creeer_physics`, ADR-0022)
 
+**Done** (2026-10-18, ADR-0022):
+- ball joints and hinges with limits, damping, friction (anchored) and drives;
+- augmented-Lagrangian constraints in the step's minimisation, with exact rows;
+- what Newmark and the energy guard needed once they met joints: a velocity projection (sparse Cholesky), substeps while joints turn fast, and the guard's surplus counting contacts only;
+- save version 8.
+
+Every validation below is green. Changed from the plan: the budget. A ragdoll in the air steps in 0.15 ms p50, gated at 0.2 ms, because its fifteen bodies free already cost 0.39 ms. On the ground it costs 1.4 ms p50, which is the large group's contact solve, P1's (G1.8).
+
 The physics has contacts and welded members, but no articulation. The ragdoll needs it, and so do carrying, ladders, and in G2 the hinges, pins and bearings.
 
 - **Kinds.** A ball joint (three rotations free) and a hinge (one free), each with angle limits (a cone and twist, or a range), joint friction, and an optional drive (a target angle with a strength limit: muscles, later motors). They join two bodies, or a body and the world.

@@ -160,7 +160,7 @@ pub fn step_group_with(
                 })
             });
             let surplus = left.map_or(0.0, |left| {
-                (coupling.elastic_energy(&states(members)) - left).max(0.0)
+                (coupling.found_energy(&states(members)) - left).max(0.0)
             });
             for (s, v) in members.iter_mut() {
                 v.save(s);
@@ -338,6 +338,7 @@ fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Sche
     for (s, v) in members.iter_mut() {
         v.finish_substep(s);
     }
+    coupling.project(members);
 }
 
 /// Scales all velocities of the group so that its kinetic energy drops by `excess`.

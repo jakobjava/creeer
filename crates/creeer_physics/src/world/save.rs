@@ -1,6 +1,7 @@
 //! The physics world as a save holds it: its settings, fixed geometry, every body (its
 //! structure, solver history, shapes, surface and sleep), and what the next step continues
-//! from: the friction anchors, and the energy the contacts held (from version 5). The ground
+//! from: the friction anchors, the energy the contacts held (from version 5) and the joints
+//! (from version 8, their constraint forces with them). The ground
 //! is not in it: it is the terrain's, which a save holds as its edits (`creeer_sim::save`);
 //! whoever loads a world gives it its ground again.
 //!
@@ -227,6 +228,8 @@ impl World {
             w.f64(energy);
         }
         w.put(&self.left.stepped);
+        // (Version 8 on.)
+        w.put(&self.joints);
         w.finish()
     }
 
@@ -271,6 +274,19 @@ impl World {
         world.anchors = anchors;
         if r.version() >= 5 {
             world.left = read_left(&mut r, &world)?;
+        }
+        if r.version() >= 8 {
+            let joints: Vec<super::joint::Joint> = r.get()?;
+            let fits = |(body, node): (usize, usize)| {
+                world
+                    .bodies
+                    .get(body)
+                    .is_some_and(|b| node < b.structure.node_count())
+            };
+            if !(joints.iter()).all(|j| fits(j.a) && j.b.is_none_or(fits)) {
+                return Err(r.error("a joint on a body the world lacks"));
+            }
+            world.joints = joints;
         }
         r.end()?;
         Ok(world)

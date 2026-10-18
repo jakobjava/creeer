@@ -57,10 +57,13 @@ pub enum Slot {
     /// over the face.
     FaceSearches,
     FaceIntegrations,
+    /// Joints (G1.1): their terms (energy, gradient, blocks), and the velocities' projection.
+    JointTerms,
+    JointProjection,
 }
 
 /// How many slots there are.
-pub const SLOTS: usize = Slot::FaceIntegrations as usize + 1;
+pub const SLOTS: usize = Slot::JointProjection as usize + 1;
 
 #[cfg(feature = "profile")]
 static TOTALS: [std::sync::atomic::AtomicU64; SLOTS] =
@@ -151,6 +154,8 @@ pub const NAMES: [(Slot, &str); SLOTS] = [
     (Slot::FlowIterations, "flow iterations"),
     (Slot::FaceSearches, "face searches"),
     (Slot::FaceIntegrations, "face integrations"),
+    (Slot::JointTerms, "joint terms"),
+    (Slot::JointProjection, "joint projection"),
 ];
 
 /// Whether a slot holds a count (else nanoseconds).

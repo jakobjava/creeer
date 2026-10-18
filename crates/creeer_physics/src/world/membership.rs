@@ -49,6 +49,7 @@ impl World {
     }
 
     fn renumber(&mut self, map: &[Option<usize>]) {
+        self.renumber_joints(map);
         self.left = self.left.renumbered(map);
         self.anchors = self
             .anchors

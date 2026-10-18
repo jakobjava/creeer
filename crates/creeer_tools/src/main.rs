@@ -11,6 +11,7 @@ mod chem_bench;
 mod electric_bench;
 mod fluids_bench;
 mod image_diff;
+mod joint_bench;
 mod lod_bench;
 mod logic_bench;
 mod mech_bench;
@@ -40,7 +41,7 @@ commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech, chem,
-      fluids, logic, reference, lod, rates)
+      fluids, logic, reference, lod, rates, joints)
   stress [--short] [--check | --save-golden] [--metrics <file>] [--only <name>]
       the stress scenarios (beams, cars, factory, server, flyover): tick percentiles
       and state hashes (checked against tests/scenarios/stress.txt)

@@ -30,11 +30,13 @@ impl World {
             }
             i
         }
-        for (a, _, b, _) in found {
-            if let Some((b, _)) = b {
-                let (ra, rb) = (root(&mut parent, *a), root(&mut parent, *b));
-                parent[ra.max(rb)] = ra.min(rb);
-            }
+        let joined = (self.joints.iter()).filter_map(|j| j.b.map(|b| (j.a.0, b.0)));
+        let touching = found
+            .iter()
+            .filter_map(|(a, _, b, _)| b.map(|(b, _)| (*a, b)));
+        for (a, b) in touching.chain(joined) {
+            let (ra, rb) = (root(&mut parent, a), root(&mut parent, b));
+            parent[ra.max(rb)] = ra.min(rb);
         }
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut group_of = vec![usize::MAX; self.bodies.len()];
@@ -125,6 +127,7 @@ impl World {
         // Step every group, in parallel, each borrowing its own bodies (in their order, as
         // its contacts number them): moving them out and back cost more than stepping 200
         // free bodies.
+        let joints = self.group_joints(&groups, &group_of);
         let dt = self.dt;
         let ground = self.ground.clone();
         let mut members: Vec<Vec<&mut Body>> =
@@ -139,11 +142,15 @@ impl World {
             .zip(contacts)
             .zip(left)
             .zip(members)
-            .map(|(((g, (c, p, measures, shapes)), left), bodies)| {
-                let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
-                contacts.set_left(left);
-                (bodies, contacts, Vec::new(), g)
-            })
+            .zip(joints)
+            .map(
+                |((((g, (c, p, measures, shapes)), left), bodies), joints)| {
+                    let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
+                    contacts.set_left(left);
+                    contacts.joints = joints;
+                    (bodies, contacts, Vec::new(), g)
+                },
+            )
             .collect();
         setup.stop(crate::profile::Slot::PassSetup);
         work.par_iter_mut()
@@ -154,8 +161,52 @@ impl World {
                 *anchors = anchor::after_step(bodies, group, contacts);
                 timer.stop(crate::profile::Slot::GroupWorld);
             });
+        // The joints' constraint forces, carried to the next step.
+        for (_, contacts, _, _) in &work {
+            for (index, joint) in &contacts.joints.list {
+                self.joints[*index].multipliers = joint.multipliers;
+                self.joints[*index].anchor = joint.anchor;
+            }
+        }
         work.into_iter()
             .map(|(_, contacts, anchors, g)| (g.clone(), contacts, anchors))
+            .collect()
+    }
+
+    /// Each group's joints, their sides numbered as the group's members, with the sides'
+    /// mass and inertia (for the joints' penalties).
+    fn group_joints(&self, groups: &[Vec<usize>], group_of: &[usize]) -> Vec<super::joint::Joints> {
+        let mut lists = vec![(Vec::new(), Vec::new()); groups.len()];
+        for (index, joint) in self.joints.iter().enumerate() {
+            let Some(&g) = group_of.get(joint.a.0).filter(|&&g| g != usize::MAX) else {
+                continue;
+            };
+            let member = |body: usize| groups[g].iter().position(|&b| b == body);
+            let (Some(a), b) = (member(joint.a.0), joint.b.map(|b| member(b.0))) else {
+                continue;
+            };
+            let mut local = joint.clone();
+            local.a.0 = a;
+            if let (Some(side), Some(Some(m))) = (&mut local.b, b) {
+                side.0 = m;
+            }
+            let inertia = |side: Option<(usize, NodeId)>| {
+                side.map_or((f64::INFINITY, f64::INFINITY, false), |(body, node)| {
+                    let s = &self.bodies[body].structure;
+                    let i = s.inertia[node];
+                    let rigid = s.node_count() == 1 && s.element_count() == 0;
+                    (
+                        s.mass[node],
+                        (i.x_axis.x + i.y_axis.y + i.z_axis.z) / 3.0,
+                        rigid,
+                    )
+                })
+            };
+            lists[g].0.push((index, local));
+            lists[g].1.push([inertia(Some(joint.a)), inertia(joint.b)]);
+        }
+        (lists.into_iter())
+            .map(|(list, sides)| super::joint::Joints::new(list, sides))
             .collect()
     }
 

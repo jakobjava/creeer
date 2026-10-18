@@ -35,6 +35,7 @@ mod hull_sat;
 #[cfg(test)]
 mod hull_tests;
 mod impact;
+pub mod joint;
 mod left;
 #[cfg(test)]
 mod load_tests;
@@ -165,6 +166,8 @@ pub struct World {
     /// The groups of the last step: their bodies and contacts (member indices refer to the
     /// bodies listed).
     groups: Vec<(Vec<usize>, Contacts)>,
+    /// Joints between bodies, or bodies and the world (`joint.rs`).
+    joints: Vec<joint::Joint>,
     /// Friction anchors of the last step.
     anchors: Vec<anchor::Anchor>,
     /// The elastic energy each point contact and face held at the end of the last step, by
@@ -188,6 +191,7 @@ impl World {
             contacts: Vec::new(),
             groups: Vec::new(),
             left: Left::default(),
+            joints: Vec::new(),
             anchors: Vec::new(),
             dt,
         }
@@ -232,8 +236,9 @@ impl World {
         // further sleepers: detect until nothing new wakes (a hit at the top of a sleeping
         // stack wakes the whole stack).
         let found = loop {
+            // Bodies joined to awake ones wake with them (one group).
+            let mut woke = self.wake_joined();
             let found = self.detect();
-            let mut woke = false;
             for (a, _, b, _) in &found {
                 if let Some((b, _)) = b {
                     let (a, b) = (*a, *b);

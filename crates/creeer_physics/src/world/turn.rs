@@ -55,10 +55,11 @@ impl World {
         let n = substeps(turn);
         let saved = (!spinning.is_empty() && n < MAX_SUBSTEPS).then(|| {
             let bodies: Vec<Saved> = self.bodies.iter().map(Saved::of).collect();
-            (bodies, self.anchors.clone(), self.left.clone())
+            let multipliers: Vec<_> = self.joints.iter().map(|j| j.multipliers).collect();
+            (bodies, self.anchors.clone(), self.left.clone(), multipliers)
         });
         self.step_in(n);
-        let Some((bodies, anchors, left)) = saved else {
+        let Some((bodies, anchors, left, multipliers)) = saved else {
             return;
         };
         // Every box awake at the start or woken in the step.
@@ -77,6 +78,9 @@ impl World {
             }
             self.anchors = anchors;
             self.left = left;
+            for (j, m) in self.joints.iter_mut().zip(multipliers) {
+                j.multipliers = m;
+            }
             crate::profile::add(crate::profile::Slot::TurnRedos, 1);
             self.step_in(substeps(turned));
         }

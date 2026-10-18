@@ -38,6 +38,14 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Material damping model**: steel's damping over-damps a joint's kilohertz rattle (crash 5 % short at 5 m/s with it) | The crash test runs undamped; a frequency-dependent model is needed | R | Medium | ADR-0005 |
 | **Impacts on structures cost substeps** (a 10 t block landing on a bridge: about 33 ms a tick while it strikes, 34 substeps of 0.5 ms at about 1 ms each, a third of that fixed costs); ten cars crashing in pairs at 15 m/s (F7.5): 91 ms the tick they strike (134 before F7.6 warm-started members' splits), 34 substeps of 50–75 Newton iterations in the struck groups | Error-controlled substeps were as accurate but no faster (ADR-0017, A1); the substeps are needed while the block strikes. **Subcycling the struck region** (its joints in short steps, the rest in the tick's, energy exact where they meet) is the method left, weeks of work: deferred by the user (2026-10-18) | S | Large | ADR-0005, ADR-0017 |
 
+### Joints
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **A ball's twist measured about A's axis**: it loses meaning as the swing nears 90° (B's reference along A's axis), and its stops are let go there | A swing–twist split with exact derivatives is a measure of its own; ragdolls' twist stops sit within it | R | Small | ADR-0022 |
+| **Joints pressed between stiff contacts hold within 1 % of their force**, not to a micrometre (a ragdoll's feet on the ground: up to tenths of a millimetre) | Each refresh of the multipliers gains little against stiffness a hundred times the penalty; stiffer penalties were slower and rang (ADR-0022, measured) | R | Medium | ADR-0022 |
+| **A ragdoll on the ground costs 1.4 ms p50** (15 worst): its fifteen bodies are one group, whose contact solve takes twice the iterations | The large group's contact solve is P1's (G1.8) | S | Large | ADR-0022; `docs/g1-plan.md` |
+
 ### Gravity and orbits
 
 | What | Why deferred | Improves | Size | Recorded in |
