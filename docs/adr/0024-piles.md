@@ -155,7 +155,7 @@ Sources: arxiv.org/html/2605.15875v1; doi.org/10.1145/3355621; graphics.cs.utah.
 
 ### Open items (kept until each is closed)
 
-- *crowd*'s CI work gate (4,730 iterations against 490) and its time gates.
+- *crowd*'s time gates (its CI work gate re-set to 5,200 by the user, 2026-10-18).
 - The rock pile's targets (worst ≤ 5 ms, p99 ≤ 2 ms).
 - `rayon_bound_tests.rs`: an ignored measurement, kept as this ADR's evidence.
 - G1.2e (prediction of nearby bodies) after P1.
@@ -180,4 +180,4 @@ About 8 % in all (5,276 → about 4,900 ms). Realism is untouched: nothing was l
 
 **Back to G1.8** (`docs/g1-plan.md`), each from the facts measured here: friction within Newton's iterations together with the joint tree (the refreshes wait on both: 35–43 % of a ragdoll's iterations), contacts whose description follows the iterate and persists (the see-saw, the found-anew surplus), the ragdoll's passive joint resistance from biomechanics, the rock pile's targets, large groups across cores.
 
-**Open:** *crowd*'s CI work gate (4,730 iterations against 490) and its time gates: the user decides (re-set to the measured value with a justification, or kept failing as a known item).
+**The *crowd* work gate** (4,730 iterations against 490): re-set to the measured value a tenth above, 5,200, by the user's decision (2026-10-18; `play/tests.rs`); G1.8 brings it back down. Its time gates (p99 ≤ 2 ms, worst ≤ 5 ms in `cargo xtask perf`) stay, unmet, for G1.8.
