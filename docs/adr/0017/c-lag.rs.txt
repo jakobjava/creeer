@@ -1,0 +1,241 @@
+//! Friction's normal forces kept consistent with every Newton iterate (ADR-0017, C).
+//!
+//! Friction's energy μ·λ·f₀(|u|) takes λ, the normal force, as a given (`mod.rs`). Lagged
+//! from the step's start and refreshed only once the step had converged (IPC's scheme), it
+//! cost a rock pile half its iterations in refreshes (up to three a step, each converged
+//! anew), and the cap of three left one step in nine ending with some contact's friction on
+//! a normal force more than 5 % off its own. Here λ is the normal force at each iterate, and
+//! Newton's matrix gains how friction's force follows it: for contact i, φᵢ·ψᵢᵀ, with φᵢ
+//! friction's gradient per unit of λ and ψᵢ = ∂λᵢ/∂x. The term is not symmetric (friction
+//! has no potential once λ follows the state); the minimiser solves with it by GMRES
+//! (`structure/gmres.rs`).
+
+use super::{Contacts, Law, Side};
+use crate::structure::group::{LagTerm, MemberState};
+use creeer_math::glam::DVec3;
+
+/// A 6-vector (translation, rotation) of a force `f` at lever arm `arm`.
+fn at_arm(f: DVec3, arm: DVec3) -> [f64; 6] {
+    let t = arm.cross(f);
+    [f.x, f.y, f.z, t.x, t.y, t.z]
+}
+
+/// The (member, node) of a side, if it is a node.
+fn node_of(side: Side) -> Option<(usize, usize)> {
+    match side {
+        Side::Node { member, node, .. } => Some((member, node)),
+        Side::Fixed(_) => None,
+    }
+}
+
+impl Contacts {
+    /// Friction's energy at `states` with the normal forces as they are now set (J): the
+    /// sliding and drilling terms, the two that take λ.
+    fn friction_energy(&self, states: &[MemberState<'_>]) -> f64 {
+        let geometry = self.geometry(states);
+        let sliding: f64 = self
+            .list
+            .iter()
+            .zip(geometry.at.iter())
+            .map(|(c, a)| c.friction * c.lambda * self.smooth(a.3.length()).0)
+            .sum();
+        sliding + self.twist_energy(states)
+    }
+
+    /// Sets every contact's λ to its normal force at `states`; returns the change of the
+    /// energy there (J).
+    pub(super) fn refresh(&mut self, states: &[MemberState<'_>]) -> f64 {
+        let before = self.friction_energy(states);
+        let geometry = self.geometry(states);
+        let (_, forces, _) = self.normal_forces(&geometry.gaps(), &geometry.measured, false);
+        for (c, force) in self.list.iter_mut().zip(forces) {
+            c.lambda = force;
+        }
+        self.friction_energy(states) - before
+    }
+
+    /// The rank-one terms φᵢ·ψᵢᵀ at `states` (module docs), for every contact with friction
+    /// that presses and slips or sticks.
+    pub(super) fn terms(&self, states: &[MemberState<'_>]) -> Vec<LagTerm> {
+        #[cfg(feature = "profile")]
+        if std::env::var_os("CREEER_PROBE_PSI").is_some() {
+            self.probe_normal_gradients(states);
+        }
+        let geometry = self.geometry(states);
+        let at = &geometry.at;
+        let psi = self.normal_gradients(states);
+        let mut terms = Vec::new();
+        for (i, c) in self.list.iter().enumerate() {
+            let Some(psi) = psi[i] else { continue };
+            // φ: friction's gradient for λ = 1, where it acts (the material points, or a
+            // ball's carried friction points).
+            let slip = at[i].3;
+            let w = slip * (c.friction * self.smooth(slip.length()).1);
+            if w == DVec3::ZERO {
+                continue;
+            }
+            let phi = match self.carried(i) {
+                None => [at_arm(w, at[i].4), at_arm(-w, at[i].5)],
+                Some([fa, fb]) => [fa.gradient_at(states, w), fb.gradient_at(states, -w)],
+            };
+            let side = |k: usize| node_of([c.a, c.b][k]).map(|n| (n, phi[k], psi[k]));
+            terms.push([side(0), side(1)]);
+        }
+        terms
+    }
+
+    /// ψᵢ = ∂λᵢ/∂x of every contact with friction that presses (`None` for the others), on
+    /// its sides A and B: −(∂F/∂δ)·∂gap/∂x, with Hertz's stiffness, or a face's corners
+    /// through the face's tangent.
+    fn normal_gradients(&self, states: &[MemberState<'_>]) -> Vec<Option<[[f64; 6]; 2]>> {
+        let geometry = self.geometry(states);
+        let at = &geometry.at;
+        // The gap's gradient of contact j on its sides A and B, the turning normal's slope
+        // included.
+        let gap_gradient = |j: usize| -> [[f64; 6]; 2] {
+            let c = &self.list[j];
+            let (_, _, direction, _, ra, rb) = at[j];
+            let mut g = [at_arm(direction, ra), at_arm(-direction, rb)];
+            if let Some(turned) = self.turned(j, states) {
+                for (member, node, slope) in turned.torques.into_iter().flatten() {
+                    for (side, gk) in [c.a, c.b].into_iter().zip(g.iter_mut()) {
+                        if node_of(side) == Some((member, node)) {
+                            gk[3] += slope.x;
+                            gk[4] += slope.y;
+                            gk[5] += slope.z;
+                            break;
+                        }
+                    }
+                }
+            }
+            g
+        };
+        // Each pressed face's ∂F_k/∂δ_l.
+        let tangents: Vec<Option<[[f64; 4]; 4]>> = self
+            .patches
+            .iter()
+            .enumerate()
+            .map(|(p, patch)| {
+                let depths: [f64; 4] = std::array::from_fn(|k| -at[patch.first + k].0);
+                let measured = &geometry.measured[p];
+                depths
+                    .iter()
+                    .chain(measured)
+                    .any(|d| *d > 0.0)
+                    .then(|| {
+                        let sigma = self.sigma_at(p, depths, measured);
+                        patch.force_tangent(depths, measured, sigma)
+                    })
+            })
+            .collect();
+        let mut out = vec![None; self.list.len()];
+        for (i, c) in self.list.iter().enumerate() {
+            if c.friction == 0.0 {
+                continue;
+            }
+            let mut psi = [[0.0; 6]; 2];
+            match c.law {
+                Law::Hertz(h) => {
+                    let depth = -at[i].0;
+                    if depth <= 0.0 {
+                        continue;
+                    }
+                    let k = h.stiffness(depth);
+                    for (p, g) in psi.iter_mut().zip(gap_gradient(i)) {
+                        *p = g.map(|x| -k * x);
+                    }
+                }
+                Law::Patch { patch, vertex } => {
+                    let Some(t) = tangents[patch] else { continue };
+                    let first = self.patches[patch].first;
+                    for (l, &kl) in t[vertex].iter().enumerate() {
+                        for (p, g) in psi.iter_mut().zip(gap_gradient(first + l)) {
+                            for (x, y) in p.iter_mut().zip(g) {
+                                *x -= kl * y;
+                            }
+                        }
+                    }
+                }
+            }
+            out[i] = Some(psi);
+        }
+        out
+    }
+}
+
+#[cfg(feature = "profile")]
+impl Contacts {
+    /// PROBE: each contact's ψ against differences of its normal force by the rigid bodies'
+    /// motions (node 0 of every member); prints the worst error of each kind of contact.
+    pub(super) fn probe_normal_gradients(&self, states: &[MemberState<'_>]) {
+        use creeer_math::glam::DQuat;
+        let psi = self.normal_gradients(states);
+        let owned: Vec<(Vec<DVec3>, Vec<DQuat>)> = states
+            .iter()
+            .map(|s| (s.position.to_vec(), s.orientation.to_vec()))
+            .collect();
+        let lambda = |o: &[(Vec<DVec3>, Vec<DQuat>)]| {
+            let view: Vec<MemberState<'_>> = o
+                .iter()
+                .map(|(x, q)| MemberState {
+                    position: x,
+                    orientation: q,
+                })
+                .collect();
+            let g = self.geometry(&view);
+            self.normal_forces(&g.gaps(), &g.measured, false).1
+        };
+        let e = 1e-8;
+        let mut fd = vec![[[0.0; 6]; 2]; self.list.len()];
+        for m in 0..owned.len() {
+            for k in 0..6 {
+                let mut lam = [Vec::new(), Vec::new()];
+                for (side, sign) in [(0, 1.0), (1, -1.0)] {
+                    let mut o = owned.clone();
+                    let mut d = DVec3::ZERO;
+                    d[k % 3] = sign * e;
+                    if k < 3 {
+                        o[m].0[0] += d;
+                    } else {
+                        o[m].1[0] = (crate::so3::exp(d) * o[m].1[0]).normalize();
+                    }
+                    lam[side] = lambda(&o);
+                }
+                for (i, c) in self.list.iter().enumerate() {
+                    for (s, side) in [c.a, c.b].into_iter().enumerate() {
+                        if node_of(side) == Some((m, 0)) {
+                            fd[i][s][k] = (lam[0][i] - lam[1][i]) / (2.0 * e);
+                        }
+                    }
+                }
+            }
+        }
+        for (i, c) in self.list.iter().enumerate() {
+            let Some(mut an) = psi[i] else { continue };
+            for (s, side) in [c.a, c.b].into_iter().enumerate() {
+                if node_of(side).is_none() {
+                    an[s] = [0.0; 6];
+                }
+            }
+            let scale = fd[i].iter().flatten().fold(1e-30f64, |a, x| a.max(x.abs()));
+            let off = fd[i]
+                .iter()
+                .flatten()
+                .zip(an.iter().flatten())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f64::max);
+            let kind = match c.law {
+                Law::Hertz(_) => "point",
+                Law::Patch { patch, .. } if self.patches[patch].sampled().is_some() => "sampled",
+                Law::Patch { .. } => "face",
+            };
+            eprintln!(
+                "PSI {kind} {:?} off by {:.2e}\n  fd {:?}\n  an {:?}",
+                c.turning,
+                off / scale,
+                fd[i],
+                an
+            );
+        }
+    }
+}

@@ -1,0 +1,44 @@
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index bbfb757..ae898f0 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -72,7 +72,16 @@ impl Coupling for Contacts {
+             // pressed together by their weight, and without their contacts the first step
+             // of a stack took 51 iterations.
+             c.touching = gaps_start[i] <= 0.0 || c.gap_hat + c.approach.min(0.0) * self.beta < 0.0;
+-            c.lambda = forces[i];
++            // Friction's λ as the step is expected to end: in a tick's impact substeps (the same
++            // contacts step after step) the normal force extrapolated from the substep before.
++            // Where a force rises, as a block strikes a bridge, taken as it was at the start it
++            // was more than 5 % off by the end of nearly every substep, and each converged twice.
++            // The refreshes judge it as before (`update_lag`).
++            c.lambda = match c.start_force {
++                Some(before) => (2.0 * forces[i] - before).max(0.0),
++                _ => forces[i],
++            };
++            c.start_force = Some(forces[i]);
+             let k = self.matrix_stiffness(i, gaps_start[i], info.h);
+             let c = &mut self.list[i];
+             c.stiffness = k;
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 87409d0..5661413 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -141,6 +141,9 @@ pub struct Contact {
+     tangent: Option<DMat3>,
+     gap_hat: f64,
+     lambda: f64,
++    /// The normal force at the start of the last step this contact took (`None` before its
++    /// first): a tick's impact substeps keep their contacts.
++    start_force: Option<f64>,
+     /// The material point of B that A's point sticks to (friction measures slip from it).
+     pub anchor: Side,
+     /// Radii of the two sides at the contact (spheres). With either above zero, friction
+@@ -186,6 +189,7 @@ impl Contact {
+             tangent: None,
+             gap_hat: 0.0,
+             lambda: 0.0,
++            start_force: None,
+             anchor: b,
+             drills: false,
+             spin_start: [DQuat::IDENTITY; 2],

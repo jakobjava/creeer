@@ -77,8 +77,20 @@ const LINKS: [Link; 14] = [
     (14, 13, v(0.1, 0.1, 0.0), DVec3::X, hinge(-0.6, 0.6)),
 ];
 
-/// The joints' damping (N·m·s/rad): a limp person's limbs settle in a swing or two.
-const DAMPING: f64 = 2.0;
+/// The joints' damping, as a damping ratio of the segment beyond each swinging about it as a
+/// pendulum under standard gravity (a property of the body, not of the planet): a limp
+/// person's limbs settle in a swing or two. One damping for all (2 N·m·s/rad) left a hanging
+/// foot, a hundred times lighter in turning than a thigh, oozing for seconds, never asleep.
+const DAMPING_RATIO: f64 = 0.5;
+
+/// The damping (N·m·s/rad) of a joint at `at` carrying a segment of `mass` and `half` extents
+/// whose centre is at `centre`: 2ζ·√(m·g₀·r·I), I about the joint.
+fn damping(mass: f64, half: DVec3, centre: DVec3, at: DVec3) -> f64 {
+    let r = (centre - at).length();
+    let own = box_inertia(mass, half);
+    let inertia = (own.x_axis.x + own.y_axis.y + own.z_axis.z) / 3.0 + mass * r * r;
+    2.0 * DAMPING_RATIO * (mass * 9.806_65 * r * inertia).sqrt()
+}
 /// The segments' boots' and suit's friction.
 const FRICTION: f64 = 0.8;
 /// How far above the ground a segment found in it is put (m).
@@ -162,6 +174,7 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
             }
         }
     }
+    let at_of = at.clone();
     // The spin whose angular momentum, with the ragdoll's inertia, is the body's.
     let mut inertia = DMat3::ZERO;
     for ((p, m), seg) in at.iter().zip(&masses).zip(&SEGMENTS) {
@@ -201,7 +214,8 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
             kind,
         );
         let j = world.join(joint);
-        world.joint_mut(j).damping = DAMPING;
+        let (m, half) = (SEGMENTS[child].2 * mass, SEGMENTS[child].1);
+        world.joint_mut(j).damping = damping(m, half, at_of[child], at);
     }
     parts
 }

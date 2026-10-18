@@ -178,7 +178,7 @@ The exact Hessian of the lagged problem saves 7 % of the iterations. The turning
 | worst step | 20.5 ms | 26.6 ms | 7.4 ms | 12.7 ms |
 | steps with friction > 5 % off | 169 | 16 | 25 | 2 |
 
-  Its direction aims at the consistent fixed point, not at the minimum of the step's objective with λ held, and the line search takes more trials (292 against 176 in one step); making the matrix every iteration cost 4 ms against 1.2. It fails the gate. The code is kept outside the tree for the realism fix below.
+  Its direction aims at the consistent fixed point, not at the minimum of the step's objective with λ held, and the line search takes more trials (292 against 176 in one step); making the matrix every iteration cost 4 ms against 1.2. It fails the gate. The code is kept outside the tree (`docs/adr/0017/`) for the realism fix below.
 
 ### A realism defect found: friction on stale normal forces
 
@@ -201,7 +201,7 @@ A step ending where its contact closes starts each impact at its touch: the 5 m/
 
 ### Speed: no gain, not adopted
 
-The estimate tells the phases apart (the bridge's: under 10⁻⁷ m falling, up to 5·10⁻⁴ m as the block strikes, 10⁻⁶ m sagging), and the bridge took 6–32 substeps a tick instead of 34. Its ticks did not get cheaper: a longer step takes more Newton iterations, every change of step refactorises the bridge (7–16 factorisations a tick against 4–5), and two more ticks substepped. Worst tick 42 ms against 33, p99 13.7 against 4.8; the crash's p99 halved (2.85 → 1.3 ms), its worst stayed (19 ms). It fails the gate (the bridge's worst under 10 ms). The code is kept outside the tree.
+The estimate tells the phases apart (the bridge's: under 10⁻⁷ m falling, up to 5·10⁻⁴ m as the block strikes, 10⁻⁶ m sagging), and the bridge took 6–32 substeps a tick instead of 34. Its ticks did not get cheaper: a longer step takes more Newton iterations, every change of step refactorises the bridge (7–16 factorisations a tick against 4–5), and two more ticks substepped. Worst tick 42 ms against 33, p99 13.7 against 4.8; the crash's p99 halved (2.85 → 1.3 ms), its worst stayed (19 ms). It fails the gate (the bridge's worst under 10 ms). The code is kept outside the tree (`docs/adr/0017/`).
 
 ### What the three measurements say
 
@@ -216,7 +216,7 @@ The user's decision after the measurements above: the work on the idle cores and
 - **Each step stepped twice from its saved state, serially and in parallel** (rayon, a face's law per task, sums in the same order): the same result bit for bit, and slower, 3.88 s against 3.02 s for the pile's 900 ticks.
 - **Rayon's fixed cost.** A parallel loop of 45 × 0.8 µs (a pile's faces' laws, 36 µs serially) costs 37 µs even run from within the pool, against 1–8 µs for loops back to back: its idle workers sleep within microseconds, and waking one on Windows takes about as long as the work.
 - **Workers kept awake** (tasks yielding to the pool's pending work while a large group solves, `rayon::yield_now`): the loop took 16 µs, and the faces' laws in the pile's worst tick 8.7 ms against 5.5. But five spinning workers slow the serial rest by 14 % (20.3 → 23.2 ms with nothing in parallel at all): the 7800X3D's eight cores carry sixteen threads, and a spinning worker shares its core with the solving one. With both, 21.2 against 21.2 ms.
-- Not adopted; the code is kept outside the tree. The structures' own parallel loops do pay (serially the bridge's worst tick took 35.5 ms against 32.8).
+- Not adopted; the code is kept outside the tree (`docs/adr/0017/`). The structures' own parallel loops do pay (serially the bridge's worst tick took 35.5 ms against 32.8).
 
 ### What did pay: the faces' laws without allocation (bit for bit)
 

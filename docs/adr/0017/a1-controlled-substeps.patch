@@ -1,0 +1,202 @@
+diff --git a/crates/creeer_physics/src/structure/solver.rs b/crates/creeer_physics/src/structure/solver.rs
+index e2f04af..4eddaa7 100644
+--- a/crates/creeer_physics/src/structure/solver.rs
++++ b/crates/creeer_physics/src/structure/solver.rs
+@@ -362,6 +362,11 @@ impl ImplicitSolver {
+         self.h
+     }
+ 
++    /// Each node's acceleration at the end of the last step.
++    pub(crate) fn accelerations(&self) -> &[DVec3] {
++        &self.acceleration
++    }
++
+     /// Changes the time step to `dt` (split into the solver's substeps) and re-linearises.
+     /// The history is rebuilt for the new step from the current velocities and the last
+     /// accelerations (x₋ = x − h·v + h²/2·a), so BDF2 continues a decelerating motion
+diff --git a/crates/creeer_physics/src/world/crush_tests.rs b/crates/creeer_physics/src/world/crush_tests.rs
+index 6f01b61..c1d593b 100644
+--- a/crates/creeer_physics/src/world/crush_tests.rs
++++ b/crates/creeer_physics/src/world/crush_tests.rs
+@@ -94,6 +94,7 @@ fn crash(speed: f64, steel: Material) -> (World, f64) {
+ fn a_crash_crushes_by_the_plastic_work() {
+     for speed in [5.0, 10.0, 20.0] {
+         let (measured, expected, _) = crush(speed);
++        eprintln!("PROBE plastic {speed} m/s: {measured:.4} against {expected:.4} ({:+.2} %)", 100.0 * (measured / expected - 1.0));
+         assert!(
+             (measured / expected - 1.0).abs() < 0.02,
+             "{speed} m/s: crushed {measured:.4} m, expected {expected:.4} m"
+@@ -175,6 +176,7 @@ fn a_real_steel_crash_crushes_as_hardening_and_strain_rate_say() {
+         let (world, _) = crash(speed, steel);
+         let measured = -world.bodies[0].structure.elements[0].plastic[0];
+         let expected = continuous(speed, &world);
++        eprintln!("PROBE real {speed} m/s: {measured:.4} against {expected:.4} ({:+.2} %)", 100.0 * (measured / expected - 1.0));
+         assert!(
+             (measured / expected - 1.0).abs() < 0.02,
+             "{speed} m/s: crushed {measured:.4} m, expected {expected:.4} m"
+@@ -226,6 +228,7 @@ fn a_bridge_collapsing_under_a_block_sags_as_impact_substeps_have_it() {
+         .iter()
+         .map(|e| e.plastic_strain)
+         .sum();
++    eprintln!("PROBE bridge sag {sag:.4} ({:+.2} %), strain {strain:.4} ({:+.2} %)", 100.0 * (sag / 0.374 - 1.0), 100.0 * (strain / 0.849 - 1.0));
+     assert!((sag / 0.374 - 1.0).abs() < 0.02, "sagged {sag:.4} m");
+     assert!(
+         (strain / 0.849 - 1.0).abs() < 0.02,
+diff --git a/crates/creeer_physics/src/world/stepping.rs b/crates/creeer_physics/src/world/stepping.rs
+index f5c70b8..f1e99f9 100644
+--- a/crates/creeer_physics/src/world/stepping.rs
++++ b/crates/creeer_physics/src/world/stepping.rs
+@@ -17,10 +17,26 @@ use super::contact::{Contacts, Side};
+ use super::{Body, anchor, impact};
+ use crate::structure::Scheme;
+ use crate::structure::group::{Coupling, MemberState, step_group_with};
++use creeer_math::glam::DVec3;
+ 
+-/// Longest time step of a deforming impact (s).
++/// Shortest time step of a deforming impact (s): where an impact begins, and wherever its
++/// motion needs it (`IMPACT_TOLERANCE`).
+ pub const IMPACT_STEP: f64 = 0.5e-3;
+ 
++/// The local error an impact substep may make (m): BDF2's, estimated as 4/7 of how far the
++/// step ends from the second-order prediction x + h·v + ½h²·a of its start (Milne's device;
++/// BDF2's error constant 2/9 against the prediction's 1/6). Under it the step doubles, past
++/// it halves, between [`IMPACT_STEP`] and the tick.
++pub const IMPACT_TOLERANCE: f64 = 1e-5;
++
++/// PROBE: the tolerance (`CREEER_IMPACT_TOL`, m).
++fn tolerance() -> f64 {
++    std::env::var("CREEER_IMPACT_TOL")
++        .ok()
++        .and_then(|s| s.parse().ok())
++        .unwrap_or(IMPACT_TOLERANCE)
++}
++
+ /// The plastic strain rate (1/s) above which a structure struck in an impact goes on being
+ /// stepped in impact substeps. A crash makes its members flow at 3–10 /s (a tube crushed at
+ /// 5–20 m/s); a structure sagging under a load, as the sandbox bridge under the 10 t block
+@@ -164,13 +180,6 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
+ /// bodies keep the impact law. The group keeps crushing while members flow faster than
+ /// [`FAST_FLOW`].
+ fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
+-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small count
+-    let n = (dt / IMPACT_STEP).ceil().max(1.0) as u32;
+-    crate::profile::add(crate::profile::Slot::ImpactSubsteps, u64::from(n));
+-    let h = dt / f64::from(n);
+-    for body in bodies.iter_mut() {
+-        body.solver.set_time_step(&body.structure, h);
+-    }
+     let deformable = |side: Side| match side {
+         Side::Node { member, .. } => bodies[member].structure.element_count() > 0,
+         Side::Fixed(_) => false,
+@@ -181,11 +190,46 @@ fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
+             c.restitution = 0.0;
+         }
+     }
+-    let mut flowing = false;
+-    for k in 0..n {
+-        if k > 0 {
++    let (mut t, mut h, mut flowing, mut steps) = (0.0, IMPACT_STEP, false, 0u64);
++    while t < dt {
++        if steps > 0 {
+             refresh_approach(bodies, contacts);
+         }
++        // On the ladder IMPACT_STEP·2ʲ; the last step takes what is left (up to 1.5 of it).
++        let left = dt - t;
++        let mut step = if left < 1.5 * h { left } else { h };
++        // A contact closing within the step, or touched within the shortest step before: the
++        // shortest step, so that no impact begins on a long one (one step of 1 ms as a tube
++        // met the wall left its crush 5 % short at 5 m/s). Pressed further, its error shows.
++        if step > IMPACT_STEP {
++            let gaps = measured_gaps(bodies, contacts);
++            if std::env::var_os("CREEER_LTE").is_some() {
++                for (c, g) in contacts.list.iter().zip(&gaps) {
++                    eprintln!("  contact gap {g:.3e} approach {:.3e}", c.approach);
++                }
++            }
++            let closing = contacts
++                .list
++                .iter()
++                .zip(&gaps)
++                .any(|(c, &g)| {
++                    impact::is_impact(c) && g + c.approach * step < 0.0 && g > c.approach * IMPACT_STEP
++                });
++            // So too a member that would tear within it, flowing on as it flows now: a tear is
++            // found at a step's end (a tube's at 30 m/s came 7 % late in a 4 ms step).
++            let tearing = bodies
++                .iter()
++                .flat_map(|b| &b.structure.elements)
++                .filter(|e| !e.broken)
++                .any(|e| e.plastic_strain + e.strain_of(&e.flow_rate) * step > e.material.elongation);
++            if closing || tearing {
++                (h, step) = (IMPACT_STEP, IMPACT_STEP.min(left));
++            }
++        }
++        for body in bodies.iter_mut() {
++            body.solver.set_time_step(&body.structure, step);
++        }
++        let predicted = predictions(bodies, step);
+         // Backward Euler only where the impact law follows (rigid bodies): a deforming
+         // structure's contacts are resolved by the substeps themselves.
+         let impact = contacts
+@@ -194,7 +238,19 @@ fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
+             .any(|c| c.restitution > 0.0 && impact::is_impact(c));
+         substep(bodies, contacts, impact, true);
+         flowing |= bodies.iter().any(|b| b.solver.last_yielding.flowing > 0);
++        let error = local_error(bodies, &predicted);
++        if std::env::var_os("CREEER_LTE").is_some() {
++            eprintln!("LTE t {:.5} step {step:.2e} error {error:.2e} flowing {flowing}", t);
++        }
++        (t, steps) = (t + step, steps + 1);
++        // BDF2's error grows as h³: doubled, the step makes eight times the error.
++        if error < tolerance() / 8.0 {
++            h = (2.0 * h).min(dt);
++        } else if error > tolerance() {
++            h = (0.5 * h).max(IMPACT_STEP);
++        }
+     }
++    crate::profile::add(crate::profile::Slot::ImpactSubsteps, steps);
+     // The crush goes on while a member flows as fast as a crash makes it: slower flow (a
+     // structure sagging under the load that struck it) is followed by the 60 Hz step.
+     let fast = bodies
+@@ -208,6 +264,32 @@ fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
+     }
+ }
+ 
++/// Where each node of the bodies would be after a step `h` at its present velocity and
++/// acceleration (the second-order prediction of [`IMPACT_TOLERANCE`]).
++fn predictions(bodies: &[&mut Body], h: f64) -> Vec<Vec<DVec3>> {
++    bodies
++        .iter()
++        .map(|b| {
++            let (s, a) = (&b.structure, b.solver.accelerations());
++            (0..s.node_count())
++                .map(|i| s.position[i] + s.velocity[i] * h + a[i] * (0.5 * h * h))
++                .collect()
++        })
++        .collect()
++}
++
++/// The largest local error of a step (m) at the deforming bodies' nodes: 4/7 of how far
++/// each ended from its `predicted` place.
++fn local_error(bodies: &[&mut Body], predicted: &[Vec<DVec3>]) -> f64 {
++    bodies
++        .iter()
++        .zip(predicted)
++        .filter(|(b, _)| b.structure.element_count() > 0)
++        .flat_map(|(b, p)| b.structure.position.iter().zip(p))
++        .map(|(x, p)| 4.0 / 7.0 * (*x - *p).length())
++        .fold(0.0, f64::max)
++}
++
+ /// Sets every contact's approach speed from the current velocities.
+ fn refresh_approach(bodies: &[&mut Body], contacts: &mut Contacts) {
+     let velocity = |side: Side| match side {
+@@ -219,7 +301,7 @@ fn refresh_approach(bodies: &[&mut Body], contacts: &mut Contacts) {
+             let s = &bodies[member].structure;
+             s.velocity[node] + s.angular_velocity[node].cross(s.orientation[node] * local)
+         }
+-        Side::Fixed(_) => creeer_math::glam::DVec3::ZERO,
++        Side::Fixed(_) => DVec3::ZERO,
+     };
+     for c in &mut contacts.list {
+         let relative = velocity(c.a) - velocity(c.b);

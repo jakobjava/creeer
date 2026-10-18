@@ -59,7 +59,7 @@ fn node(side: Side, states: &[MemberState<'_>]) -> Option<(usize, usize, DQuat)>
 
 impl Contacts {
     /// Records where the turning normals start (the step's start).
-    pub(super) fn start_turning(&mut self, start: &[MemberState<'_>]) {
+    pub(crate) fn start_turning(&mut self, start: &[MemberState<'_>]) {
         for c in &mut self.list {
             let orientation = |side| node(side, start).map_or(DQuat::IDENTITY, |n| n.2);
             match &mut c.turning {

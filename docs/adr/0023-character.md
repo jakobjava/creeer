@@ -52,7 +52,7 @@
 - **Knocked down** (`character::ragdoll::knocked`): leaning past 45°, or jolted by more than 2 m/s in a step beyond what gravity and its own loads explain.
   - People keep their feet by stepping after pushes that move their centre at 1–1.5 m/s, not after 2. Walking into a wall is not such a jolt; running into it, or landing on the hips from 3 m, is.
   - The jolt, not the contacts' forces: an impact's impulse is the impact law's, outside them, so on the terrain a 10 m fall read as no force at all.
-- **The ragdoll** (`ragdoll::fall`): fifteen boxes on fourteen joints (ADR-0022) with a person's mass fractions (de Leva 1996, the suit spread alike, the backpack on the torso), a person's joint ranges, and damping 2 N·m·s/rad.
+- **The ragdoll** (`ragdoll::fall`): fifteen boxes on fourteen joints (ADR-0022) with a person's mass fractions (de Leva 1996, the suit spread alike, the backpack on the torso), a person's joint ranges, and each joint damped at a damping ratio of 0.5 of the segment beyond it swinging about it (2ζ·√(m·g₀·r·I): a foot about 0.08, a thigh about 5 N·m·s/rad; one damping of 2 for all left a hanging foot oozing for seconds, never asleep; ADR-0024).
   - The body becomes its pelvis, at the same index and entity, so whatever knows the character finds it.
   - The handover keeps momentum and angular momentum exactly: the segments are placed with their centre of mass on the body's, at its velocity, turning at the spin that gives their inertia the body's angular momentum.
 - **Injury from mechanics** (`character::injury`): an impact's harm follows from the deceleration of the part struck, not from the height fallen.

@@ -1,0 +1,376 @@
+diff --git a/crates/creeer_client/src/physics_profile.rs b/crates/creeer_client/src/physics_profile.rs
+index 6ed2cdd..b09851a 100644
+--- a/crates/creeer_client/src/physics_profile.rs
++++ b/crates/creeer_client/src/physics_profile.rs
+@@ -154,3 +154,58 @@ fn profile_rock_turns() {
+ fn profile_crash() {
+     report(PhysicsScene::Crash, 300, 3.0);
+ }
++
++/// Each tick of a scene's run stepped once more from its own saved state, serially and with
++/// the work within groups in parallel (`profile::set_serial`): the same result bit for bit,
++/// and each one's time (`AB_SCENE`, `AB_TICKS`).
++#[test]
++#[ignore = "profile"]
++fn ab_parallel() {
++    use creeer_physics::world::World;
++    let scene = match std::env::var("AB_SCENE").as_deref() {
++        Ok("stacks") => PhysicsScene::Stacks,
++        Ok("crash") => PhysicsScene::Crash,
++        Ok("bridge") => PhysicsScene::Bridge,
++        _ => PhysicsScene::Rocks,
++    };
++    let ticks: usize = std::env::var("AB_TICKS")
++        .ok()
++        .and_then(|s| s.parse().ok())
++        .unwrap_or(900);
++    let mut sb = PhysicsSandbox::new(scene, 1.0 / 60.0);
++    // (serial, parallel): total ms, worst ms.
++    let mut sums = [[0.0f64; 2]; 2];
++    let mut worst_tick = (0.0, 0.0, 0);
++    for tick in 0..ticks {
++        let bytes = sb.world().to_bytes();
++        let mut after = Vec::new();
++        let mut times = [0.0; 2];
++        for (k, serial) in [true, false].into_iter().enumerate() {
++            let mut w = World::from_bytes(&bytes).expect("a world");
++            profile::set_serial(serial);
++            let _ = profile::take();
++            let t = std::time::Instant::now();
++            w.step();
++            let ms = t.elapsed().as_secs_f64() * 1e3;
++            let p = profile::take();
++            if std::env::var("AB_AT").ok().and_then(|s| s.parse::<usize>().ok()) == Some(tick) {
++                let parts: Vec<String> = NAMES.iter().zip(p).filter(|(_, v)| *v > 0).map(|((slot, name), v)| if is_count(*slot) { format!("{name} {v}") } else { format!("{name} {:.2}", v as f64 / 1e6) }).collect();
++                println!("{} {ms:.2} ms: {}", if serial { "serial" } else { "parallel" }, parts.join(", "));
++            }
++            times[k] = ms;
++            sums[k][0] += ms;
++            sums[k][1] = sums[k][1].max(ms);
++            after.push(w.to_bytes());
++        }
++        assert!(after[0] == after[1], "tick {tick}: parallel differs from serial");
++        if times[0] > worst_tick.0 {
++            worst_tick = (times[0], times[1], tick);
++        }
++        profile::set_serial(false);
++        sb.step(1.0 / 60.0);
++    }
++    println!(
++        "{scene:?}: serial {:.0} ms (worst {:.2}), parallel {:.0} ms (worst {:.2}); serial's worst tick {} took {:.2} -> {:.2} ms",
++        sums[0][0], sums[0][1], sums[1][0], sums[1][1], worst_tick.2, worst_tick.0, worst_tick.1
++    );
++}
+diff --git a/crates/creeer_physics/src/lib.rs b/crates/creeer_physics/src/lib.rs
+index e0d685b..c203b0f 100644
+--- a/crates/creeer_physics/src/lib.rs
++++ b/crates/creeer_physics/src/lib.rs
+@@ -3,6 +3,7 @@
+ //! Structures and contacts follow ADR-0004 and ADR-0005; planet gravity and terrain
+ //! contacts were added in F3 (`gravity`, `world::ground`).
+ 
++pub mod awake;
+ pub mod gravity;
+ pub mod profile;
+ pub mod rotation;
+diff --git a/crates/creeer_physics/src/profile.rs b/crates/creeer_physics/src/profile.rs
+index 111c2fa..6dba87b 100644
+--- a/crates/creeer_physics/src/profile.rs
++++ b/crates/creeer_physics/src/profile.rs
+@@ -166,3 +166,28 @@ pub fn is_count(slot: Slot) -> bool {
+             | Slot::FlowIterations
+     )
+ }
++
++/// PROBE (A/B of parallel work within a group): everything within a group serial.
++#[cfg(feature = "profile")]
++static SERIAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++
++/// PROBE: sets whether work within a group runs serially (`profile` only).
++pub fn set_serial(on: bool) {
++    #[cfg(feature = "profile")]
++    SERIAL.store(on, std::sync::atomic::Ordering::Relaxed);
++    #[cfg(not(feature = "profile"))]
++    let _ = on;
++}
++
++/// PROBE: whether work within a group runs serially (never without `profile`).
++#[inline(always)]
++pub fn serial() -> bool {
++    #[cfg(feature = "profile")]
++    {
++        SERIAL.load(std::sync::atomic::Ordering::Relaxed)
++    }
++    #[cfg(not(feature = "profile"))]
++    {
++        false
++    }
++}
+diff --git a/crates/creeer_physics/src/world/contact/normal.rs b/crates/creeer_physics/src/world/contact/normal.rs
+index 6ae75e6..9cac130 100644
+--- a/crates/creeer_physics/src/world/contact/normal.rs
++++ b/crates/creeer_physics/src/world/contact/normal.rs
+@@ -1,8 +1,10 @@
+ //! The contacts' normal forces: each contact's law at its penetration (`law.rs`, `patch.rs`).
+ 
++use super::patch::Patch;
+ use super::{Contacts, Law, MATRIX_DEPTH, Side};
+ use crate::structure::group::MemberState;
+ use creeer_math::glam::DVec3;
++use rayon::prelude::*;
+ use std::sync::{Mutex, MutexGuard, PoisonError};
+ 
+ impl Contacts {
+@@ -35,8 +37,10 @@ impl Contacts {
+         // energy at a state and the gradient there after ask for the same depths twice.
+         let mut memo = self.memo.lock();
+         memo.resize_with(self.patches.len(), || None);
+-        let mut at_points = Vec::with_capacity(self.patches.len());
+-        for ((p, last), measured) in self.patches.iter().zip(memo.iter_mut()).zip(measured) {
++        // Each patch on its own (its law's search, its points' forces), then summed in order:
++        // a large group's faces in parallel (`Contacts::parallel`), the
++        // sums the same either way.
++        let one = |((p, last), measured): ((&Patch, &mut Option<Remembered>), &Vec<f64>)| {
+             let depths: [f64; 4] = std::array::from_fn(|k| -gaps[p.first + k]);
+             #[allow(clippy::float_cmp)] // the very same depths
+             let same = last
+@@ -59,16 +63,46 @@ impl Contacts {
+                 });
+             }
+             let r = last.as_mut().expect("remembered");
+-            energy += r.energy;
+-            forces[p.first..p.first + 4].copy_from_slice(&r.forces);
+-            if points {
++            let at = points.then(|| {
+                 let sigma = r.sigma;
+-                at_points.push(
+-                    r.points
+-                        .get_or_insert_with(|| p.point_forces(depths, measured, sigma))
+-                        .clone(),
+-                );
+-            }
++                r.points
++                    .get_or_insert_with(|| p.point_forces(depths, measured, sigma))
++                    .clone()
++            });
++            (r.energy, r.forces, at)
++        };
++        let results: Vec<(f64, [f64; 4], Option<Vec<f64>>)> =
++            if self.parallel() && std::env::var_os("CREEER_NO_PAR").is_none() && {
++                // Only for laws to evaluate: at a state already evaluated (the gradient after the
++                // line search) each face only reads what it kept.
++                #[allow(clippy::float_cmp)] // the very same depths
++                let fresh = self.patches.iter().zip(memo.iter()).zip(measured).filter(|((p, last), m)| {
++                    !last.as_ref().is_some_and(|r| {
++                        r.measured == **m && (0..4).all(|k| r.depths[k] == -gaps[p.first + k])
++                    })
++                });
++                fresh.count() >= PARALLEL_LAWS
++            } {
++                self.patches
++                    .par_iter()
++                    .zip(memo.par_iter_mut())
++                    .zip(measured.par_iter())
++                    .with_min_len(self.patches.len().div_ceil(rayon::current_num_threads()).max(4))
++                    .map(one)
++                    .collect()
++            } else {
++                self.patches
++                    .iter()
++                    .zip(memo.iter_mut())
++                    .zip(measured)
++                    .map(one)
++                    .collect()
++            };
++        let mut at_points = Vec::with_capacity(self.patches.len());
++        for (p, (e, f, at)) in self.patches.iter().zip(results) {
++            energy += e;
++            forces[p.first..p.first + 4].copy_from_slice(&f);
++            at_points.extend(at);
+         }
+         (energy, forces, at_points)
+     }
+@@ -179,3 +213,18 @@ impl Contacts {
+ 
+ /// The (member, node) of a contact's two sides, none for fixed geometry.
+ pub type Sides = (Option<(usize, usize)>, Option<(usize, usize)>);
++
++/// How many contacts make a group large enough for its contacts to be evaluated in parallel,
++/// with workers kept awake for it (`awake.rs`): below it the work of an evaluation is too
++/// little to share.
++pub const PARALLEL_CONTACTS: usize = 64;
++
++/// How many faces' laws an evaluation must have to evaluate for them to be shared out.
++const PARALLEL_LAWS: usize = 16;
++
++impl Contacts {
++    /// Whether this group's contacts are evaluated in parallel ([`PARALLEL_CONTACTS`]).
++    pub fn parallel(&self) -> bool {
++        self.list.len() >= PARALLEL_CONTACTS && !crate::profile::serial()
++    }
++}
+diff --git a/crates/creeer_physics/src/world/hessian_probe_tests.rs b/crates/creeer_physics/src/world/hessian_probe_tests.rs
+index 1540608..2e8d306 100644
+--- a/crates/creeer_physics/src/world/hessian_probe_tests.rs
++++ b/crates/creeer_physics/src/world/hessian_probe_tests.rs
+@@ -158,3 +158,135 @@ fn probe_hessian_pile() {
+     }
+     run("pile", w, 240);
+ }
++/// What a parallel loop of `items` × `each` µs costs after `gap` µs of serial work.
++#[test]
++#[ignore = "profile"]
++fn rayon_latency() {
++    rayon::join(rayon_latency_in_pool, || ());
++}
++
++fn rayon_latency_in_pool() {
++    println!("on a worker: {:?}", rayon::current_thread_index());
++    use rayon::prelude::*;
++    let spin = |us: f64| {
++        let t = std::time::Instant::now();
++        let mut x = 0u64;
++        while t.elapsed().as_secs_f64() * 1e6 < us {
++            x = x.wrapping_add(1);
++        }
++        x
++    };
++    for (gap, items, each) in [(40.0, 45, 0.8), (40.0, 45, 3.0), (5.0, 45, 0.8), (40.0, 200, 0.8)] {
++        let rounds = 2000;
++        let (mut serial, mut parallel) = (0.0, 0.0);
++        for _ in 0..rounds {
++            spin(gap);
++            let t = std::time::Instant::now();
++            let s: u64 = (0..items).map(|_| spin(each)).sum();
++            serial += t.elapsed().as_secs_f64();
++            spin(gap);
++            let t = std::time::Instant::now();
++            let p: u64 = (0..items).into_par_iter().map(|_| spin(each)).sum();
++            parallel += t.elapsed().as_secs_f64();
++            std::hint::black_box((s, p));
++        }
++        println!(
++            "gap {gap} µs, {items} × {each} µs: serial {:.1} µs, parallel {:.1} µs a loop",
++            serial / f64::from(rounds) * 1e6,
++            parallel / f64::from(rounds) * 1e6
++        );
++    }
++}
++
++/// Where rayon's fixed cost goes: join, chunked loops, broadcast, a pool of its own.
++#[test]
++#[ignore = "probe"]
++fn rayon_overhead() {
++    use rayon::prelude::*;
++    let rounds = 5000;
++    let time = |name: &str, f: &dyn Fn()| {
++        f();
++        let t = std::time::Instant::now();
++        for _ in 0..rounds {
++            f();
++        }
++        println!("{name}: {:.2} µs", t.elapsed().as_secs_f64() / f64::from(rounds) * 1e6);
++    };
++    time("join of two empties", &|| {
++        rayon::join(|| std::hint::black_box(1), || std::hint::black_box(2));
++    });
++    time("par_iter 45 empties", &|| {
++        let s: usize = (0..45usize).into_par_iter().map(std::hint::black_box).sum();
++        std::hint::black_box(s);
++    });
++    time("par_iter 45, min len 6", &|| {
++        let s: usize = (0..45usize).into_par_iter().with_min_len(6).map(std::hint::black_box).sum();
++        std::hint::black_box(s);
++    });
++    let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build().expect("a pool");
++    time("own pool of 8, par_iter 45, min len 6", &|| {
++        pool.install(|| {
++            let s: usize = (0..45usize).into_par_iter().with_min_len(6).map(std::hint::black_box).sum();
++            std::hint::black_box(s);
++        });
++    });
++    println!("threads: {}", rayon::current_num_threads());
++}
++
++/// The latency pattern with rayon's workers kept awake by tasks that yield to pending work.
++#[test]
++#[ignore = "probe"]
++fn rayon_awake() {
++    rayon::join(rayon_awake_in_pool, || ());
++}
++
++fn rayon_awake_in_pool() {
++    use rayon::prelude::*;
++    use std::sync::Arc;
++    use std::sync::atomic::{AtomicBool, Ordering};
++    let spin = |us: f64| {
++        let t = std::time::Instant::now();
++        let mut x = 0u64;
++        while t.elapsed().as_secs_f64() * 1e6 < us {
++            x = x.wrapping_add(1);
++        }
++        x
++    };
++    let helpers: usize = std::env::var("HELPERS").ok().and_then(|s| s.parse().ok()).unwrap_or(7);
++    let alive = Arc::new(AtomicBool::new(true));
++    for _ in 0..helpers {
++        let alive = Arc::clone(&alive);
++        rayon::spawn(move || {
++            while alive.load(Ordering::Relaxed) {
++                if rayon::yield_now() != Some(rayon::Yield::Executed) {
++                    std::hint::spin_loop();
++                }
++            }
++        });
++    }
++    for (gap, items, each) in [(40.0, 45usize, 0.8), (40.0, 45, 3.0), (40.0, 200, 0.8)] {
++        let rounds = 2000;
++        let (mut serial, mut parallel) = (0.0, 0.0);
++        for _ in 0..rounds {
++            spin(gap);
++            let t = std::time::Instant::now();
++            let s: u64 = (0..items).map(|_| spin(each)).sum();
++            serial += t.elapsed().as_secs_f64();
++            spin(gap);
++            let t = std::time::Instant::now();
++            let p: u64 = (0..items)
++                .into_par_iter()
++                .with_min_len(items.div_ceil(helpers + 1))
++                .map(|_| spin(each))
++                .sum();
++            parallel += t.elapsed().as_secs_f64();
++            std::hint::black_box((s, p));
++        }
++        println!(
++            "awake ({helpers}): gap {gap} µs, {items} × {each} µs: serial {:.1} µs, parallel {:.1} µs",
++            serial / f64::from(rounds) * 1e6,
++            parallel / f64::from(rounds) * 1e6
++        );
++    }
++    alive.store(false, Ordering::Relaxed);
++}
+diff --git a/crates/creeer_physics/src/world/pass.rs b/crates/creeer_physics/src/world/pass.rs
+index c3130ba..b8e0197 100644
+--- a/crates/creeer_physics/src/world/pass.rs
++++ b/crates/creeer_physics/src/world/pass.rs
+@@ -13,6 +13,9 @@ use crate::structure::NodeId;
+ use creeer_math::glam::{DMat3, DQuat, DVec3};
+ use rayon::prelude::*;
+ 
++/// How many workers a large group keeps awake.
++const AWAKE_HELPERS: usize = 7;
++
+ /// A stepped group: its bodies (world indices), contacts and friction anchors.
+ pub(super) type Stepped = (Vec<usize>, Contacts, Vec<anchor::Anchor>);
+ 
+@@ -148,6 +151,10 @@ impl World {
+         setup.stop(crate::profile::Slot::PassSetup);
+         work.par_iter_mut()
+             .for_each(|(bodies, contacts, anchors, group)| {
++                // A large group's contacts are evaluated in parallel: some workers kept awake
++                // for it (`awake.rs`).
++                let _awake = (contacts.parallel())
++                    .then(|| crate::awake::Awake::new(std::env::var("CREEER_HELPERS").ok().and_then(|s| s.parse().ok()).unwrap_or(AWAKE_HELPERS)));
+                 let timer = crate::profile::start();
+                 stepping::step(bodies, contacts, dt);
+                 *anchors = anchor::after_step(bodies, group, contacts);

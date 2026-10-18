@@ -1,0 +1,47 @@
+//! Keeping some of rayon's workers awake while a large group solves.
+//!
+//! A large group's Newton step evaluates its contacts a few hundred times, each evaluation
+//! tens of microseconds of work split over the cores, with serial work between. Rayon's idle
+//! workers go to sleep within microseconds, and on Windows waking one takes about as long as
+//! the work itself: a parallel loop of 45 faces' laws (36 µs serially) took 37 µs. Workers
+//! kept awake run the loop's chunks as they come (16 µs). An [`Awake`] holds them so: each
+//! helper is a task that yields to the pool's pending work until the guard is dropped, so it
+//! runs any task (another group's as well), and none can wait on it.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// While it lives, `helpers` of rayon's workers stay awake running the pool's pending work.
+#[derive(Debug)]
+pub struct Awake(Arc<AtomicBool>);
+
+impl Awake {
+    /// Wakes up to `helpers` workers (fewer if the pool is smaller).
+    pub fn new(helpers: usize) -> Self {
+        let alive = Arc::new(AtomicBool::new(true));
+        for _ in 0..helpers.min(rayon::current_num_threads().saturating_sub(1)) {
+            let alive = Arc::clone(&alive);
+            rayon::spawn(move || {
+                while alive.load(Ordering::Relaxed) {
+                    if rayon::yield_now() != Some(rayon::Yield::Executed) {
+                        for _ in 0..spins() {
+                            std::hint::spin_loop();
+                        }
+                    }
+                }
+            });
+        }
+        Self(alive)
+    }
+}
+
+impl Drop for Awake {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
+/// PROBE: pauses between a helper's looks for work (`CREEER_SPINS`).
+fn spins() -> usize {
+    std::env::var("CREEER_SPINS").ok().and_then(|s| s.parse().ok()).unwrap_or(1)
+}

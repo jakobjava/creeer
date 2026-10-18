@@ -1,0 +1,153 @@
+//! Newton's direction when the matrix is not symmetric (ADR-0017, C): GMRES (Saad &
+//! Schultz 1986) on the factorised symmetric part M plus a correction N known only by its
+//! product with a vector (friction following its normal forces, `contact/lag.rs`).
+//!
+//! Preconditioned on the right: (I + N·M⁻¹)·y = r, d = M⁻¹·y, so its residual is the
+//! system's own. The products M⁻¹·vⱼ are kept (flexible GMRES's form), and the direction is
+//! their combination: no solve more than the iterations. With N = 0 the first iteration is
+//! exact, d = M⁻¹·r, the plain Newton direction for the cost of one solve.
+
+use creeer_math::glam::DVec3;
+
+fn dot(a: &[DVec3], b: &[DVec3]) -> f64 {
+    a.iter().zip(b).map(|(a, b)| a.dot(*b)).sum()
+}
+
+/// Solves (M + N)·d = r: `precondition` applies M⁻¹ in place, `apply` writes N·v. Stops once
+/// the residual is below `tolerance`·|r| or after `limit` iterations; returns d and the
+/// iterations taken.
+pub(super) fn solve(
+    r: &[DVec3],
+    mut precondition: impl FnMut(&mut [DVec3]),
+    mut apply: impl FnMut(&[DVec3], &mut [DVec3]),
+    tolerance: f64,
+    limit: usize,
+) -> (Vec<DVec3>, usize) {
+    let n = r.len();
+    let norm = dot(r, r).sqrt();
+    if norm == 0.0 || !norm.is_finite() {
+        return (vec![DVec3::ZERO; n], 0);
+    }
+    // The Krylov basis vⱼ, their preconditioned zⱼ = M⁻¹·vⱼ, the Hessenberg matrix's columns
+    // (rotated as they come) and the rotations (c, s).
+    let mut basis: Vec<Vec<DVec3>> = vec![r.iter().map(|x| *x / norm).collect()];
+    let mut preconditioned: Vec<Vec<DVec3>> = Vec::new();
+    let mut columns: Vec<Vec<f64>> = Vec::new();
+    let mut rotations: Vec<(f64, f64)> = Vec::new();
+    // The rotated right-hand side, |r|·e₁.
+    let mut g = vec![norm];
+    let mut product = vec![DVec3::ZERO; n];
+    for j in 0..limit {
+        let mut z = basis[j].clone();
+        precondition(&mut z);
+        apply(&z, &mut product);
+        // w = vⱼ + N·zⱼ, orthogonalised against the basis (modified Gram–Schmidt).
+        let mut w: Vec<DVec3> = basis[j].iter().zip(&product).map(|(v, p)| *v + *p).collect();
+        preconditioned.push(z);
+        let mut h = Vec::with_capacity(j + 2);
+        for v in &basis {
+            let hij = dot(&w, v);
+            for (wi, vi) in w.iter_mut().zip(v) {
+                *wi -= *vi * hij;
+            }
+            h.push(hij);
+        }
+        let next = dot(&w, &w).sqrt();
+        h.push(next);
+        for (k, &(c, s)) in rotations.iter().enumerate() {
+            let (a, b) = (h[k], h[k + 1]);
+            h[k] = c * a + s * b;
+            h[k + 1] = -s * a + c * b;
+        }
+        let (a, b) = (h[j], h[j + 1]);
+        let radius = a.hypot(b);
+        let (c, s) = if radius == 0.0 {
+            (1.0, 0.0)
+        } else {
+            (a / radius, b / radius)
+        };
+        h[j] = radius;
+        h[j + 1] = 0.0;
+        rotations.push((c, s));
+        g.push(-s * g[j]);
+        g[j] *= c;
+        columns.push(h);
+        let done = g[j + 1].abs() <= tolerance * norm || next == 0.0 || j + 1 == limit;
+        if done {
+            // Back substitution for the coefficients, then d = Σ yₖ·zₖ.
+            let m = j + 1;
+            let mut y = vec![0.0; m];
+            for k in (0..m).rev() {
+                let sum: f64 = (k + 1..m).map(|l| columns[l][k] * y[l]).sum();
+                y[k] = (g[k] - sum) / columns[k][k];
+            }
+            let mut d = vec![DVec3::ZERO; n];
+            for (yk, z) in y.iter().zip(&preconditioned) {
+                for (di, zi) in d.iter_mut().zip(z) {
+                    *di += *zi * *yk;
+                }
+            }
+            return (d, m);
+        }
+        basis.push(w.iter().map(|x| *x / next).collect());
+    }
+    unreachable!("GMRES returns by its last iteration")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A small non-symmetric system, M its symmetric diagonal part: GMRES finds the exact
+    /// solution, and with N = 0 in one iteration.
+    #[test]
+    fn gmres_solves_a_nonsymmetric_system() {
+        // A = M + N, M = diag(4, 5, 6, 7, 8, 9) (as two DVec3), N = u·vᵀ + p·qᵀ.
+        let m = [4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let (u, v) = ([1.0, -0.5, 0.2, 0.0, 0.3, 1.0], [0.4, 0.1, -0.3, 1.2, 0.0, 0.5]);
+        let (p, q) = ([0.0, 2.0, 0.1, -0.7, 0.0, 0.2], [1.0, 0.0, 0.6, 0.0, -0.4, 0.3]);
+        let a = |x: &[f64; 6]| -> [f64; 6] {
+            let uv: f64 = v.iter().zip(x).map(|(a, b)| a * b).sum();
+            let pq: f64 = q.iter().zip(x).map(|(a, b)| a * b).sum();
+            std::array::from_fn(|i| m[i] * x[i] + u[i] * uv + p[i] * pq)
+        };
+        let to = |x: &[f64; 6]| vec![DVec3::new(x[0], x[1], x[2]), DVec3::new(x[3], x[4], x[5])];
+        let from = |d: &[DVec3]| [d[0].x, d[0].y, d[0].z, d[1].x, d[1].y, d[1].z];
+        let truth = [1.0, -2.0, 0.5, 3.0, -1.0, 0.25];
+        let r = to(&a(&truth));
+        let precondition = |x: &mut [DVec3]| {
+            let mut f = from(x);
+            for (fi, mi) in f.iter_mut().zip(m) {
+                *fi /= mi;
+            }
+            x.copy_from_slice(&to(&f));
+        };
+        let (d, iterations) = solve(
+            &r,
+            precondition,
+            |x, out| {
+                let f = from(x);
+                let mut n = a(&f);
+                for (ni, (mi, fi)) in n.iter_mut().zip(m.iter().zip(f)) {
+                    *ni -= mi * fi;
+                }
+                out.copy_from_slice(&to(&n));
+            },
+            1e-14,
+            6,
+        );
+        let d = from(&d);
+        for (x, t) in d.iter().zip(truth) {
+            assert!((x - t).abs() < 1e-12, "{d:?}");
+        }
+        // N of rank two: the residual vanishes within three iterations.
+        assert!(iterations <= 3, "{iterations}");
+        let (plain, one) = solve(&r, precondition, |_, out| out.fill(DVec3::ZERO), 1e-14, 6);
+        assert_eq!(one, 1);
+        let mut expected = r.clone();
+        precondition(&mut expected);
+        for (x, e) in plain.iter().zip(&expected) {
+            assert!((*x - *e).length() < 1e-14);
+        }
+    }
+}

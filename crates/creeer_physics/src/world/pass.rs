@@ -289,17 +289,29 @@ impl World {
         );
         let local_a = body_a.structure.orientation[na].conjugate()
             * (raw.point_a - body_a.structure.position[na]);
-        let body = |at| Turning::Body {
-            at,
-            from: DQuat::IDENTITY,
+        // A turning normal starts from the bodies as they are found (the step's start): the
+        // energy guard measures the contacts before the step sets them up, and with no start
+        // (identity) it turned each normal by its body's whole orientation (a ragdoll's foot
+        // under a crate found 21 J in an edge 6 mm apart, every step, `turning.rs`).
+        let orientation = |body: usize, node: NodeId| self.bodies[body].structure.orientation[node];
+        let body = |(m, body, node)| Turning::Body {
+            at: (m, node),
+            from: orientation(body, node),
         };
         contact.turning = match raw.follows {
-            Follows::A => body((member(a), na)),
-            Follows::B => b.map_or(Turning::Frozen, |(b, nb)| body((member(b), nb))),
+            Follows::A => body((member(a), a, na)),
+            Follows::B => b.map_or(Turning::Frozen, |(b, nb)| body((member(b), b, nb))),
             Follows::Edges(ea, eb) => Turning::Edges {
                 edges: (ea, eb),
-                from: (DQuat::IDENTITY, DQuat::IDENTITY),
-                sign: 1.0,
+                from: (
+                    orientation(a, na),
+                    b.map_or(DQuat::IDENTITY, |(b, nb)| orientation(b, nb)),
+                ),
+                sign: if ea.cross(eb).dot(raw.normal) < 0.0 {
+                    -1.0
+                } else {
+                    1.0
+                },
             },
             Follows::Neither | Follows::ShapeA | Follows::ShapeB => Turning::Frozen,
         };

@@ -374,4 +374,6 @@ mod jet_tests;
 /// A character fallen: its ragdoll.
 pub mod ragdoll;
 #[cfg(test)]
+mod ragdoll_bench;
+#[cfg(test)]
 mod swim_tests;

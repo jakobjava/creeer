@@ -106,6 +106,15 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
         .sum();
     contacts.set_weight(weight);
     contacts.set_step(bodies[0].solver.time_step());
+    // Turning normals from where this (sub)step starts, before the guard measures them.
+    let states: Vec<MemberState<'_>> = bodies
+        .iter()
+        .map(|b| MemberState {
+            position: &b.structure.position,
+            orientation: &b.structure.orientation,
+        })
+        .collect();
+    contacts.start_turning(&states);
     // The bodies' energy only: contacts found pressed into each other at the step's start hold
     // energy that never existed (a ball found inside a crate held 290 kJ, and the rebound was
     // allowed to give some of it back, F5).
