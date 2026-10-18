@@ -21,6 +21,8 @@ Limits that later work already lifted are not listed. Examples: members that cou
 
 **Not a place for slowness.** Performance and maximum realism together are paramount (plan.md): a scene or system that is too slow is fixed now, not listed here. Only speed-ups beyond the budgets (headroom for larger worlds) belong here, and what the user chose to defer after the measurements (the sandbox scenes' 2–3 ms target, 2026-10-18).
 
+**Scheduled.** plan.md's Phase B places these items in the milestones whose gameplay first exposes them: the speed items in its **performance track** (P1 piles in G1; P2 the structure solve and P3 struck structures in G2; P4 networks beside the tick in G3–G4; P5 meshed pipes in G5; P6 many vehicles in G6; P7 servers on VMs in G4; P8 PGO and real min-spec hardware in G11), and the realism items under each milestone's "Lifts". An item lifted there is removed from this list.
+
 ## Physics
 
 ### Structures and materials
