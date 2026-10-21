@@ -9,11 +9,12 @@
 //!   positive over their ranges and their enthalpies continuous where ranges meet, and the
 //!   signs of ΔG of reactions whose direction is known (so a mod's species cannot make water
 //!   fall apart by itself at room temperature);
-//! - the palette and its approved exceptions (G1.3a, `docs/art-style.md`): they must load,
-//!   and what breaks the style is a warning.
+//! - the palette and its approved exceptions (G1.3a, `docs/art-style.md`) and every model in
+//!   the manifests (G1.3b): they must load, and what breaks the style is a warning.
 
 use crate::surroundings::Surroundings;
-use creeer_art::{Exception, Palette, Srgb, checks};
+use creeer_art::model::{Entry, Model};
+use creeer_art::{Exception, Palette, Srgb, checks, model_check};
 use creeer_data::Data;
 use creeer_materials::MaterialTable;
 use creeer_materials::species::{Species, SpeciesTable};
@@ -123,6 +124,32 @@ fn art(data: &Data, rocks: &RockTable, report: &mut Report) {
         .collect();
     for finding in checks::check(&palette, &rocks, &exceptions) {
         report.warnings.push(format!("art style: {finding}"));
+    }
+    models(data, &palette, report);
+}
+
+/// Every model in the manifests (G1.3b): it must load, its materials palette tokens; what
+/// breaks the style (budget, bounds, facets) is a warning.
+fn models(data: &Data, palette: &Palette, report: &mut Report) {
+    let entries = match Entry::all(data) {
+        Ok(e) => e,
+        Err(e) => return report.errors.push(e),
+    };
+    report.counts.push(("models", entries.len()));
+    for entry in &entries {
+        let at = format!("{}: {}", origin(data, &entry.file), entry.file);
+        let model = data
+            .binary(&entry.file)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| Model::read(bytes, palette));
+        match model {
+            Ok(model) => {
+                for problem in model_check::check(&model, entry) {
+                    report.warnings.push(format!("art style: {at}: {problem}"));
+                }
+            }
+            Err(e) => report.errors.push(format!("{at}: {e}")),
+        }
     }
 }
 

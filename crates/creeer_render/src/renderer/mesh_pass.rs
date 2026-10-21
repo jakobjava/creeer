@@ -1,5 +1,6 @@
 //! Instanced mesh rendering (camera view and shadow casters share one instance buffer).
 
+use super::palette::GpuPalette;
 use super::*;
 
 /// One draw call: a mesh and a range of the instance buffer.
@@ -10,8 +11,8 @@ pub(crate) struct Draw {
     instance_count: u32,
 }
 
-const MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+const MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 6 => Uint32];
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4];
 
@@ -62,6 +63,8 @@ impl MeshBuffers<'_> {
 /// followed by the shadow casters of each cascade.
 pub(super) struct MeshPass {
     pipeline: wgpu::RenderPipeline,
+    /// The tokens model vertices name (bind group 2).
+    palette: GpuPalette,
     vertices: Option<wgpu::Buffer>,
     indices: Option<wgpu::Buffer>,
     instances: wgpu::Buffer,
@@ -87,9 +90,14 @@ impl MeshPass {
             include_str!("../shaders/mesh.wgsl")
         );
         let module = shader(device, "mesh", source);
+        let palette = GpuPalette::new(device);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("mesh"),
-            bind_group_layouts: &[Some(globals_layout), Some(shadow_sample_layout)],
+            bind_group_layouts: &[
+                Some(globals_layout),
+                Some(shadow_sample_layout),
+                Some(&palette.layout),
+            ],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -119,6 +127,7 @@ impl MeshPass {
         let instance_capacity = 1024;
         Self {
             pipeline,
+            palette,
             vertices: None,
             indices: None,
             instances: create_instance_buffer(device, instance_capacity),
@@ -258,7 +267,18 @@ impl MeshPass {
         };
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(1, shadow_sampling, &[]);
+        pass.set_bind_group(2, &self.palette.bind_group, &[]);
         buffers.draw(pass, meshes, &self.draws);
+    }
+
+    /// Replaces the palette model vertices name.
+    pub(super) fn set_palette(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        palette: &creeer_art::Palette,
+    ) {
+        self.palette.set(device, queue, palette);
     }
 }
 

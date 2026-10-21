@@ -6,12 +6,16 @@
 //!   player colours;
 //! - [`checks`]: contrast against the grounds, chroma and lightness limits, player colours
 //!   told apart; [`exception`]: the user's approved exceptions to them;
+//! - [`model`]: models (binary glTF from the scripts in `art/`) read into meshes that name
+//!   tokens; [`model_check`]: each held to its manifest entry and the style;
 //! - [`vision`]: colour-vision deficiencies simulated (Machado et al. 2009), kept for the
 //!   colour-blind mode that waits until the game is published (`docs/future-improvements.md`).
 
 pub mod checks;
 pub mod colour;
 pub mod exception;
+pub mod model;
+pub mod model_check;
 pub mod palette;
 pub mod vision;
 
@@ -20,12 +24,14 @@ mod colour_tests;
 #[cfg(test)]
 mod doc_tests;
 #[cfg(test)]
+mod model_tests;
+#[cfg(test)]
 mod palette_tests;
 
 pub use checks::{Finding, check};
 pub use colour::{Lab, Srgb, ciede2000};
 pub use exception::{Exception, Rule};
-pub use palette::{Group, Palette, Shade, Token};
+pub use palette::{Group, Palette, Pattern, Shade, Token};
 pub use vision::Vision;
 
 /// Effects the style forbids (`docs/art-style.md` §5): none may appear in the renderer's

@@ -50,61 +50,64 @@ The rocks' colours live in `data/geology/rocks.ron` and are part of this palette
 
 ### 3.2 Materials
 
-| Token | Colour | Roughness | Metalness | Notes |
-|---|---|---|---|---|
-| `steel` | `#8a8d90` | 0.45 | 1 | Bare structural steel |
-| `steel_painted` | `#6f7a6c` | 0.60 | 0 | Default paint for built steel (a muted industrial green-grey) |
-| `steel_rust` | `#8b4a2b` | 0.90 | 0 | Rust, as wear on bare steel only |
-| `aluminium` | `#c9ccd0` | 0.35 | 1 | |
-| `copper` | `#c46f3e` | 0.35 | 1 | |
-| `copper_patina` | `#5f9b84` | 0.80 | 0 | Patina, only as wear on old copper |
-| `titanium` | `#9a958e` | 0.40 | 1 | |
-| `timber` | `#c8a16a` | 0.70 | 0 | Sawn spruce; other woods' tones in §3.4 |
-| `concrete` | `#a7a39b` | 0.90 | 0 | |
-| `glass` | `#a9c3c8` | 0.10 | 0 | Tinted, opaque until transparency exists |
-| `ice` | `#d8e8ef` | 0.20 | 0 | |
-| `rubber` | `#2b2a29` | 0.85 | 0 | |
-| `plastic` | `#d8d2c4` | 0.55 | 0 | Unpigmented polyethylene (G5) |
+The surface columns (§6): **Pattern** is what the renderer draws within the colour; **Wears to** what chipped edges reveal; **Ages to** what age turns it into; **Weathers in** the years that takes outdoors in temperate air (§6b).
+
+| Token | Colour | Roughness | Metalness | Pattern | Wears to | Ages to | Weathers in | Notes |
+|---|---|---|---|---|---|---|---|---|
+| `steel` | `#8a8d90` | 0.45 | 1 | Metal | | `steel_rust` | 0.5 | Bare structural steel; rusts over in months (ISO 9223 C3: 25–50 µm the first year) |
+| `steel_painted` | `#6f7a6c` | 0.60 | 0 | Paint | `steel` | `steel_rust` | 15 | Default paint for built steel (a muted industrial green-grey); paint lasts 7–15 years (ISO 12944, medium) |
+| `steel_rust` | `#8b4a2b` | 0.90 | 0 | Stone | | | | Rust: what steel ages to |
+| `aluminium` | `#c9ccd0` | 0.35 | 1 | Metal | | | | Its oxide stays silvery |
+| `copper` | `#c46f3e` | 0.35 | 1 | Metal | | `copper_patina` | 10 | Brown within months, green in 5–7 years on coasts, 10–14 inland |
+| `copper_patina` | `#5f9b84` | 0.80 | 0 | Stone | | | | Patina: what copper ages to |
+| `titanium` | `#9a958e` | 0.40 | 1 | Metal | | | | |
+| `timber` | `#c8a16a` | 0.70 | 0 | Wood | `wood_cut` | `timber_weathered` | 1 | Sawn spruce, fresh; other woods' tones in §3.4. Greys within a year outdoors |
+| `timber_weathered` | `#5e4f3f` | 0.85 | 0 | Wood | | | | Old wood, greyed and darkened: what timber ages to |
+| `concrete` | `#a7a39b` | 0.90 | 0 | Stone | | | | |
+| `glass` | `#a9c3c8` | 0.10 | 0 | Glass | | | | Tinted, opaque until transparency exists |
+| `ice` | `#d8e8ef` | 0.20 | 0 | Glass | | | | |
+| `rubber` | `#2b2a29` | 0.85 | 0 | Leather | | | | |
+| `plastic` | `#d8d2c4` | 0.55 | 0 | Plain | | | | Unpigmented polyethylene (G5) |
 
 ### 3.3 The character
 
-| Token | Colour | Roughness | Metalness | Notes |
-|---|---|---|---|---|
-| `coverall` | `#8c99a6` | 0.85 | 0 | Quilted cool grey-blue work coverall: arms, legs, hood |
-| `leather` | `#4b2c22` | 0.70 | 0 | Dark oxblood-brown: boots, gloves, belt, straps, knee and elbow pads |
-| `lens` | `#2a3b33` | 0.05 | 0 | Smoky green glass of the goggles |
-| `player_accent` | per player | 0.75 | 0 | The work jacket (§3.6) |
-| `skin` | per player | 0.55 | 0 | A choice of skin tones from measured skin colour data, set in G1.3f with the user's approval |
-| `hair` | per player | 0.70 | 0 | A choice of natural hair colours, set with the skin tones |
-| `base_layer` | set in G1.3f | 0.85 | 0 | The base body's plain vest and shorts |
+| Token | Colour | Roughness | Metalness | Pattern | Notes |
+|---|---|---|---|---|---|
+| `coverall` | `#8c99a6` | 0.85 | 0 | Fabric | Quilted cool grey-blue work coverall: arms, legs, hood |
+| `leather` | `#4b2c22` | 0.70 | 0 | Leather | Dark oxblood-brown: boots, gloves, belt, straps, knee and elbow pads |
+| `lens` | `#2a3b33` | 0.05 | 0 | Glass | Smoky green glass of the goggles |
+| `player_accent` | per player | 0.75 | 0 | Fabric | The work jacket (§3.6) |
+| `skin` | per player | 0.55 | 0 | Plain | A choice of skin tones from measured skin colour data, set in G1.3f with the user's approval |
+| `hair` | per player | 0.70 | 0 | Plain | A choice of natural hair colours, set with the skin tones |
+| `base_layer` | set in G1.3f | 0.85 | 0 | Fabric | The base body's plain vest and shorts |
 
 Buckles, rivets and the goggles' rims are `steel`; the jetpack's bottles are `steel_painted` on a `steel` frame with `leather` straps (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 16.9 for `coverall` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them.
 
 ### 3.4 Vegetation
 
-| Token | Colour | Roughness | Notes |
-|---|---|---|---|
-| `bark_spruce` | `#5a4632` | 0.90 | |
-| `bark_birch` | `#d6d1c4` | 0.85 | |
-| `bark_birch_marks` | `#3b3631` | 0.90 | Birch bark's dark marks, as detail |
-| `bark_oak` | `#4f4537` | 0.95 | |
-| `leaves_spruce` | `#3f5a35` | 0.80 | |
-| `leaves_pine` | `#4b6338` | 0.80 | |
-| `leaves_birch` | `#6f8a3c` | 0.75 | |
-| `leaves_oak` | `#4d6b30` | 0.80 | |
-| `grass` | `#6b7a3f` | 0.90 | Never brighter than the objects standing in it |
-| `wood_cut` | `#d9b47c` | 0.75 | Fresh cut faces and stumps: a bright tell of where work was done |
+| Token | Colour | Roughness | Pattern | Notes |
+|---|---|---|---|---|
+| `bark_spruce` | `#5a4632` | 0.90 | Wood | |
+| `bark_birch` | `#d6d1c4` | 0.85 | Wood | |
+| `bark_birch_marks` | `#3b3631` | 0.90 | Wood | Birch bark's dark marks, as detail |
+| `bark_oak` | `#4f4537` | 0.95 | Wood | |
+| `leaves_spruce` | `#3f5a35` | 0.80 | Plain | |
+| `leaves_pine` | `#4b6338` | 0.80 | Plain | |
+| `leaves_birch` | `#6f8a3c` | 0.75 | Plain | |
+| `leaves_oak` | `#4d6b30` | 0.80 | Plain | |
+| `grass` | `#6b7a3f` | 0.90 | Plain | Never brighter than the objects standing in it |
+| `wood_cut` | `#d9b47c` | 0.75 | Wood | Fresh cut faces and stumps: a bright tell of where work was done |
 
 ### 3.5 Accents
 
 Saturated colour is reserved for what matters. Nothing else may be as saturated as these.
 
-| Token | Colour | Roughness | Use |
-|---|---|---|---|
-| `hazard_yellow` | `#e8b400` | 0.60 | Danger markings, with `hazard_black` stripes |
-| `hazard_black` | `#22201e` | 0.60 | |
-| `hot` | from temperature | | Glowing metal, embers: blackbody colour from the real temperature (Planck), strength from the emitted radiance, above about 525 °C (Draper point) |
-| `signal_green` / `signal_red` | `#5fbf3a` / `#d8402c` | 0.30 | Lamps and indicators that are on |
+| Token | Colour | Roughness | Pattern | Wears to | Use |
+|---|---|---|---|---|---|
+| `hazard_yellow` | `#e8b400` | 0.60 | Paint | `steel` | Danger markings, with `hazard_black` stripes |
+| `hazard_black` | `#22201e` | 0.60 | Paint | `steel` | |
+| `hot` | from temperature | | Plain | | Glowing metal, embers: blackbody colour from the real temperature (Planck), strength from the emitted radiance, above about 525 °C (Draper point) |
+| `signal_green` / `signal_red` | `#5fbf3a` / `#d8402c` | 0.30 | Glass | | Lamps and indicators that are on |
 
 ### 3.6 Player colours
 
@@ -144,12 +147,51 @@ Measured in CIELAB, automated in tests over the palette.
 - **Bloom** only on emissive surfaces (hot metal, lamps), subtle.
 - **Forbidden effects:** film grain, chromatic aberration, vignette, lens flares, depth of field in play, motion blur by default, outlines, cel shading, and fog beyond the atmosphere's real scattering.
 
-## 6. Surfaces
+## 6. Surfaces: grainy, weathered, used
 
-- **Procedural detail.** Triplanar value noise modulates the base colour: terrain ±35 % (as now), meshes ±12 %, vegetation ±20 %. The noise scale is fixed in world metres (≈ 0.5 m for terrain, ≈ 5 cm for parts) so detail reads the same everywhere.
-- **Edge wear.** Convex edges lighten towards the bare material underneath (painted steel shows `steel`), in a band 1–3 cm wide, from curvature baked into the vertices at export. How much wear a part has is a parameter (new = none, old = full), and may later follow the part's real history.
-- **Grime.** Concave areas darken with AO, up to 30 % beyond the lighting's own.
-- **No textures from images**, except the UI's icons (themselves renders, §9) and fonts.
+Factorio's things look worked and old: grain in everything, dirt where it gathers, edges chipped, metal rusting, wood greyed. Creëer gets there with procedural layers in the renderer, all of them in world metres, and none from images. The user, 2026-10-21: "it should look like factorio (it is difficult to describe: grainy, weathered, used, etc.)", "darker and grimier", and "the game should have an aging mechanic, things look older and older".
+
+**What a model carries** (baked by its Blender script, `art/bake.py`):
+- baked occlusion (one value per large face, per corner on small ones);
+- edge wear (the bevel faces);
+- each part's tone;
+- each corner's height above the model's base;
+- grain coordinates in metres, along each part's grain.
+
+**The layers, in order** (the renderer's mesh shader; `art/preview.py` previews them in Blender):
+
+1. **Tone.** Each part (a board, a plate) is ±18 % in value from its token's colour. No two boards are alike.
+2. **Pattern.** Each token has one (§3's tables), drawn along the part's grain:
+   - *Wood*: thin dark grain lines, wandering, a few centimetres apart, over soft streaks;
+   - *Paint*: a fine orange peel;
+   - *Metal*: brushed along the part;
+   - *Stone*: speckle at two scales;
+   - *Fabric*: a fine weave;
+   - *Leather*: pebbling;
+   - *Glass* and *Plain*: none.
+3. **Mottling and grain.** Over everything: mottling ±15 % at about 30 cm, and fine grain ±10 % at a few millimetres. Detail finer than a pixel fades out (filtered noise), so nothing shimmers at a distance.
+4. **Age.** Each token weathers at its material's real rate (§6b): wood greys all over, and more in patches; steel rusts and copper greens in patches, first where dirt holds water. Each part's age differs a little from its object's (±0.3, by its tone).
+5. **Grime.** The ground's splash up to 35 cm from the bottom, nothing on what faces up, everything that faces down. Dirt in creases (from the occlusion). Both gather with age: a new object is clean. A film of dirt (up to 30 % darker) and rain streaks down the sides come with age too.
+6. **Edge wear.** Chips along the bevels, in patches and never a continuous line (no outlines, §5). They reveal the token beneath (`wears_to`: painted steel shows `steel`, timber shows `wood_cut`). They grow with age and with use (§6b).
+7. **Occlusion.** The baked occlusion darkens ambient light only; the sun has its shadows.
+
+- **Roughness** follows the layers: grime is rougher, and chipped edges smoother.
+- **No textures from images,** except the UI's icons (themselves renders, §9) and fonts.
+
+### 6b. Ageing
+
+Things get older as the world runs. A placed crate is new; after a few game days its timber has greyed, and its plates have rusted where dirt holds water. Each token weathers at its real rate, given in §3's tables as the years it takes outdoors in temperate air (ISO 9223's category C3). Some examples:
+- **Timber** greys in about a year: UV breaks down its lignin within days, and rain washes it out.
+- **Bare steel** rusts over in about half a year: C3 corrodes 25–50 µm in the first year.
+- **Paint** lasts 7–15 years (ISO 12944, medium durability).
+- **Copper** greens in about 10 years: 5–7 on coasts and in industrial air, more than 30 in dry air.
+
+What drives it:
+- **Surroundings** set the rate: in air with oxygen and water, the C3 rate; in the sea, three times it (marine air and water are C5 and worse); in vacuum, none for rust and patina, and UV alone for wood.
+- **Pace:** real rates would be invisible within a play session, so a world setting runs weathering faster than time. The default is one year of weathering per game day (6 hours); the server sets it.
+- **Use:** impacts chip edges. An impact's energy beyond what a coating resists (about 10 J, as ISO 6272's falling-weight test measures) adds wear.
+
+The server keeps each object's age (its exposure so far, the rate it ages at now, and its wear) and saves it. Clients draw it, and it costs nothing per tick: the age at any moment follows from the rate.
 
 ## 7. Shapes and models
 

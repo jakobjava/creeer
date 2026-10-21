@@ -1,0 +1,9 @@
+// The models (G1.3b, ADR-0026): each made by its script in art/ (docs/blender-mcp.md) and
+// exported to its file here by `cargo xtask art`. The validator holds each to the style
+// (docs/art-style.md §7) and to its entry: its class sets its triangle budget, its bounds its
+// size and origin (within 1 cm), in metres with +Y up.
+[
+    // The sandbox's crate: its physics is a 1 m box (creeer_server world/commands.rs); its
+    // origin is the centre of its base.
+    (name: "crate", file: "models/crate.glb", class: Item, bounds: ((-0.5, 0.0, -0.5), (0.5, 1.0, 0.5))),
+]

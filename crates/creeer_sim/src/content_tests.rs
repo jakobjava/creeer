@@ -34,7 +34,9 @@ fn the_base_pack_validates_with_only_nasas_two_known_steps() {
     assert_eq!(count("planets"), Some(4));
     assert_eq!(count("systems"), Some(1));
     // The palette (G1.3a), with no style warnings beyond its approved exceptions.
-    assert_eq!(count("palette tokens"), Some(45));
+    assert_eq!(count("palette tokens"), Some(46));
+    // The models (G1.3b): the crate.
+    assert_eq!(count("models"), Some(1));
 }
 
 #[test]
@@ -155,6 +157,19 @@ fn the_validator_catches_each_kind_of_broken_data() {
     one_error(
         &broken("palette", &[("art/palette.ron", token)]),
         &["palette: art/palette.ron", "steel", "bad colour"],
+    );
+    // A model whose file is no glTF, and one whose file is not there (G1.3b).
+    let manifest = r#"[(name: "junk", file: "models/junk.glb", class: Item, bounds: ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)))]"#;
+    one_error(
+        &broken(
+            "junk",
+            &[("models/models.ron", manifest), ("models/junk.glb", "text")],
+        ),
+        &["junk: models/junk.glb", "not a glTF"],
+    );
+    one_error(
+        &broken("lost", &[("models/models.ron", manifest)]),
+        &["models/junk.glb", "no pack has this file"],
     );
 }
 

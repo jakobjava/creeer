@@ -1,13 +1,31 @@
 // Instanced meshes with "PBR-lite" shading (ADR-0003): GGX specular + Lambert diffuse from
 // the sun with cascaded shadows, hemispheric sky/ground ambient. Positions are
-// camera-relative (camera at origin).
+// camera-relative (camera at origin). Model vertices name palette tokens (G1.3b, ADR-0026);
+// procedural ones take their instance's material.
 
 @group(1) @binding(0) var shadow_map: texture_depth_2d_array;
 @group(1) @binding(1) var shadow_sampler: sampler_comparison;
 
+// One palette token (renderer/palette.rs, `TokenRaw`).
+struct Token {
+    colour: vec3<f32>,
+    roughness: f32,
+    metalness: f32,
+    // 1: each player has their own colour, the instance's.
+    per_player: f32,
+    wears_to: u32,
+    pad: u32,
+};
+@group(2) @binding(0) var<storage, read> palette: array<Token>;
+
+// A vertex drawn in its instance's own material.
+const NO_TOKEN: u32 = 0xffffu;
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    // Bits 0–15 the token, 16–23 baked occlusion, 24–31 edge wear.
+    @location(6) material: u32,
 };
 
 struct InstanceIn {
@@ -28,6 +46,9 @@ struct VertexOut {
     @location(3) material: vec2<f32>,
     // Engineering overlay value (or a huge negative number for "none").
     @location(4) @interpolate(flat) heat: f32,
+    @location(5) @interpolate(flat) token: u32,
+    // x: baked occlusion, y: edge wear.
+    @location(6) masks: vec2<f32>,
 };
 
 @vertex
@@ -41,6 +62,8 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.color = i.color.rgb;
     out.material = vec2<f32>(i.position_metal.w, i.scale_rough.w);
     out.heat = i.color.a;
+    out.token = v.material & 0xffffu;
+    out.masks = vec2<f32>(f32((v.material >> 16u) & 0xffu), f32(v.material >> 24u)) / 255.0;
     return out;
 }
 
@@ -56,7 +79,16 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let up = globals.up.xyz;
     var base = in.color;
     var metal = in.material.x;
-    var roughness = clamp(in.material.y, 0.045, 1.0);
+    var roughness = in.material.y;
+    if in.token != NO_TOKEN {
+        let token = palette[in.token];
+        if token.per_player < 0.5 {
+            base = token.colour;
+        }
+        metal = token.metalness;
+        roughness = token.roughness;
+    }
+    roughness = clamp(roughness, 0.045, 1.0);
     if globals.heatmap.x > 0.5 {
         if in.heat > -1.0e37 {
             // Overlay: the measured value replaces the material; keep a matte finish so
@@ -76,7 +108,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         visibility = sun_visibility(in.world, n);
     }
     let direct = direct_light(n, v, l, base, metal, roughness, globals.sun_color.rgb, visibility);
-    let ambient = ambient_light(
+    // Baked occlusion shades the ambient light only: the sun has its shadows.
+    let ambient = in.masks.x * ambient_light(
         n, v, up, base, metal, roughness, globals.sky_ambient.rgb, globals.ground_ambient.rgb,
     );
     return vec4<f32>(direct + ambient, 1.0);

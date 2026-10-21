@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 creeer_data.workspace = true
 creeer_math.workspace = true
+gltf.workspace = true
 ron.workspace = true
 serde.workspace = true
 

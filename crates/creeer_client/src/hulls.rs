@@ -94,10 +94,10 @@ pub fn mesh(hull: &Hull) -> MeshData {
         let normal = face.normal.as_vec3().to_array();
         let first = u32::try_from(mesh.vertices.len()).expect("a small mesh");
         for &v in &face.ring {
-            mesh.vertices.push(MeshVertex {
-                position: hull.vertices()[v].as_vec3().to_array(),
+            mesh.vertices.push(MeshVertex::plain(
+                hull.vertices()[v].as_vec3().to_array(),
                 normal,
-            });
+            ));
         }
         let corners = u32::try_from(face.ring.len()).expect("a small face");
         for k in 1..corners - 1 {

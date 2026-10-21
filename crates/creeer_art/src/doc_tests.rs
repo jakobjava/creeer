@@ -11,13 +11,17 @@ use serde::Deserialize;
 
 const STYLE: &str = include_str!("../../../docs/art-style.md");
 
-/// A token as the file's tables give it.
+/// A token as the file's tables give it; a column the table lacks reads as its default.
 #[derive(Debug)]
 struct Row {
     name: String,
     shade: Shade,
     roughness: Option<f64>,
     metalness: Option<f64>,
+    pattern: String,
+    wears_to: Option<String>,
+    ages_to: Option<String>,
+    weathers_in: Option<f64>,
 }
 
 /// The `backticked` items of a cell.
@@ -84,12 +88,20 @@ fn doc_tokens() -> Vec<Row> {
             names.len(),
             colours.len()
         );
+        let token = |name: &str| {
+            column(name).and_then(|k| backticked(&cells[k]).first().map(|s| (*s).to_owned()))
+        };
+        let pattern = column("Pattern").map_or_else(|| "Plain".to_owned(), |k| cells[k].clone());
         for (k, name) in names.iter().enumerate() {
             rows.push(Row {
                 name: (*name).to_owned(),
                 shade: colours[if colours.len() == 1 { 0 } else { k }],
                 roughness: number("Roughness"),
                 metalness: number("Metalness"),
+                pattern: pattern.clone(),
+                wears_to: token("Wears to"),
+                ages_to: token("Ages to"),
+                weathers_in: number("Weathers in"),
             });
         }
     }
@@ -120,6 +132,20 @@ fn every_token_in_the_style_is_in_the_data_and_nothing_else() {
             .token(&row.name)
             .unwrap_or_else(|| panic!("{} is in art-style.md but not in the data", row.name));
         assert_eq!(token.shade, row.shade, "{}", row.name);
+        assert_eq!(
+            format!("{:?}", token.pattern),
+            row.pattern,
+            "{} pattern",
+            row.name
+        );
+        let name = |k: Option<usize>| k.map(|k| palette.tokens[k].name.clone());
+        assert_eq!(name(token.wears_to), row.wears_to, "{} wears to", row.name);
+        assert_eq!(name(token.ages_to), row.ages_to, "{} ages to", row.name);
+        assert_eq!(
+            token.weathers_in, row.weathers_in,
+            "{} weathers in",
+            row.name
+        );
         if let Some(r) = row.roughness {
             assert!(
                 (token.roughness - r).abs() < 1e-12,

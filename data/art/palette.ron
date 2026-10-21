@@ -4,52 +4,54 @@
 //
 // colour: Hex("#rrggbb") (sRGB as authored), PerPlayer, FromTemperature or Unset.
 // roughness: 0 mirror-smooth, 1 fully matte (default 1); metalness: 0 or 1 (default 0).
-// wears_to: the token that wear on convex edges reveals.
-// carried_on: grounds against which edge wear and occlusion carry the contrast the colour
-// lacks (art-style.md §4), each approved by the user.
+// pattern: the fine surface (art-style.md §6): Plain (default), Wood, Paint, Metal, Stone,
+// Fabric, Leather, Glass. wears_to: the token that wear on convex edges reveals. ages_to: the
+// token that age turns it into, in patches; weathers_in: the years that takes outdoors in
+// temperate air (art-style.md §6b).
 [
     // §3.2 Materials
-    (name: "steel", group: Material, colour: Hex("#8a8d90"), roughness: 0.45, metalness: 1.0),
-    (name: "steel_painted", group: Material, colour: Hex("#6f7a6c"), roughness: 0.60, wears_to: Some("steel")),
-    (name: "steel_rust", group: Wear, colour: Hex("#8b4a2b"), roughness: 0.90),
-    (name: "aluminium", group: Material, colour: Hex("#c9ccd0"), roughness: 0.35, metalness: 1.0),
-    (name: "copper", group: Material, colour: Hex("#c46f3e"), roughness: 0.35, metalness: 1.0),
-    (name: "copper_patina", group: Wear, colour: Hex("#5f9b84"), roughness: 0.80),
-    (name: "titanium", group: Material, colour: Hex("#9a958e"), roughness: 0.40, metalness: 1.0),
-    (name: "timber", group: Material, colour: Hex("#c8a16a"), roughness: 0.70),
-    (name: "concrete", group: Material, colour: Hex("#a7a39b"), roughness: 0.90),
-    (name: "glass", group: Material, colour: Hex("#a9c3c8"), roughness: 0.10),
-    (name: "ice", group: Material, colour: Hex("#d8e8ef"), roughness: 0.20),
-    (name: "rubber", group: Material, colour: Hex("#2b2a29"), roughness: 0.85),
+    (name: "steel", group: Material, colour: Hex("#8a8d90"), roughness: 0.45, metalness: 1.0, pattern: Metal, ages_to: Some("steel_rust"), weathers_in: Some(0.5)),
+    (name: "steel_painted", group: Material, colour: Hex("#6f7a6c"), roughness: 0.60, pattern: Paint, wears_to: Some("steel"), ages_to: Some("steel_rust"), weathers_in: Some(15.0)),
+    (name: "steel_rust", group: Wear, colour: Hex("#8b4a2b"), roughness: 0.90, pattern: Stone),
+    (name: "aluminium", group: Material, colour: Hex("#c9ccd0"), roughness: 0.35, metalness: 1.0, pattern: Metal),
+    (name: "copper", group: Material, colour: Hex("#c46f3e"), roughness: 0.35, metalness: 1.0, pattern: Metal, ages_to: Some("copper_patina"), weathers_in: Some(10.0)),
+    (name: "copper_patina", group: Wear, colour: Hex("#5f9b84"), roughness: 0.80, pattern: Stone),
+    (name: "titanium", group: Material, colour: Hex("#9a958e"), roughness: 0.40, metalness: 1.0, pattern: Metal),
+    (name: "timber", group: Material, colour: Hex("#c8a16a"), roughness: 0.70, pattern: Wood, wears_to: Some("wood_cut"), ages_to: Some("timber_weathered"), weathers_in: Some(1.0)),
+    (name: "timber_weathered", group: Wear, colour: Hex("#5e4f3f"), roughness: 0.85, pattern: Wood),
+    (name: "concrete", group: Material, colour: Hex("#a7a39b"), roughness: 0.90, pattern: Stone),
+    (name: "glass", group: Material, colour: Hex("#a9c3c8"), roughness: 0.10, pattern: Glass),
+    (name: "ice", group: Material, colour: Hex("#d8e8ef"), roughness: 0.20, pattern: Glass),
+    (name: "rubber", group: Material, colour: Hex("#2b2a29"), roughness: 0.85, pattern: Leather),
     (name: "plastic", group: Material, colour: Hex("#d8d2c4"), roughness: 0.55),
 
     // §3.3 The character
-    (name: "coverall", group: Character, colour: Hex("#8c99a6"), roughness: 0.85),
-    (name: "leather", group: Character, colour: Hex("#4b2c22"), roughness: 0.70),
-    (name: "lens", group: Character, colour: Hex("#2a3b33"), roughness: 0.05),
-    (name: "player_accent", group: Character, colour: PerPlayer, roughness: 0.75),
+    (name: "coverall", group: Character, colour: Hex("#8c99a6"), roughness: 0.85, pattern: Fabric),
+    (name: "leather", group: Character, colour: Hex("#4b2c22"), roughness: 0.70, pattern: Leather),
+    (name: "lens", group: Character, colour: Hex("#2a3b33"), roughness: 0.05, pattern: Glass),
+    (name: "player_accent", group: Character, colour: PerPlayer, roughness: 0.75, pattern: Fabric),
     (name: "skin", group: Character, colour: PerPlayer, roughness: 0.55),
     (name: "hair", group: Character, colour: PerPlayer, roughness: 0.70),
-    (name: "base_layer", group: Character, colour: Unset, roughness: 0.85),
+    (name: "base_layer", group: Character, colour: Unset, roughness: 0.85, pattern: Fabric),
 
     // §3.4 Vegetation
-    (name: "bark_spruce", group: Vegetation, colour: Hex("#5a4632"), roughness: 0.90),
-    (name: "bark_birch", group: Vegetation, colour: Hex("#d6d1c4"), roughness: 0.85),
-    (name: "bark_birch_marks", group: Vegetation, colour: Hex("#3b3631"), roughness: 0.90),
-    (name: "bark_oak", group: Vegetation, colour: Hex("#4f4537"), roughness: 0.95),
+    (name: "bark_spruce", group: Vegetation, colour: Hex("#5a4632"), roughness: 0.90, pattern: Wood),
+    (name: "bark_birch", group: Vegetation, colour: Hex("#d6d1c4"), roughness: 0.85, pattern: Wood),
+    (name: "bark_birch_marks", group: Vegetation, colour: Hex("#3b3631"), roughness: 0.90, pattern: Wood),
+    (name: "bark_oak", group: Vegetation, colour: Hex("#4f4537"), roughness: 0.95, pattern: Wood),
     (name: "leaves_spruce", group: Vegetation, colour: Hex("#3f5a35"), roughness: 0.80),
     (name: "leaves_pine", group: Vegetation, colour: Hex("#4b6338"), roughness: 0.80),
     (name: "leaves_birch", group: Vegetation, colour: Hex("#6f8a3c"), roughness: 0.75),
     (name: "leaves_oak", group: Vegetation, colour: Hex("#4d6b30"), roughness: 0.80),
     (name: "grass", group: Vegetation, colour: Hex("#6b7a3f"), roughness: 0.90),
-    (name: "wood_cut", group: Vegetation, colour: Hex("#d9b47c"), roughness: 0.75),
+    (name: "wood_cut", group: Vegetation, colour: Hex("#d9b47c"), roughness: 0.75, pattern: Wood),
 
     // §3.5 Accents
-    (name: "hazard_yellow", group: Accent, colour: Hex("#e8b400"), roughness: 0.60),
-    (name: "hazard_black", group: Accent, colour: Hex("#22201e"), roughness: 0.60),
+    (name: "hazard_yellow", group: Accent, colour: Hex("#e8b400"), roughness: 0.60, pattern: Paint, wears_to: Some("steel")),
+    (name: "hazard_black", group: Accent, colour: Hex("#22201e"), roughness: 0.60, pattern: Paint, wears_to: Some("steel")),
     (name: "hot", group: Accent, colour: FromTemperature),
-    (name: "signal_green", group: Accent, colour: Hex("#5fbf3a"), roughness: 0.30),
-    (name: "signal_red", group: Accent, colour: Hex("#d8402c"), roughness: 0.30),
+    (name: "signal_green", group: Accent, colour: Hex("#5fbf3a"), roughness: 0.30, pattern: Glass),
+    (name: "signal_red", group: Accent, colour: Hex("#d8402c"), roughness: 0.30, pattern: Glass),
 
     // §10 The interface
     (name: "ui_panel", group: Ui, colour: Hex("#2e2b29")),

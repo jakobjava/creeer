@@ -4,6 +4,10 @@
 //! - `cargo xtask perf [--save-baseline]`: runs the performance spikes, the sandbox's scenes
 //!   and the stress scenarios in release mode, checks their budgets, ceilings and hashes, and
 //!   compares against `perf/baseline.txt` (fails on a regression of more than 10 %, plan.md §5).
+//! - `cargo xtask art [--check] [--blend] [name…]`: builds the models from their scripts in
+//!   `art/` with headless Blender ([`art`], `docs/blender-mcp.md`).
+
+mod art;
 
 use std::collections::BTreeMap;
 use std::env;
@@ -14,7 +18,9 @@ const USAGE: &str = "usage: cargo xtask <task>
 
 tasks:
   ci                        file length, fmt check, clippy (-D warnings), tests
-  perf [--save-baseline]    spike budgets + regression check against perf/baseline.txt";
+  perf [--save-baseline]    spike budgets + regression check against perf/baseline.txt
+  art [--check] [--blend] [name...]
+                            build models from art/*.py with Blender 5.2 into data/models/";
 
 /// Allowed slowdown before `perf` reports a regression.
 const REGRESSION_TOLERANCE: f64 = 0.10;
@@ -32,6 +38,7 @@ fn main() -> ExitCode {
         ["ci"] => ci(),
         ["perf"] => perf(false),
         ["perf", "--save-baseline"] => perf(true),
+        ["art", rest @ ..] => art::art(rest),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::FAILURE

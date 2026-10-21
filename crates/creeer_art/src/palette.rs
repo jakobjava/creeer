@@ -48,6 +48,28 @@ impl Shade {
     }
 }
 
+/// The fine surface a token has (`art-style.md` §6): what the renderer draws within it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Deserialize)]
+pub enum Pattern {
+    /// Uniform, with only the shared mottling and grain.
+    #[default]
+    Plain,
+    /// Grain lines along the part, growth rings, the odd knot.
+    Wood,
+    /// Paint over a surface: fine orange peel, chips at the edges.
+    Paint,
+    /// Bare metal: brushed along the part.
+    Metal,
+    /// Mineral: speckle at several scales.
+    Stone,
+    /// A woven cloth.
+    Fabric,
+    /// Pebbled hide.
+    Leather,
+    /// Smooth, with faint streaks.
+    Glass,
+}
+
 /// One token.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token {
@@ -58,8 +80,13 @@ pub struct Token {
     pub roughness: f64,
     /// 0 dielectric, 1 bare metal.
     pub metalness: f64,
+    pub pattern: Pattern,
     /// The token that wear on convex edges reveals (painted steel wears to bare steel).
     pub wears_to: Option<usize>,
+    /// The token that age turns it into, in patches (timber greys, bare steel rusts).
+    pub ages_to: Option<usize>,
+    /// The years ageing takes outdoors in temperate air (ISO 9223 C3; `art-style.md` §6b).
+    pub weathers_in: Option<f64>,
 }
 
 /// The palette: the tokens, in data order, and the player colours.
@@ -89,7 +116,13 @@ struct TokenDef {
     #[serde(default)]
     metalness: f64,
     #[serde(default)]
+    pattern: Pattern,
+    #[serde(default)]
     wears_to: Option<String>,
+    #[serde(default)]
+    ages_to: Option<String>,
+    #[serde(default)]
+    weathers_in: Option<f64>,
 }
 
 fn matte() -> f64 {
@@ -142,22 +175,37 @@ impl Palette {
                     return Err(at(format!("{what} {v} is outside 0–1")));
                 }
             }
-            let wears_to = match &def.wears_to {
-                None => None,
-                Some(name) if name == &def.name => return Err(at("wears to itself".into())),
-                Some(name) => Some(
-                    defs.iter()
-                        .position(|(d, _)| &d.name == name)
-                        .ok_or_else(|| at(format!("wears to {name:?}, which is no token")))?,
-                ),
+            // Another token, named in `field` ("wears to", "ages to").
+            let other = |field: &str, name: &Option<String>| match name {
+                None => Ok(None),
+                Some(name) if name == &def.name => Err(at(format!("{field} itself"))),
+                Some(name) => defs
+                    .iter()
+                    .position(|(d, _)| &d.name == name)
+                    .map(Some)
+                    .ok_or_else(|| at(format!("{field} {name:?}, which is no token"))),
             };
+            let ages_to = other("ages to", &def.ages_to)?;
+            match (ages_to, def.weathers_in) {
+                (Some(_), Some(years)) if years > 0.0 && years.is_finite() => {}
+                (None, None) => {}
+                (Some(_), _) => {
+                    return Err(at(
+                        "ages, but weathers_in is not a positive number of years".into(),
+                    ));
+                }
+                (None, Some(_)) => return Err(at("weathers_in without ages_to".into())),
+            }
             tokens.push(Token {
                 name: def.name.clone(),
                 group: def.group,
                 shade,
                 roughness: def.roughness,
                 metalness: def.metalness,
-                wears_to,
+                pattern: def.pattern,
+                wears_to: other("wears to", &def.wears_to)?,
+                ages_to,
+                weathers_in: def.weathers_in,
             });
         }
         let pairs: Vec<(String, String)> =

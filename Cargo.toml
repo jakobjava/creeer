@@ -51,6 +51,8 @@ pollster = "1.0.1"
 # Data files
 serde = { version = "1.0.229", features = ["derive"] }
 ron = "0.12.2"
+# Models (G1.3b, ADR-0026): binary glTF, read without images (the style uses none).
+gltf = { version = "1.4.1", default-features = false, features = ["utils", "names"] }
 
 # Simulation
 rayon = "1.12.0"

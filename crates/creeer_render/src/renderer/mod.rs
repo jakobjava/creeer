@@ -28,6 +28,7 @@ mod encode;
 mod exposure_pass;
 mod line_pass;
 mod mesh_pass;
+mod palette;
 mod readback;
 mod sea_pass;
 mod setup;
@@ -197,6 +198,13 @@ impl Renderer {
         self.targets = Targets::new(&self.device, self.size);
         self.tonemap.rebind(&self.device, &self.targets);
         self.exposure.rebind(&self.device, &self.targets);
+    }
+
+    /// The palette model meshes name their tokens in (G1.3b): the one their models were read
+    /// against ([`crate::MeshData::from_model`]). Until set, model vertices draw neutral grey.
+    pub fn set_palette(&mut self, palette: &creeer_art::Palette) {
+        self.mesh_pass
+            .set_palette(&self.device, &self.queue, palette);
     }
 
     /// Changes the sun shadow resolution (see [`ShadowQuality`] for the memory cost).

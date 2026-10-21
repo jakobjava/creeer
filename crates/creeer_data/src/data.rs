@@ -125,12 +125,25 @@ impl Data {
             .ok_or_else(|| DataError::new(path, "no pack has this file"))
     }
 
-    /// The pack the text of `path` comes from.
+    /// The bytes of binary file `path` (a model) from the last pack that has it.
+    ///
+    /// # Errors
+    /// If no pack has it.
+    pub fn binary(&self, path: &str) -> Result<&[u8], DataError> {
+        self.packs
+            .iter()
+            .rev()
+            .find_map(|p| p.binaries.get(path))
+            .map(Vec::as_slice)
+            .ok_or_else(|| DataError::new(path, "no pack has this file"))
+    }
+
+    /// The pack the text or bytes of `path` come from.
     pub fn origin(&self, path: &str) -> Option<&str> {
         self.packs
             .iter()
             .rev()
-            .find(|p| p.files.contains_key(path))
+            .find(|p| p.files.contains_key(path) || p.binaries.contains_key(path))
             .map(Pack::name)
     }
 
@@ -212,6 +225,10 @@ fn content_hash(packs: &[Pack]) -> u64 {
         for (path, text) in &pack.files {
             eat(path.as_bytes());
             eat(text.as_bytes());
+        }
+        for (path, bytes) in &pack.binaries {
+            eat(path.as_bytes());
+            eat(bytes);
         }
     }
     h

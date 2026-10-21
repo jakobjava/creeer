@@ -6,7 +6,7 @@
 use bytemuck::{Pod, Zeroable};
 use creeer_math::glam::Vec3;
 
-/// One mesh vertex as stored on the GPU.
+/// One mesh vertex as stored on the GPU (28 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub struct MeshVertex {
@@ -14,6 +14,36 @@ pub struct MeshVertex {
     pub position: [f32; 3],
     /// Unit normal in mesh space.
     pub normal: [f32; 3],
+    /// Its palette token (bits 0–15, [`NO_TOKEN`] for the instance's own material), baked
+    /// occlusion (16–23, 255 open) and edge wear (24–31) (G1.3b, ADR-0026).
+    pub material: u32,
+}
+
+/// The token of a vertex drawn in its instance's own material (procedural meshes).
+pub const NO_TOKEN: u16 = u16::MAX;
+
+/// Packs a vertex's token, occlusion and wear (both 0–1).
+pub fn pack_material(token: u16, occlusion: f32, wear: f32) -> u32 {
+    let byte = |x: f32| {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0–255
+        let b = (x.clamp(0.0, 1.0) * 255.0).round() as u32;
+        b
+    };
+    u32::from(token) | byte(occlusion) << 16 | byte(wear) << 24
+}
+
+/// The material of a procedural vertex: the instance's own, unoccluded, unworn.
+const PLAIN: u32 = NO_TOKEN as u32 | 255 << 16;
+
+impl MeshVertex {
+    /// A procedural vertex, drawn in its instance's own material.
+    pub fn plain(position: [f32; 3], normal: [f32; 3]) -> Self {
+        Self {
+            position,
+            normal,
+            material: PLAIN,
+        }
+    }
 }
 
 /// CPU-side mesh.
@@ -28,11 +58,25 @@ pub struct MeshData {
 impl MeshData {
     fn push_vertex(&mut self, position: Vec3, normal: Vec3) -> u32 {
         let index = u32::try_from(self.vertices.len()).expect("mesh too large");
-        self.vertices.push(MeshVertex {
-            position: position.to_array(),
-            normal: normal.to_array(),
-        });
+        self.vertices
+            .push(MeshVertex::plain(position.to_array(), normal.to_array()));
         index
+    }
+
+    /// A model read from the packs, its tokens indices into the palette the renderer holds.
+    pub fn from_model(model: &creeer_art::model::Model) -> Self {
+        Self {
+            vertices: model
+                .vertices
+                .iter()
+                .map(|v| MeshVertex {
+                    position: v.position,
+                    normal: v.normal,
+                    material: pack_material(v.token, v.occlusion, v.wear),
+                })
+                .collect(),
+            indices: model.indices.clone(),
+        }
     }
 
     /// Adds a planar quad with corners in counter-clockwise order as seen from the front.
