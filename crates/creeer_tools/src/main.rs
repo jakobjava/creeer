@@ -51,6 +51,9 @@ commands:
       bandwidth and state hashes (checked against tests/scenarios/play.txt)
   validate [--data <dir>] [--mods <dir>]
       load and check every data pack as the game merges them
+  bones
+      write the ragdoll's segments and joints to art/engineer/bones.json, for the art
+      scripts (G1.3f)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region
   import-nasa9 <thermo.inp> <out.ron>   NASA Glenn species data (the CEA program's thermo.inp)
@@ -83,6 +86,19 @@ fn main() -> ExitCode {
         Some("validate") => validate::run(&args[1..]),
         Some("stress") => stress::run(&args[1..]),
         Some("play") => play::run(&args[1..]),
+        Some("bones") => {
+            use creeer_sim::character::bones;
+            match std::fs::write(bones::PATH, bones::json()) {
+                Ok(()) => {
+                    println!("the ragdoll's bones written to {}", bones::PATH);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("bones: {}: {e}", bones::PATH);
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("image-diff") => match (args.get(1), args.get(2)) {
             (Some(a), Some(b)) => image_diff::run(a.as_ref(), b.as_ref()),
             _ => usage(),

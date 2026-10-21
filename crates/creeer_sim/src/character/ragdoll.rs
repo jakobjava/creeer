@@ -16,15 +16,16 @@ use creeer_physics::world::{Body, World};
 
 /// A segment: its centre standing (above the feet, x across, y up, z forward; m), half
 /// extents (m) and share of the mass.
-type Segment = (DVec3, DVec3, f64);
+pub(crate) type Segment = (DVec3, DVec3, f64);
 
 const fn v(x: f64, y: f64, z: f64) -> DVec3 {
     DVec3::new(x, y, z)
 }
 
 /// Pelvis, torso (with the backpack), head; then each side's upper arm, forearm, hand, thigh,
-/// shank, foot (left, then right).
-const SEGMENTS: [Segment; 15] = [
+/// shank, foot: first the side at −x (the right of a person facing +z with +y up, in a
+/// right-handed frame), then the side at +x (the left).
+pub(crate) const SEGMENTS: [Segment; 15] = [
     (v(0.0, 1.0, 0.0), v(0.16, 0.1, 0.11), 0.130),
     (v(0.0, 1.35, -0.02), v(0.19, 0.25, 0.14), 0.305),
     (v(0.0, 1.73, 0.0), v(0.11, 0.13, 0.12), 0.069),
@@ -44,7 +45,7 @@ const SEGMENTS: [Segment; 15] = [
 
 /// A joint: child and parent segment, where (standing, above the feet), its axis, and what
 /// it lets turn (a ball's cone and twist, or a hinge's range; rad).
-type Link = (usize, usize, DVec3, DVec3, Kind);
+pub(crate) type Link = (usize, usize, DVec3, DVec3, Kind);
 
 const fn ball(cone: f64, twist: f64) -> Kind {
     Kind::Ball {
@@ -60,7 +61,7 @@ const fn hinge(lo: f64, hi: f64) -> Kind {
 }
 
 /// The joints: back, neck; each side's shoulder, elbow, wrist, hip, knee, ankle.
-const LINKS: [Link; 14] = [
+pub(crate) const LINKS: [Link; 14] = [
     (1, 0, v(0.0, 1.1, 0.0), DVec3::Y, ball(0.6, 0.5)),
     (2, 1, v(0.0, 1.6, 0.0), DVec3::Y, ball(0.7, 1.0)),
     (3, 1, v(-0.28, 1.58, 0.0), DVec3::NEG_Y, ball(1.6, 1.0)),

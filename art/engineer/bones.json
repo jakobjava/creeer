@@ -1,0 +1,36 @@
+{
+  "frame": "metres, a person standing, above the feet: x across (+x the person's left), y up, z forward",
+  "segments": [
+    {"name": "pelvis", "centre": [0, 1, 0], "half": [0.16, 0.1, 0.11], "mass_share": 0.13},
+    {"name": "torso", "centre": [0, 1.35, -0.02], "half": [0.19, 0.25, 0.14], "mass_share": 0.305},
+    {"name": "head", "centre": [0, 1.73, 0], "half": [0.11, 0.13, 0.12], "mass_share": 0.069},
+    {"name": "upper_arm.R", "centre": [-0.28, 1.43, 0], "half": [0.055, 0.15, 0.055], "mass_share": 0.027},
+    {"name": "forearm.R", "centre": [-0.28, 1.13, 0], "half": [0.045, 0.14, 0.045], "mass_share": 0.016},
+    {"name": "hand.R", "centre": [-0.28, 0.93, 0], "half": [0.045, 0.05, 0.025], "mass_share": 0.006},
+    {"name": "thigh.R", "centre": [-0.1, 0.7, 0], "half": [0.075, 0.2, 0.075], "mass_share": 0.142},
+    {"name": "shank.R", "centre": [-0.1, 0.3, 0], "half": [0.055, 0.19, 0.055], "mass_share": 0.043},
+    {"name": "foot.R", "centre": [-0.1, 0.05, 0.05], "half": [0.055, 0.04, 0.13], "mass_share": 0.014},
+    {"name": "upper_arm.L", "centre": [0.28, 1.43, 0], "half": [0.055, 0.15, 0.055], "mass_share": 0.027},
+    {"name": "forearm.L", "centre": [0.28, 1.13, 0], "half": [0.045, 0.14, 0.045], "mass_share": 0.016},
+    {"name": "hand.L", "centre": [0.28, 0.93, 0], "half": [0.045, 0.05, 0.025], "mass_share": 0.006},
+    {"name": "thigh.L", "centre": [0.1, 0.7, 0], "half": [0.075, 0.2, 0.075], "mass_share": 0.142},
+    {"name": "shank.L", "centre": [0.1, 0.3, 0], "half": [0.055, 0.19, 0.055], "mass_share": 0.043},
+    {"name": "foot.L", "centre": [0.1, 0.05, 0.05], "half": [0.055, 0.04, 0.13], "mass_share": 0.014}
+  ],
+  "joints": [
+    {"name": "back", "child": "torso", "parent": "pelvis", "at": [0, 1.1, 0], "axis": [0, 1, 0], "kind": "ball", "cone": 0.6, "twist": [-0.5, 0.5]},
+    {"name": "neck", "child": "head", "parent": "torso", "at": [0, 1.6, 0], "axis": [0, 1, 0], "kind": "ball", "cone": 0.7, "twist": [-1, 1]},
+    {"name": "shoulder.R", "child": "upper_arm.R", "parent": "torso", "at": [-0.28, 1.58, 0], "axis": [0, -1, 0], "kind": "ball", "cone": 1.6, "twist": [-1, 1]},
+    {"name": "elbow.R", "child": "forearm.R", "parent": "upper_arm.R", "at": [-0.28, 1.28, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [0, 2.5]},
+    {"name": "wrist.R", "child": "hand.R", "parent": "forearm.R", "at": [-0.28, 0.99, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [-1, 1]},
+    {"name": "hip.R", "child": "thigh.R", "parent": "pelvis", "at": [-0.1, 0.9, 0], "axis": [0, -1, 0], "kind": "ball", "cone": 1.4, "twist": [-0.6, 0.6]},
+    {"name": "knee.R", "child": "shank.R", "parent": "thigh.R", "at": [-0.1, 0.5, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [-2.4, 0]},
+    {"name": "ankle.R", "child": "foot.R", "parent": "shank.R", "at": [-0.1, 0.1, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [-0.6, 0.6]},
+    {"name": "shoulder.L", "child": "upper_arm.L", "parent": "torso", "at": [0.28, 1.58, 0], "axis": [0, -1, 0], "kind": "ball", "cone": 1.6, "twist": [-1, 1]},
+    {"name": "elbow.L", "child": "forearm.L", "parent": "upper_arm.L", "at": [0.28, 1.28, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [0, 2.5]},
+    {"name": "wrist.L", "child": "hand.L", "parent": "forearm.L", "at": [0.28, 0.99, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [-1, 1]},
+    {"name": "hip.L", "child": "thigh.L", "parent": "pelvis", "at": [0.1, 0.9, 0], "axis": [0, -1, 0], "kind": "ball", "cone": 1.4, "twist": [-0.6, 0.6]},
+    {"name": "knee.L", "child": "shank.L", "parent": "thigh.L", "at": [0.1, 0.5, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [-2.4, 0]},
+    {"name": "ankle.L", "child": "foot.L", "parent": "shank.L", "at": [0.1, 0.1, 0], "axis": [1, 0, 0], "kind": "hinge", "range": [-0.6, 0.6]}
+  ]
+}

@@ -363,6 +363,8 @@ pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
 #[cfg(test)]
 mod tests;
 
+/// The ragdoll's bones as a table for the art scripts.
+pub mod bones;
 #[cfg(test)]
 mod fall_tests;
 /// Injury from impacts.

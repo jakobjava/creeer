@@ -211,7 +211,7 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
 
 #### G1.3f The engineer
 
-- **The look** (`art-style.md` §3.3, §8). The base body: a person with an open face, short hair and the player's skin tone, in a plain base layer. The starting outfit's wearables: a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood leaving the face open, goggles, and the jetpack (two small nitrogen bottles on a harness frame, on the back slot). There is no hard hat, no rucksack and no tools.
+- **The look** (`art-style.md` §3.3, §8). The base body: a person with an open face, short hair and the player's skin tone, in a plain base layer. The starting outfit's wearables: a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood leaving the face open, and goggles. There is no hard hat, no rucksack and no tools, and no jetpack: the user, 2026-10-21, "the 'base' player model should not have a jet pack, that is something that you can build if you progress in the game" (G1.6). It is modelled when it can be made.
 - **Its survey first** (as every step's): how stylised games with realistic proportions model readable faces without the uncanny valley, and measured human skin colours (for the `skin` tones, within `art-style.md` §4's limits). The skin tones and hair colours go to the user for approval.
 - **A blockout first.** Rough shapes on the ragdoll's proportions, the base body and the outfit, judged as a silhouette at 64 px and at 20 m, and shown to the user from the front, side and three-quarter. The detailed models start only after the user approves it.
 - **The models** (`art/engineer/body.py` and one script per wearable in `art/wear/`):
@@ -286,7 +286,8 @@ The style board and a walk in the planet sandbox, shown to the user: the enginee
 - **Dropping and bags.** A dropped bulk becomes a bag: a physics body whose mass is its contents. Dropped tools and logs are their own bodies.
 - **Containers.** A crate holds items, and its physics mass includes them (it changes as items go in and out).
 - **Wearables as items** (G1.3e made them drawable). Putting one on or taking it off is a transaction like any other. A worn piece's mass is added to the segments it is worn on, so the character's and the ragdoll's masses and inertias follow what is worn. The starting outfit comes from the pod.
-- **The landing pod.** Each player starts at a landing pod: a container with the starting kit (suit, tools, a little food for G9), a charger for the jetpack's nitrogen, and the respawn point.
+- **The landing pod.** Each player starts at a landing pod: a container with the starting kit (suit, tools, a little food for G9) and the respawn point, with a charger for a jetpack's nitrogen once one is made.
+- **The jetpack as an item** (the user, 2026-10-21: not in the starting kit, "something that you can build if you progress in the game"). The character's jetpack (G1.2c) works only while one is worn, and its mass is on the torso only then. Players make one once production allows (`plan.md`, G3 on); until then the sandbox and the play scenes hand it out.
 - **Transactions.** Every move between inventories, containers and the world is one server-authoritative transaction, atomic and ledgered: mass, species and items conserved, tested over random sequences (proptest).
 - **Saves.** New save sections for inventories and containers (save version 7, migration from 6); bags and pods are bodies like any other.
 - **Validation:** conservation under random transfers; a crate's mass and inertia following its contents; a full pack slowing the walk; save and load mid-transfer; a client asking to move what it does not have is refused.
@@ -387,7 +388,7 @@ Recommended here, to be confirmed with the user at the sub-milestone they belong
 2. **The landing pod as the start** (G1.6): a starting kit and a respawn point that fit a planet with no one on it.
 3. **Cameras: first and third person** (G1.9). A higher, Factorio-like overview camera for factories is an idea for G3.
 4. **Reach of 2.5 m for survival play** (G1.4), with F5's 500 m commands kept for creative and test servers.
-5. **The jetpack's look** (G1.3f). **Decided by the user, 2026-10-21:** two small nitrogen bottles on a harness frame, a wearable on the back slot, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out.
+5. **The jetpack's look** (G1.3f). **Decided by the user, 2026-10-21:** two small nitrogen bottles on a harness frame, a wearable on the back slot, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out. Later the same day the user moved it out of the starting outfit: it is made as the player progresses (G1.6, "The jetpack as an item").
 
 ## Budgets (development machine; min-spec projections ×2)
 
