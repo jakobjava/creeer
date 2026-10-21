@@ -57,6 +57,9 @@ impl Renderer {
         #[allow(clippy::cast_precision_loss)] // window sizes are far below 2^24
         let aspect = self.size.0 as f32 / self.size.1 as f32;
         let view_proj = frame.camera.view_projection(aspect);
+        // A length l at distance d spans l·focal/d pixels.
+        #[allow(clippy::cast_precision_loss)]
+        let focal = self.size.1 as f32 / (2.0 * (0.5 * frame.camera.fov_y).tan());
         let lighting = frame.lighting;
         let shadows_on = lighting.shadow_distance > 0.0;
         let basis = LightBasis::new(lighting.sun_direction);
@@ -114,6 +117,7 @@ impl Renderer {
             frame.scene,
             frame.camera,
             view_proj,
+            focal,
             shadows_on.then_some((&cascades, &basis)),
         );
         self.terrain.prepare(

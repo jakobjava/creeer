@@ -26,6 +26,7 @@ use tonemap_pass::TonemapPass;
 
 mod encode;
 mod exposure_pass;
+mod levels;
 mod line_pass;
 mod mesh_pass;
 mod noise;

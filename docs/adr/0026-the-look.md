@@ -46,6 +46,13 @@
 | Bethesda's biped slots (Skyrim; [UESP](https://ck.uesp.net/wiki/Skyrim_bodyparts_number)) | Each armour piece fills numbered body slots; its mesh is partitioned by body part, often carrying the body beneath it | Taken: wearables fill slots. Not taken: carrying a copy of the body in each piece (a body per piece to keep in step) |
 | inZOI's masking system ([ModKit](https://mod-docs.playinzoi.com/ModKit/project/CAZ/Guide/03.%20Masking%20System.html)) | Each outfit names the lower layers' regions it covers and the body regions it hides, "to prevent body parts from poking through shirts, pants, shoes" | Taken: each wearable lists the regions it hides, of the body and of the layers beneath |
 | Modular characters in practice (Unreal's leader pose; [gamedev.net](https://gamedev.net/forums/topic/710077-how-to-implement-a-modular-clothing-system); [polycount](https://polycount.com/discussion/comment/2636650)) | All parts share one skeleton, animated once; covered meshes are not drawn. Practitioners warn that skin hidden only partly will still clip through clothes in some poses, and prefer replacing whole segments | Taken: one skeleton animated once; whole regions hidden, never a part of one; poke-through measured in extreme poses |
+| 9-slice scaling ([Wikipedia](https://en.wikipedia.org/wiki/9-slice_scaling)); "Cheap round-edged box" ([three.js forum](https://discourse.threejs.org/t/cheap-round-edged-box-vertex-shader/8066)) | Corners keep their size while the rest stretches. In 3D, a vertex shader places each vertex at its inner box's corner (from its signs) plus its normal times the radius, and it works with instancing; a guard is needed when the box is smaller than the radius | Taken: primitives bevelled in the vertex shader, so a bevel keeps its size in metres under any instance scale; the radius limited by the smallest side |
+| Face-weighted normals on hard surfaces (Polycount practice, [thread](https://polycount.com/discussion/comment/2577165)) | A one-segment chamfer whose sides carry the faces' own normals shades like a rounded edge, and can stand in for a baked normal map on clean hard edges | Taken for authored models' small bevels. Not for the primitives: their 2.5 cm chamfer strayed beyond `model_check`'s smoothness rule (see "Measured and rejected"), so they get true rounds, the faces' normals at their sides |
+| Hoppe, "View-Dependent Refinement of Progressive Meshes" ([SIGGRAPH 1997](https://hhoppe.com/proj/vdrpm/)) | Refines a mesh where its geometric error, projected to the screen, exceeds a tolerance; geomorphs hide the pops | Taken: levels chosen by their projected error. Not needed: geomorphs, as the error stays under half a pixel |
+| Nanite (Karis, Stubbe and Wihlidal, SIGGRAPH 2021), as described by secondary sources | Clusters chosen so their error projects to about a pixel; for shadows, a texel of the map drawn to. A metric too strict costs time, one too loose pops | Taken: the error bound in pixels. Half a pixel here, since only silhouettes show it |
+| Cesium 3D Tiles ([CesiumJS](https://cesium.com/learn/ion-sdk/ref-doc/Cesium3DTileset.html)) | Each tile's geometric error projected to the screen; refined above a maximum (16 pixels by default) | The same measure; its tolerance suits streamed terrain, not silhouettes |
+| Geometric specular anti-aliasing: Kaplanyan et al., "Filtering Distributions of Normals for Shading Antialiasing" (HPG 2016); Tokuyoshi and Kaplanyan, "Improved Geometric Specular Antialiasing" (I3D 2019); as Unity's HDRP ([`CommonMaterial.hlsl`](https://github.com/Unity-Technologies/Graphics/blob/master/Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl)) and Filament implement it | The normal's change across a pixel, from screen derivatives, widens the specular lobe: α² grows by twice the variance, capped. HDRP: the variance "should be at most 0.5² = 0.25", a Gaussian pixel of σ = ½ pixel | Taken, at that variance, for every mesh; both pipelines |
+| Centroid interpolation (Direct3D, Vulkan and WGSL's `@interpolate(…, centroid)`) | With multisampling, a pixel only partly covered by a triangle is shaded at its centre, often outside the triangle, where attributes are extrapolated; centroid sampling evaluates them within the covered samples | Taken for normals: a bevel thinner than a pixel was shaded with normals extrapolated past its faces' |
 
 ## Decision (proposed)
 
@@ -82,6 +89,10 @@
 9. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
 10. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
 11. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
+    - **Rounds built in the vertex shader.** The box, the cylinder and the sphere are unit shapes, scaled per instance. A vertex at `p` with normal `n` is drawn at `p·s + (n − 2p)·r`: its corner of the inner shape plus its normal times the bevel radius `r`. Every vertex of a round thus lies on the true round, whatever its normal: the box's edges and corners and the cylinder's rims are rounds of `k` segments a quarter turn, and on the sphere `n = 2p` and nothing moves. So a round keeps its size in metres however a part is scaled: `r` is 8 % of the smallest side, at most 2.5 cm. The shadow pass places vertices the same way.
+    - **Levels by half a pixel.** The box comes sharp and rounded by 1 to 8 segments; the cylinder and the sphere in levels of 6 to 128 segments around, the cylinder's rims as round as its sides need (none at 6 and 8, up to 13 at 128). Each instance is drawn with the coarsest level whose silhouette error projects under half a pixel at its nearest point: the sagitta `R(1 − cos(π/n))` of the radius, about twice that on the sphere for its faces' centres, the deepest facet of a rounded corner of the bevel radius, and `(√3 − 1)·r` for the sharp box's corners. A switch moves the silhouette by less than half a pixel, so nothing pops and no geomorphs are needed. Rounds of 8 segments stray 0.12 mm along the edges at 2.5 cm, within `model_check`'s rule for authored models (1 % of the radius or 1 mm).
+    - **Shadows at their own level.** In each cascade, an instance is drawn at the coarsest level under half a texel of the map. The coarser caster lies within the drawn shape, so it shades nothing on it.
+    - **Highlights filtered by the pixel.** Specular anti-aliasing widens each highlight by the spread of normals within the pixel, and normals are interpolated at the centroid, so a bevel thinner than a pixel neither sparkles nor shows normals extrapolated past its faces'.
 
 ## Measured and rejected
 
@@ -107,6 +118,10 @@ Measured with `creeer_client --bench 600 --view factory` (10,015 parts, 1080p, a
 | Value noise computed from hashes: eight hashes and seven interpolations a sample | 2.64 ms p50, 20 % over before; the noise on procedural parts alone 0.14 ms | One fetch a sample from a 32³ noise volume, its fraction warped by a quintic (Quilez's texture interpolation). Octaves finer than a pixel are their mean, without a fetch |
 | One pipeline for models and procedural meshes, branching per fragment | The full surface's registers and outputs slowed every procedural part, with no model on screen: about 0.12 ms | Two pipelines: procedural meshes with a lean vertex output and mottling only; models with the full surface |
 | The instance grown by 16 bytes for its age and wear (80 bytes) | 0.08 ms: each instance is copied for the camera and for every shadow cascade it reaches | Packed into the 4 bytes roughness had: roughness and wear 8 bits each, the years a half float. 64 bytes again |
+| Bevels shaded as interpolated at the pixel's centre, without specular anti-aliasing | In the close-up view, a dotted bright line along a beam's top edge: chamfers 9 mm wide, under a pixel there, caught the sun with normals extrapolated past their faces' | Normals interpolated at the centroid, and highlights widened by the pixel's spread of normals: the line is continuous, the highlight a rounded edge has |
+| The box's and the cylinder's edges as one 45° chamfer of the bevel radius, shaded with the faces' normals | A chamfer is the chord of its quarter round: up to 29 % of the radius off it, 7.3 mm at 2.5 cm, several pixels a metre away. By `model_check`'s measure it strays 3.5 mm, over its 1 mm | True rounds of `k` segments in levels of detail, from a sharp box far away to 8 segments (0.12 mm) close by |
+| Shadows drawn at the camera's level | Close-up 1.83 ms against 1.66 before the surfaces (+10 %); horizon p99 +14 %: near parts drew 128-segment casters into four cascades | Each cascade at its own level, under half a texel |
+| Each pass's levels gathered by sorting the batch once for the camera and once per cascade | Factory 2.44 ms, from 2.07: five passes over 10,000 instances on the CPU, each with a sort | One pass over the instances: each converted once, put in a bucket per pass and level, the buckets appended as one draw each. Factory 2.12 ms |
 
 ### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
 
@@ -133,6 +148,12 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - Its grain runs along its boards: u's gradient on their faces is (1, 0).
   - `xtask art --check` passes on unchanged scripts and catches a 2 mm change.
 - **Drawing (G1.3c).** A snapshot without looks (the planet's) draws the 1 m crate as its model, from its base. Meshes whose vertices name tokens are drawn by the model pipeline, the rest by the plain one. The noise volume is the same on every run, and evenly spread. An instance's packed roughness, wear and years read back exactly, and years beyond 65,000 are capped below infinity.
+- **Smooth geometry (G1.3c).**
+  - Every level of the rounded box and of the cylinder is closed (each edge used once each way) and convex, its faces outward, at scales from 1 m cubes to 1 cm × 2 m rods. The box has 8k² + 24k + 12 triangles.
+  - A round keeps its size in metres: on a 0.1 × 3 × 0.4 m box, the faces are inset by the same 8 mm from both edges, and every rounded vertex lies on its corner's sphere of that radius to 10⁻⁶.
+  - Each level's error is measured on its drawn geometry: the cylinders' chords at their sagitta to 10⁻⁵; the spheres' deepest faces within their bound and above 90 % of it; the rounded box's deepest corner facet at the error used for it to 10⁻⁴. The cylinder's rims never stray further than its sides. At 24 segments the facets lie within 1 % of the radius.
+  - Each instance gets the coarsest level under half a pixel, and the next coarser exceeds it; a cylinder lying along the view is drawn as finely as its near end needs. A cascade takes the coarsest level under half a texel, never coarser for finer texels.
+  - The shaders' round constants and placement match `primitives.rs` (checked against `globals.wgsl`).
 - **Ageing (G1.3c).**
   - A year of exposure per game day in air, and three in the sea.
   - A 200 kg crate dropped from 3 m is worn 0.091, which is 4.5 kJ beyond the coating's 10 J (its bottom fell about 2.3 m). One placed gently is worn 0.
@@ -161,6 +182,23 @@ Budgets in `docs/g1-plan.md`. Ambient occlusion ≤ 1 ms at 1080p on min-spec (a
 
 Of the factory's 0.10 ms, the mottling on procedural parts takes about 0.08 ms and the larger vertex (40 bytes, from 28) about 0.02 ms.
 
+**Smooth geometry (G1.3c), measured** with the surfaces, against the same build from before them. Far parts drop to sharp boxes and a few segments, and shadows to their texels' needs, so the look as a whole now costs less than the flat-shaded sandbox did in most views:
+
+| View | Before the surfaces | With surfaces and smooth geometry | Change |
+|---|---|---|---|
+| factory | 2.20 ms | 2.12 ms | −3.6 % |
+| closeup | 1.67 ms | 1.71 ms | +2.4 % |
+| overview | 1.86 ms | 1.75 ms | −5.9 % |
+| horizon | 1.47 ms | 1.44 ms | −2.0 % |
+| physics | 1.62 ms | 1.58 ms | −2.5 % |
+
+p99 likewise: the close-up 2.00 ms against 1.91, the rest at or below before.
+
 ## Limits
 
 To be written as the work finds them; each also in `docs/future-improvements.md`.
+
+- **Rounds are drawn, not simulated.** A box's collision shape keeps its sharp edges, so its drawn corners lie up to (√3 − 1) times the bevel radius (at most 1.8 cm) inside the box that collides.
+- **One rule for every part's rounds:** 8 % of the smallest side, at most 2.5 cm. A part cannot ask for sharper or softer edges until the instance carries its own radius.
+- **Closer than about 0.2 m,** the finest box (8 segments) may show its facets by more than half a pixel.
+- **The sandbox's convex hulls** (rocks, a wedge, a prism) are flat-shaded with sharp edges. They are drawn at their own size, so the scaling trick does not apply: rounding them needs each hull's inner hull, its faces moved in by the radius.

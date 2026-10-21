@@ -32,7 +32,9 @@ struct InstanceIn {
 struct PlainOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) world: vec3<f32>,
-    @location(1) normal: vec3<f32>,
+    // Centroid: a triangle thinner than a pixel (a bevel) is shaded within itself, not at
+    // the pixel's centre with its normal extrapolated beyond the faces'.
+    @location(1) @interpolate(perspective, centroid) normal: vec3<f32>,
     // Position in the mesh's own space (m, scaled), for its surface.
     @location(2) local: vec3<f32>,
     @location(3) @interpolate(flat) color: vec3<f32>,
@@ -45,7 +47,7 @@ struct PlainOut {
 struct ModelOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) world: vec3<f32>,
-    @location(1) normal: vec3<f32>,
+    @location(1) @interpolate(perspective, centroid) normal: vec3<f32>,
     @location(2) local: vec3<f32>,
     @location(3) @interpolate(flat) color: vec3<f32>,
     @location(4) @interpolate(flat) material: vec2<f32>,
@@ -67,7 +69,7 @@ fn instance_material(i: InstanceIn) -> vec2<f32> {
 
 @vertex
 fn vs_plain(v: VertexIn, i: InstanceIn) -> PlainOut {
-    let local = v.position * i.scale;
+    let local = shaped(v.position, v.normal, v.material, i.scale);
     let world = rotate(i.rotation, local) + i.position_metal.xyz;
     var out: PlainOut;
     out.clip = globals.view_proj * vec4<f32>(world, 1.0);
@@ -106,23 +108,40 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> ModelOut {
     return out;
 }
 
+// Geometric specular anti-aliasing (Kaplanyan et al. 2016; Tokuyoshi and Kaplanyan 2019, as
+// Unity's HDRP and Filament use it): a pixel is a Gaussian of σ = ½ pixel, so the spread of
+// normals within it is a quarter of their squared change across it, and widens the lobe
+// (α² grows by twice that), up to a cap. Without it, a bevel thinner than a pixel sparkles.
+const PIXEL_VARIANCE: f32 = 0.25;
+const SPREAD_CAP: f32 = 0.04;
+
+/// What a pixel's spread of normals adds to α² (α = roughness²).
+fn normal_spread(normal: vec3<f32>) -> f32 {
+    let n = normalize(normal);
+    let du = dpdx(n);
+    let dv = dpdy(n);
+    return min(2.0 * PIXEL_VARIANCE * (dot(du, du) + dot(dv, dv)), SPREAD_CAP);
+}
+
 @fragment
 fn fs_plain(in: PlainOut) -> @location(0) vec4<f32> {
-    // The footprint first: derivatives need uniform control flow.
+    // Derivatives first: they need uniform control flow.
     let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
+    let spread = normal_spread(in.normal);
     // Metalness from 2 up marks a light source emitting (w − 2) times its colour.
     if in.material.x >= 2.0 {
         return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
     let at = Place(in.local, vec3<f32>(0.0, 1.0, 0.0), vec2<f32>(0.0), footprint, vec2<f32>(0.0));
     let surface = plain_surface(in.color, in.material.y, in.material.x, at);
-    return vec4<f32>(lit(in.world, in.normal, surface, in.heat, 1.0), 1.0);
+    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, 1.0), 1.0);
 }
 
 @fragment
 fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
     let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
     let grain_footprint = max(abs(dpdx(in.grain)), abs(dpdy(in.grain)));
+    let spread = normal_spread(in.normal);
     if in.material.x >= 2.0 {
         return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
@@ -131,18 +150,23 @@ fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
         in.token, in.color, in.masks.x, in.masks.y, in.masks.z, in.masks.w,
         in.ageing.x, in.ageing.y, at,
     );
-    return vec4<f32>(lit(in.world, in.normal, surface, in.heat, in.masks.x), 1.0);
+    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, in.masks.x), 1.0);
 }
 
-/// `surface` at `world` lit by the sun (with its shadows) and the sky; `occlusion` shades the
-/// ambient light only. With the engineering overlay on, `heat` replaces the material.
-fn lit(world: vec3<f32>, normal: vec3<f32>, surface: Surface, heat: f32, occlusion: f32) -> vec3<f32> {
+/// `surface` at `world` lit by the sun (with its shadows) and the sky; `spread` (from
+/// `normal_spread`) widens its highlights, `occlusion` shades the ambient light only. With the
+/// engineering overlay on, `heat` replaces the material.
+fn lit(
+    world: vec3<f32>, normal: vec3<f32>, spread: f32, surface: Surface, heat: f32, occlusion: f32,
+) -> vec3<f32> {
     let n = normalize(normal);
     let v = normalize(-world);
     let l = globals.sun_direction.xyz;
     var base = surface.colour;
     var metal = surface.metalness;
-    var roughness = clamp(surface.roughness, 0.045, 1.0);
+    // Its own roughness r, widened by the pixel's spread of normals: α² + spread, α = r².
+    let own = clamp(surface.roughness, 0.045, 1.0);
+    var roughness = sqrt(sqrt(min(own * own * own * own + spread, 1.0)));
     if globals.heatmap.x > 0.5 {
         if heat > -1.0e37 {
             // Overlay: the measured value replaces the material; keep a matte finish so

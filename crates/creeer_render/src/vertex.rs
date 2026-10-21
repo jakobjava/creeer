@@ -3,7 +3,9 @@
 //!
 //! A model's vertex names a palette token and carries what its script baked: occlusion, edge
 //! wear, its part's tone, its height above the model's base and its grain coordinates. A
-//! procedural vertex ([`MeshVertex::plain`]) takes its instance's own material.
+//! procedural vertex ([`MeshVertex::plain`]) takes its instance's own material; a bevelled one
+//! ([`MeshVertex::bevelled`]), of a unit primitive, is drawn with its edges bevelled by a radius
+//! in metres whatever its instance's scale (`crate::primitives`).
 
 use bytemuck::{Pod, Zeroable};
 
@@ -16,7 +18,8 @@ pub struct MeshVertex {
     /// Unit normal in mesh space.
     pub normal: [f32; 3],
     /// Its palette token (bits 0–15, [`NO_TOKEN`] for the instance's own material), baked
-    /// occlusion (16–23, 255 open) and edge wear (24–31).
+    /// occlusion (16–23, 255 open) and edge wear (24–31). A procedural vertex's wear marks it
+    /// bevelled (255) or not (0).
     pub material: u32,
     /// Its part's tone (bits 0–7, 128 the token's own) and its height above the model's base
     /// (16–31, over `creeer_art::model::HEIGHT_RANGE`).
@@ -60,6 +63,20 @@ impl MeshVertex {
         }
     }
 
+    /// A procedural vertex of a unit primitive, bevelled: drawn at `p·s + (n − 2p)·r` for its
+    /// instance's scale `s` and bevel radius `r` (`crate::primitives::shaped`).
+    pub fn bevelled(position: [f32; 3], normal: [f32; 3]) -> Self {
+        Self {
+            material: pack_material(NO_TOKEN, 1.0, 1.0),
+            ..Self::plain(position, normal)
+        }
+    }
+
+    /// True for a bevelled procedural vertex.
+    pub fn is_bevelled(&self) -> bool {
+        self.material & 0xffff == u32::from(NO_TOKEN) && self.material >> 24 != 0
+    }
+
     /// A model's vertex, its token an index into the palette the renderer holds.
     pub fn from_model(v: &creeer_art::model::Vertex) -> Self {
         Self {
@@ -91,5 +108,13 @@ mod tests {
         assert_eq!(std::mem::size_of::<MeshVertex>(), 40);
         let plain = MeshVertex::plain([0.0; 3], [0.0, 1.0, 0.0]);
         assert_eq!(plain.material & 0xffff, u32::from(NO_TOKEN));
+        assert!(!plain.is_bevelled());
+        assert!(MeshVertex::bevelled([0.0; 3], [0.0, 1.0, 0.0]).is_bevelled());
+        // A model's worn vertex is not bevelled: its wear is wear.
+        let worn = MeshVertex {
+            material: pack_material(3, 1.0, 1.0),
+            ..plain
+        };
+        assert!(!worn.is_bevelled());
     }
 }

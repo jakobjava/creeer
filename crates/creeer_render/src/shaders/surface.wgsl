@@ -20,8 +20,6 @@ struct Token {
 };
 @group(2) @binding(0) var<storage, read> palette: array<Token>;
 
-// A vertex drawn in its instance's own material.
-const NO_TOKEN: u32 = 0xffffu;
 const PATTERN_WOOD: u32 = 1u;
 const PATTERN_PAINT: u32 = 2u;
 const PATTERN_METAL: u32 = 3u;

@@ -1,12 +1,20 @@
 //! Instanced mesh rendering (camera view and shadow casters share one instance buffer).
 
+use super::levels;
 use super::palette::GpuPalette;
 use super::*;
+use crate::scene::Instance;
+use creeer_math::glam::DVec3;
+use gather::Cull;
 
-/// One draw call: a mesh and a range of the instance buffer.
+#[path = "mesh_gather.rs"]
+mod gather;
+
+/// One draw call: a mesh's range in the arena (one of its levels) and a range of the instance
+/// buffer.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Draw {
-    mesh: usize,
+    range: usize,
     first_instance: u32,
     instance_count: u32,
 }
@@ -47,7 +55,7 @@ impl MeshBuffers<'_> {
         pass.set_vertex_buffer(1, self.instances.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
         for draw in draws {
-            let range = meshes.ranges[draw.mesh];
+            let range = meshes.ranges[draw.range];
             pass.draw_indexed(
                 range.first_index..range.first_index + range.index_count,
                 range.base_vertex,
@@ -77,6 +85,8 @@ pub(super) struct MeshPass {
     draws: Vec<Draw>,
     model_draws: Vec<Draw>,
     pub(super) shadow_draws: [Vec<Draw>; CASCADES],
+    /// Each pass and level's instances while a batch is gathered (`mesh_gather.rs`).
+    buckets: Vec<Vec<InstanceRaw>>,
 }
 
 impl MeshPass {
@@ -146,6 +156,7 @@ impl MeshPass {
             draws: Vec::new(),
             model_draws: Vec::new(),
             shadow_draws: std::array::from_fn(|_| Vec::new()),
+            buckets: vec![Vec::new(); (1 + CASCADES) * gather::MAX_LEVELS],
         }
     }
 
@@ -179,7 +190,8 @@ impl MeshPass {
     }
 
     /// Culls (camera frustum and per-cascade caster tests), converts and uploads all
-    /// instances; records the draw lists.
+    /// instances; records the draw lists. Meshes with levels of detail are drawn at the level
+    /// each instance needs (`levels.rs`), for a viewport `focal` pixels over 2·tan(fov/2).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn prepare(
         &mut self,
@@ -189,6 +201,7 @@ impl MeshPass {
         scene: &Scene,
         camera: &Camera,
         view_proj: Mat4,
+        focal: f32,
         shadows: Option<(&[Cascade; CASCADES], &LightBasis)>,
     ) -> RenderStats {
         let frustum = Frustum::from_view_projection(view_proj);
@@ -198,37 +211,15 @@ impl MeshPass {
         // Draws are recorded relative to each pass's own list, then offset when concatenated.
         let mut pass_draws: Vec<Vec<Draw>> = vec![Vec::new(); 1 + CASCADES];
         let mut stats = RenderStats::default();
+        let cull = Cull {
+            camera: camera.position,
+            frustum,
+            shadows,
+            focal,
+        };
         for (mesh, batch) in scene.batches.iter().enumerate() {
-            let Some(range) = meshes.ranges.get(mesh) else {
-                continue;
-            };
-            let starts: Vec<usize> = self.pass_scratch.iter().map(Vec::len).collect();
-            for instance in batch {
-                let raw = InstanceRaw::new(instance, camera.position);
-                let center = raw.position.into();
-                let radius = range.bounding_radius * instance.scale.max_element();
-                if frustum.intersects_sphere(center, radius) {
-                    self.pass_scratch[0].push(raw);
-                } else {
-                    stats.instances_culled += 1;
-                }
-                if let Some((cascades, basis)) = shadows {
-                    for (c, cascade) in cascades.iter().enumerate() {
-                        if cascade.may_cast_into(basis, center, radius) {
-                            self.pass_scratch[1 + c].push(raw);
-                        }
-                    }
-                }
-            }
-            for (p, list) in self.pass_scratch.iter().enumerate() {
-                let count = list.len() - starts[p];
-                if count > 0 {
-                    pass_draws[p].push(Draw {
-                        mesh,
-                        first_instance: u32::try_from(starts[p]).expect("instance count"),
-                        instance_count: u32::try_from(count).expect("instance count"),
-                    });
-                }
+            if let Some(&levels) = meshes.meshes.get(mesh) {
+                self.gather_mesh(&mut pass_draws, meshes, levels, batch, &cull, &mut stats);
             }
         }
 
@@ -245,7 +236,7 @@ impl MeshPass {
             .next()
             .unwrap_or_default()
             .into_iter()
-            .partition(|draw| meshes.ranges[draw.mesh].model);
+            .partition(|draw| meshes.ranges[draw.range].model);
         for (target, list) in self.shadow_draws.iter_mut().zip(lists) {
             *target = list;
         }

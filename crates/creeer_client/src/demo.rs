@@ -4,9 +4,10 @@
 use crate::sandbox::SandboxSnapshot;
 use creeer_math::glam::{DQuat, DVec3, Vec3};
 use creeer_math::{Frame64, det};
+use creeer_render::primitives::{self, Round};
 use creeer_render::{
-    Atmosphere, Camera, Color, DebugLines, Heatmap, Instance, Material, MeshArena, MeshData,
-    MeshId, Palette, Scene, Sky,
+    Atmosphere, Camera, Color, DebugLines, Heatmap, Instance, Material, MeshArena, MeshId, Palette,
+    Scene, Sky,
 };
 use std::f64::consts::FRAC_PI_2;
 
@@ -52,9 +53,11 @@ impl DemoMeshes {
     /// in the renderer's arena.
     pub fn register(arena: &mut MeshArena) -> Self {
         Self {
-            cube: arena.add(&MeshData::cuboid(Vec3::splat(0.5))),
-            cylinder: arena.add(&MeshData::cylinder(0.5, 0.5, 24)),
-            sphere: arena.add(&MeshData::uv_sphere(0.5, 32, 16)),
+            // Smooth (ADR-0026 decision 11): rounded edges and rims, each primitive in levels
+            // of detail chosen by their error on screen.
+            cube: arena.add_levels(&primitives::box_levels(), Round::Box),
+            cylinder: arena.add_levels(&primitives::cylinder_levels(), Round::Cylinder),
+            sphere: arena.add_levels(&primitives::sphere_levels(), Round::Sphere),
             hulls: crate::hulls::catalogue()
                 .each_ref()
                 .map(|h| arena.add(&crate::hulls::mesh(h))),

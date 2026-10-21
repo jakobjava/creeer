@@ -171,7 +171,7 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - no shimmer: frame-to-frame difference under a slow camera move;
   - ageing: exposure exact across save and load; rates by surroundings; a crate in the sea ageing three times as fast; a dropped crate's wear against the impact's energy; determinism.
 - **Smooth geometry everywhere** (`art-style.md` pillar 9, §7):
-  - the sandbox's flat-shaded primitives become smooth ones: bevelled boxes with face-weighted normals, and cylinders and spheres with at least 24 segments;
+  - the sandbox's flat-shaded primitives become smooth ones: boxes with rounded edges and cylinders with rounded rims (true rounds, a radius in metres whatever the scale), and cylinders and spheres with at least 24 segments at their finest. Done 2026-10-21 (ADR-0026 decision 11);
   - members (cylinders) and spheres get levels of detail chosen by screen-space error (half a pixel), not by distance;
   - the terrain's normals and dug craters checked to be smooth at every level of detail, with close-up screenshots.
 - **Validation:** golden screenshots of the crate, members and spheres at noon and in the evening, close and at 20 m; the facets' screen-space error measured on the levels of detail.

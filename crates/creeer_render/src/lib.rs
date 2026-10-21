@@ -10,6 +10,7 @@ pub mod debug_lines;
 mod half;
 pub mod heatmap;
 pub mod mesh;
+pub mod primitives;
 pub mod renderer;
 pub mod scene;
 mod shadow;
