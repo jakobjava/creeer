@@ -113,14 +113,22 @@ Where it starts: meshes are a position and a normal per vertex with one material
 #### G1.3a The palette in data and the style checks
 
 - **The palette.** `data/art/palette.ron` holds every token of `art-style.md` §3 and §10: its colour, roughness, metalness and group (terrain, material, character, vegetation, accent, player, UI), and, for wear, the token beneath it (`steel_painted` wears to `steel`). A test reads the tables of `art-style.md` and fails if the two differ. The validator checks it with the pack (ADR-0018).
-- **Colour science** in a small crate, `creeer_art`: sRGB ↔ CIELAB, CIEDE2000, and colour-vision simulation (Machado, Oliveira and Fernandes 2009: deuteranopia and protanopia).
+- **Colour science** in a small crate, `creeer_art`: sRGB ↔ CIELAB and CIEDE2000.
 - **The checks, in CI** (`art-style.md` §4, §3.6, §5):
-  - every object token at least ΔE₀₀ 12 from the five grounds, or listed as carried by its wear and occlusion (then shown on the style board);
+  - every object token at least ΔE₀₀ 12 from the five grounds;
   - chroma and L\* limits per group;
-  - the sixteen player colours told apart under both simulated deficiencies (a minimum ΔE₀₀ between any two, set from the measured spread);
-  - the renderer's post-processing chain holding no forbidden effect.
-- **What fails today goes to the user,** not quietly into the palette: `rubber` against basalt (ΔE₀₀ 7.8) and `steel` against gravel (10.3) already miss the 12. Each gets a proposed new colour, or is listed as carried by wear, with the user's approval in the changelog.
-- **Validation:** CIEDE2000 against Sharma, Wu and Dalal's 34 test pairs (to 10⁻⁴); the colour-vision matrices against the paper's tables; sRGB white at L\* = 100.
+  - the sixteen player colours at least ΔE₀₀ 8 apart (normal vision);
+  - no forbidden effect in the renderer's sources.
+- **Approved exceptions:** a miss is kept only by the user's approval, listed in `art-style.md` §4 and `data/art/exceptions.ron`. A check reports an exception once it is no longer needed.
+- **The validator** loads the palette and its exceptions with every pack. A mod's misses are warnings, since a mod may choose its own look.
+- **Done** (2026-10-21). The first run found:
+  - steel, titanium and concrete too close to gravel;
+  - rubber too close to basalt;
+  - copper and laterite bauxite too saturated;
+  - the player colours confused under colour blindness.
+
+  The user kept the original colours, so the misses became approved exceptions. Colour blindness waits until the game is published (`docs/future-improvements.md`; ADR-0026 has what was measured).
+- **Validation:** CIEDE2000 against Sharma, Wu and Dalal's 34 test pairs (to 10⁻⁴); Lab against published values (sRGB red, white, mid-grey); every token, player colour and rock colour named in `art-style.md` against the data, both ways; the checks on palettes broken in each way; the base pack passing with its exceptions.
 
 #### G1.3b Models: glTF, materials as tokens, the validator
 

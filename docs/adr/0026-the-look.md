@@ -69,7 +69,21 @@
 
 ## Measured and rejected
 
-Nothing yet.
+### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
+
+The first run of the style's checks found the sixteen player colours of `art-style.md` §3.6 confused under simulated colour-vision deficiencies (Machado et al. 2009, `creeer_art::vision`). For deuteranopes, blue and violet are ΔE₀₀ 1.3 apart, violet and indigo 1.3, and orange and ochre 1.7. For protanopes, violet and indigo are 2.9 apart. In normal vision the closest pair is blue and indigo, at 8.5.
+
+| Option | Result |
+|---|---|
+| Krzywinski's colour-blind palettes (12 and 15 colours, after Wong 2011) | Far apart for deuteranopes, but neon (luminous magentas and greens): against `art-style.md` pillar 10 |
+| A greedy max-min selection (Glasbey et al. 2007) under all three visions, chroma ≤ 50, every colour ΔE₀₀ ≥ 12 from the grounds | Sixteen colours at least 11.1 apart, but chosen without regard to today's colours |
+| Today's colours nudged, each to the nearest colour that keeps every pair ≥ ΔE₀₀ 10 under all three visions (orange fixed) | Achieved at 10.0. Changed: blue `#5587af`, yellow `#ebcd5a`, violet `#644ba5`, teal `#289b78` (jade), rose `#dc5569`, lime `#b9f0aa` (mint), sienna `#a55028`, green `#378250`, ochre `#d7af78` (tan) |
+
+The user kept today's colours and set colour blindness aside until the game is published (`art-style.md` changelog). The nudged set is the starting point for a colour-blind mode then (`docs/future-improvements.md`). The check now holds the player colours to ΔE₀₀ 8 in normal vision.
+
+### The other first-run misses, kept by the user
+
+Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber against basalt (7.8), and the chroma of copper (50.7) and laterite bauxite (55.8). Changes as small as those limits ask were measured (for example steel `#96999c` at 12.2), and the user kept the original colours. They are listed as approved exceptions (`art-style.md` §4, `data/art/exceptions.ron`). The checks report an exception once it is no longer needed.
 
 ## Validation
 

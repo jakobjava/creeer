@@ -33,6 +33,8 @@ fn the_base_pack_validates_with_only_nasas_two_known_steps() {
     assert_eq!(count("materials"), Some(9));
     assert_eq!(count("planets"), Some(4));
     assert_eq!(count("systems"), Some(1));
+    // The palette (G1.3a), with no style warnings beyond its approved exceptions.
+    assert_eq!(count("palette tokens"), Some(45));
 }
 
 #[test]
@@ -147,5 +149,44 @@ fn the_validator_catches_each_kind_of_broken_data() {
     one_error(
         &broken("system", &[("systems/default.ron", &system)]),
         &["system: systems/default.ron", "planets/missing.ron"],
+    );
+    // A palette token with a malformed colour (G1.3a).
+    let token = r##"[(name: "steel", group: Material, colour: Hex("#8a8d9"), metalness: 1.0)]"##;
+    one_error(
+        &broken("palette", &[("art/palette.ron", token)]),
+        &["palette: art/palette.ron", "steel", "bad colour"],
+    );
+}
+
+#[test]
+fn a_mods_look_is_checked_against_the_style_as_warnings() {
+    // Steel recoloured a saturated green: it loads, and the style's checks say why it is off.
+    let mods = std::env::temp_dir().join(format!("creeer_validate_{}_look", std::process::id()));
+    let _ = std::fs::remove_dir_all(&mods);
+    let root = mods.join("look");
+    std::fs::create_dir_all(root.join("art")).unwrap();
+    std::fs::write(
+        root.join("pack.ron"),
+        "Pack(name: \"look\", version: \"1\", requires: [\"base\"])",
+    )
+    .unwrap();
+    let token = r##"[(name: "steel", group: Material, colour: Hex("#40e040"), metalness: 1.0)]"##;
+    std::fs::write(root.join("art/palette.ron"), token).unwrap();
+    let data = Data::open(&repository("data"), std::slice::from_ref(&mods)).unwrap();
+    let report = validate(&data);
+    let _ = std::fs::remove_dir_all(&mods);
+    assert!(report.ok(), "{:#?}", report.errors);
+    let style: Vec<&String> = (report.warnings.iter())
+        .filter(|w| w.starts_with("art style: steel"))
+        .collect();
+    assert!(style.iter().any(|w| w.contains("chroma")), "{style:#?}");
+    // Base steel's exception against gravel is not needed by the green: it says so.
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("no longer needed")),
+        "{:#?}",
+        report.warnings
     );
 }

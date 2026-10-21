@@ -2,8 +2,8 @@
 
 use crate::checks::{self, Finding, Rock, check, closest_players};
 use crate::colour::Srgb;
+use crate::exception::{Exception, Rule};
 use crate::palette::{Palette, Shade};
-use crate::vision::Vision;
 use creeer_data::Data;
 use creeer_data::merge::ron_list;
 use serde::Deserialize;
@@ -88,7 +88,7 @@ fn checks_find_what_breaks_the_style_and_nothing_else() {
             (name: "neon", group: Accent, colour: Hex("#00ff00")),
             (name: "fine", group: Material, colour: Hex("#8c99a6"))"##,
     );
-    let found = check(&palette, &[]);
+    let found = check(&palette, &[], &[]);
     let has = |f: &dyn Fn(&Finding) -> bool| found.iter().any(f);
     assert!(has(
         &|f| matches!(f, Finding::Contrast { token, ground, .. } if token == "dull" && ground == "gravel")
@@ -111,7 +111,7 @@ fn checks_find_what_breaks_the_style_and_nothing_else() {
     let bare =
         parse(r##"[(name: "x", group: Material, colour: Hex("#8c99a6"))]"##).expect("parses");
     assert_eq!(
-        check(&bare, &[])
+        check(&bare, &[], &[])
             .iter()
             .filter(|f| matches!(f, Finding::MissingGround(_)))
             .count(),
@@ -119,86 +119,91 @@ fn checks_find_what_breaks_the_style_and_nothing_else() {
     );
 }
 
+fn exception(subject: &str, rule: Rule) -> Exception {
+    Exception {
+        subject: subject.to_owned(),
+        rules: vec![rule],
+        why: "a test".to_owned(),
+        approved: "2026-10-21".to_owned(),
+    }
+}
+
 #[test]
-fn contrast_carried_by_wear_is_accepted_only_on_its_named_grounds() {
-    let dull = |carried: &str| {
-        with_grounds(&format!(
-            r##"(name: "dull", group: Material, colour: Hex("#8a8d90"), carried_on: [{carried}])"##
-        ))
-    };
-    let contrast = |p: &Palette| {
-        check(p, &[])
+fn exceptions_excuse_exactly_what_they_name_and_say_when_they_are_needless() {
+    let palette = with_grounds(r##"(name: "dull", group: Material, colour: Hex("#8a8d90"))"##);
+    let contrast = |e: &[Exception]| {
+        check(&palette, &[], e)
             .into_iter()
             .filter(|f| matches!(f, Finding::Contrast { .. }))
             .count()
     };
-    assert_eq!(contrast(&dull("")), 1);
-    assert_eq!(contrast(&dull(r#""gravel""#)), 0);
-    let found = check(&dull(r#""sand""#), &[]);
+    assert_eq!(contrast(&[]), 1);
+    assert_eq!(
+        contrast(&[exception("dull", Rule::Contrast("gravel".into()))]),
+        0
+    );
+    // On another ground, it excuses nothing and is reported as needless.
+    let wrong = [exception("dull", Rule::Contrast("soil".into()))];
+    assert_eq!(contrast(&wrong), 1);
+    let found = check(&palette, &[], &wrong);
     assert!(
         found
             .iter()
-            .any(|f| matches!(f, Finding::UnknownGround { .. }))
+            .any(|f| matches!(f, Finding::NeedlessException { .. }))
     );
+    // Unknown subjects and grounds are refused.
+    for bad in [
+        exception("nothing", Rule::Chroma),
+        exception("dull", Rule::Contrast("sand".into())),
+    ] {
+        let found = check(&palette, &[], &[bad]);
+        assert!(
+            found
+                .iter()
+                .any(|f| matches!(f, Finding::UnknownException { .. }))
+        );
+    }
 }
 
 #[test]
 fn ores_may_be_more_saturated_than_their_host_rocks() {
     let palette = with_grounds("");
     let copper = Srgb::parse("#c0773f").expect("hex");
-    let as_host = [Rock {
-        name: "host",
-        colour: copper,
-        ore: false,
-    }];
-    let as_ore = [Rock {
-        name: "ore",
-        colour: copper,
-        ore: true,
-    }];
-    assert!(
-        check(&palette, &as_host)
+    let rock = |ore| {
+        [Rock {
+            name: "rock",
+            colour: copper,
+            ore,
+        }]
+    };
+    let saturated = |rocks: &[Rock]| {
+        check(&palette, rocks, &[])
             .iter()
             .any(|f| matches!(f, Finding::Chroma { .. }))
-    );
-    assert!(
-        !check(&palette, &as_ore)
-            .iter()
-            .any(|f| matches!(f, Finding::Chroma { .. }))
-    );
+    };
+    assert!(saturated(&rock(false)));
+    assert!(!saturated(&rock(true)));
 }
 
 #[test]
-fn player_colours_are_judged_as_each_vision_sees_them() {
-    // Blue and violet: apart in normal vision, together under deuteranopia.
+fn player_colours_too_alike_are_found() {
     let players = vec![
+        ("orange".to_owned(), Srgb([224, 123, 57])),
+        ("amber".to_owned(), Srgb([226, 128, 60])),
         ("blue".to_owned(), Srgb([61, 127, 217])),
-        ("violet".to_owned(), Srgb([142, 91, 214])),
     ];
-    let normal = closest_players(&players, Vision::Normal).expect("a pair").0;
-    let deutan = closest_players(&players, Vision::Deuteranopia)
-        .expect("a pair")
-        .0;
-    assert!(normal > checks::PLAYER_DIFFERENCE && deutan < checks::PLAYER_DIFFERENCE);
+    let (d, i, j) = closest_players(&players).expect("a pair");
+    assert!(d < checks::PLAYER_DIFFERENCE && (i, j) == (0, 1));
     let palette = Palette {
         tokens: Vec::new(),
         players,
     };
-    let found = check(&palette, &[]);
-    assert!(found.iter().any(|f| matches!(
-        f,
-        Finding::Players {
-            vision: Vision::Deuteranopia,
-            ..
-        }
-    )));
-    assert!(!found.iter().any(|f| matches!(
-        f,
-        Finding::Players {
-            vision: Vision::Normal,
-            ..
-        }
-    )));
+    let found = check(&palette, &[], &[]);
+    let pairs: Vec<_> = found
+        .iter()
+        .filter(|f| matches!(f, Finding::Players { .. }))
+        .collect();
+    assert_eq!(pairs.len(), 1, "{found:?}");
 }
 
 #[derive(Deserialize)]
@@ -209,11 +214,11 @@ struct RockDef {
     ore: bool,
 }
 
-/// The base pack's findings, printed (`cargo test -p creeer_art -- --nocapture base`).
 #[test]
-fn base_findings() {
+fn the_base_pack_keeps_the_style_with_its_approved_exceptions() {
     let data = Data::base();
     let palette = Palette::from_data(&data).expect("the base palette loads");
+    let exceptions = Exception::from_data(&data).expect("the exceptions load");
     let defs = (data.table("rocks", "geology/rocks.ron"))
         .merge(ron_list, |r: &RockDef| &r.name)
         .expect("rocks load");
@@ -225,15 +230,13 @@ fn base_findings() {
             ore: r.ore,
         })
         .collect();
-    for f in check(&palette, &rocks) {
-        println!("{f}");
-    }
-    for v in Vision::ALL {
-        if let Some((d, i, j)) = closest_players(&palette.players, v) {
-            println!(
-                "closest players under {v:?}: {} and {} at {d:.1}",
-                palette.players[i].0, palette.players[j].0
-            );
-        }
-    }
+    let found: Vec<String> = check(&palette, &rocks, &exceptions)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert!(found.is_empty(), "{found:#?}");
+    let (d, i, j) = closest_players(&palette.players).expect("sixteen players");
+    let pair = (palette.players[i].0.as_str(), palette.players[j].0.as_str());
+    assert_eq!(pair, ("blue", "indigo"));
+    assert!((d - 8.5).abs() < 0.05, "{d}");
 }

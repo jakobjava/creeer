@@ -1,10 +1,11 @@
 //! The style's automated checks (`docs/art-style.md` §4, §3.6): contrast against the grounds,
-//! chroma and lightness limits, and player colours told apart under colour-vision
-//! deficiencies. Each finding names what failed and by how much.
+//! chroma and lightness limits, and player colours told apart. Each finding names what failed
+//! and by how much; the user's approved exceptions are honoured, and reported once they are
+//! no longer needed.
 
-use crate::colour::{Srgb, ciede2000, difference};
+use crate::colour::{Srgb, difference};
+use crate::exception::{Exception, Rule};
 use crate::palette::{Group, Palette};
-use crate::vision::Vision;
 use std::fmt;
 
 /// The most common grounds, which objects must stand out from (§4).
@@ -19,8 +20,9 @@ pub const ORE_CHROMA: f64 = 55.0;
 pub const OBJECT_CHROMA: f64 = 45.0;
 /// The range of L\* of every colour in the scene: no pure black or white.
 pub const LIGHTNESS: (f64, f64) = (8.0, 92.0);
-/// The least ΔE₀₀ between any two player colours, as each vision sees them.
-pub const PLAYER_DIFFERENCE: f64 = 10.0;
+/// The least ΔE₀₀ between any two player colours (normal colour vision; the closest pair of
+/// §3.6's sixteen, blue and indigo, is 8.5 apart).
+pub const PLAYER_DIFFERENCE: f64 = 8.0;
 
 /// A rock as the checks need it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,17 +49,19 @@ pub enum Finding {
     },
     /// A colour too near black or white.
     Lightness { what: String, lightness: f64 },
-    /// Two player colours that `vision` can hardly tell apart.
+    /// Two player colours too alike.
     Players {
         a: String,
         b: String,
-        vision: Vision,
         difference: f64,
     },
     /// A ground the checks need is neither a rock nor a token.
     MissingGround(String),
-    /// A token carried on a ground that is not one of [`GROUNDS`].
-    UnknownGround { token: String, ground: String },
+    /// An exception for something that is neither a token nor a rock, or for a ground that is
+    /// not one of [`GROUNDS`].
+    UnknownException { subject: String, rule: Rule },
+    /// An exception whose limit is met anyway: it should be removed.
+    NeedlessException { subject: String, rule: Rule },
 }
 
 impl fmt::Display for Finding {
@@ -81,45 +85,35 @@ impl fmt::Display for Finding {
                 "{what}: L* {lightness:.1} (between {} and {})",
                 LIGHTNESS.0, LIGHTNESS.1
             ),
-            Self::Players {
-                a,
-                b,
-                vision,
-                difference,
-            } => write!(
+            Self::Players { a, b, difference } => write!(
                 f,
-                "players {a} and {b} under {vision:?}: ΔE00 {difference:.1} (at least {PLAYER_DIFFERENCE})"
+                "players {a} and {b}: ΔE00 {difference:.1} (at least {PLAYER_DIFFERENCE})"
             ),
             Self::MissingGround(g) => write!(f, "ground {g} is neither a rock nor a token"),
-            Self::UnknownGround { token, ground } => {
-                write!(f, "{token} is carried on {ground}, which is no ground")
+            Self::UnknownException { subject, rule } => {
+                write!(f, "exception {rule:?} for {subject}, which is not there")
+            }
+            Self::NeedlessException { subject, rule } => {
+                write!(f, "exception {rule:?} for {subject} is no longer needed")
             }
         }
     }
 }
 
-/// Every check over `palette` and the terrain's `rocks`.
-pub fn check(palette: &Palette, rocks: &[Rock]) -> Vec<Finding> {
+/// Every check over `palette` and the terrain's `rocks`, less what `exceptions` excuse.
+pub fn check(palette: &Palette, rocks: &[Rock], exceptions: &[Exception]) -> Vec<Finding> {
     let mut found = Vec::new();
     let grounds = grounds(palette, rocks, &mut found);
     for token in &palette.tokens {
         let Some(colour) = token.shade.fixed() else {
             continue;
         };
-        for ground in &token.carried_on {
-            if !GROUNDS.contains(&ground.as_str()) {
-                found.push(Finding::UnknownGround {
-                    token: token.name.clone(),
-                    ground: ground.clone(),
-                });
-            }
-        }
         // Objects stand out from the ground; vegetation is told apart by its shape first
         // (§8), wear lies on its material, accents come in pairs, the interface is not lit.
         if matches!(token.group, Group::Material | Group::Character) {
             for (name, ground) in &grounds {
                 let d = difference(colour, *ground);
-                if d < GROUND_CONTRAST && !token.carried_on.iter().any(|g| g == name) {
+                if d < GROUND_CONTRAST {
                     found.push(Finding::Contrast {
                         token: token.name.clone(),
                         ground: (*name).to_owned(),
@@ -148,15 +142,58 @@ pub fn check(palette: &Palette, rocks: &[Rock]) -> Vec<Finding> {
         lightness(&format!("player {name}"), *colour, &mut found);
     }
     players(&palette.players, &mut found);
-    found
+    excuse(found, palette, rocks, exceptions)
+}
+
+/// `found` less what an exception covers, plus each exception that is unknown or covers
+/// nothing.
+fn excuse(
+    found: Vec<Finding>,
+    palette: &Palette,
+    rocks: &[Rock],
+    exceptions: &[Exception],
+) -> Vec<Finding> {
+    let covers = |e: &Exception, rule: &Rule, f: &Finding| match (rule, f) {
+        (Rule::Contrast(g), Finding::Contrast { token, ground, .. }) => {
+            token == &e.subject && ground == g
+        }
+        (Rule::Chroma, Finding::Chroma { what, .. }) => what == &e.subject,
+        _ => false,
+    };
+    let mut out: Vec<Finding> = found
+        .iter()
+        .filter(|f| {
+            !exceptions
+                .iter()
+                .any(|e| e.rules.iter().any(|r| covers(e, r, f)))
+        })
+        .cloned()
+        .collect();
+    for e in exceptions {
+        let known =
+            palette.token(&e.subject).is_some() || rocks.iter().any(|r| r.name == e.subject);
+        for rule in &e.rules {
+            let ground_known = match rule {
+                Rule::Contrast(g) => GROUNDS.contains(&g.as_str()),
+                Rule::Chroma => true,
+            };
+            let (subject, rule) = (e.subject.clone(), rule.clone());
+            if !known || !ground_known {
+                out.push(Finding::UnknownException { subject, rule });
+            } else if !found.iter().any(|f| covers(e, &rule, f)) {
+                out.push(Finding::NeedlessException { subject, rule });
+            }
+        }
+    }
+    out
 }
 
 /// The grounds' colours: rocks first, then tokens (grass).
-fn grounds<'a>(
+fn grounds(
     palette: &Palette,
     rocks: &[Rock],
     found: &mut Vec<Finding>,
-) -> Vec<(&'a str, Srgb)> {
+) -> Vec<(&'static str, Srgb)> {
     let mut out = Vec::new();
     for name in GROUNDS {
         let rock = rocks.iter().find(|r| r.name == name).map(|r| r.colour);
@@ -190,33 +227,28 @@ fn lightness(what: &str, colour: Srgb, found: &mut Vec<Finding>) {
     }
 }
 
-/// Every pair of player colours, as each vision sees them.
+/// Every pair of player colours.
 fn players(players: &[(String, Srgb)], found: &mut Vec<Finding>) {
-    for vision in Vision::ALL {
-        let seen: Vec<_> = players.iter().map(|(_, c)| vision.sees(*c).lab()).collect();
-        for i in 0..players.len() {
-            for j in i + 1..players.len() {
-                let d = ciede2000(seen[i], seen[j]);
-                if d < PLAYER_DIFFERENCE {
-                    found.push(Finding::Players {
-                        a: players[i].0.clone(),
-                        b: players[j].0.clone(),
-                        vision,
-                        difference: d,
-                    });
-                }
+    for (i, (a, x)) in players.iter().enumerate() {
+        for (b, y) in &players[i + 1..] {
+            let d = difference(*x, *y);
+            if d < PLAYER_DIFFERENCE {
+                found.push(Finding::Players {
+                    a: a.clone(),
+                    b: b.clone(),
+                    difference: d,
+                });
             }
         }
     }
 }
 
-/// The least ΔE₀₀ between any two of `players` under `vision`, with the pair.
-pub fn closest_players(players: &[(String, Srgb)], vision: Vision) -> Option<(f64, usize, usize)> {
-    let seen: Vec<_> = players.iter().map(|(_, c)| vision.sees(*c).lab()).collect();
+/// The least ΔE₀₀ between any two of `players`, with the pair's indices.
+pub fn closest_players(players: &[(String, Srgb)]) -> Option<(f64, usize, usize)> {
     let mut best: Option<(f64, usize, usize)> = None;
     for i in 0..players.len() {
         for j in i + 1..players.len() {
-            let d = ciede2000(seen[i], seen[j]);
+            let d = difference(players[i].1, players[j].1);
             if best.is_none_or(|(b, _, _)| d < b) {
                 best = Some((d, i, j));
             }

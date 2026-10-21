@@ -8,9 +8,12 @@
 //! - the data integrity checks of plan.md §6 over the merged data: species' heat capacities
 //!   positive over their ranges and their enthalpies continuous where ranges meet, and the
 //!   signs of ΔG of reactions whose direction is known (so a mod's species cannot make water
-//!   fall apart by itself at room temperature).
+//!   fall apart by itself at room temperature);
+//! - the palette and its approved exceptions (G1.3a, `docs/art-style.md`): they must load,
+//!   and what breaks the style is a warning.
 
 use crate::surroundings::Surroundings;
+use creeer_art::{Exception, Palette, Srgb, checks};
 use creeer_data::Data;
 use creeer_materials::MaterialTable;
 use creeer_materials::species::{Species, SpeciesTable};
@@ -84,6 +87,7 @@ pub fn validate(data: &Data) -> Report {
         Ok(t) => {
             report.counts.push(("minerals", t.minerals.len()));
             report.counts.push(("rocks", t.rocks.len()));
+            art(data, &t, &mut report);
         }
         Err(e) => {
             // Every planet would fail the same way: say it once.
@@ -94,6 +98,32 @@ pub fn validate(data: &Data) -> Report {
     planets(data, species.as_ref(), &mut report);
     systems(data, &mut report);
     report
+}
+
+/// The palette and its exceptions (G1.3a): they must load. The style's checks are warnings,
+/// since a mod may choose its own look; the base pack is held to them by `creeer_art`'s tests.
+fn art(data: &Data, rocks: &RockTable, report: &mut Report) {
+    let palette = Palette::from_data(data);
+    let exceptions = Exception::from_data(data);
+    let (palette, exceptions) = match (palette, exceptions) {
+        (Ok(p), Ok(e)) => (p, e),
+        (p, e) => {
+            report.errors.extend(p.err());
+            report.errors.extend(e.err());
+            return;
+        }
+    };
+    report.counts.push(("palette tokens", palette.tokens.len()));
+    let rocks: Vec<checks::Rock> = (rocks.rocks.iter())
+        .map(|r| checks::Rock {
+            name: &r.name,
+            colour: Srgb(r.color),
+            ore: r.ore,
+        })
+        .collect();
+    for finding in checks::check(&palette, &rocks, &exceptions) {
+        report.warnings.push(format!("art style: {finding}"));
+    }
 }
 
 /// Whether a file's first item (past comments) is `Planet(`.

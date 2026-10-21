@@ -3,6 +3,7 @@
 //! terrain colour in §3.1 are in the data, and the data has nothing the file does not.
 
 use crate::colour::Srgb;
+use crate::exception::{Exception, Rule};
 use crate::palette::{Group, Palette, Shade};
 use creeer_data::Data;
 use creeer_data::merge::ron_list;
@@ -166,6 +167,46 @@ fn player_colours_are_the_styles() {
         }
     }
     assert_eq!(listed, palette.players);
+}
+
+#[test]
+fn the_approved_exceptions_are_the_styles() {
+    let data = Data::base();
+    let mut in_data: Vec<(String, Rule, String)> = Exception::from_data(&data)
+        .expect("the exceptions load")
+        .into_iter()
+        .flat_map(|e| {
+            let (subject, approved) = (e.subject, e.approved);
+            e.rules
+                .into_iter()
+                .map(move |r| (subject.clone(), r, approved.clone()))
+        })
+        .collect();
+    // The rows of §4's table: Subject | Limit lifted | Why | Approved.
+    let mut in_doc = Vec::new();
+    for line in section("## 4. Value, saturation and contrast").lines() {
+        let cells: Vec<&str> = line
+            .trim()
+            .trim_matches('|')
+            .split('|')
+            .map(str::trim)
+            .collect();
+        if cells.len() != 4 || cells[0] == "Subject" || cells[0].starts_with("---") {
+            continue;
+        }
+        let subject = cells[0].trim_matches('`').to_owned();
+        let rule = match cells[1].strip_prefix("contrast against ") {
+            Some(ground) => Rule::Contrast(ground.to_owned()),
+            None if cells[1] == "chroma" => Rule::Chroma,
+            None => panic!("unknown limit {:?}", cells[1]),
+        };
+        in_doc.push((subject, rule, cells[3].to_owned()));
+    }
+    let key = |e: &(String, Rule, String)| format!("{e:?}");
+    in_data.sort_by_key(key);
+    in_doc.sort_by_key(key);
+    assert!(!in_doc.is_empty(), "§4's table was not found");
+    assert_eq!(in_doc, in_data);
 }
 
 /// Every `.rs` and `.wgsl` file under `dir`, with its text.

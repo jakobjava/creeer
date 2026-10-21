@@ -108,7 +108,7 @@ Saturated colour is reserved for what matters. Nothing else may be as saturated 
 
 ### 3.6 Player colours
 
-Sixteen accents, told apart by people with the common colour-vision deficiencies (checked against simulated deuteranopia and protanopia in the test): `#e07b39` orange, `#3d7fd9` blue, `#d9c23d` yellow, `#8e5bd6` violet, `#3dbfae` teal, `#d64f6e` rose, `#7fbf3f` lime, `#e0e0e0` white, `#a0522d` sienna, `#5a6fd6` indigo, `#c9a0dc` lilac, `#2f8f4f` green, `#e8a0a0` pink, `#8a8f99` slate, `#c08a2a` ochre, `#3a3a3a` charcoal.
+Sixteen accents, told apart at a glance: in normal colour vision, any two are at least ΔE₀₀ 8 apart (the closest, blue and indigo, are 8.5 apart). A colour-blind mode waits until the game is published (`docs/future-improvements.md`). The colours: `#e07b39` orange, `#3d7fd9` blue, `#d9c23d` yellow, `#8e5bd6` violet, `#3dbfae` teal, `#d64f6e` rose, `#7fbf3f` lime, `#e0e0e0` white, `#a0522d` sienna, `#5a6fd6` indigo, `#c9a0dc` lilac, `#2f8f4f` green, `#e8a0a0` pink, `#8a8f99` slate, `#c08a2a` ochre, `#3a3a3a` charcoal.
 
 ### 3.7 Data overlays
 
@@ -124,6 +124,16 @@ Measured in CIELAB, automated in tests over the palette.
   - materials, character and vegetation ≤ 45;
   - only accents (§3.5) and player colours may exceed 45.
 - **No pure black or white** in the scene: L\* between 8 and 92 for every base colour. Darkness comes from lighting, not from the palette.
+- **Approved exceptions.** A colour that misses a limit stays only with the user's approval, listed here and in `data/art/exceptions.ron` (a test checks that the two agree). The checks report an exception once it is no longer needed. For contrast, the token's edge wear and occlusion must carry it, and the style board shows that they do.
+
+| Subject | Limit lifted | Why | Approved |
+|---|---|---|---|
+| `steel` | contrast against gravel | Original colour kept; edge wear and reflections carry it (ΔE₀₀ 10.3) | 2026-10-21 |
+| `titanium` | contrast against gravel | Original colour kept; edge wear and reflections carry it (ΔE₀₀ 7.5) | 2026-10-21 |
+| `concrete` | contrast against gravel | Original colour kept; edge wear and occlusion carry it (ΔE₀₀ 11.5) | 2026-10-21 |
+| `rubber` | contrast against basalt | No colour above pure black reaches 12 on basalt (ΔE₀₀ 7.8) | 2026-10-21 |
+| `copper` | chroma | Original colour kept (chroma 50.7) | 2026-10-21 |
+| laterite bauxite | chroma | Original colour kept (chroma 55.8, against an ore's 55) | 2026-10-21 |
 
 ## 5. Light and the frame
 
@@ -216,7 +226,8 @@ In Factorio's spirit, not a copy of it.
    - the ΔE contrast against the grounds (§4);
    - the chroma and L\* limits (§4);
    - icon silhouettes distinct (§7);
-   - player colours distinguishable under simulated colour-vision deficiencies (§3.6);
+   - player colours told apart (§3.6);
+   - the approved exceptions still needed (§4);
    - the forbidden effects absent from the renderer's settings (§5).
 5. **The style board.** A headless scene (`--style-board`) renders every asset on the five grounds, at noon and in the evening, plus the HUD and an inventory window. Its golden images are checked on every change to an asset, a shader or the palette. A difference is either a fix or an intended change, approved with the image.
 6. **Review at every milestone's end.** The user looks at the style board as part of the demo. New subjects (machines in G2–G3, vehicles in G6) get a §8 entry here before their first model.
@@ -232,3 +243,7 @@ In Factorio's spirit, not a copy of it.
   - **The engineer** (§3.3, §8): workwear after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)". The off-white suit, bellows joints, helmet and visor were replaced by `coverall`, `leather`, `lens` and the jacket in `player_accent` (roughness 0.75, a fabric). The body is skinned on the ragdoll's segments instead of drawn as rigid segments, for smooth surfaces (ADR-0026).
   - **§1b** gained what the survey took from Factorio; **§11.3**: models come from scripts in Blender (`docs/blender-mcp.md`).
   - **The user's choices on the engineer** (2026-10-21): the jetpack as bottles on a harness frame; the body skinned and smooth; a hood and goggles with the face open (so no respirator in the starting outfit). Then: "in future I want to have many wearables, so there should [be] a 'naked' version that can wear more and more cool stuff as you progress". §8 now has a base body (base layer, open face, skin tone and hair chosen by the player) and wearables on the same bones; §3.3 gained `skin`, `hair` and `base_layer`.
+- 2026-10-21, G1.3a: the checks' first run over the palette.
+  - **The user kept the original colours** of players and materials ("keep the original colours for maximum realism"). The misses are listed as approved exceptions (§4's table).
+  - **Colour blindness is not considered for now** (the user: "right now lets not consider colour blind people, we could do that later if i ever want to publish it"). §3.6 no longer promises that the player colours are told apart under colour-vision deficiencies. A colour-blind mode is in `docs/future-improvements.md`, with what was measured.
+  - **Tokens made explicit.** The patina and the birch marks became tokens (`copper_patina`, `bark_birch_marks`), and the accents got a roughness, so the data and these tables match one to one.

@@ -1,0 +1,14 @@
+// Exceptions to docs/art-style.md §4's limits, each approved by the user (G1.3a, ADR-0026).
+// art-style.md §4 lists the same; a test fails if the two differ, and the checks report an
+// exception that is no longer needed.
+//
+// rules: Contrast("<ground>") lets edge wear and occlusion carry the contrast against that
+// ground; Chroma lets the subject be more saturated than its group's limit.
+[
+    (subject: "steel", rules: [Contrast("gravel")], why: "the original colour kept; bare steel's edge wear and reflections carry it (ΔE00 10.3)", approved: "2026-10-21"),
+    (subject: "titanium", rules: [Contrast("gravel")], why: "the original colour kept; edge wear and reflections carry it (ΔE00 7.5)", approved: "2026-10-21"),
+    (subject: "concrete", rules: [Contrast("gravel")], why: "the original colour kept; edge wear and occlusion carry it (ΔE00 11.5)", approved: "2026-10-21"),
+    (subject: "rubber", rules: [Contrast("basalt")], why: "no colour above pure black reaches 12 on basalt; edge wear and occlusion carry it (ΔE00 7.8)", approved: "2026-10-21"),
+    (subject: "copper", rules: [Chroma], why: "the original colour kept (chroma 50.7)", approved: "2026-10-21"),
+    (subject: "laterite bauxite", rules: [Chroma], why: "the original colour kept (chroma 55.8 for an ore's 55)", approved: "2026-10-21"),
+]

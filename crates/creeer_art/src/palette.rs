@@ -60,9 +60,6 @@ pub struct Token {
     pub metalness: f64,
     /// The token that wear on convex edges reveals (painted steel wears to bare steel).
     pub wears_to: Option<usize>,
-    /// The grounds against which its edge wear and occlusion carry the contrast its colour
-    /// lacks (`art-style.md` §4), each approved by the user.
-    pub carried_on: Vec<String>,
 }
 
 /// The palette: the tokens, in data order, and the player colours.
@@ -93,8 +90,6 @@ struct TokenDef {
     metalness: f64,
     #[serde(default)]
     wears_to: Option<String>,
-    #[serde(default)]
-    carried_on: Vec<String>,
 }
 
 fn matte() -> f64 {
@@ -163,7 +158,6 @@ impl Palette {
                 roughness: def.roughness,
                 metalness: def.metalness,
                 wears_to,
-                carried_on: def.carried_on.clone(),
             });
         }
         let pairs: Vec<(String, String)> =
