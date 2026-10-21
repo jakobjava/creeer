@@ -15,7 +15,7 @@ use creeer_net::channel::{Pacer, RELIABLE, UNRELIABLE};
 use creeer_net::entity::EntityId;
 use creeer_net::interest::{Grid, importance};
 use creeer_net::message::{Plastic, ServerMessage, to_bytes};
-use creeer_net::predict::InputQueue;
+use creeer_net::predict::{InputQueue, NEARBY};
 use creeer_net::renet::{ClientId, RenetServer};
 use creeer_net::snapshot::Sender;
 use creeer_terrain::edits::Edits;
@@ -241,7 +241,17 @@ impl Session {
         view.sort_by_key(|v| v.0);
         // Less the message's tag.
         let budget = self.pacer.snapshot_budget() - 1;
-        let snapshot = self.sender.write(tick, self.inputs.last(), &view, budget);
+        // The bodies the client may predict, near its avatar (`predict::NEARBY`).
+        let near: Vec<_> = (view.iter())
+            .filter(|(id, ..)| {
+                let at = world
+                    .index(*id)
+                    .map(|i| world.world.bodies[i].structure.position[0]);
+                at.is_some_and(|p| (p - centre).length() < NEARBY)
+            })
+            .map(|v| v.0)
+            .collect();
+        let snapshot = (self.sender).write(tick, self.inputs.last(), &view, (budget, &near));
         let message = to_bytes(&ServerMessage::Snapshot(snapshot));
         self.pacer.snapshot(message.len());
         self.pacer.flush();

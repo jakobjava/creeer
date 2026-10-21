@@ -29,6 +29,11 @@ pub const BUFFER: usize = 2;
 pub const MOST_BUFFER: usize = 6;
 /// Ticks of a buffer never running low before it shrinks (ten seconds).
 pub const SETTLE: u32 = 600;
+/// The bodies a client predicts with its avatar lie within this of it (m; ADR-0025): what it
+/// can walk into within a round trip, and a reach.
+pub const NEARBY: f64 = 6.0;
+/// And at most this many of them, the nearest (each costs the client its re-simulation).
+pub const MOST_NEARBY: usize = 12;
 /// Inputs the server holds for a client at most: a client running ahead of the server's
 /// clock has the excess dropped (and its prediction corrected), so its inputs never wait
 /// longer than this many ticks.

@@ -19,7 +19,7 @@ fn received(ticks: impl Iterator<Item = u32>) -> Receiver {
     let (mut sender, mut receiver) = (Sender::default(), Receiver::default());
     for tick in ticks {
         let state = thrown(f64::from(tick) * DT);
-        let bytes = sender.write(tick, 0, &[(EntityId(1), state, 1.0)], usize::MAX);
+        let bytes = sender.write(tick, 0, &[(EntityId(1), state, 1.0)], (usize::MAX, &[]));
         receiver.read(&bytes).expect("a snapshot");
         sender.ack(tick);
     }
