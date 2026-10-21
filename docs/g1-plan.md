@@ -149,13 +149,27 @@ Where it starts: meshes are a position and a normal per vertex with one material
 - **Validation:** a set of broken models in `tests/models/`, each refused for its own reason (an unknown token, an image, over budget, wrong scale, a coarse facet, a misplaced bone); the crate drawn in the sandbox; the crate's script rebuilt to the identical file.
 - **Budget:** a model's load ≤ 5 ms.
 
-#### G1.3c Surfaces and smooth geometry
+#### G1.3c Surfaces, ageing and smooth geometry
 
-- **Surface detail on meshes** (`art-style.md` §6):
-  - triplanar value noise of ±12 % on the base colour, fixed in world metres (about 5 cm);
-  - edge wear on convex edges, revealing the token beneath, by the baked convexity broken up by noise, scaled by the instance's wear;
-  - grime in creases from the baked occlusion, up to 30 %;
-  - machined faces a little shinier.
+Revised 2026-10-21, after the user saw the first crate in Blender. The user found it "a very boring and blandy monochrome wood texture", and said everything should look like Factorio, "grainy, weathered, used", then "darker and grimier". The user also asked for ageing: "things look older and older". The look was worked out live in Blender (`art/preview.py`) on three crates of different ages (ADR-0026, decisions 3 and 4).
+
+- **Surfaces in the mesh shader** (`art-style.md` §6), the preview's layers in WGSL:
+  - tone, pattern, mottling and fine grain;
+  - age, grime and rain streaks;
+  - edge chips and occlusion.
+
+  The noise is filtered by its screen footprint, so detail finer than a pixel fades instead of shimmering. Vertices gain the part's tone, the height above the base and the grain coordinates; each instance its age and wear; the palette on the GPU its patterns, what tokens wear and age to, and their years.
+- **Ageing** (`art-style.md` §6b):
+  - the server keeps each object's age: its exposure, its rate and the tick it changed, plus its wear;
+  - the rate comes from its surroundings: air with oxygen and water 1, the sea 3, vacuum 0 for rust and patina;
+  - a world pace (one year of weathering per game day by default) scales it;
+  - impact energy beyond about 10 J adds wear;
+  - it is saved, and replicated in the spawn and on change, so nothing runs per tick;
+  - clients draw it.
+- **Validation:**
+  - the shader's layers against the Blender preview: the crate at ages 0.1, 0.5 and 1.0, side by side in both;
+  - no shimmer: frame-to-frame difference under a slow camera move;
+  - ageing: exposure exact across save and load; rates by surroundings; a crate in the sea ageing three times as fast; a dropped crate's wear against the impact's energy; determinism.
 - **Smooth geometry everywhere** (`art-style.md` pillar 9, §7):
   - the sandbox's flat-shaded primitives become smooth ones: bevelled boxes with face-weighted normals, and cylinders and spheres with at least 24 segments;
   - members (cylinders) and spheres get levels of detail chosen by screen-space error (half a pixel), not by distance;
@@ -180,7 +194,7 @@ Where it starts: meshes are a position and a normal per vertex with one material
 
 - **Decided** (the user, 2026-10-21; it was the first of the "Decisions to confirm" below): the engineer is skinned on fifteen bones that are the ragdoll's segments, so the drawn body is the simulated one bone for bone, and smooth across its joints.
 - **Dual quaternion skinning** (Kavan et al. 2007), in one compute pass a frame. The shadow, prepass and colour passes draw the skinned result as a plain mesh.
-- **Wearables** (ADR-0026, decision 6):
+- **Wearables** (ADR-0026, decision 7):
   - the base body and every wearable are skinned meshes on the same bones, animated once;
   - each mesh is divided into regions (head, face, hair, neck, torso, upper arms, forearms, hands, pelvis, thighs, shanks, feet);
   - a wearable fills slots (head, eyes, face, torso inner and outer, hands, legs, feet, back) and lists the regions it hides, of the body and of the layers beneath;

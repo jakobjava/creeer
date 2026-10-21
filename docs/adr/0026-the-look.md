@@ -1,6 +1,6 @@
 # ADR-0026: The look: models, materials, ambient occlusion and the engineer (G1.3)
 
-**Status:** in progress (2026-10-21). The user approved the plan (`docs/g1-plan.md`, G1.3) and chose the jetpack on a harness, the skinned body, and a hood and goggles with the face open. The user then added the base body and wearables (decision 6).
+**Status:** in progress (2026-10-21). The user approved the plan (`docs/g1-plan.md`, G1.3) and chose the jetpack on a harness, the skinned body, and a hood and goggles with the face open. The user then added the base body and wearables (decision 7), a Factorio-like weathered look (decision 3) and ageing (decision 4).
 **Context:** G1.3 makes `docs/art-style.md` real, so that everything after it (tools, items, trees, the pod) is made in the style from its first version. The user, at its start: the engineer after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)"; "i do not want a futuristic art style but something similar to the vibe of factorio"; "i do not want a blocky or voxy like game (no minecraft geometry, i want smooth surfaces ==> realism)".
 **Builds on:** ADR-0003 (the renderer: forward, 4× MSAA, HDR, cascaded shadows, PBR-lite, Khronos PBR Neutral), ADR-0018 (data packs and the validator), ADR-0022 and ADR-0023 (joints, the character and its ragdoll).
 **Evidence:** to come with each sub-milestone (G1.3a–i).
@@ -32,7 +32,14 @@
 | Unreal's GPU skin cache | Skins each mesh once a frame in a compute pass; every later pass (shadows, depth, colour) draws the result | Taken: one compute pass skins the characters, and every pass draws them as plain meshes |
 | Rosen, "An Indie Approach to Procedural Animation" (GDC 2014, *Overgrowth*) | Interactive animation from very few key poses, blended procedurally with springs and physics | Taken: a handful of poses authored in Blender, blended by gait phase and speed |
 | Johansen, *Automated Semi-Procedural Animation for Character Locomotion* ([Aarhus, 2009](https://runevision.com/thesis/)) | Cycles analysed at design time; at run time the legs are fitted by inverse kinematics so the feet land on uneven ground (the "footbase", ground height) | Taken: the feet placed on the ground the legs' rays find, by two-bone inverse kinematics |
-| Curvature-based wear: Blender's Pointiness and Dirty Vertex Colors; Substance's curvature masks; Unigine's screen-space curvature | Convex edges chip to the bare material and concave areas gather grime; the masks broken up by noise. Screen-space curvature aliases at distance (reported) | Taken: convexity and occlusion baked per vertex at export, broken up by triplanar noise. Screen-space curvature not taken |
+| Curvature-based wear: Blender's Pointiness and Dirty Vertex Colors; Substance's curvature masks; Unigine's screen-space curvature | Convex edges chip to the bare material and concave areas gather grime; the masks broken up by noise. Screen-space curvature aliases at distance (reported) | Taken: wear on the bevel faces and occlusion baked at export, broken up by noise. Screen-space curvature not taken |
+| Factorio's look, as players describe it ([forum](https://forums.factorio.com/viewtopic.php?p=511707)) | Renders "distressed" after rendering; a hand-painted layer of grime over parametric textures; weathered where mods look "shiny and new" | Taken as the goal: grime, wear and age as layers over every material |
+| Procedural wood: Modo's Wood procedural ([Foundry](https://learn.foundry.com/modo/content/help/pages/shading_lighting/shader_items/wood.html)); plank shaders (Mankala's write-up) | Rings distorted by waves, plus grain noise; for planks, noise stretched along the board and ring bands from it | Taken: thin wandering grain lines (crests of a sine displaced by slow noise) over streaks stretched about 1:20 along each part |
+| Procedural dirt (Blender geometry-nodes AO, Octane's Dirt, practitioners' guides) | Dirt from baked occlusion and position, edge wear from convexity, each a layer broken by noise; rust where water collects | Taken: the ground's splash by height and facing, dirt in creases from the occlusion, rust and patina first where dirt holds water |
+| Atmospheric corrosion: ISO 9223 (corrosivity categories) and ISO 12944 (paint durability) | First-year loss of carbon steel: C2 1.3–25 µm, C3 25–50, C4 50–80, C5 80–200, CX up to 700. Paint systems last 7–15 years at medium durability | Taken: bare steel weathers in about half a year at C3, paint in 15; the sea three times faster |
+| Wood weathering (lignin photodegradation studies; natural weathering of 16 species) | Yellowing or browning within days to weeks of sun, then a grey cellulose layer 2–5 mm thick over months; denser woods change more slowly | Taken: timber greys in about a year outdoors |
+| Copper patina (Copper Development Association) | Russet to chocolate brown within months; green in 5–7 years on coasts and in industrial air, 10–14 rural, over 30 in dry air; moisture's dwell time decides | Taken: copper greens in about 10 years |
+| ISO 6272 falling-weight test | Coatings judged by the drop energy they take without cracking, typically of the order of 10 J | Taken: impacts beyond about 10 J chip edges |
 | Blender MCP practice (agent-skills notes on `blender-mcp`) | Exports through the MCP time out; run them in headless Blender | Taken: the MCP for live work, exports by `blender --background` from committed scripts (`docs/blender-mcp.md`) |
 | glTF 2.0 (Khronos); the `gltf` crate 1.4.1 | The standard format, with skins, animations and vertex colours; custom attributes need the crate's `extras` feature | Taken; the baked masks go in `COLOR_0`, so no custom attributes are needed |
 | World of Warcraft's geosets ([warcraft.wiki.gg](https://warcraft.wiki.gg/wiki/Character_model)) | The player model is divided into pieces of geometry that equipment toggles or swaps | Taken: the base body in regions that worn things hide |
@@ -48,26 +55,48 @@
    - Each instance carries the player's accent, how worn it is, and the overlay value.
    - A token can name the material that wear reveals (painted steel wears to `steel`).
    - Procedural meshes (members, the sandbox's bodies) keep a per-instance material, as now.
-3. **Surface detail on meshes**: triplanar noise (±12 %, 5 cm), edge wear from the baked convexity, grime from the baked occlusion, as `art-style.md` §6 says.
-4. **Ambient occlusion: GTAO** after XeGTAO, applied to ambient light only (the sun has its shadows), with the multi-bounce fit.
+3. **Surfaces: grainy, weathered, used** (`art-style.md` §6; revised 2026-10-21 after the user saw the first crate: "a very boring and blandy monochrome wood texture", "it should look like factorio … grainy, weathered, used", then "darker and grimier").
+   - **What a model carries,** baked by its script: occlusion, edge wear on its bevels, each part's tone, each corner's height above its base, and grain coordinates in metres along each part's grain. A per-face value on large faces, since per-corner values drew diagonals.
+   - **Per token,** in the palette: a pattern (wood, paint, metal, stone, fabric, leather, glass, plain), what wear reveals, what age turns it into, and the years that takes.
+   - **The shader's layers:** tone, pattern, mottling and fine grain (filtered so nothing shimmers), age, grime, rain streaks, edge chips, occlusion on ambient light. They are worked out live in Blender (`art/preview.py`, the same layers as nodes), on three crates of ages 0.1, 0.5 and 1.0 side by side.
+4. **Ageing** (the user: "the game should have an aging mechanic, things look older and older"; `art-style.md` §6b).
+   - **Each token weathers at its material's real rate** outdoors in temperate air (ISO 9223 C3): timber in about a year, bare steel in half a year, paint in 15, copper in 10.
+   - **Surroundings set the rate:** air with oxygen and water 1, the sea 3, vacuum 0 for rust and patina.
+   - **A world pace** makes it visible: one year of weathering per game day by default.
+   - **Impacts beyond about 10 J chip edges** (ISO 6272).
+   - **The server keeps each object's age** as its exposure, its current rate and its wear, changed only on events. It is saved and replicated, so it costs nothing per tick, and clients draw it.
+5. **Ambient occlusion: GTAO** after XeGTAO, applied to ambient light only (the sun has its shadows), with the multi-bounce fit.
    - How it fits the MSAA forward pass is decided by measuring both options: (a) a depth and normal prepass, as Bevy does, or (b) ambient light written to its own target in the main pass and occluded when composited.
    - Quality presets, with half resolution on low.
-5. **The engineer is skinned on the ragdoll's bones.** Fifteen bones, one per segment, so the drawn body is the simulated one bone for bone, smooth across its joints.
+6. **The engineer is skinned on the ragdoll's bones.** Fifteen bones, one per segment, so the drawn body is the simulated one bone for bone, smooth across its joints.
    - Dual quaternion skinning, in one compute pass per frame.
    - A ragdoll's segments say whose they are and which segment they are (protocol 7), so the client can draw the person.
    - This replaces `docs/g1-plan.md`'s first decision to confirm (a segmented suit). Smooth surfaces are now a rule (`art-style.md` pillar 9), and rigid segments would show seams and gaps at every bent joint.
-6. **A base body and wearables** (the user, 2026-10-21: "in future I want to have many wearables, so there should [be] a 'naked' version that can wear more and more cool stuff as you progress").
+7. **A base body and wearables** (the user, 2026-10-21: "in future I want to have many wearables, so there should [be] a 'naked' version that can wear more and more cool stuff as you progress").
    - **One skeleton, animated once.** The base body and every wearable are skinned meshes on the same fifteen bones.
    - **Regions.** The base body and every wearable are divided into regions (head, face, hair, neck, torso, upper arms, forearms, hands, pelvis, thighs, shanks, feet). A wearable fills slots (head, eyes, face, torso inner and outer, hands, legs, feet, back) and lists the regions it hides, of the body and of the layers beneath (geosets, biped slots, inZOI's covering regions).
    - **Drawn as one.** When an outfit changes, the visible regions of everything worn are merged into one index list, skinned and drawn as one mesh.
    - **The starting outfit is made of wearables** (`art-style.md` §8), so the same system carries every later piece.
    - **Gameplay comes later.** Wearables become items in G1.6 (each worn piece's mass on its segments), and their insulation and protection count from G9.
-7. **The engineer's look**, as `art-style.md` §8 says: the base body with an open face and the player's skin tone, in the starting outfit. A blockout from the ragdoll's proportions comes first, judged by its silhouette and approved by the user before the detailed models.
-8. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
-9. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
-10. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
+8. **The engineer's look**, as `art-style.md` §8 says: the base body with an open face and the player's skin tone, in the starting outfit. A blockout from the ragdoll's proportions comes first, judged by its silhouette and approved by the user before the detailed models.
+9. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
+10. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
+11. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
 
 ## Measured and rejected
+
+### Baking and building the crate (G1.3b, 2026-10-21)
+
+| Tried | Measured | Why rejected, and what replaced it |
+|---|---|---|
+| Occlusion and convexity baked per vertex | On the crate (788 triangles) the mean occlusion was 0.25 and wear covered 89 % of it: every vertex lies on an edge or under another part, and its value smears across whole faces | Per face corner, each sampled a fifth of the way to its face's centre |
+| Corners sampled where another part covers them | Corner plates 6 mm thick over the battens' ends turned 1 m battens black (occlusion 0 at all four corners); a 3 mm "covered" test missed them | A corner covered within 1 cm is sampled further in (a fifth, then a third, then halfway) |
+| Per-corner values on large faces, triangulated | Dark diagonals across boards: three corners alike and one different, interpolated over two triangles | One value (the corners' mean) on faces over 25 cm², baked before triangulation; height stored instead of a finished grime value, so it interpolates exactly |
+| Curvature wear on smooth edges using vertex normals | Plates' flat faces read fully worn: their vertex normals average in the plates' sides | Wear on bevel faces only; wear on smooth curves waits for the character |
+| Python sets of Blender faces and edges | Builds differed run to run (sets iterate in memory order) | Ordered de-duplication; `PYTHONHASHSEED` fixed by `xtask art` |
+| Triangulation left to the exporter | One build in five differed, in 30 bytes of indices | A Triangulate modifier with fixed rules, after the bake |
+| Byte equality for `art --check` | Still one build in six differed: Blender's normals vary in their last bits between runs, and the exporter shares vertices by them | Geometry compared: every triangle's corners quantised (10 µm, 10⁻⁴, 10⁻³), sorted, equal to one unit. A 2 mm change in the boards' gaps is caught |
+| Blender's Wave texture for wood grain | Its band direction and distortion drew zigzags or ran across the boards | Grain lines written out: the crests of a sine across the grain, displaced by slow noise along it (also what the game shader computes) |
 
 ### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
 
