@@ -77,6 +77,8 @@ pub struct ServerWorld {
     /// became something else since the sessions were last told (`people.rs`).
     people: std::collections::BTreeMap<EntityId, people::Person>,
     changed: Vec<EntityId>,
+    /// Every entity's age (G1.3c, `ageing.rs`).
+    ages: ageing::Ages,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -145,6 +147,7 @@ impl ServerWorld {
             reactions: Vec::new(),
             people: std::collections::BTreeMap::new(),
             changed: Vec::new(),
+            ages: ageing::Ages::default(),
         }
     }
 
@@ -304,9 +307,12 @@ impl ServerWorld {
         let scope = profile::scope("people");
         self.people_after(&pushes);
         drop(scope);
-        let _scope = profile::scope("surroundings");
+        let scope = profile::scope("surroundings");
         self.surroundings.settle(&mut self.world, DT);
+        drop(scope);
         self.tick += 1;
+        let _scope = profile::scope("ageing");
+        self.age_after_step();
     }
 }
 
@@ -328,6 +334,10 @@ pub mod people;
 mod persist;
 mod regions;
 pub use regions::Tag;
+mod ageing;
+#[cfg(test)]
+mod ageing_tests;
+pub use ageing::Ages;
 mod commands;
 #[cfg(test)]
 mod people_tests;

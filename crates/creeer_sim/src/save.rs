@@ -1,6 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 9** (G1.3c): as version 8, with an optional section `AGES`: each entity's age (its
+//! weathering and wear, `crate::ageing`; `save/ages.rs`).
+//!
 //! **Version 8** (G1): as version 7, the physics world keeping its joints (`WRLD`; ADR-0022), and
 //! an optional section `PEOP`: players' characters as people, their health and a fallen one's
 //! ragdoll (G1.2d; ADR-0023).
@@ -47,13 +50,14 @@ use creeer_math::codec::{DecodeError, Reader, Writer};
 use creeer_physics::world::{Body, World};
 use creeer_terrain::edits::Edits;
 
+mod ages;
 mod machines;
 mod people;
 pub use machines::SavedMachine;
 pub use people::SavedPerson;
 
 /// The version this game writes.
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -84,6 +88,8 @@ pub struct Save {
     pub machines: Vec<SavedMachine>,
     /// Players' characters as people (`crate::character`): health, a fallen one's ragdoll.
     pub people: Vec<SavedPerson>,
+    /// Each entity's age (`crate::ageing`), in order of their ids.
+    pub ages: Vec<(u32, crate::ageing::Weathering)>,
 }
 
 /// A body parked far from every player, with what the world keeps of it.
@@ -142,7 +148,8 @@ impl Save {
             + u64::from(!self.water.is_empty())
             + u64::from(!self.parked.is_empty())
             + u64::from(!self.machines.is_empty())
-            + u64::from(!self.people.is_empty());
+            + u64::from(!self.people.is_empty())
+            + u64::from(!self.ages.is_empty());
         w.varint(sections);
         let mut meta = Writer::new();
         meta.put(&self.planet);
@@ -175,6 +182,9 @@ impl Save {
         if !self.people.is_empty() {
             section(&mut w, b"PEOP", &people::people_bytes(&self.people));
         }
+        if !self.ages.is_empty() {
+            section(&mut w, b"AGES", &ages::ages_bytes(&self.ages));
+        }
         w.finish()
     }
 
@@ -204,6 +214,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         parked: Vec::new(),
         machines: Vec::new(),
         people: Vec::new(),
+        ages: Vec::new(),
     })
 }
 
@@ -216,6 +227,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     }
     let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
     let (mut surr, mut park, mut mach, mut peop) = (None, None, None, None);
+    let mut ages = None;
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -228,6 +240,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"PARK" => park = Some(body),
             b"MACH" => mach = Some(body),
             b"PEOP" => peop = Some(body),
+            b"AGES" => ages = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -279,6 +292,10 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         Some(bytes) => people::people_from(bytes)?,
         None => Vec::new(),
     };
+    let ages = match ages {
+        Some(bytes) => ages::ages_from(bytes)?,
+        None => Vec::new(),
+    };
     // A fallen person's segments are bodies of the world (a ragdoll is never parked).
     let live = |id: &u32| entities.iter().any(|e| e.0 == *id);
     if !people.iter().all(|p| p.parts.iter().all(live)) {
@@ -297,6 +314,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         parked,
         machines,
         people,
+        ages,
     })
 }
 
@@ -356,6 +374,8 @@ fn park_from(bytes: &[u8], version: u32) -> Result<Vec<Vec<ParkedBody>>, SaveErr
     Ok(parked)
 }
 
+#[cfg(test)]
+mod ages_tests;
 #[cfg(test)]
 mod joint_tests;
 #[cfg(test)]

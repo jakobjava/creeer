@@ -85,6 +85,7 @@ pub(super) fn scene() -> Save {
         parked: Vec::new(),
         machines: Vec::new(),
         people: Vec::new(),
+        ages: Vec::new(),
     }
 }
 

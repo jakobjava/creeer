@@ -89,3 +89,9 @@
 ## Amended in G1 (2026-10-18): the view found from occupied cells
 
 - **A client's view cost 3 ms a send.** G1.0's play harness, the first to run eight clients through real sessions, found the server's tick at 25.8 ms p50 with eight players: each session's view (`interest::Grid::around`, 600 m in 32 m cells) looked up about 55,000 cells, twice. The grid now visits its occupied cells instead whenever there are fewer of them than the view's box spans, and a session searches once (the wider radius) and takes the nearer set from it. The same entities in the same order: the play scene's state hash is unchanged, and the tick fell to 0.65 ms p50.
+
+## Amended in G1.3c (2026-10-21): ages; protocol 7, save version 9
+
+- **Ages** (`creeer_sim::ageing`, ADR-0026). The server keeps each entity's weathering (its exposure as of a tick, the rate it grows at since) and its wear from impacts, by entity, so parking and reordering bodies leave it alone.
+- **Protocol 7** adds `ServerMessage::Age`: an entity's exposure as of a network tick, its rate and its wear. It is queued right after the entity's spawn (and dropped with the spawn if it leaves view first), and again when the rate or the wear changes. A client works out the exposure at any moment from the rate: nothing is sent per tick.
+- **Save version 9** adds the optional section `AGES`. Earlier saves load with everything new.

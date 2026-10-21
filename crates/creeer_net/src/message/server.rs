@@ -62,6 +62,27 @@ pub enum ServerMessage {
     /// its health (a share of a whole one), whether it is down (its ragdoll: not predicted),
     /// for the HUD and the prediction. Sent with every snapshot round.
     Own { gas: f64, health: f64, fallen: bool },
+    /// An entity's age (G1.3c, `creeer_sim::ageing`): sent after its spawn, and when its
+    /// rate or wear changes.
+    Age(EntityId, Age),
+}
+
+/// An entity's age as a client draws it: its exposure (years of weathering) as of network
+/// tick `at`, the rate it grows at (years per second) and its wear from use (0–1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Age {
+    pub exposure: f64,
+    pub rate: f64,
+    pub at: u32,
+    pub wear: f64,
+}
+
+impl Age {
+    /// Its exposure at network tick `tick` of `rate` ticks a second (years).
+    pub fn exposure_at(&self, tick: f64, rate: u32) -> f64 {
+        let seconds = (tick - f64::from(self.at)) / f64::from(rate);
+        self.exposure + self.rate * seconds.max(0.0)
+    }
 }
 
 /// A machine as a panel shows it.
@@ -167,6 +188,14 @@ impl Encode for ServerMessage {
                 w.u8(6);
                 w.raw(bytes);
             }
+            Self::Age(id, age) => {
+                w.u8(10);
+                w.put(id);
+                w.f64(age.exposure);
+                w.f64(age.rate);
+                w.u32(age.at);
+                w.f64(age.wear);
+            }
         }
     }
 }
@@ -236,6 +265,15 @@ impl Decode for ServerMessage {
                 health: r.finite()?,
                 fallen: r.get()?,
             },
+            10 => Self::Age(
+                r.get()?,
+                Age {
+                    exposure: r.finite()?,
+                    rate: r.finite()?,
+                    at: r.u32()?,
+                    wear: r.finite()?,
+                },
+            ),
             _ => return Err(r.error("unknown server message")),
         })
     }

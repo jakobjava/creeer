@@ -14,7 +14,7 @@ use creeer_math::glam::DVec3;
 use creeer_net::channel::{Pacer, RELIABLE, UNRELIABLE};
 use creeer_net::entity::EntityId;
 use creeer_net::interest::{Grid, importance};
-use creeer_net::message::{Plastic, ServerMessage, to_bytes};
+use creeer_net::message::{Age, Plastic, ServerMessage, to_bytes};
 use creeer_net::predict::{InputQueue, NEARBY};
 use creeer_net::renet::{ClientId, RenetServer};
 use creeer_net::snapshot::Sender;
@@ -140,7 +140,13 @@ impl Session {
     }
 
     /// Queues what came into and left the client's view, and the edits it has not had.
-    pub fn update_view(&mut self, world: &ServerWorld, grid: &Grid, shapes: &mut Shapes) {
+    pub fn update_view(
+        &mut self,
+        world: &ServerWorld,
+        grid: &Grid,
+        shapes: &mut Shapes,
+        tick: u32,
+    ) {
         let centre = self.centre(world);
         // One search for both: what may stay, and of that what is near enough to come.
         let around = grid.around(centre, VIEW * LEAVE);
@@ -179,6 +185,13 @@ impl Session {
                 bytes: to_bytes(&ServerMessage::Spawn(id, kind)),
                 spawns: Some(id),
             });
+            // Its age right after it (G1.3c); unsent with it if it leaves first.
+            if let Some(age) = world.age_told(id, tick) {
+                self.outbox.push_back(Queued {
+                    bytes: to_bytes(&ServerMessage::Age(id, age)),
+                    spawns: Some(id),
+                });
+            }
             self.pending.insert(id);
         }
         // Edits not yet had (all of the world's: the terrain is everyone's).
@@ -204,6 +217,28 @@ impl Session {
         if self.has(id) {
             self.queue(&ServerMessage::Plastic(id, change.clone()));
         }
+    }
+
+    /// Queues an entity's changed age (G1.3c), if the client has it.
+    pub fn age(&mut self, id: EntityId, age: Age) {
+        if self.has(id) {
+            self.queue(&ServerMessage::Age(id, age));
+        }
+    }
+
+    /// Sends its own character as only the server knows it (G1.2): its jetpack's gas, its
+    /// health, whether it is down. A few bytes a round.
+    pub fn own(&self, renet: &mut RenetServer, world: &ServerWorld) {
+        let Some(avatar) = self.avatar.filter(|a| world.index(*a).is_some()) else {
+            return;
+        };
+        let person = world.person(avatar);
+        let own = to_bytes(&ServerMessage::Own {
+            gas: world.gas(avatar),
+            health: person.map_or(1.0, |p| p.health),
+            fallen: person.is_some_and(crate::world::people::Person::fallen),
+        });
+        renet.send_message(self.client, UNRELIABLE, own);
     }
 
     /// Sends what the budget pays for this round (`seconds` since the last), then the

@@ -30,6 +30,10 @@ impl Connection {
             ServerMessage::Despawn(id) => {
                 self.kinds.remove(&id);
                 self.broken.remove(&id);
+                self.ages.remove(&id);
+            }
+            ServerMessage::Age(id, age) => {
+                self.ages.insert(id, age);
             }
             ServerMessage::Edits { first, log } => self.edited(first, &log),
             ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),

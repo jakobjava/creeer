@@ -61,7 +61,8 @@ fn write_v8_fixture() {
 #[test]
 fn the_version_8_fixture_keeps_its_joints() {
     let save = Save::from_bytes(V8).unwrap();
-    assert_eq!(save.to_bytes(), V8);
+    // Re-saved, it is the current version of what the scene writes (version 9 on: the same
+    // sections, its header the newer version).
     let written = joint_scene();
     assert_eq!(save.to_bytes(), written.to_bytes());
     let joints = save.world.joints();

@@ -343,6 +343,7 @@ impl Server {
 
     fn send(&mut self) {
         let changed = self.world.take_changed();
+        let aged = self.world.take_aged();
         let world = &self.world;
         let at = world
             .ids()
@@ -357,23 +358,17 @@ impl Server {
             for id in &changed {
                 session.forget(*id);
             }
-            session.update_view(world, &grid, &mut self.shapes);
+            session.update_view(world, &grid, &mut self.shapes, self.net_tick);
             for (id, change) in &changes {
                 session.plastic(*id, change);
             }
-            session.send(&mut self.renet, world, seconds, self.net_tick);
-            // Its own character as only the server knows it (G1.2): a few bytes a round.
-            if let Some(avatar) = session.avatar
-                && world.index(avatar).is_some()
-            {
-                let person = world.person(avatar);
-                let own = to_bytes(&ServerMessage::Own {
-                    gas: world.gas(avatar),
-                    health: person.map_or(1.0, |p| p.health),
-                    fallen: person.is_some_and(crate::world::people::Person::fallen),
-                });
-                self.renet.send_message(session.client, UNRELIABLE, own);
+            for (id, _) in &aged {
+                if let Some(age) = world.age_told(*id, self.net_tick) {
+                    session.age(*id, age);
+                }
             }
+            session.send(&mut self.renet, world, seconds, self.net_tick);
+            session.own(&mut self.renet, world);
         }
     }
 }

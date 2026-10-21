@@ -187,7 +187,7 @@ Things get older as the world runs. A placed crate is new; after a few game days
 - **Copper** greens in about 10 years: 5–7 on coasts and in industrial air, more than 30 in dry air.
 
 What drives it:
-- **Surroundings** set the rate: in air with oxygen and water, the C3 rate; in the sea, three times it (marine air and water are C5 and worse); in vacuum, none for rust and patina, and UV alone for wood.
+- **Surroundings** set the rate: in air with oxygen and water, the C3 rate; in the sea, three times it (marine air and water are C5 and worse); in vacuum, none (wood's greying by UV alone in vacuum is a future improvement).
 - **Pace:** real rates would be invisible within a play session, so a world setting runs weathering faster than time. The default is one year of weathering per game day (6 hours); the server sets it.
 - **Use:** impacts chip edges. An impact's energy beyond what a coating resists (about 10 J, as ISO 6272's falling-weight test measures) adds wear.
 

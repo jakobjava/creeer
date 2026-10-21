@@ -61,7 +61,7 @@
    - **The shader's layers:** tone, pattern, mottling and fine grain (filtered so nothing shimmers), age, grime, rain streaks, edge chips, occlusion on ambient light. They are worked out live in Blender (`art/preview.py`, the same layers as nodes), on three crates of ages 0.1, 0.5 and 1.0 side by side.
 4. **Ageing** (the user: "the game should have an aging mechanic, things look older and older"; `art-style.md` §6b).
    - **Each token weathers at its material's real rate** outdoors in temperate air (ISO 9223 C3): timber in about a year, bare steel in half a year, paint in 15, copper in 10.
-   - **Surroundings set the rate:** air with oxygen and water 1, the sea 3, vacuum 0 for rust and patina.
+   - **Surroundings set the rate:** air with oxygen and water 1, the sea 3, vacuum 0.
    - **A world pace** makes it visible: one year of weathering per game day by default.
    - **Impacts beyond about 10 J chip edges** (ISO 6272).
    - **The server keeps each object's age** as its exposure, its current rate and its wear, changed only on events. It is saved and replicated, so it costs nothing per tick, and clients draw it.
@@ -116,7 +116,19 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
 
 ## Validation
 
-Planned per sub-milestone in `docs/g1-plan.md` (G1.3a–i). Among them:
+**Done so far (2026-10-21):**
+- **Colour (G1.3a).** CIEDE2000 matches all 34 of Sharma, Wu and Dalal's pairs to 10⁻⁴. The palette, player colours, rock colours and approved exceptions match `art-style.md` both ways, and the base pack keeps the style with its exceptions.
+- **Models (G1.3b).** The crate reads with 788 triangles in its two tokens, and models broken in each way are refused for their reason.
+  - Its exported masks are the baked values unconverted: alpha equals each vertex's height over 2 m, and Blender's occlusion 0.6875 and 0.6458 at two corners read back exactly.
+  - Its grain runs along its boards: u's gradient on their faces is (1, 0).
+  - `xtask art --check` passes on unchanged scripts and catches a 2 mm change.
+- **Drawing (G1.3c).** A snapshot without looks (the planet's) draws the 1 m crate as its model, from its base.
+- **Ageing (G1.3c).**
+  - A year of exposure per game day in air, and three in the sea.
+  - A 200 kg crate dropped from 3 m is worn 0.091, which is 4.5 kJ beyond the coating's 10 J (its bottom fell about 2.3 m). One placed gently is worn 0.
+  - Ages survive a save exactly (version 9, its fixture), and a client is told every crate's age and its wear when it changes (protocol 7).
+
+**Still to come:**
 - CIEDE2000 against Sharma, Wu & Dalal's test pairs;
 - colour-vision simulation against Machado et al. (2009);
 - GTAO against analytic occlusion (a sphere on a plane, a 90° crease) and a ray-traced reference;

@@ -99,6 +99,19 @@ fn server_messages_read_back() {
         health: 0.75,
         fallen: true,
     });
+    let age = crate::message::Age {
+        exposure: 1.5,
+        rate: 1.0 / 21_600.0,
+        at: 1200,
+        wear: 0.25,
+    };
+    back(&ServerMessage::Age(EntityId(42), age));
+    // Six hours of 60 Hz ticks later, a year more.
+    assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
+    assert!(
+        (age.exposure_at(0.0, 60) - 1.5).abs() < 1e-12,
+        "never before it was told"
+    );
     back(&ServerMessage::Edits {
         first: 17,
         log: vec![9; 300],

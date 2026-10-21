@@ -165,7 +165,17 @@ impl PlanetSession {
             let Some(pose) = poses.get(id) else { continue };
             let (p, q) = (pose.position, pose.orientation);
             match kind {
-                Kind::Body(Shape::Box(half), _) => out.boxes.push((p, q, *half)),
+                Kind::Body(Shape::Box(half), _) => {
+                    out.boxes.push((p, q, *half));
+                    // Its age as of the moment drawn (G1.3c).
+                    let age = c.ages.get(id).map_or((0.0, 0.0), |a| {
+                        let exposure = a.exposure_at(c.drawn_at(), TICK_RATE);
+                        #[allow(clippy::cast_possible_truncation)] // years and a share
+                        let drawn = (exposure as f32, a.wear as f32);
+                        drawn
+                    });
+                    out.box_age.push(age);
+                }
                 Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
                 // A character (until G1.3's suit): its torso a box, its legs two beams down
                 // to where its feet stand.

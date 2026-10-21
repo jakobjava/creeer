@@ -318,3 +318,38 @@ fn a_client_that_asks_is_sent_the_servers_profile_once_a_second() {
     game.run(130, still);
     assert!(game.clients[0].0.profile.is_none());
 }
+
+#[test]
+fn a_client_is_told_each_crates_age_and_its_wear_when_it_changes() {
+    let mut w = world();
+    crates(&mut w, 3, 6.0);
+    let mut game = Game::new(w);
+    game.join("ada", None);
+    game.run(90, still);
+    // A crate dropped from 3 m beside the player after they joined: worn as it lands.
+    let up = game.server.world.spawn().normalize();
+    let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
+    let beside = game.server.world.spawn() + east * 3.0;
+    let at = game.server.world.ground_under(beside) + up * 3.0;
+    game.server.world.apply(&Command::Crate(at), None).unwrap();
+    let dropped = *game.server.world.ids().last().expect("the crate");
+    game.run(180, still);
+    let client = &game.clients[0].0;
+    let mut told = 0;
+    for (id, kind) in &client.kinds {
+        if !matches!(kind, Kind::Body(..)) {
+            continue;
+        }
+        let server = game.server.world.age(*id).expect("the server ages it");
+        let age = client.ages.get(id).expect("the client is told its age");
+        assert!((age.wear - server.wear).abs() < 1e-12, "{id:?}");
+        assert!((age.rate - server.rate).abs() < 1e-18);
+        told += 1;
+    }
+    assert_eq!(told, 4);
+    assert!(
+        client.ages[&dropped].wear > 0.05,
+        "{}",
+        client.ages[&dropped].wear
+    );
+}

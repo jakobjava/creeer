@@ -174,6 +174,7 @@ pub fn draw(
         // A snapshot without looks (the planet's) shows crates, without heat.
         let t = current.box_heat.get(k).copied().unwrap_or(f32::NAN);
         let look = current.box_look.get(k).copied().unwrap_or(Look::Crate);
+        let (exposure, wear) = current.box_age.get(k).copied().unwrap_or((0.0, 0.0));
         let material = match look {
             Look::Crate => CRATE,
             Look::Steel => incandescent(STEEL, t),
@@ -181,7 +182,8 @@ pub fn draw(
             Look::Radiator => WHITE_PAINT,
             Look::Canvas => CANVAS,
             Look::Water => WATER,
-        };
+        }
+        .aged(exposure, wear);
         match meshes.models.crate_box {
             // The 1 m crate is drawn as its model, from the centre of its base (G1.3b).
             Some(model) if look == Look::Crate && is_crate(half) => scene.add(

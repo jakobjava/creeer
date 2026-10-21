@@ -34,6 +34,9 @@ impl ServerWorld {
         this.surroundings.restore(water);
         this.reindex();
         this.restore_people(&save.people);
+        this.ages.by_entity = (save.ages.iter())
+            .map(|(id, age)| (EntityId(*id), *age))
+            .collect();
         for island in save.parked {
             let bodies = (island.into_iter())
                 .map(|p| {
@@ -91,6 +94,9 @@ impl ServerWorld {
             parked,
             machines,
             people: self.saved_people(),
+            ages: (self.ages.by_entity.iter())
+                .map(|(id, age)| (id.0, *age))
+                .collect(),
         }
     }
 }

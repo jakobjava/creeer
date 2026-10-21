@@ -161,7 +161,7 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   The noise is filtered by its screen footprint, so detail finer than a pixel fades instead of shimmering. Vertices gain the part's tone, the height above the base and the grain coordinates; each instance its age and wear; the palette on the GPU its patterns, what tokens wear and age to, and their years.
 - **Ageing** (`art-style.md` §6b):
   - the server keeps each object's age: its exposure, its rate and the tick it changed, plus its wear;
-  - the rate comes from its surroundings: air with oxygen and water 1, the sea 3, vacuum 0 for rust and patina;
+  - the rate comes from its surroundings: air with oxygen and water 1, the sea 3, vacuum 0;
   - a world pace (one year of weathering per game day by default) scales it;
   - impact energy beyond about 10 J adds wear;
   - it is saved, and replicated in the spawn and on change, so nothing runs per tick;
