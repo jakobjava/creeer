@@ -168,6 +168,7 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - A year of exposure per game day in air, and three in the sea.
   - A 200 kg crate dropped from 3 m is worn 0.091, which is 4.5 kJ beyond the coating's 10 J (its bottom fell about 2.3 m). One placed gently is worn 0.
   - Ages survive a save exactly (version 9, its fixture), and a client is told every crate's age and its wear when it changes (protocol 7).
+  - Ageing changes no motion. The stress scene `server` and the play scene `crowd` hash the whole save, so their goldens changed with version 9's ages section (and CI's stress job failed from 090d95d until they were renewed). Their physics alone, the save's world, hashes the same before ageing (e5a02a1) and after, at both lengths: `server` 2453dd84… (120 ticks) and 8c52bd7b… (1,200), `crowd` 2beb8e52… (300) and 0bf54b69… (1,800).
 
 **Still to come:**
 - colour-vision simulation against Machado et al.'s published examples (set aside with the colour-blind mode);
