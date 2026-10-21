@@ -6,8 +6,9 @@ layers closely enough to judge a model while it is made, live in Blender:
 1. the token's colour, shifted by the part's tone (blue of "Color");
 2. the token's pattern (wood grain along the part, brushed metal, paint, stone, cloth, leather);
 3. mottling and fine grain over everything;
-4. age (the object's "age" property, 0 new to 1 old; the game's per instance): patches turning
-   into the token it ages to (timber greys, steel rusts), dirt gathering, edges chipping;
+4. age (the object's "age" property: the years it has weathered, as the game's instance carries
+   them): patches turning into the token it ages to at its own rate (timber greys in a year,
+   steel rusts), dirt gathering over two years, edges chipping;
 5. grime: the ground's splash (alpha) and dirt in creases (from the occlusion, red);
 6. edge wear: chips on worn edges (green) revealing the token it wears to;
 7. the baked occlusion (only a preview of what the renderer does with ambient light).
@@ -16,8 +17,9 @@ layers closely enough to judge a model while it is made, live in Blender:
 import bake
 import bpy
 
-# Grime's colour: dark earthy dirt (linear).
+# Grime's colour: dark earthy dirt (linear); it gathers over this many years outdoors.
 GRIME = (0.022, 0.018, 0.013)
+GRIME_YEARS = 2.0
 # Wood: grain lines per metre across the grain, and how far (in lines) each wanders.
 GRAIN_LINES = 45.0
 GRAIN_WANDER = 6.0
@@ -137,9 +139,9 @@ def _pattern(t, kind, uv, obj):
 
 def surface(mat, info, wears, ages):
     """Fills `mat`'s node tree with the preview of a token: `info` its (rgb, roughness, metalness,
-    pattern); `wears` the (rgb, roughness, metalness) of the token it wears to and `ages` the
-    linear colour it ages to (each None without one)."""
-    rgb, rough, metal, kind = info
+    pattern, years to weather or None); `wears` the (rgb, roughness, metalness) of the token it
+    wears to and `ages` the linear colour it ages to (each None without one)."""
+    rgb, rough, metal, kind, weathers_in = info
     t = _Tree(mat)
     bsdf = next(n for n in t.nodes if n.type == "BSDF_PRINCIPLED")
     bsdf.inputs["Metallic"].default_value = metal
@@ -170,9 +172,12 @@ def surface(mat, info, wears, ages):
     speck = t.noise(obj, 420.0, 1.0)
     colour = t.scale(colour, t.math("ADD", t.math("MULTIPLY", speck, 0.20), 0.90))
 
-    # The object's age (0 new, 1 old): its "age" property here, its instance's in the game.
-    age_of = t.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="age")
-    object_age = age_of.outputs["Fac"]
+    # The years the object has weathered: its "age" property here, its instance's in the game.
+    # Dirt gathers over GRIME_YEARS; each part is a little older or younger (its tone, ±0.3).
+    years = t.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="age").outputs["Fac"]
+    object_age = t.math("DIVIDE", years, GRIME_YEARS, clamp=True)
+    shift = t.math("MULTIPLY", t.math("SUBTRACT", tone, 0.5), 0.6)
+    film_age = t.math("ADD", object_age, shift, clamp=True)
 
     # 5 (first, ageing follows the dirt): grime from the splash and the creases, gathering as
     # the object ages (a new one is clean).
@@ -181,10 +186,10 @@ def surface(mat, info, wears, ages):
     grime = t.math("MULTIPLY", grime, t.math("ADD", t.noise(obj, 9.0, 4.0), 0.5))
     grime = t.math("MULTIPLY", grime, t.math("ADD", t.math("MULTIPLY", object_age, 0.9), 0.1), clamp=True)
 
-    # 4: age. Each part has its own (its tone shifts it ±0.3). Wood greys all over and more in
+    # 4: age, at the token's own rate (its years to weather). Wood greys all over and more in
     # patches; metal rusts and copper greens in patches only, where dirt holds water.
-    age = t.math("ADD", t.math("MULTIPLY", t.math("SUBTRACT", tone, 0.5), 0.6), object_age, clamp=True)
-    if ages is not None:
+    if ages is not None and weathers_in:
+        age = t.math("ADD", t.math("DIVIDE", years, weathers_in), shift, clamp=True)
         patches = t.math("ADD", t.math("MULTIPLY", t.noise(obj, 2.5, 5.0), 0.7),
                          t.math("MULTIPLY", grime, 0.5))
         threshold = t.math("SUBTRACT", 1.25, age)
@@ -197,10 +202,10 @@ def surface(mat, info, wears, ages):
         colour = t.mix(colour, aged_colour, amount)
     colour = t.mix(colour, GRIME, t.math("MULTIPLY", grime, 0.9))
     # A film of dirt over everything old, and streaks down the sides where rain ran.
-    colour = t.scale(colour, t.math("SUBTRACT", 1.0, t.math("MULTIPLY", age, 0.3)))
+    colour = t.scale(colour, t.math("SUBTRACT", 1.0, t.math("MULTIPLY", film_age, 0.3)))
     streak = t.smoothstep(t.noise(t.stretch(obj, 50.0, 50.0, 1.5), 1.0, 3.0), 0.5, 0.72)
     sides = t.math("SUBTRACT", 1.0, t.math("ABSOLUTE", facing.outputs["Z"]))
-    streaks = t.math("MULTIPLY", t.math("MULTIPLY", streak, sides), t.math("MULTIPLY", age, 0.3))
+    streaks = t.math("MULTIPLY", t.math("MULTIPLY", streak, sides), t.math("MULTIPLY", film_age, 0.3))
     colour = t.scale(colour, t.math("SUBTRACT", 1.0, streaks))
 
     # 6: wear on edges, in patches a few centimetres long (never a continuous line, no
@@ -209,7 +214,7 @@ def surface(mat, info, wears, ages):
     # a new object, mostly its surface on an old one.
     chips = t.smoothstep(t.math("MULTIPLY", wear, t.noise(obj, 9.0, 3.0)), 0.58, 0.72)
     chips = t.math("MULTIPLY", chips, t.math("ADD", t.math("MULTIPLY", object_age, 1.2), 0.1), clamp=True)
-    fresh = t.math("MULTIPLY", chips, t.math("SUBTRACT", 0.7, t.math("MULTIPLY", age, 0.55)))
+    fresh = t.math("MULTIPLY", chips, t.math("SUBTRACT", 0.7, t.math("MULTIPLY", film_age, 0.55)))
     roughness = t.math("ADD", rough, t.math("MULTIPLY", grime, 0.15))
     metallic = metal
     if wears is not None:

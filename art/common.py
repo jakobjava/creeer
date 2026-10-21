@@ -52,7 +52,7 @@ def _srgb_to_linear(c):
 
 
 def palette():
-    """Token -> (linear rgb, roughness, metalness, pattern, wears_to, ages_to) from
+    """Token -> (linear rgb, roughness, metalness, pattern, wears_to, ages_to, weathers_in) from
     data/art/palette.ron, for previewing."""
     text = PALETTE.read_text(encoding="utf-8")
     tokens = {}
@@ -76,6 +76,7 @@ def palette():
             field(r"pattern: (\w+)", "Plain"),
             field(r'wears_to: Some\("(\w+)"\)', None),
             field(r'ages_to: Some\("(\w+)"\)', None),
+            float(years) if (years := field(r"weathers_in: Some\(([0-9.]+)\)", None)) else None,
         )
     return tokens
 
@@ -88,13 +89,13 @@ def material(token):
     tokens = palette()
     if token not in tokens:
         raise ValueError(f"{token} is not a palette token")
-    rgb, rough, metal, pattern, wears_to, ages_to = tokens[token]
+    rgb, rough, metal, pattern, wears_to, ages_to, weathers_in = tokens[token]
     mat = bpy.data.materials.new(token)
     mat.use_nodes = True
     mat.use_backface_culling = True
     wears = tokens[wears_to][:3] if wears_to else None
     ages = tokens[ages_to][0] if ages_to else None
-    preview.surface(mat, (rgb, rough, metal, pattern), wears, ages)
+    preview.surface(mat, (rgb, rough, metal, pattern, weathers_in), wears, ages)
     return mat
 
 

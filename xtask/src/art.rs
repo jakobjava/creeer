@@ -1,9 +1,12 @@
-//! `cargo xtask art [--check] [--blend] [name…]` (G1.3b, `docs/blender-mcp.md`): builds models
-//! from their scripts in `art/` with headless Blender, into `data/models/<name>.glb`.
+//! `cargo xtask art [--check] [--blend] [--board <out.png>] [name…]` (G1.3b,
+//! `docs/blender-mcp.md`): builds models from their scripts in `art/` with headless Blender,
+//! into `data/models/<name>.glb`.
 //!
 //! - `--check`: builds into `target/art/` instead and fails if any differs from the committed
 //!   file (a script changed without its export, or an export made by hand);
-//! - `--blend`: also saves `target/art/<name>.blend`, to open by hand.
+//! - `--blend`: also saves `target/art/<name>.blend`, to open by hand;
+//! - `--board <out.png>`: renders the style board in Blender instead (`art/board.py`), the
+//!   preview of the surfaces to set beside `creeer_client --style-board`.
 //!
 //! Blender is found through the `BLENDER` environment variable, or at its default install
 //! path, and must be the pinned version: a new Blender must not change a model unnoticed.
@@ -17,7 +20,7 @@ use std::process::{Command, ExitCode};
 /// The Blender every model is built with (its `--version` begins with this).
 const VERSION: &str = "Blender 5.2.";
 /// Scripts in `art/` that are not models.
-const NOT_MODELS: [&str; 4] = ["bake", "build", "common", "preview"];
+const NOT_MODELS: [&str; 5] = ["bake", "board", "build", "common", "preview"];
 
 fn default_blender() -> PathBuf {
     if cfg!(windows) {
@@ -69,20 +72,25 @@ fn models() -> Vec<String> {
 
 /// Runs art/build.py for `name`, writing `glb` (and `blend`).
 fn build(blender: &Path, name: &str, glb: &Path, blend: Option<&Path>) -> bool {
+    let mut args = vec![name.as_ref(), glb.as_os_str()];
+    args.extend(blend.map(Path::as_os_str));
+    run(blender, "art/build.py", &args)
+}
+
+/// Runs `script` in a clean headless Blender with `args` after its `--`, printing its
+/// `art: ` lines (and everything when it fails).
+fn run(blender: &Path, script: &str, args: &[&std::ffi::OsStr]) -> bool {
     let mut command = Command::new(blender);
     command.args([
         "--background",
         "--factory-startup",
         "--python",
-        "art/build.py",
+        script,
         "--",
     ]);
-    command.arg(name).arg(glb);
+    command.args(args);
     // Python randomises string hashing per process; fixed, sets of names iterate alike.
     command.env("PYTHONHASHSEED", "0");
-    if let Some(blend) = blend {
-        command.arg(blend);
-    }
     match command.output() {
         Ok(out) => {
             let text = String::from_utf8_lossy(&out.stdout);
@@ -131,6 +139,17 @@ pub fn art(args: &[&str]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Some(i) = args.iter().position(|a| *a == "--board") {
+        let Some(out) = args.get(i + 1) else {
+            eprintln!("--board needs a file name");
+            return ExitCode::FAILURE;
+        };
+        return if run(&blender, "art/board.py", &[out.as_ref()]) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
     let all = models();
     let wanted: Vec<String> = args
         .iter()

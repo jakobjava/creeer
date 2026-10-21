@@ -167,7 +167,7 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - it is saved, and replicated in the spawn and on change, so nothing runs per tick;
   - clients draw it.
 - **Validation:**
-  - the shader's layers against the Blender preview: the crate at ages 0.1, 0.5 and 1.0, side by side in both;
+  - the shader's layers against the Blender preview, side by side in both. Done 2026-10-21: the crate at 0, 1 and 4 years (`creeer_client --style-board`, `cargo xtask art --board`); the preview now reads its "age" as years, as the game does (ADR-0026, Validation);
   - no shimmer: frame-to-frame difference under a slow camera move. Done 2026-10-21: `creeer_client --shimmer`, surfaces 0.079 % against a 0.2 % gate (ADR-0026, Validation);
   - ageing: exposure exact across save and load; rates by surroundings; a crate in the sea ageing three times as fast; a dropped crate's wear against the impact's energy; determinism.
 - **Smooth geometry everywhere** (`art-style.md` pillar 9, §7):

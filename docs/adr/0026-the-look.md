@@ -65,7 +65,7 @@
 3. **Surfaces: grainy, weathered, used** (`art-style.md` §6; revised 2026-10-21 after the user saw the first crate: "a very boring and blandy monochrome wood texture", "it should look like factorio … grainy, weathered, used", then "darker and grimier").
    - **What a model carries,** baked by its script: occlusion, edge wear on its bevels, each part's tone, each corner's height above its base, and grain coordinates in metres along each part's grain. A per-face value on large faces, since per-corner values drew diagonals.
    - **Per token,** in the palette: a pattern (wood, paint, metal, stone, fabric, leather, glass, plain), what wear reveals, what age turns it into, and the years that takes.
-   - **The shader's layers:** tone, pattern, mottling and fine grain (filtered so nothing shimmers), age, grime, rain streaks, edge chips, occlusion on ambient light. They are worked out live in Blender (`art/preview.py`, the same layers as nodes), on three crates of ages 0.1, 0.5 and 1.0 side by side.
+   - **The shader's layers:** tone, pattern, mottling and fine grain (filtered so nothing shimmers), age, grime, rain streaks, edge chips, occlusion on ambient light. They are worked out live in Blender (`art/preview.py`, the same layers as nodes), on three crates side by side, new, one year and four years weathered.
 4. **Ageing** (the user: "the game should have an aging mechanic, things look older and older"; `art-style.md` §6b).
    - **Each token weathers at its material's real rate** outdoors in temperate air (ISO 9223 C3): timber in about a year, bare steel in half a year, paint in 15, copper in 10.
    - **Surroundings set the rate:** air with oxygen and water 1, the sea 3, vacuum 0.
@@ -162,6 +162,8 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - **Result (1280 × 720, 32 frames):** the surfaces, 89 % of the image, flicker on 0.079 % of their pixels (p99.9 at 1.8 levels); the gate is 0.2 %. The edges, rendered in one colour, flicker on 1.64 % of the image.
   - **The check catches shimmer:** with the noise's and the grain lines' footprint fade switched off, the surfaces flicker on 3.48 %, 44 times as much, the distant ground and the crate faces most.
   - Left for later: the edges' crawl itself (an antialiasing matter; recorded in `docs/future-improvements.md`).
+- **The shader against the preview (G1.3c).** The crate at 0, 1 and 4 years, drawn by the game (`creeer_client --style-board`) and by Blender with the preview's nodes (`cargo xtask art --board`), same camera and sun. The layers sit in the same places and age alike: each board's tone and grain lines, the one-year crate's grey patches and stains, the old crate darkened and streaked, worn edges in patches, the painted corner plates. The patterns differ in detail (Blender's noise is not ours). Blender's colours are paler and cooler (its AgX tone mapping desaturates; its sky light is a uniform blue): a difference of lighting, not of surface.
+  - Found on the way: the preview read its "age" as one number from 0 to 1 for everything, while the game reads years, with grime over two of them and each token weathering at its own rate. The preview now reads years too.
 - **Ageing (G1.3c).**
   - A year of exposure per game day in air, and three in the sea.
   - A 200 kg crate dropped from 3 m is worn 0.091, which is 4.5 kJ beyond the coating's 10 J (its bottom fell about 2.3 m). One placed gently is worn 0.
