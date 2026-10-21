@@ -53,7 +53,7 @@ fn bodies_are_drawn_as_what_they_are() {
     let ball = Body::rigid(Shape::Sphere { radius: 0.4 }, 10.0, DVec3::ZERO, DT);
     assert!(matches!(
         kind(&ball, None, false),
-        Kind::Body(NetShape::Sphere(r), _) if r == 0.4
+        Kind::Body(NetShape::Sphere(r), _) if (r - 0.4).abs() < 1e-12
     ));
     assert_eq!(
         kind(&ball, Some("ada"), false),

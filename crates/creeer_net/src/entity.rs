@@ -159,7 +159,7 @@ fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
         1 => true,
         _ => return Err(r.error("not a flag")),
     };
-    if !(mass > 0.0) || friction < 0.0 || !(0.0..=1.0).contains(&restitution) {
+    if mass <= 0.0 || friction < 0.0 || !(0.0..=1.0).contains(&restitution) {
         return Err(r.error("a body's matter out of range"));
     }
     Ok(Matter {
