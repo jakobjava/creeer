@@ -20,7 +20,7 @@ use std::process::{Command, ExitCode};
 /// The Blender every model is built with (its `--version` begins with this).
 const VERSION: &str = "Blender 5.2.";
 /// Scripts in `art/` that are not models.
-const NOT_MODELS: [&str; 5] = ["bake", "board", "build", "common", "preview"];
+const NOT_MODELS: [&str; 6] = ["bake", "base_meshes", "board", "build", "common", "preview"];
 
 fn default_blender() -> PathBuf {
     if cfg!(windows) {

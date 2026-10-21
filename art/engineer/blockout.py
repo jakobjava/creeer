@@ -1,45 +1,63 @@
-"""The engineer's blockout (G1.3f; ADR-0026 decision 8; docs/art-style.md §8): rough shapes of a
-real person, to judge the silhouette before any detailed model. Two figures side by side: the
-base body in its base layer, and the starting outfit (quilted coverall, jacket in the player's
-colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood
-leaving the face open, and goggles). The jetpack is not part of it: it is made as the player
-progresses. The rough guide is Factorio's FFF-40 engineer, without its hard hat, tools and
+"""The engineer's blockout (G1.3f; ADR-0026 decision 8; docs/art-style.md §8): a real person's
+body and the starting outfit, to judge the look before the detailed models. Two figures side by
+side: the base body in its base layer (a vest and shorts), and the starting outfit (a quilted
+coverall, a jacket in the player's colour with a belt, leather knee and elbow pads, thick
+gloves, laced boots, and goggles pushed up on the forehead). The head is bare, with short hair
+(the user asked for a proper face instead of a hood). The jetpack is not part of it: the player
+makes it later. The rough guide is Factorio's FFF-40 engineer, without its hard hat, tools and
 rucksack.
 
-The person: ANSUR II's men (4,082 measured, 2010–2012; the U.S. Army's public data) at their
-means, scaled to a stature of 1.80 m (their mean is 1.756 m), standing on boots' 3 cm soles.
-The ragdoll's segments (bones.json, written from the Rust code) are drawn beside each figure as
-wire boxes: where they disagree with the person, the segments are to be corrected (G1.3f,
-"within its segments").
+The body is Blender Studio's realistic man (Human Base Meshes, CC0), fitted to ANSUR II's men
+at their means scaled to 1.80 m and posed standing (`body.py`), made an average man rather than
+an athlete (`physique.py`); every garment is an offset of that body (`garments.py`), so it fits
+him and moves with him. The ragdoll's segments
+(bones.json, written from the Rust code) are drawn over the outfit as wire boxes: where they
+disagree with the person, the segments are to be corrected (G1.3f, "within its segments").
 
 Not a model: nothing is exported. Run it in a Blender session (it builds into its own scene,
 "engineer blockout", and leaves the others alone):
 
     exec(open("art/engineer/blockout.py").read())
 
-Skin, hair and the base layer's colours are placeholders until the user approves the tones.
+The base layer is mid grey, as the user chose; the skin and hair are one of the players' tones
+each.
 """
 
+import importlib
 import json
 import math
 import pathlib
+import sys
 
 import bmesh
 import bpy
-from mathutils import Matrix, Quaternion, Vector
+from mathutils import Matrix, Vector
+from mathutils.geometry import convex_hull_2d
 
 try:
     HERE = pathlib.Path(__file__).resolve().parent
 except NameError:  # run by exec() in a live session
     HERE = pathlib.Path(r"C:\Users\jakmo\dev\creëer\art\engineer")
+sys.path.insert(0, str(HERE))
+import body as B  # noqa: E402
+import garments as G  # noqa: E402
+import physique as P  # noqa: E402
+
+# A live session keeps modules between runs: the files as they are now.
+B, G = importlib.reload(B), importlib.reload(G)
+P = importlib.reload(P)
+
 BONES = json.loads((HERE / "bones.json").read_text(encoding="utf-8"))
 
 SCENE = "engineer blockout"
-# Placeholders (skin: the Monk scale's sixth tone) and the palette's tokens, sRGB.
+# The palette's tokens, sRGB; the skin is the Monk scale's sixth tone and the hair measured
+# brown (two of the players' choices), the eyes' whites and irises the blockout's own.
 COLOURS = {
     "skin": ("#a07e56", 0.55),
-    "hair": ("#3b2a20", 0.70),
-    "base_layer": ("#5a6066", 0.85),
+    "hair": ("#4f3f35", 0.70),
+    "eye": ("#e4ddd2", 0.2),
+    "iris": ("#3b2a1f", 0.1),
+    "base_layer": ("#797e86", 0.85),
     "coverall": ("#8c99a6", 0.85),
     "jacket": ("#e07b39", 0.75),
     "leather": ("#4b2c22", 0.70),
@@ -47,36 +65,16 @@ COLOURS = {
     "steel": ("#8a8d90", 0.45),
     "rubber": ("#2b2a29", 0.85),
 }
-
-# ANSUR II men's means scaled to 1.80 m (m): heights above the soles of bare feet.
-TOP = 1.80
-CHIN = 1.555  # top − (sellion to menton 0.126 + sellion below the top ~0.12)
-EYES = 1.67
-NECK_BASE = 1.475  # suprasternale; cervicale (C7) 1.555
-SHOULDER = 1.43  # the shoulder joints, 4–5 cm below the acromion (1.477)
-ELBOW = 1.133  # radiale: acromion − acromion-radiale length 0.344
-WRIST = 0.869
-FINGERTIPS = 0.671  # wrist − hand length 0.198
-HIP = 0.92  # the hip joints, about at trochanterion (0.923)
-KNEE = 0.49  # between the femoral epicondyle (0.504) and the tibial plateau (0.480)
-ANKLE = 0.075  # lateral malleolus
 SOLE = 0.03  # boots' soles
-# The trunk's sections: height, half width, half depth, the centre's offset forward.
-TRUNK = [
-    (0.84, 0.15, 0.1, 0.0),
-    (0.9, 0.172, 0.122, -0.012),
-    (0.97, 0.177, 0.126, -0.012),
-    (1.04, 0.168, 0.12, -0.006),
-    (1.1, 0.162, 0.118, 0.0),
-    (1.18, 0.158, 0.121, 0.004),
-    (1.26, 0.16, 0.128, 0.006),
-    (1.33, 0.164, 0.13, 0.004),
-    (1.39, 0.168, 0.124, -0.004),
-    (1.43, 0.165, 0.11, -0.01),
-    (1.465, 0.145, 0.09, -0.014),
-    (1.5, 0.105, 0.072, -0.016),
-    (1.53, 0.068, 0.062, -0.014),
-]
+# Where the garments end (m, the fitted body standing in its A-pose): the necklines (a point
+# on the front of the neck and the plane's normal, tilted up at the back), the jacket's hem,
+# how far up the forearm the sleeves and the gloves' cuffs reach from the wrist, the boots' tops.
+NECK = ((0, -0.06, 1.47), (0, -0.474, 0.88))
+HEM = 0.97
+SLEEVE = 0.11
+CUFF = 0.06
+BOOT_TOP = 0.2
+SIDES = ((1, "L"), (-1, "R"))
 
 
 def g(x, y, z):
@@ -105,87 +103,47 @@ def material(name):
 
 
 class Figure:
-    """One figure's parts, gathered by material, standing at `offset` (m, across) and lifted by
-    `lift` (m)."""
+    """One figure's objects, gathered by material."""
 
-    def __init__(self, scene, offset, lift=0.0):
-        self.scene, self.offset, self.lift, self.parts = scene, offset, lift, {}
+    def __init__(self, scene):
+        self.scene, self.parts = scene, {}
 
-    def _add(self, mat, obj):
+    def add(self, mat, obj):
         self.parts.setdefault(mat, []).append(obj)
         return obj
 
-    def _object(self, bm, name, matrix):
-        """A mesh object of `bm` with `matrix` baked into its vertices (the object stays at
-        the identity, so sizes in its mesh are metres)."""
+    def clone(self, mat, src):
+        obj = src.copy()
+        obj.data = src.data.copy()
+        self.scene.collection.objects.link(obj)
+        return self.add(mat, obj)
+
+    def _mesh(self, mat, bm, matrix):
         bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
-        mesh = bpy.data.meshes.new(name)
+        mesh = bpy.data.meshes.new(mat)
         bm.to_mesh(mesh)
         bm.free()
-        obj = bpy.data.objects.new(name, mesh)
+        for p in mesh.polygons:
+            p.use_smooth = True
+        obj = bpy.data.objects.new(mat, mesh)
         self.scene.collection.objects.link(obj)
-        return obj
-
-    def at(self, p):
-        return g(p[0], p[1] + self.lift, p[2]) + Vector((self.offset, 0, 0))
-
-    def _place(self, centre, turn=None, scale=(1.0, 1.0, 1.0)):
-        at = Matrix.Translation(self.at(centre))
-        rotation = (turn or Quaternion()).to_matrix().to_4x4()
-        return at @ rotation @ Matrix.Diagonal((*scale, 1.0))
+        return self.add(mat, obj)
 
     def ellipsoid(self, mat, centre, semi):
-        """An ellipsoid at `centre` with semi-axes `semi`, both in the game's axes."""
+        """An ellipsoid at `centre` with semi-axes `semi` (Blender's axes)."""
         bm = bmesh.new()
         bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
-        matrix = self._place(centre, scale=(semi[0], semi[2], semi[1]))
-        return self._add(mat, self._object(bm, mat, matrix))
+        return self._mesh(mat, bm, Matrix.Translation(centre) @ Matrix.Diagonal((*semi, 1.0)))
 
-    def limb(self, mat, a, b, ra, rb):
-        """A tapered limb from `a` (radius `ra`) to `b` (radius `rb`), rounded at both ends."""
-        axis = g(*b) - g(*a)
+    def disc(self, mat, centre, radius, depth, facing):
+        """A short cylinder (a lens, its frame) at `centre`, its axis along `facing`."""
         bm = bmesh.new()
-        bmesh.ops.create_cone(
-            bm, cap_ends=True, segments=32, radius1=ra, radius2=rb, depth=axis.length
-        )
-        mid = [(p + q) / 2 for p, q in zip(a, b)]
-        turn = Vector((0, 0, 1)).rotation_difference(axis.normalized())
-        obj = self._add(mat, self._object(bm, mat, self._place(mid, turn)))
-        self.ellipsoid(mat, a, (ra, ra, ra))
-        self.ellipsoid(mat, b, (rb, rb, rb))
-        return obj
+        bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=radius, radius2=radius, depth=depth)
+        turn = Vector((0, 0, 1)).rotation_difference(Vector(facing)).to_matrix().to_4x4()
+        return self._mesh(mat, bm, Matrix.Translation(centre) @ turn)
 
-    def loft(self, mat, rings, segments=40):
-        """A smooth trunk through elliptical `rings` (height, half width, half depth, the
-        centre's offset forward; game axes), closed at both ends."""
-        bm = bmesh.new()
-        loops = []
-        for y, hw, hd, zc in rings:
-            loops.append([
-                bm.verts.new(g(hw * math.cos(a), y, zc + hd * math.sin(a)))
-                for a in (math.tau * i / segments for i in range(segments))
-            ])
-        for lo, hi in zip(loops, loops[1:]):
-            for i in range(segments):
-                j = (i + 1) % segments
-                bm.faces.new((lo[i], lo[j], hi[j], hi[i]))
-        for ring, flip in ((loops[0], True), (loops[-1], False)):
-            bm.faces.new(ring[::-1] if flip else ring)
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        offset = Matrix.Translation(self.at((0, 0, 0)))
-        return self._add(mat, self._object(bm, mat, offset))
-
-    def disc(self, mat, centre, radius, depth, facing=(0, 0, 1)):
-        """A short cylinder (a lens, a cap) at `centre`, its axis along `facing` (game axes)."""
-        bm = bmesh.new()
-        bmesh.ops.create_cone(
-            bm, cap_ends=True, segments=24, radius1=radius, radius2=radius, depth=depth
-        )
-        turn = Vector((0, 0, 1)).rotation_difference(g(*facing))
-        return self._add(mat, self._object(bm, mat, self._place(centre, turn)))
-
-    def tube(self, mat, points, radius):
-        """A strap or rail along `points` (game axes)."""
+    def tube(self, mat, points, radius, cyclic=False):
+        """A strap or a rolled collar along `points`."""
         curve = bpy.data.curves.new(mat, "CURVE")
         curve.dimensions = "3D"
         curve.bevel_depth = radius
@@ -193,14 +151,38 @@ class Figure:
         spline = curve.splines.new("POLY")
         spline.points.add(len(points) - 1)
         for p, q in zip(spline.points, points):
-            p.co = (*self.at(q), 1.0)
+            p.co = (*q, 1.0)
+        spline.use_cyclic_u = cyclic
         obj = bpy.data.objects.new(mat, curve)
         self.scene.collection.objects.link(obj)
-        return self._add(mat, obj)
+        return self.add(mat, obj)
 
-    def finish(self, name, soft):
-        """Joins each material's parts into one object; the `soft` ones (cloth and skin) are
-        merged into one smooth surface by a voxel remesh and smoothing."""
+    def band(self, mat, points, half_height, thickness, filled=False):
+        """A flat band (a belt) round the closed loop `points`, all at one height; `filled`, a
+        slab (a sole) with rounded edges."""
+        curve = bpy.data.curves.new(mat, "CURVE")
+        curve.dimensions = "2D"
+        curve.fill_mode = "BOTH" if filled else "NONE"
+        curve.extrude = half_height
+        curve.bevel_depth = thickness / 2
+        spline = curve.splines.new("POLY")
+        spline.points.add(len(points) - 1)
+        for p, q in zip(spline.points, points):
+            p.co = (q.x, q.y, 0.0, 1.0)
+        spline.use_cyclic_u = True
+        obj = bpy.data.objects.new(mat, curve)
+        obj.location.z = points[0].z
+        self.scene.collection.objects.link(obj)
+        return self.add(mat, obj)
+
+    def pose(self):
+        for objs in self.parts.values():
+            for obj in objs:
+                if obj.type == "MESH":
+                    B.pose(obj)
+
+    def finish(self, name, at):
+        """Joins each material's parts into one object, standing at `at`."""
         out = []
         for mat, objs in self.parts.items():
             with bpy.context.temp_override(selected_editable_objects=objs, active_object=objs[0], object=objs[0]):
@@ -211,132 +193,127 @@ class Figure:
                 with bpy.context.temp_override(selected_editable_objects=meshes, active_object=meshes[0], object=meshes[0]):
                     bpy.ops.object.join()
             obj = meshes[0]
+            obj.data.transform(obj.matrix_world)
+            obj.matrix_world = Matrix.Identity(4)
             obj.name = f"{name} {mat}"
-            obj.data.materials.clear()
-            obj.data.materials.append(material(mat))
-            if mat in soft:
-                remesh = obj.modifiers.new("merge", "REMESH")
-                remesh.mode = "VOXEL"
-                remesh.voxel_size = 0.01
-                smooth = obj.modifiers.new("smooth", "SMOOTH")
-                smooth.factor = 0.9
-                smooth.iterations = 20
-                with bpy.context.temp_override(object=obj, active_object=obj):
-                    bpy.ops.object.modifier_apply(modifier="merge")
-                    bpy.ops.object.modifier_apply(modifier="smooth")
-            for p in obj.data.polygons:
-                p.use_smooth = True
+            if mat != "eye":
+                obj.data.materials.clear()
+                obj.data.materials.append(material(mat))
+            obj.location = at
             out.append(obj)
         return out
 
 
-def grown(lo, hi, more):
-    """The trunk's sections from `lo` to `hi` (m), grown by `more` (a garment's thickness)."""
-    return [(y, hw + more, hd + more, zc) for y, hw, hd, zc in TRUNK if lo <= y <= hi]
+def head(f, skin, eyes):
+    """The skin (all of it: the clothes cover the rest), the eyeballs with their irises (the
+    faces looking ahead within 28°: an 11.7 mm iris on a 24 mm eye), short hair."""
+    f.clone("skin", skin)
+    for src in eyes:
+        obj = f.clone("eye", src)
+        obj.data.materials.clear()
+        obj.data.materials.append(material("eye"))
+        obj.data.materials.append(material("iris"))
+        centre = sum((v.co for v in obj.data.vertices), Vector()) / len(obj.data.vertices)
+        for p in obj.data.polygons:
+            ahead = (p.center - centre).normalized().dot(Vector((0, -1, 0)))
+            p.material_index = 1 if ahead > math.cos(math.radians(28)) else 0
+    f.add("hair", G.hair(f.scene, skin, G.head_centre(skin, eyes)))
 
 
-def body(f, mat, more=0.0):
-    """A real person's shapes (ANSUR II), grown by `more` (a garment's thickness). The arms hang
-    a little out from the hips, palms to the thighs."""
-    m = more
-    f.ellipsoid(mat, (0, (TOP + CHIN) / 2, 0.01), (0.079 + m, (TOP - CHIN) / 2 + m, 0.102 + m))
-    f.limb(mat, (0, NECK_BASE - 0.01, -0.012), (0, 1.6, 0.0), 0.063 + m, 0.058 + m)
-    # The trunk through its measured sections: hips 0.35 × 0.25 m, waist 0.33 × 0.24, chest
-    # 0.30 × 0.26 under the arms, narrowing over the shoulders to the neck.
-    f.loft(mat, [(y, hw + m, hd + m, zc) for y, hw, hd, zc in TRUNK])
-    for side in (-1, 1):
-        x = 0.19 * side
-        # The deltoids (0.52 m across them), the arms.
-        f.ellipsoid(mat, (0.19 * side, SHOULDER - 0.02, 0.0), (0.054 + m, 0.075 + m, 0.056 + m))
-        f.limb(mat, (x, SHOULDER, 0), (0.215 * side, ELBOW, 0), 0.054 + m, 0.042 + m)
-        f.ellipsoid(mat, (0.218 * side, ELBOW - 0.08, 0.0), (0.045 + m, 0.09 + m, 0.048 + m))
-        f.limb(mat, (0.215 * side, ELBOW, 0), (0.225 * side, WRIST, 0), 0.042 + m, 0.03 + m)
-        # The legs: thighs 0.64 m round at the top, calves 0.40, ankles 0.235.
-        hx = 0.09 * side
-        f.ellipsoid(mat, (0.095 * side, 0.8, 0.0), (0.09 + m, 0.14 + m, 0.095 + m))
-        f.limb(mat, (hx, HIP, 0), (hx, KNEE, 0.005), 0.098 + m, 0.058 + m)
-        f.limb(mat, (hx, KNEE, 0.005), (hx, ANKLE + 0.01, -0.01), 0.052 + m, 0.036 + m)
-        f.ellipsoid(mat, (hx, 0.36, -0.018), (0.058 + m, 0.11 + m, 0.062 + m))
+def forearm(side):
+    """The wrist and the direction up the forearm, fitted (A-pose)."""
+    w, e = B.joint("wrist", side), B.joint("elbow", side)
+    return w, (e - w).normalized()
 
 
-def hands_and_feet(f, mat, more=0.0):
-    m = more
-    for side in (-1, 1):
-        # Hands 0.198 m long and 0.09 wide; feet 0.278 long and 0.104 wide.
-        f.ellipsoid(mat, (0.228 * side, (WRIST + FINGERTIPS) / 2, 0.0), (0.018 + m, 0.1 + m, 0.045 + m))
-        f.ellipsoid(mat, (0.09 * side, 0.035, 0.07), (0.052 + m, 0.035 + m, 0.139 + m))
+def on_arm(cloth, tag):
+    return lambda v: cloth.weight(v, "w_arm." + tag) > 0.5
 
 
-def base_figure(scene, offset):
-    f = Figure(scene, offset)
-    body(f, "skin")
-    hands_and_feet(f, "skin")
-    f.ellipsoid("hair", (0, 1.722, -0.016), (0.084, 0.088, 0.106))
-    # The base layer: a vest and shorts.
-    f.loft("base_layer", grown(1.02, 1.44, 0.007))
-    f.loft("base_layer", grown(0.84, 1.07, 0.008))
-    for side in (-1, 1):
-        f.limb("base_layer", (0.09 * side, HIP, 0), (0.095 * side, 0.72, 0), 0.104, 0.096)
-    return f.finish("base", soft={"skin", "base_layer"})
+def base_figure(scene, skin, eyes):
+    f = Figure(scene)
+    head(f, skin, eyes)
+    # The base layer: a vest with short sleeves, and shorts.
+    vest = G.Cloth(skin).cut(*NECK)
+    vest.cut((0, 0, 1.0), (0, 0, -1), where=lambda v: vest.arm(v) < 0.5)
+    for side, tag in SIDES:
+        s, e = B.joint("shoulder", side), B.joint("elbow", side)
+        vest.cut(s + (e - s).normalized() * 0.12, e - s, where=on_arm(vest, tag))
+    f.add("base_layer", vest.make(scene, "vest", 0.004, over=skin, gap=0.002, passes=20))
+    shorts = G.Cloth(skin)
+    shorts.drop(lambda v: shorts.arm(v) > 0.5).cut((0, 0, 1.07), (0, 0, 1)).cut((0, 0, 0.72), (0, 0, -1))
+    f.add("base_layer", shorts.make(scene, "shorts", 0.006, over=skin, gap=0.003, passes=30, hang=(G.SEAT, 400)))
+    f.pose()
+    return f.finish("base", (-0.6, 0, 0))
 
 
-def outfit_figure(scene, offset):
-    f = Figure(scene, offset, lift=SOLE)
-    # The face, inside the hood.
-    f.ellipsoid("skin", (0, (TOP + CHIN) / 2, 0.01), (0.079, (TOP - CHIN) / 2, 0.102))
-    # The quilted coverall over everything but the head, hands and feet.
-    body(f, "coverall", more=0.02)
-    # The jacket in the player's colour, to the hips, its sleeves to the forearms.
-    f.loft("jacket", grown(0.97, 1.475, 0.042))
-    for side in (-1, 1):
-        f.ellipsoid("jacket", (0.19 * side, SHOULDER - 0.02, 0.0), (0.082, 0.098, 0.086))
-        f.limb("jacket", (0.19 * side, SHOULDER, 0), (0.215 * side, ELBOW, 0), 0.084, 0.072)
-        f.limb("jacket", (0.215 * side, ELBOW, 0), (0.221 * side, 0.98, 0), 0.072, 0.066)
-    # The padded hood, its face opening cut later.
-    f.ellipsoid("coverall", (0, 1.69, -0.012), (0.106, 0.15, 0.127))
-    # Goggles over the eyes, their strap round the hood.
-    for x in (-0.033, 0.033):
-        f.disc("leather", (x, EYES, 0.103), 0.029, 0.016)
-        f.disc("lens", (x, EYES, 0.111), 0.023, 0.012)
-    around = [math.radians(d) for d in range(60, 301, 15)]
-    f.tube("leather", [(0.104 * math.sin(a), EYES + 0.012, -0.002 + 0.128 * math.cos(a)) for a in around], 0.009)
-    # The belt.
-    belt = [(0.208 * math.sin(a), 1.075, 0.162 * math.cos(a)) for a in [i * math.tau / 32 for i in range(33)]]
-    f.tube("leather", belt, 0.022)
-    for side in (-1, 1):
-        x, hx = 0.228 * side, 0.09 * side
-        # Thick gloves and their cuffs.
-        f.ellipsoid("leather", (x, (WRIST + FINGERTIPS) / 2, 0.0), (0.03, 0.104, 0.052))
-        f.limb("leather", (0.224 * side, WRIST + 0.06, 0), (0.226 * side, WRIST - 0.02, 0), 0.05, 0.047)
-        # Laced boots: the foot, the shaft to mid-shin, a rubber sole.
-        f.ellipsoid("leather", (hx, 0.04, 0.072), (0.064, 0.05, 0.152))
-        f.limb("leather", (hx, 0.06, -0.01), (hx, 0.2, -0.008), 0.07, 0.064)
-        f.ellipsoid("rubber", (hx, -0.012, 0.072), (0.066, 0.02, 0.155))
-        # Leather knee and elbow pads.
-        f.ellipsoid("leather", (hx, KNEE, 0.085), (0.06, 0.072, 0.03))
-        f.ellipsoid("leather", (0.215 * side, ELBOW, -0.075), (0.05, 0.062, 0.026))
-    # No jetpack: it is made later in the game (the user, 2026-10-21), a wearable on the back.
-    parts = f.finish("outfit", soft={"skin", "coverall", "jacket"})
-    # The hood's opening for the face.
-    hood = next(o for o in parts if o.name.endswith("coverall"))
-    bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
-    bmesh.ops.transform(
-        bm,
-        matrix=Matrix.Translation(f.at((0, 1.668, 0.125))) @ Matrix.Diagonal((0.064, 0.09, 0.098, 1.0)),
-        verts=bm.verts,
-    )
-    cut = bpy.data.objects.new("face opening", bpy.data.meshes.new("face opening"))
-    bm.to_mesh(cut.data)
-    bm.free()
-    scene.collection.objects.link(cut)
-    boolean = hood.modifiers.new("face", "BOOLEAN")
-    boolean.operation = "DIFFERENCE"
-    boolean.object = cut
-    with bpy.context.temp_override(object=hood, active_object=hood):
-        bpy.ops.object.modifier_apply(modifier="face")
-    bpy.data.objects.remove(cut)
-    return parts
+def outfit_figure(scene, skin, eyes):
+    f = Figure(scene)
+    head(f, skin, eyes)
+    # The quilted coverall over everything but the head, hands and feet: 6 mm of padding, 8 mm
+    # of ease (the user, 2026-10-21: twice "too thick"). The jacket over it adds 8 mm more.
+    c = G.Cloth(skin).cut(*NECK).cut((0, 0, 0.16), (0, 0, -1))
+    for side, tag in SIDES:
+        w, up = forearm(side)
+        c.cut(w, -up, where=on_arm(c, tag))
+    coverall = f.add("coverall", c.make(scene, "coverall", 0.014, over=skin, gap=0.006, passes=200, hang=(G.TRUNK, 500)))
+    # The jacket in the player's colour, to the hips, its sleeves to the forearms, with a stand
+    # collar round the neck (the user, 2026-10-21: no rolled "sausage"); it falls from the chest.
+    j = G.Cloth(skin).cut(*NECK)
+    j.cut((0, 0, HEM), (0, 0, -1), where=lambda v: j.arm(v) < 0.5)
+    for side, tag in SIDES:
+        w, up = forearm(side)
+        j.cut(w + up * SLEEVE, -up, where=on_arm(j, tag))
+    jacket = f.add("jacket", j.make(scene, "jacket", 0.022, over=coverall, gap=0.004, passes=300, hang=(G.TRUNK, 500)))
+    neckline = G.smoothed(G.around([p for p in j.rim if p.z > 1.3 and abs(p.x) < 0.12]))
+    f.add("jacket", G.collar(scene, "collar", neckline, skin))
+    ring, middle = G.ring(jacket, 1.075, lambda co: abs(co.x) < 0.25)
+    f.band("leather", [middle + (p - middle) * 1.02 for p in ring], 0.02, 0.005)
+    # Thick gloves to past the wrists, and laced boots to mid-shin.
+    gl = G.Cloth(skin)
+    gl.keep(lambda v: gl.arm(v) > 0.5)
+    for side, tag in SIDES:
+        w, up = forearm(side)
+        gl.cut(w + up * CUFF, up, where=on_arm(gl, tag))
+    f.add("leather", gl.make(scene, "gloves", 0.004, passes=20))
+    bo = G.Cloth(skin)
+    bo.keep(lambda v: bo.arm(v) < 0.5 and v.co.z < BOOT_TOP + 0.05).cut((0, 0, BOOT_TOP), (0, 0, 1)).hull()
+    f.add("leather", bo.make(scene, "boots", 0.012, over=skin, gap=0.008, passes=10, subdivide=2))
+    goggles(f, skin)
+    f.pose()
+    pads_and_soles(f, coverall, jacket)
+    return f.finish("outfit", (0.6, 0, SOLE))
+
+
+def goggles(f, skin):
+    """Goggles pushed up on the forehead, their strap round the head: the face stays open."""
+    hair = f.parts["hair"][0]
+    facing = Vector((0, -1, 0.55)).normalized()
+    for x in (-0.034, 0.034):
+        near = [v.co for o in (skin, hair) for v in o.data.vertices if abs(v.co.x - x) < 0.006 and abs(v.co.z - 1.752) < 0.006]
+        front = min(c.y for c in near)
+        f.disc("leather", Vector((x, front - 0.004, 1.752)), 0.028, 0.016, facing)
+        f.disc("lens", Vector((x, front - 0.011, 1.756)), 0.022, 0.012, facing)
+    ring, middle = G.ring(hair, 1.748)
+    back = [middle + (p - middle) * 1.04 for p in ring if abs(math.degrees(math.atan2(p.x - middle.x, middle.y - p.y))) > 55]
+    f.tube("leather", sorted(back, key=lambda p: math.atan2(p.x - middle.x, p.y - middle.y)), 0.007)
+
+
+def pads_and_soles(f, coverall, jacket):
+    """Leather knee and elbow pads and the boots' rubber soles, where the posed body has its
+    knees, elbows and feet."""
+    boots = next(o for o in f.parts["leather"] if o.name.startswith("boots"))
+    for side, tag in SIDES:
+        knee = B.posed(B.joint("knee", side), side, "leg")
+        f.add("leather", G.pad(f.scene, "knee pad", coverall, knee + Vector((0, 0, 0.01)), 0.055, 0.07, (0, -1, 0), "w_leg." + tag))
+        elbow = B.posed(B.joint("elbow", side), side, "arm")
+        f.add("leather", G.pad(f.scene, "elbow pad", jacket, elbow, 0.045, 0.06, (0, 1, 0), "w_arm." + tag))
+        # The sole: the boot's outline seen from below, 5 mm wider, 3 cm thick.
+        foot = [v.co for v in boots.data.vertices if v.co.x * side > 0 and v.co.z < 0.06]
+        hull = [foot[i] for i in convex_hull_2d([(c.x, c.y) for c in foot])]
+        middle = sum(hull, Vector()) / len(hull)
+        outline = [middle + (c - middle) * (1.0 + 0.005 / (c - middle).xy.length) for c in hull]
+        f.band("rubber", [Vector((c.x, c.y, -SOLE / 2)) for c in outline], SOLE / 2 - 0.004, 0.008, filled=True)
 
 
 def ragdoll_boxes(scene, offset):
@@ -363,11 +340,20 @@ def build():
     scene = bpy.data.scenes.get(SCENE) or bpy.data.scenes.new(SCENE)
     for obj in list(scene.objects):
         bpy.data.objects.remove(obj)
-    # Joining and applying modifiers work in the active scene's view layer.
+    # Weighting, joining and applying modifiers work in the active scene's view layer.
     if bpy.context.window is not None:
         bpy.context.window.scene = scene
-    base_figure(scene, -0.6)
-    outfit_figure(scene, 0.6)
+    skin, eyes = B.load(scene)
+    B.weigh(skin)
+    for obj in (skin, *eyes):
+        B.fit(obj)
+    for name, value in P.average(skin).items():
+        print(f"art: {name}: {value}")
+    base_figure(scene, skin, eyes)
+    outfit_figure(scene, skin, eyes)
+    for obj in (skin, *eyes):
+        bpy.data.objects.remove(obj)
+    P.measure(scene.objects["base skin"])
     ragdoll_boxes(scene, 0.6)
     return scene
 

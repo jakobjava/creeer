@@ -36,6 +36,14 @@ If the add-on is out of date: run `uvx mcp-for-blender install-addon`, then swit
 
 **The Blender version is pinned** (5.2 LTS). It is recorded in every `.glb` (`asset.generator`), and `xtask art` refuses another version, so a new Blender cannot change a model unnoticed. Blender is found through the `BLENDER` environment variable, or else at its default install path.
 
+## The engineer's base mesh
+
+The engineer's body starts from Blender Studio's Human Base Meshes v1.4.1 (CC0; the user's choice, ADR-0026), its realistic man.
+
+- **Fetched, never committed.** `art/base_meshes.py` downloads the bundle once from its pinned address on mirror.blender.org (50 MB), checks its SHA-256 and unpacks only its `.blend` into `target/art-cache/`. A bundle that does not match is deleted, and nothing is built from it.
+- **Only mesh data is taken.** Scripts append the objects they need (`bpy.data.libraries.load(…, link=False)`), never open the file itself, and check that what they took has no animation or drivers. Its text blocks (a README, and a stale licence text naming another rig) are never loaded, and with auto-run off nothing in it runs.
+- **The blockout** (`art/engineer/blockout.py`, with `body.py`, `physique.py` and `garments.py`) runs in a live session and exports nothing: `exec(open("art/engineer/blockout.py").read())` builds the scene "engineer blockout" in about 11 s and prints its measures against the surveys as `art:` lines.
+
 ## Conventions
 
 - **Units and axes.** Metres. Blender's +Z up becomes +Y up on export (the glTF exporter's default), which is the engine's +Y up.
@@ -56,7 +64,7 @@ If the add-on is out of date: run `uvx mcp-for-blender install-addon`, then swit
 - The add-on's socket has no authentication. It listens on this machine only (localhost): never open port 9876 to a network, and stop the server when you are not modelling.
 - The add-on offers a safe mode (`BLENDER_MCP_SAFE_MODE=1` in the server's environment) if you want to restrict it further.
 - Telemetry is off (`DISABLE_TELEMETRY=true`); the add-on's content collection is opt-in and stays off.
-- Don't open `.blend` files from unknown sources with "Auto Run Python Scripts" on.
+- Don't open `.blend` files from unknown sources with "Auto Run Python Scripts" on. The one outside file the scripts use, the base mesh bundle, is checked against its pinned SHA-256 and only appended from (above).
 
 ## Troubleshooting
 

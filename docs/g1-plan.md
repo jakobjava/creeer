@@ -105,7 +105,7 @@ It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and a
 The user's direction at its start (2026-10-21, recorded in `art-style.md`'s changelog):
 - **Not futuristic:** the vibe of Factorio.
 - **Not blocky or voxel-like:** no Minecraft geometry; smooth surfaces, for realism.
-- **The engineer** after Factorio's FFF-40 engineer as a very rough guide, without its hard hat, tools and rucksack. The user chose: the jetpack as two bottles on a harness frame, a skinned and smooth body, and a hood and goggles with the face open.
+- **The engineer** after Factorio's FFF-40 engineer as a very rough guide, without its hard hat, tools and rucksack. The user chose: the jetpack as two bottles on a harness frame, a skinned and smooth body, and a hood and goggles with the face open (later the hood went: the head is bare, the goggles pushed up).
 - **Many wearables in future:** a base body ("naked": in a plain base layer) that wears more and more as the player progresses. The starting outfit is itself made of wearables.
 
 Where it starts: meshes are a position and a normal per vertex with one material per instance; the character is drawn as a box and two beams; there is no ambient occlusion; meshes have no surface detail (ADR-0026, "Where it starts"). Blender 5.2 LTS with MCP for Blender is set up and running (`docs/blender-mcp.md`).
@@ -211,9 +211,10 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
 
 #### G1.3f The engineer
 
-- **The look** (`art-style.md` §3.3, §8). The base body: a person with an open face, short hair and the player's skin tone, in a plain base layer. The starting outfit's wearables: a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood leaving the face open, and goggles. There is no hard hat, no rucksack and no tools, and no jetpack: the user, 2026-10-21, "the 'base' player model should not have a jet pack, that is something that you can build if you progress in the game" (G1.6). It is modelled when it can be made.
+- **The look** (`art-style.md` §3.3, §8). The base body: a person with an open face, short hair and the player's skin tone, in a plain base layer. The starting outfit's wearables: a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, and goggles pushed up on the forehead; no hood, the head bare with short hair (the user, 2026-10-21). There is no hard hat, no rucksack and no tools, and no jetpack: the user, 2026-10-21, "the 'base' player model should not have a jet pack, that is something that you can build if you progress in the game" (G1.6). It is modelled when it can be made.
 - **Its survey first** (as every step's): how stylised games with realistic proportions model readable faces without the uncanny valley, and measured human skin colours (for the `skin` tones, within `art-style.md` §4's limits). The skin tones and hair colours go to the user for approval.
 - **A blockout first.** Rough shapes on the ragdoll's proportions, the base body and the outfit, judged as a silhouette at 64 px and at 20 m, and shown to the user from the front, side and three-quarter. The detailed models start only after the user approves it.
+  - **Done** (2026-10-21, approved after three rounds): Blender Studio's realistic base mesh (CC0) fitted to ANSUR II's men of normal weight at 1.80 m, every garment an offset of the body (`art/engineer/blockout.py`, `body.py`, `physique.py`, `garments.py`; ADR-0026). The user kept the Monk scale's skin tones and the nine measured hair colours.
 - **The models** (`art/engineer/body.py` and one script per wearable in `art/wear/`):
   - built on the bones the ragdoll has (the table that `creeer_tools` writes from the Rust code);
   - each wearable fitted over the body (and over the layers it goes on), its regions and slots named;

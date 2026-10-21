@@ -32,7 +32,7 @@
     (name: "player_accent", group: Character, colour: PerPlayer, roughness: 0.75, pattern: Fabric),
     (name: "skin", group: Character, colour: PerPlayer, roughness: 0.55),
     (name: "hair", group: Character, colour: PerPlayer, roughness: 0.70),
-    (name: "base_layer", group: Character, colour: Unset, roughness: 0.85, pattern: Fabric),
+    (name: "base_layer", group: Character, colour: Hex("#797e86"), roughness: 0.85, pattern: Fabric),
 
     // §3.4 Vegetation
     (name: "bark_spruce", group: Vegetation, colour: Hex("#5a4632"), roughness: 0.90, pattern: Wood),
