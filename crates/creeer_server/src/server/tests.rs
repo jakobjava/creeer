@@ -114,7 +114,7 @@ fn a_player_joins_sees_the_world_and_walks_in_it() {
     let boxes = client
         .kinds
         .values()
-        .filter(|k| matches!(k, Kind::Body(_)))
+        .filter(|k| matches!(k, Kind::Body(..)))
         .count();
     assert_eq!(boxes, 6);
     // Each crate drawn where the server has it (they rest: to the quantisation).
@@ -168,7 +168,7 @@ fn what_one_player_does_the_other_sees() {
         let boxes = client
             .kinds
             .values()
-            .filter(|k| matches!(k, Kind::Body(_)))
+            .filter(|k| matches!(k, Kind::Body(..)))
             .count();
         assert_eq!(boxes, 1);
         assert_eq!(client.edits.len(), 1);
@@ -256,7 +256,7 @@ fn a_saved_world_loaded_again_is_told_to_every_player() {
             .0
             .kinds
             .values()
-            .filter(|k| matches!(k, Kind::Body(_)))
+            .filter(|k| matches!(k, Kind::Body(..)))
             .count()
     };
     assert_eq!(count(&game), 8);

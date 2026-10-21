@@ -165,8 +165,8 @@ impl PlanetSession {
             let Some(pose) = poses.get(id) else { continue };
             let (p, q) = (pose.position, pose.orientation);
             match kind {
-                Kind::Body(Shape::Box(half)) => out.boxes.push((p, q, *half)),
-                Kind::Body(Shape::Sphere(radius)) => out.spheres.push((p, *radius)),
+                Kind::Body(Shape::Box(half), _) => out.boxes.push((p, q, *half)),
+                Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
                 // A character (until G1.3's suit): its torso a box, its legs two beams down
                 // to where its feet stand.
                 Kind::Character { .. } => {
@@ -181,7 +181,7 @@ impl PlanetSession {
                     }
                 }
                 // The sandbox makes no rocks: a hull is drawn as the ball around it.
-                Kind::Body(Shape::Hull(corners)) => {
+                Kind::Body(Shape::Hull(corners), _) => {
                     let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
                     out.spheres.push((p, radius));
                 }

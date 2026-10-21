@@ -383,6 +383,8 @@ mod people_tests;
 #[cfg(test)]
 mod play_tests;
 #[cfg(test)]
+mod predict_tests;
+#[cfg(test)]
 pub(crate) mod tests;
 
 /// Why a client with data `content` may not join a server with `data`: the server's packs.

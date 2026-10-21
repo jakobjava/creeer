@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::entity::{EntityId, Kind};
-use crate::entity::{Frame, Shape};
+use crate::entity::{Frame, Matter, Shape};
 
 fn back<T: Encode + Decode + PartialEq + std::fmt::Debug>(m: &T) {
     let bytes = to_bytes(m);
@@ -68,10 +68,24 @@ fn server_messages_read_back() {
         members: vec![[0, 1], [1, 2]],
         radius: 0.05,
     };
+    let matter = Matter {
+        mass: 80.0,
+        friction: 0.7,
+        restitution: 0.25,
+        surface: [210.0e9, 0.3, 0.002],
+        predicted: true,
+    };
+    let still = Matter {
+        predicted: false,
+        ..matter
+    };
     for kind in [
-        Kind::Body(Shape::Box(DVec3::splat(0.5))),
-        Kind::Body(Shape::Sphere(0.4)),
-        Kind::Body(Shape::Hull(vec![DVec3::X, DVec3::Y, DVec3::Z, DVec3::ZERO])),
+        Kind::Body(Shape::Box(DVec3::splat(0.5)), matter),
+        Kind::Body(Shape::Sphere(0.4), still),
+        Kind::Body(
+            Shape::Hull(vec![DVec3::X, DVec3::Y, DVec3::Z, DVec3::ZERO]),
+            matter,
+        ),
         Kind::Character {
             player: "ada".into(),
         },

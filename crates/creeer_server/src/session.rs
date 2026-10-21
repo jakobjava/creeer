@@ -171,7 +171,10 @@ impl Session {
         came.sort_unstable();
         for id in came {
             let Some(i) = world.index(id) else { continue };
-            let kind = shapes.kind(id, &world.world.bodies[i], world.drawn_as(i), world.tick);
+            let joined =
+                (world.world.joints().iter()).any(|j| j.a.0 == i || j.b.is_some_and(|b| b.0 == i));
+            let drawn = (world.drawn_as(i), joined);
+            let kind = shapes.kind(id, &world.world.bodies[i], drawn, world.tick);
             self.outbox.push_back(Queued {
                 bytes: to_bytes(&ServerMessage::Spawn(id, kind)),
                 spawns: Some(id),

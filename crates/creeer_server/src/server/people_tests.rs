@@ -34,13 +34,13 @@ fn a_player_sees_their_character_fall_and_stand_up_again() {
     let client = &game.clients[0].0;
     assert!(client.health < 0.9, "health {}", client.health);
     assert!(
-        matches!(client.kinds[&avatar], Kind::Body(_)),
+        matches!(client.kinds[&avatar], Kind::Body(..)),
         "drawn as its character"
     );
     let segments = client
         .kinds
         .values()
-        .filter(|k| matches!(k, Kind::Body(_)))
+        .filter(|k| matches!(k, Kind::Body(..)))
         .count();
     assert_eq!(segments, 15);
     // Drawn where the server has its pelvis (two ticks behind, as everything else).

@@ -9,7 +9,7 @@
 //! shape (the one [`Shapes`] keeps), so the changes fit what each has.
 
 use creeer_math::glam::DVec3;
-use creeer_net::entity::{EntityId, Frame, Kind, Shape as NetShape};
+use creeer_net::entity::{EntityId, Frame, Kind, Matter, Shape as NetShape};
 use creeer_net::message::Plastic;
 use creeer_net::quant::{BodyState, POSITION_SCALE, Quantised};
 use creeer_physics::structure::Structure;
@@ -23,20 +23,37 @@ pub const SHAPE_TOLERANCE: f64 = 0.01;
 /// Ticks between two shape changes of one structure at least.
 pub const SHAPE_EVERY: u64 = 6;
 
-/// What a client draws a body as (`player` whose avatar it is).
-pub fn kind(body: &Body, player: Option<&str>) -> Kind {
+/// What a client draws a body as (`player` whose avatar it is; `joined`: a joint's side).
+pub fn kind(body: &Body, player: Option<&str>, joined: bool) -> Kind {
     if let Some(player) = player {
         return Kind::Character {
             player: player.to_owned(),
         };
     }
     match body.shapes.as_slice() {
-        [(0, shape)] if body.structure.element_count() == 0 => Kind::Body(match shape {
-            Shape::Box { half } => NetShape::Box(*half),
-            Shape::Sphere { radius } => NetShape::Sphere(*radius),
-            Shape::Hull(hull) => NetShape::Hull(hull.vertices().to_vec()),
-        }),
+        [(0, shape)] if body.structure.element_count() == 0 => Kind::Body(
+            match shape {
+                Shape::Box { half } => NetShape::Box(*half),
+                Shape::Sphere { radius } => NetShape::Sphere(*radius),
+                Shape::Hull(hull) => NetShape::Hull(hull.vertices().to_vec()),
+            },
+            matter(body, joined),
+        ),
         _ => Kind::Structure(frame(&body.structure, &offsets(&body.structure))),
+    }
+}
+
+/// What a rigid body is made of, for a client's prediction (ADR-0025): a lone rigid body may
+/// be predicted; a joint's side (a ragdoll's) or a held one (a character's) is the server's
+/// alone.
+fn matter(body: &Body, joined: bool) -> Matter {
+    let s = body.surface;
+    Matter {
+        mass: body.structure.total_mass(),
+        friction: body.friction,
+        restitution: body.restitution,
+        surface: [s.youngs_modulus, s.poisson_ratio, s.rounding],
+        predicted: !joined && !body.held,
     }
 }
 
@@ -95,10 +112,16 @@ pub struct Shapes {
 impl Shapes {
     /// What a client is told when structure `id` (`body`) comes into view: its shape as
     /// every client was told it (the changes since come to all alike).
-    pub fn kind(&mut self, id: EntityId, body: &Body, player: Option<&str>, tick: u64) -> Kind {
+    pub fn kind(
+        &mut self,
+        id: EntityId,
+        body: &Body,
+        (player, joined): (Option<&str>, bool),
+        tick: u64,
+    ) -> Kind {
         let s = &body.structure;
         if player.is_some() || s.element_count() == 0 {
-            return kind(body, player);
+            return kind(body, player, joined);
         }
         let told = self.told.entry(id).or_insert_with(|| {
             let (members, broken, _) = members(s);

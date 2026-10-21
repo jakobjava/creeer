@@ -24,7 +24,7 @@ fn frame() -> Body {
 
 #[test]
 fn bodies_are_drawn_as_what_they_are() {
-    let crate_ = Body::rigid(
+    let mut crate_ = Body::rigid(
         Shape::Box {
             half: DVec3::new(0.5, 0.25, 1.0),
         },
@@ -32,14 +32,31 @@ fn bodies_are_drawn_as_what_they_are() {
         DVec3::ZERO,
         DT,
     );
+    crate_.friction = 0.7;
+    // What it is made of comes with it: the client predicts it with that (ADR-0025).
+    let matter = Matter {
+        mass: 10.0,
+        friction: 0.7,
+        restitution: crate_.restitution,
+        surface: [210.0e9, 0.3, 0.002],
+        predicted: true,
+    };
     assert_eq!(
-        kind(&crate_, None),
-        Kind::Body(NetShape::Box(DVec3::new(0.5, 0.25, 1.0)))
+        kind(&crate_, None, false),
+        Kind::Body(NetShape::Box(DVec3::new(0.5, 0.25, 1.0)), matter)
     );
+    // A joint's side (a ragdoll's) and a held body are the server's alone.
+    let alone = |k: Kind| matches!(k, Kind::Body(_, m) if !m.predicted);
+    assert!(alone(kind(&crate_, None, true)));
+    crate_.held = true;
+    assert!(alone(kind(&crate_, None, false)));
     let ball = Body::rigid(Shape::Sphere { radius: 0.4 }, 10.0, DVec3::ZERO, DT);
-    assert_eq!(kind(&ball, None), Kind::Body(NetShape::Sphere(0.4)));
+    assert!(matches!(
+        kind(&ball, None, false),
+        Kind::Body(NetShape::Sphere(r), _) if r == 0.4
+    ));
     assert_eq!(
-        kind(&ball, Some("ada")),
+        kind(&ball, Some("ada"), false),
         Kind::Character {
             player: "ada".into()
         }
@@ -48,8 +65,11 @@ fn bodies_are_drawn_as_what_they_are() {
     let (hull, _) = Hull::new(&points).unwrap();
     let corners = hull.vertices().to_vec();
     let rock = Body::rigid(Shape::Hull(Arc::new(hull)), 10.0, DVec3::ZERO, DT);
-    assert_eq!(kind(&rock, None), Kind::Body(NetShape::Hull(corners)));
-    let Kind::Structure(f) = kind(&frame(), None) else {
+    assert!(matches!(
+        kind(&rock, None, false),
+        Kind::Body(NetShape::Hull(c), _) if c == corners
+    ));
+    let Kind::Structure(f) = kind(&frame(), None, false) else {
         panic!("a structure")
     };
     assert_eq!((f.nodes.len(), f.members.len()), (8, 12));
@@ -66,7 +86,7 @@ fn a_structure_is_drawn_in_its_own_frame() {
         *p = DVec3::new(100.0, 5.0, -3.0) + turn * *p;
         *q = turn;
     }
-    let Kind::Structure(f) = kind(&body, None) else {
+    let Kind::Structure(f) = kind(&body, None, false) else {
         panic!("a structure")
     };
     // Relative to node 0, in its frame: as built.
@@ -80,7 +100,7 @@ fn shape_changes_are_told_past_the_tolerance_and_not_too_often() {
     let mut body = frame();
     let mut shapes = Shapes::default();
     let id = EntityId(4);
-    shapes.kind(id, &body, None, 0);
+    shapes.kind(id, &body, (None, false), 0);
     let changes =
         |shapes: &mut Shapes, body: &Body, tick| shapes.changes(std::iter::once((id, body)), tick);
     // A sway of 5 mm: nothing.

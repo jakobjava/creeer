@@ -34,10 +34,25 @@ pub struct Frame {
 }
 
 /// What an entity is.
+/// What a rigid body is made of, for a client to predict it (G1.2e, ADR-0025): what the
+/// physics needs beyond its shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Matter {
+    /// Its mass (kg; its inertia follows from it and its shape, uniformly dense).
+    pub mass: f64,
+    /// Its surface's Coulomb friction and restitution.
+    pub friction: f64,
+    pub restitution: f64,
+    /// Its surface: Young's modulus (Pa), Poisson's ratio, its edges' rounding (m).
+    pub surface: [f64; 3],
+    /// Whether a client may predict it: a lone rigid body, no joint's side.
+    pub predicted: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
-    /// A rigid body.
-    Body(Shape),
+    /// A rigid body, and what it is made of.
+    Body(Shape, Matter),
     /// A player's character (its shape is the game's: `creeer_sim::character`), and whose.
     Character {
         /// The player's name.
@@ -64,17 +79,28 @@ impl Decode for EntityId {
 impl Encode for Kind {
     fn encode(&self, w: &mut Writer) {
         match self {
-            Self::Body(Shape::Box(half)) => {
-                w.u8(0);
-                w.put(half);
-            }
-            Self::Body(Shape::Sphere(radius)) => {
-                w.u8(1);
-                w.f64(*radius);
-            }
-            Self::Body(Shape::Hull(corners)) => {
-                w.u8(2);
-                w.put(corners);
+            Self::Body(shape, matter) => {
+                match shape {
+                    Shape::Box(half) => {
+                        w.u8(0);
+                        w.put(half);
+                    }
+                    Shape::Sphere(radius) => {
+                        w.u8(1);
+                        w.f64(*radius);
+                    }
+                    Shape::Hull(corners) => {
+                        w.u8(2);
+                        w.put(corners);
+                    }
+                }
+                for v in [matter.mass, matter.friction, matter.restitution] {
+                    w.f64(v);
+                }
+                for v in matter.surface {
+                    w.f64(v);
+                }
+                w.u8(u8::from(matter.predicted));
             }
             Self::Character { player } => {
                 w.u8(3);
@@ -103,9 +129,9 @@ impl Decode for Kind {
                 .ok_or_else(|| r.error("member's node beyond the nodes"))
         };
         Ok(match r.u8()? {
-            0 => Self::Body(Shape::Box(r.get()?)),
-            1 => Self::Body(Shape::Sphere(r.finite()?)),
-            2 => Self::Body(Shape::Hull(r.get()?)),
+            0 => Self::Body(Shape::Box(r.get()?), matter(r)?),
+            1 => Self::Body(Shape::Sphere(r.finite()?), matter(r)?),
+            2 => Self::Body(Shape::Hull(r.get()?), matter(r)?),
             3 => Self::Character { player: r.get()? },
             4 => {
                 let radius = r.finite()?;
@@ -123,4 +149,24 @@ impl Decode for Kind {
             _ => return Err(r.error("unknown kind of entity")),
         })
     }
+}
+
+fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
+    let (mass, friction, restitution) = (r.finite()?, r.finite()?, r.finite()?);
+    let surface = [r.finite()?, r.finite()?, r.finite()?];
+    let predicted = match r.u8()? {
+        0 => false,
+        1 => true,
+        _ => return Err(r.error("not a flag")),
+    };
+    if !(mass > 0.0) || friction < 0.0 || !(0.0..=1.0).contains(&restitution) {
+        return Err(r.error("a body's matter out of range"));
+    }
+    Ok(Matter {
+        mass,
+        friction,
+        restitution,
+        surface,
+        predicted,
+    })
 }
