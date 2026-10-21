@@ -6,6 +6,12 @@
 //! brush's signed distance (negative inside). This works at every level of detail, needs a
 //! few dozen bytes per edit, and later edits override earlier ones (ADR-0006).
 //!
+//! The max and min are smooth (G1.3c, ADR-0006 amended): where an edit meets the ground, a
+//! dug rim is rounded off and a fill meets the ground in a fillet, over [`ROUND_CELLS`] cells
+//! of the grid that draws it. A crease between them, sharp, came out of the one-vertex-a-cell
+//! mesher as a zigzag of cell-sized facets (`docs/art-style.md` pillar 9). Physics reads the
+//! finest grid's field, so what is drawn up close is what is touched.
+//!
 //! A brush smaller than half a cell cannot be resolved by a chunk and would alias into a
 //! cell-sized bubble, so coarse chunks leave such brushes out ([`Edits::affecting`]).
 
@@ -102,21 +108,49 @@ impl Edit {
         }
     }
 
-    /// Applies the edit to a density value at `p`.
-    pub fn apply(&self, p: DVec3, density: f64) -> f64 {
+    /// Applies the edit to a density value at `p`, rounded over `round` metres where it meets
+    /// the surface ([`round`]).
+    pub fn apply(&self, p: DVec3, density: f64, round: f64) -> f64 {
         match self {
-            Self::Dig(b) => density.max(-b.distance(p)),
-            Self::Fill(b, _) => density.min(b.distance(p)),
+            Self::Dig(b) => smooth_max(density, -b.distance(p), round),
+            Self::Fill(b, _) => smooth_min(density, b.distance(p), round),
         }
     }
 }
 
+/// The rounds where edits meet the ground span this many cells of the grid that draws them: a
+/// round narrower than about two cells shows the cells' zigzag.
+pub const ROUND_CELLS: f64 = 2.0;
+/// The finest grid's cell (m): the field physics reads ([`Edits::density`]).
+pub const FINEST_CELL: f64 = 1.0;
+
+/// The width (m) of the rounds where edits meet the ground, on a grid of `cell` metres.
+pub fn round(cell: f64) -> f64 {
+    ROUND_CELLS * cell
+}
+
+/// `min(a, b)`, rounded where the two are within `k` of each other: at most `k/4` below it,
+/// equal to it elsewhere (Quilez's polynomial smooth minimum).
+pub fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
+    if k <= 0.0 {
+        return a.min(b);
+    }
+    let h = (k - (a - b).abs()).max(0.0) / k;
+    a.min(b) - 0.25 * k * h * h
+}
+
+/// `max(a, b)`, rounded as [`smooth_min`].
+pub fn smooth_max(a: f64, b: f64, k: f64) -> f64 {
+    -smooth_min(-a, -b, k)
+}
+
 /// Edge of the cells of the spatial index (m).
 const INDEX_CELL: f64 = 16.0;
-/// How far around its brush an edit is indexed (m). Rock just outside a dug brush has a
-/// density set by the brush (its distance to the dug wall), not by the generator, and contact
-/// queries there must see the edit; penetrations deeper than this do not occur.
-const INDEX_MARGIN: f64 = 2.0;
+/// How far around its brush an edit is indexed (m): its round on the finest grid, and beyond
+/// that rock just outside a dug brush has a density set by the brush (its distance to the dug
+/// wall), not by the generator, and contact queries there must see the edit; penetrations
+/// deeper than 2 m do not occur.
+const INDEX_MARGIN: f64 = ROUND_CELLS * FINEST_CELL + 2.0;
 
 /// The ordered log of edits, with a spatial index for point queries.
 #[derive(Clone, Debug, Default)]
@@ -162,14 +196,17 @@ impl Edits {
         self.log.push(edit);
     }
 
-    /// The edits whose brush overlaps the box `lo..hi` and that a grid of `cell` metres can
-    /// resolve (radius at least half a cell), in order.
+    /// The edits whose brush, widened by its round, overlaps the box `lo..hi` and that a grid
+    /// of `cell` metres can resolve (radius at least half a cell), in order.
     pub fn affecting(&self, lo: DVec3, hi: DVec3, cell: f64) -> Vec<Edit> {
+        let reach = round(cell);
         self.log
             .iter()
             .filter(|e| {
                 let (blo, bhi) = e.brush().bounds();
-                e.brush().radius() >= 0.5 * cell && blo.cmple(hi).all() && bhi.cmpge(lo).all()
+                e.brush().radius() >= 0.5 * cell
+                    && (blo - reach).cmple(hi).all()
+                    && (bhi + reach).cmpge(lo).all()
             })
             .copied()
             .collect()
@@ -184,9 +221,10 @@ impl Edits {
             .map(|&i| &self.log[i as usize])
     }
 
-    /// Applies every edit at `p` to a generated density.
+    /// Applies every edit at `p` to a generated density, with the finest grid's rounds.
     pub fn density(&self, p: DVec3, generated: f64) -> f64 {
-        self.near(p).fold(generated, |d, e| e.apply(p, d))
+        let round = round(FINEST_CELL);
+        self.near(p).fold(generated, |d, e| e.apply(p, d, round))
     }
 
     /// The rock of the last fill among `edits` whose brush contains `p` (within `tolerance`

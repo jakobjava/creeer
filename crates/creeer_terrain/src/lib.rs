@@ -24,6 +24,8 @@ pub mod monotone;
 pub mod noise;
 pub mod occlusion;
 pub mod planet;
+#[cfg(test)]
+mod rounds_tests;
 mod sea;
 pub mod spike;
 pub mod stream;

@@ -18,7 +18,7 @@
 //! exactly like the coarser level.
 
 use crate::datum::Datum;
-use crate::edits::Edit;
+use crate::edits::{Edit, round};
 use crate::terrain::{Terrain, generated};
 use crate::tiles::HeightSampler;
 use creeer_math::glam::{DVec3, Vec3};
@@ -46,17 +46,20 @@ impl<'a> LevelField<'a> {
     /// Density (m): the height above this level's surface; negative in rock.
     pub(crate) fn density(&mut self, p: DVec3) -> f64 {
         let generated = generated(&self.datum, &mut self.sampler, p);
-        self.edits.iter().fold(generated, |d, e| e.apply(p, d))
+        let round = round(self.cell);
+        self.edits
+            .iter()
+            .fold(generated, |d, e| e.apply(p, d, round))
     }
 
     /// The density at `p` and its gradient (points into the air).
     ///
     /// The generated part's gradient is exact: the derivative of the interpolated heights,
     /// the datum and the distance from the centre (one height lookup instead of six). Edits
-    /// combine by max/min, which has creases: an edit whose surface stays at least `reach`
-    /// from the generated one around `p` either has no part in the value or is all of it,
-    /// and its gradient is the brush's. Where it comes closer, the crease may cross the
-    /// stencil, and the gradient is central differences over one cell, as everywhere before.
+    /// combine by a rounded max/min: an edit whose surface stays at least `reach` from the
+    /// generated one around `p` (its round included) either has no part in the value or is
+    /// all of it, and its gradient is the brush's. Where it comes closer, the round may cross
+    /// the stencil, and the gradient is central differences over one cell.
     pub(crate) fn value_gradient(&mut self, p: DVec3) -> (f64, DVec3) {
         let (density, gradient, _) = self.sample(p);
         (density, gradient)
@@ -76,8 +79,8 @@ impl<'a> LevelField<'a> {
         );
         for e in &self.edits {
             // Over one cell each way, a brush distance moves at most a cell, the density
-            // about |g| cells; twice that for its curvature.
-            let reach = 2.0 * self.cell * (1.0 + g.length());
+            // about |g| cells; twice that for its curvature, and the round besides.
+            let reach = 2.0 * self.cell * (1.0 + g.length()) + round(self.cell);
             let (value, sign) = match e {
                 Edit::Dig(b) => (-b.distance(p), -1.0),
                 Edit::Fill(b, _) => (b.distance(p), 1.0),

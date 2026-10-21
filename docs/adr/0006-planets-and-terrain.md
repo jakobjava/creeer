@@ -112,3 +112,32 @@ Two kinds of seam showed in low sunlight: faint lines where levels meet, and str
 **Cost** (interleaved with an F4 build): one chunk with cold tiles 9.1 ms against 6.9 ms (warm tiles: 6.1 against 4.6 ms; the rest is tiles of the coarser level, which streaming shares with the coarser chunks), 1,452 chunks/s on 16 threads → **272 chunks/s projected to 6 min-spec cores** (budget 200; F4: 330). Of the meshing: refining 0.7 ms, caps 0.4 ms, clipping 0.1 ms, the extra sample layer 0.25 ms. Triangles +16 % (caps). The descent benchmark is unchanged: p50 7.0 against 7.2 ms, p99 12.0 against 12.1 ms.
 
 The limit "lighting seams between levels" above is resolved by geomorphing.
+
+## Amended in G1.3c (2026-10-21): rounded edits
+
+G1.3c's check of the terrain up close (ADR-0026, decision 11; `docs/art-style.md` pillar 9, "smooth, never blocky") found a ball dug into the ground drawn with a **zigzag rim**: cell-sized facets, alternately lit and dark, some folded back on themselves.
+
+**The cause:** max/min CSG leaves a crease where a brush meets the ground, and Surface Nets puts one vertex in each cell. A crease that turns by 90° within one cell has no vertex on it, and the cells around it fold their quads across it.
+
+**Prior work.**
+
+| Work | What it does | What it means here |
+|---|---|---|
+| Quilez, smooth minimum ([iquilezles.org](https://iquilezles.org/articles/smin/)) | `smin(a, b, k) = min(a, b) − h²·k/4`, `h = max(k − abs(a − b), 0)/k`: equal to min where the two differ by k or more, a quarter of k below it at the crease, continuous in slope | Taken, as a smooth max for digs and a smooth min for fills |
+| Surface Nets (Gibson 1998) and dual contouring (Ju et al., SIGGRAPH 2002) | One vertex per cell; dual contouring places it by a quadratic error over Hermite data, keeping sharp creases | Not taken: a crease kept sharp would still be drawn with 1 m facets, against pillar 9. A rounded rim is also what loose ground does: it slumps |
+
+**Decision.** Edits combine by a **smooth max (dig) and smooth min (fill)** whose round spans `ROUND_CELLS` = 2 cells of the grid that draws them (`edits.rs`): 2 m on the finest level, wider on coarser ones, so every level stays smooth and geomorphing blends between rounds. Physics reads the finest level's field, so what is drawn up close is what is touched. A round reaches up to its width beyond the brush, so the chunks an edit affects, the samples it changes, the point index's margin (2 m → 4 m) and the crease test of the exact gradients all widen by it.
+
+**The rock on a dug wall:** a vertex showed the rock at its depth when it lay within half a cell of a dig brush, else the rock at the natural surface. On a rounded rim neighbours flipped between the two. Now any vertex below the natural surface shows the rock at its depth, so the layers appear on dug walls as level bands; the mesher no longer walks the chunk's edits for each vertex.
+
+**Measured** (a ball of 4.5 m radius dug 2 m into gentle ground; folds between neighbouring triangles within the rim, `rounds_tests.rs`):
+
+| Edits | Worst fold | Folds over 45°, levels 0 / 1 / 2 |
+|---|---|---|
+| max/min (before) | 150–154° (flaps) | 52 / 27 / 21 |
+| rounds of 2 cells | 44–54° | 6 / 0 / 3 |
+| rounds of 3 cells (not taken) | 35–47° | 0 / 0 / 1 |
+
+Three cells would be smoother, but a 3 m round on the finest level turns small holes into bowls. Motion in the stress and play scenes is unchanged (their physics hashes before and after are equal: no body reaches a dug rim there). The `server` stress scene, which digs, runs as before (p50 0.84 against 0.83 ms).
+
+**Limit:** on the finest level a round of 2 m spans about two vertices, so from a few metres away its lighting still shows the triangles as spikes along the rim. Smooth up close needs a finer mesh near the camera (0.5 m cells) or normals per pixel (`docs/future-improvements.md`).

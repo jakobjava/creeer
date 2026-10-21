@@ -171,6 +171,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 |---|---|---|---|---|
 | **The streamer's update has rare slow frames**: in the stress flyover (1,200 frames) its p99 is 0.7 ms, but about one run in three has one frame of 4–7 ms, at no fixed frame, while its workers keep every core but two busy | Not reproducible at a frame (scheduling or the queue's lock with fourteen workers); gated at half a 60 Hz frame (8 ms). Fewer workers while the camera moves fast, or a lock-free queue, would tell | S | Small | ADR-0021 |
 | **Small edits vanish at a distance**: brushes under half a cell leave coarse chunks (a 2 m hole is invisible beyond about 250 m) | Level-of-detail cost | R, G | Medium | ADR-0006 |
+| **Dug rims smooth up close**: on the finest level (1 m cells) a rim's 2 m round spans about two vertices, so a few metres away its lighting shows the triangles as spikes. A finer finest level near the camera (0.5 m cells), or normals per pixel from the density field, would make it smooth | G1.3c fixed the zigzag and flaps (folds 150° → about 50°); finer terrain costs streaming and memory everywhere near the player | R | Large | ADR-0006, amended in G1.3c |
 | **Ground contacts cost more than plane contacts** (a large crate samples a few hundred surface points near the ground) | Correctness first | S | Medium | ADR-0006 |
 | **The sea is drawn as the datum's ellipsoid** (the true equipotential differs by metres) | Simple per-pixel intersection | R | Small | ADR-0014; `sea.wgsl` |
 

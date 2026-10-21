@@ -173,8 +173,8 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
 - **Smooth geometry everywhere** (`art-style.md` pillar 9, §7):
   - the sandbox's flat-shaded primitives become smooth ones: boxes with rounded edges and cylinders with rounded rims (true rounds, a radius in metres whatever the scale), and cylinders and spheres with at least 24 segments at their finest. Done 2026-10-21 (ADR-0026 decision 11);
   - members (cylinders) and spheres get levels of detail chosen by screen-space error (half a pixel), not by distance;
-  - the terrain's normals and dug craters checked to be smooth at every level of detail, with close-up screenshots.
-- **Validation:** golden screenshots of the crate, members and spheres at noon and in the evening, close and at 20 m; the facets' screen-space error measured on the levels of detail.
+  - the terrain's normals and dug craters checked to be smooth at every level of detail, with close-up screenshots. Done 2026-10-21: dug rims were zigzags with flaps; edits now combine by rounds of two cells (ADR-0006, amended in G1.3c); the rims' lighting up close waits on finer terrain (`docs/future-improvements.md`).
+- **Validation:** golden screenshots of the crate, members and spheres at noon and in the evening, close and at 20 m; the facets' screen-space error measured on the levels of detail. The error: done 2026-10-21 (`primitives_tests.rs`, `levels.rs`, ADR-0026). The golden screenshots move to G1.3h, whose style board makes every asset's goldens and checks them on each change.
 - **Budget:** the F1 mesh budget (10,000 instanced parts at 60 FPS on min-spec) still met; the mesh pass at most 10 % slower than now. For the surfaces: met, +4 to +6 % frame time across the bench views (ADR-0026, Cost).
 
 #### G1.3d Ambient occlusion (GTAO)

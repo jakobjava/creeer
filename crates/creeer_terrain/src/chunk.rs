@@ -162,11 +162,13 @@ impl ChunkSamples {
         Self { key, values }
     }
 
-    /// Applies an edit to the samples within one cell of its brush (enough for every cell
-    /// the brush surface crosses to see exact values; `edits.rs`).
+    /// Applies an edit to the samples within one cell of its brush widened by its round
+    /// (enough for every cell the rounded surface crosses to see exact values; `edits.rs`).
     pub fn apply(&mut self, edit: &Edit) {
-        let (lo, hi) = edit.brush().bounds();
         let (origin, cell) = (self.key.origin(), self.key.cell_size());
+        let round = crate::edits::round(cell);
+        let (lo, hi) = edit.brush().bounds();
+        let (lo, hi) = (lo - round, hi + round);
         // Sample index of a coordinate: (x − origin) / cell + 1, widened by one cell.
         let span = |lo: f64, hi: f64, o: f64| {
             let n = SAMPLES as f64;
@@ -187,7 +189,7 @@ impl ChunkSamples {
                     let at = i + SAMPLES * (j + SAMPLES * k);
                     let p = self.position(i, j, k);
                     #[allow(clippy::cast_possible_truncation)]
-                    let v = edit.apply(p, f64::from(self.values[at])) as f32;
+                    let v = edit.apply(p, f64::from(self.values[at]), round) as f32;
                     self.values[at] = v;
                 }
             }
