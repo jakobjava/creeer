@@ -259,6 +259,46 @@ fn joined_bodies_do_not_collide_unless_asked() {
 }
 
 #[test]
+fn bodies_let_pass_do_not_collide_and_follow_their_bodies() {
+    let mut world = World::new(DT);
+    let dt = world.dt();
+    let mut overlapping = |at: DVec3| {
+        let mut b = Body::rigid(
+            Shape::Box {
+                half: DVec3::splat(0.2),
+            },
+            1.0,
+            at,
+            dt,
+        );
+        b.structure.gravity = DVec3::ZERO;
+        world.add(b)
+    };
+    let (a, b, c) = (
+        overlapping(DVec3::ZERO),
+        overlapping(DVec3::new(0.3, 0.0, 0.0)),
+        overlapping(DVec3::new(5.0, 0.0, 0.0)),
+    );
+    world.let_pass(b, a);
+    assert!(world.passes(a, b) && !world.passes(a, c));
+    world.step();
+    assert!(world.contacts.is_empty(), "{:?}", world.contacts.len());
+    // Saved without them: whoever loads the world lets them pass again.
+    assert!(!World::from_bytes(&world.to_bytes()).unwrap().passes(a, b));
+    // They follow their bodies, and go with either.
+    world.remove_body(c);
+    assert!(world.passes(a, b));
+    let d = world.add(Body::rigid(
+        Shape::Sphere { radius: 0.1 },
+        1.0,
+        DVec3::Y * 9.0,
+        dt,
+    ));
+    world.remove_body(a);
+    assert!(!world.passes(0, 1) && !world.passes(0, d - 1));
+}
+
+#[test]
 fn joints_are_saved_and_follow_their_bodies() {
     let mut world = World::new(DT);
     let a = ball(&mut world, DVec3::new(1.0, 0.0, 0.0), 1.0);

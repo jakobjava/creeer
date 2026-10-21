@@ -3,7 +3,8 @@
 //! from: the friction anchors, the energy the contacts held (from version 5) and the joints
 //! (from version 8, their constraint forces with them). The ground
 //! is not in it: it is the terrain's, which a save holds as its edits (`creeer_sim::save`);
-//! whoever loads a world gives it its ground again.
+//! nor are the pairs of bodies let pass through each other (`World::let_pass`), its owner's;
+//! whoever loads a world gives it both again.
 //!
 //! What a step finds again from the state (its contacts and groups) is left out, and what a
 //! solver caches (its factorised matrix) is rebuilt; so a loaded world goes on as the saved

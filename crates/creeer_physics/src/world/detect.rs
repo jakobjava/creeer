@@ -60,7 +60,8 @@ impl World {
         let mut found = Vec::new();
         // Sleeping bodies need no contacts among themselves or with fixed geometry.
         let asleep = |body: usize| self.bodies[body].sleep.asleep;
-        // Bodies joined do not collide with each other, unless their joint says so.
+        // Bodies joined do not collide with each other, unless their joint says so; nor do
+        // bodies let pass.
         let unjoined = self.unjoined_pairs();
         let joined = |a: usize, b: usize| unjoined.binary_search(&(a.min(b), a.max(b))).is_ok();
         for (i, a) in items.iter().enumerate() {

@@ -51,7 +51,7 @@ WRIST_HEIGHT = 0.869
 # forearms in line with them, palms to the thighs (the carrying angle, 11.0° in men by
 # Paraskevas et al. 2004, shows with the palms forward; turned to the thighs, the forearm
 # lines up with the upper arm); the legs drawn in until the ankles are 11 cm from the middle.
-LOWER_ARMS = math.radians(21.0)
+LOWER_ARMS = math.radians(19.0)
 CARRYING_ANGLE = 0.0
 DRAW_IN_LEGS = math.radians(4.5)
 

@@ -239,15 +239,32 @@ impl World {
         joint
     }
 
-    /// Pairs of bodies joined without colliding (detection skips them).
+    /// Pairs of bodies that do not collide (detection skips them): joined without colliding,
+    /// or let pass ([`Self::let_pass`]).
     pub(super) fn unjoined_pairs(&self) -> Vec<(usize, usize)> {
         let mut pairs: Vec<(usize, usize)> = (self.joints.iter())
             .filter(|j| !j.collide)
             .filter_map(|j| j.b.map(|b| (j.a.0.min(b.0), j.a.0.max(b.0))))
+            .chain(self.passing.iter().copied())
             .collect();
         pairs.sort_unstable();
         pairs.dedup();
         pairs
+    }
+
+    /// Bodies `a` and `b` pass through each other from now on: no contacts between them, as
+    /// if a joint kept them from colliding. Removing either ends it. Not saved
+    /// ([`Self::to_bytes`]): whoever loads a world lets its pairs pass again.
+    pub fn let_pass(&mut self, a: usize, b: usize) {
+        let pair = (a.min(b), a.max(b));
+        if let Err(at) = self.passing.binary_search(&pair) {
+            self.passing.insert(at, pair);
+        }
+    }
+
+    /// Whether bodies `a` and `b` were let pass through each other.
+    pub fn passes(&self, a: usize, b: usize) -> bool {
+        self.passing.binary_search(&(a.min(b), a.max(b))).is_ok()
     }
 
     /// Wakes every sleeping body joined to an awake one; returns whether any woke.
@@ -267,9 +284,16 @@ impl World {
         woke
     }
 
-    /// The joints renumbered to the bodies' new indices (`map`), those on a body removed
-    /// dropped.
+    /// The joints and the passing pairs renumbered to the bodies' new indices (`map`), those
+    /// on a body removed dropped.
     pub(super) fn renumber_joints(&mut self, map: &[Option<usize>]) {
+        let new = |body: usize| map.get(body).copied().flatten();
+        let mut passing: Vec<(usize, usize)> = (self.passing.iter())
+            .filter_map(|&(a, b)| Some((new(a)?, new(b)?)))
+            .map(|(a, b)| (a.min(b), a.max(b)))
+            .collect();
+        passing.sort_unstable();
+        self.passing = passing;
         let moved =
             |(body, node): (usize, NodeId)| map.get(body).copied().flatten().map(|b| (b, node));
         self.joints = std::mem::take(&mut self.joints)

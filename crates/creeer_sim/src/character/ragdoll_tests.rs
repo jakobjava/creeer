@@ -27,6 +27,30 @@ fn the_segments_weigh_what_the_body_did() {
 }
 
 #[test]
+fn segments_not_joined_stand_apart() {
+    // Joined segments do not collide; any other two overlapping as they stand would be thrown
+    // apart by their contacts the moment the ragdoll forms. The closest pair, a forearm and a
+    // thigh as the arms hang by the hips, is a centimetre apart.
+    let joined = |a: usize, b: usize| {
+        LINKS
+            .iter()
+            .any(|l| (l.0, l.1) == (a, b) || (l.0, l.1) == (b, a))
+    };
+    let mut closest = f64::INFINITY;
+    for (a, (ca, ha, _)) in SEGMENTS.iter().enumerate() {
+        for (b, (cb, hb, _)) in SEGMENTS.iter().enumerate().skip(a + 1) {
+            if joined(a, b) {
+                continue;
+            }
+            let gap = ((*ca - *cb).abs() - (*ha + *hb)).max_element();
+            assert!(gap > 0.0, "segments {a} and {b} overlap by {}", -gap);
+            closest = closest.min(gap);
+        }
+    }
+    assert!(closest < 0.02, "the closest pair is {closest} m apart");
+}
+
+#[test]
 fn falling_keeps_momentum_and_angular_momentum() {
     let mut world = World::new(DT);
     let mut b = character::body(DVec3::new(1.0, 2.0, -0.5), DVec3::Y, DT);
@@ -49,6 +73,9 @@ fn falling_keeps_momentum_and_angular_momentum() {
         "angular momentum {l0} → {l}"
     );
     assert_eq!(world.joints().len(), 14);
+    // Its limbs pass through each other, but for the arms on the trunk and head.
+    assert!(world.passes(parts[6], parts[12]) && world.passes(parts[5], parts[6]));
+    assert!(!world.passes(parts[4], parts[1]) && !world.passes(parts[11], parts[HEAD]));
 }
 
 #[test]

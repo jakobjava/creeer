@@ -212,8 +212,8 @@ The server keeps each object's age (its exposure so far, the rate it ages at now
 
 | Asset | Triangles |
 |---|---|
-| The character as drawn: the base body and everything worn, without hidden regions | ≤ 15,000 |
-| A wearable | ≤ 4,000 |
+| The character as drawn (the base body and everything worn, without hidden regions), in levels of detail chosen by screen error | close-up about 30,000–40,000, its limit measured first (G1.3f); mid 10,000–15,000; far, at play distance and in shadows, 2,000–4,000 |
+| A wearable | ≤ 4,000 at the mid level; at the others in proportion |
 | A tool | ≤ 2,000 |
 | An item, bag or crate | ≤ 1,000 |
 | The landing pod | ≤ 20,000 |
@@ -308,4 +308,5 @@ In Factorio's spirit, not a copy of it.
   - **An average man** ("too muscular", "still way to buff, to broad", "the hip is too wide"): fitted to ANSUR II's men of normal weight. §8's "bulky clothes, slightly broad at the shoulders" became thin workwear on a man neither broad nor muscular.
   - **Thin clothes** ("really really thick", "still too thick"), a seat that is not accentuated, and a stand collar instead of a rolled one ("remove this weird sausage like feature").
   - **The base layer is mid grey** (the user's pick), `#797e86`: nudged ΔE₀₀ 1.6 from the first proposal `#7c8187` to keep ΔE₀₀ 12 from gravel.
+  - **Levels of detail for the engineer** (§7's budgets; the user: "i think we should have different LODs for the player"): detail can only be geometry here (no image textures, no normal maps), so quilting, laces, buckles and gloved fingers are triangles. More near the camera, few at play distance (about 70 px tall) and in shadows; the close-up budget is measured before modelling to it.
   - **Skin tones and hair colours** (§3.3; the user: "skin tone and hair is good"): the Monk scale's ten tones, its lightest three as approved exceptions (§4), and nine measured hair colours (`data/art/people.ron`).

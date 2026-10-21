@@ -86,6 +86,28 @@
 - **A strike's duration** is the steps it was seen in less one (it starts and ends within its first and last): taken as all of them, a 20 m fall's 32 ms strike seen over three steps read as 50 ms, and two thirds as hard.
 - **Falls**, each from five leans (people land differently; one landing alone is chance): 1 m unhurt, standing; 3 m 0–0.12, down; 5 m 0–0.14; 10 m 0.53–0.61; 20 m 1.0–1.06, killed every time.
 
+### Amended in G1.3f (2026-10-21): the ragdoll in a real person's proportions
+
+The ragdoll had been laid out for a 1.86 m person carrying a jetpack, its arms 9 cm too wide and 15 cm too high, its hands half as long as a person's. It now has the engineer's proportions (ADR-0026), so the drawn body, skinned on these segments (G1.3e), is the simulated one.
+
+- **Measured, not guessed** (`art/engineer/segments.py`, run on the fitted engineer in Blender): each vertex of his skin is given to a segment by its weights, split at the joints (the pelvis down to the gluteal fold, as de Leva segments it). A limb's box runs from joint to joint; across, it is the limb's measured section, an ellipse, as a box of the same area. The trunk's, the head's and the feet's likewise from their extents. Joints at the person's joint centres: shoulders at 1.459 m and ±0.186 m, elbows 1.148, wrists 0.899, hips 0.959, knees 0.524, ankles 0.111 (on boots' 3 cm soles); the back at the waist (1.113), the neck at the base of the neck (1.56). The masses keep de Leva's shares.
+- **The rule within its segments** (`art-style.md` §2): every vertex of the trunk, head, hands and feet lies within its box grown by 3 cm. The forearms and shanks miss on 0.3–1.5 % of theirs (by up to 3.8 cm), the upper arms on 5 % (4.7 cm, the shoulder's muscles) and the thighs on 7 % (4.5 cm, the hip's): boxes large enough to take them would meet the trunk's.
+- **No two segments not joined overlap as they stand** (a test): the closest, a forearm and a thigh as the arms hang by the hips, are a centimetre apart. The arms hang 19° down from the base mesh's A-pose rather than 21°: at 21° a forearm's box overlapped a thigh's by 6 mm.
+- **Legs are folded from the ragdoll's own hip joints** (0.959 m), not the standing body's hip (0.92): folding below the joints left them pulled apart from the thighs, and the crowd scene's worst tick took 385 ms.
+- **Within a ragdoll, only the arms meet the trunk and head** (`ragdoll::pass_within`, `World::let_pass`, the user's choice): the other pairs of segments pass through each other. With every pair colliding, the limbs, now as close together as a person's, kept fallen ragdolls restless (the contacts found anew each step, G1.8). The pairs are not saved; the server lets them pass again for the fallen when it loads (`people::restore_people`).
+
+| Within a ragdoll (24 crates dropped on a character, 10 s each) | At rest | Time | Worst tick |
+|---|---|---|---|
+| The old ragdoll, every pair colliding | 17 | 19.9 s | 48 ms |
+| Corrected, every pair colliding | 10 | 34.4 s | 116 ms |
+| Corrected, all but arm against leg | 9 | 31.6 s | 185 ms |
+| Corrected, all but leg against leg | 13 | 26.6 s | 84 ms |
+| **Corrected, only arms against the trunk and head (taken)** | **17** | **23.7 s** | **52 ms** |
+| Corrected, none | 19 | 21.3 s | 72 ms |
+
+- **The play scene *crowd*** at full length: p50 1.08 → 0.94 ms, p99 15.1 → 10.6 ms, worst 35 → 28 ms. Its most work in a tick at CI's length rose from 4,730 to 6,651 Newton iterations (tick 82, a crate landing on a fallen player; the old ragdoll reached 6,347 at full length): the user raised its ceiling to 7,300 (`play/tests.rs`). The stress scene *server* at full length: p99 24.5 → 15.2 ms, worst 67 → 31 ms.
+- **Goldens renewed** (*crowd* both lengths, *server* at 1,200 ticks), after the old ragdoll with the new code reproduced every old hash: the change is the ragdoll's alone.
+
 ### Not yet (G1.2's next slice)
 
 Prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.

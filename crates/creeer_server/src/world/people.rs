@@ -276,5 +276,13 @@ impl ServerWorld {
         for id in self.avatars() {
             self.people.entry(id).or_default();
         }
+        // The fallen's segments pass through each other as when they fell (not saved).
+        let fallen: Vec<Vec<usize>> = (self.people.values())
+            .filter(|p| p.fallen())
+            .map(|p| p.parts.iter().filter_map(|e| self.index(*e)).collect())
+            .collect();
+        for parts in fallen {
+            ragdoll::pass_within(&mut self.world, &parts);
+        }
     }
 }

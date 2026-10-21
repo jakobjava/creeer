@@ -100,6 +100,13 @@ fn a_world_saved_with_a_person_down_loads_with_them_down() {
     let q = back.person(ada).unwrap();
     assert_eq!((q.health, &q.parts), (p.health, &p.parts));
     assert_eq!(back.world.joints().len(), 14);
+    // Its limbs pass through each other as when it fell, but for the arms on the trunk.
+    let at = |k: usize| back.index(q.parts[k]).unwrap();
+    assert!(back.world.passes(at(6), at(12)), "the thighs pass");
+    assert!(
+        !back.world.passes(at(4), at(1)),
+        "a forearm meets the torso"
+    );
     // And stands up as she would have.
     let mut ticks = 0;
     while back.person(ada).unwrap().fallen() {

@@ -178,6 +178,10 @@ pub struct World {
     groups: Vec<(Vec<usize>, Contacts)>,
     /// Joints between bodies, or bodies and the world (`joint.rs`).
     joints: Vec<joint::Joint>,
+    /// Pairs of bodies that pass through each other, beyond those a joint keeps from colliding
+    /// (`joint.rs`): a ragdoll's limbs, for one. Not saved: whoever loads a world gives them
+    /// again, as its ground.
+    passing: Vec<(usize, usize)>,
     /// Struts for the next step (`strut.rs`).
     struts: Vec<strut::Strut>,
     /// Friction anchors of the last step.
@@ -204,6 +208,7 @@ impl World {
             groups: Vec::new(),
             left: Left::default(),
             joints: Vec::new(),
+            passing: Vec::new(),
             struts: Vec::new(),
             anchors: Vec::new(),
             dt,

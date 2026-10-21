@@ -221,8 +221,10 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - weights painted by the script;
   - bevels and face-weighted normals;
   - occlusion and convexity baked into `COLOR_0`;
-  - the body and the outfit, as drawn, at most 15,000 triangles; a wearable at most 4,000.
+  - in levels of detail chosen by screen error, as the primitives' (the user, 2026-10-21: "different LODs for the player"): close-up about 30,000–40,000 triangles for the body and the outfit as drawn, mid 10,000–15,000, far 2,000–4,000 (play distance and the shadows); a wearable at most 4,000 at the mid level, the others in proportion;
+  - **the close-up budget measured first**, before modelling to it: one player close to the camera, and a crowd of players in the factory scene, timed with stand-in meshes of each level's triangle count drawn into the main pass and the shadow cascades, against the frame budgets on the development machine projected to min-spec (skinning's own cost measured with G1.3e);
 - **Within its segments** (`art-style.md` §2): every vertex of the body weighted mainly to a bone lies within that segment's collision box grown by 3 cm, and the starting outfit within 5 cm. Where the real shape and a box disagree by more, the box is corrected to the person's dimensions, as a physics change, tested. Bulky later wearables (a pressure suit, armour) change their segments' boxes and masses when they come.
+  - **Done** (2026-10-21): the segments measured on the fitted engineer (`art/engineer/segments.py`) and moved to his proportions; within a ragdoll only the arms meet the trunk and head (the user's choice, until G1.8's persistent contacts); ADR-0023, amended in G1.3f. The upper arms and thighs miss the 3 cm on 5–7 % of their vertices (the shoulders' and hips' muscles); the detailed model is checked again.
 - **Out of scope here:** later wearables (a respirator, insulated suits, armour, a pressure suit for EVA in G8) come with what makes them; a character creator beyond skin tone and hair colour (faces, hair styles, body shapes) is recorded in `docs/future-improvements.md`.
 - **Validation:**
   - the validator on every model;

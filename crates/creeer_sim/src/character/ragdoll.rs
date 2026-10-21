@@ -7,7 +7,7 @@
 //! of mass where the body's was, moving at its velocity, turning at the spin that gives its own
 //! inertia the body's angular momentum (`I_rag·ω' = I_body·ω`).
 
-use super::{CENTRE, HIP};
+use super::CENTRE;
 use crate::character;
 use creeer_math::glam::{DMat3, DVec3};
 use creeer_physics::world::joint::{Joint, Kind};
@@ -25,22 +25,32 @@ const fn v(x: f64, y: f64, z: f64) -> DVec3 {
 /// Pelvis, torso (with the backpack), head; then each side's upper arm, forearm, hand, thigh,
 /// shank, foot: first the side at −x (the right of a person facing +z with +y up, in a
 /// right-handed frame), then the side at +x (the left).
+///
+/// Measured on the engineer (G1.3f, ADR-0026): Blender Studio's base mesh fitted to ANSUR II's
+/// men of normal weight at 1.80 m, standing on boots' 3 cm soles, arms hanging (palms to the
+/// thighs, so the forearms and hands hang a little forward). Each limb's box runs from joint to
+/// joint; across, its section is the limb's measured section, an ellipse, as a box of the same
+/// area (half widths √π/2 of the ellipse's). The trunk's and the feet's likewise from their
+/// extents, the pelvis below the back joint and down to the gluteal fold, as de Leva segments
+/// it. Every vertex of the trunk, head, hands and feet lies within 3 cm of its box; the
+/// shoulders' and the hips' muscles bulge up to 4.5 cm past the upper arms' and thighs'
+/// (ADR-0023, amended), where bigger boxes would meet the trunk's.
 pub(crate) const SEGMENTS: [Segment; 15] = [
-    (v(0.0, 1.0, 0.0), v(0.16, 0.1, 0.11), 0.130),
-    (v(0.0, 1.35, -0.02), v(0.19, 0.25, 0.14), 0.305),
-    (v(0.0, 1.73, 0.0), v(0.11, 0.13, 0.12), 0.069),
-    (v(-0.28, 1.43, 0.0), v(0.055, 0.15, 0.055), 0.027),
-    (v(-0.28, 1.13, 0.0), v(0.045, 0.14, 0.045), 0.016),
-    (v(-0.28, 0.93, 0.0), v(0.045, 0.05, 0.025), 0.006),
-    (v(-0.1, 0.7, 0.0), v(0.075, 0.2, 0.075), 0.142),
-    (v(-0.1, 0.3, 0.0), v(0.055, 0.19, 0.055), 0.043),
-    (v(-0.1, 0.05, 0.05), v(0.055, 0.04, 0.13), 0.014),
-    (v(0.28, 1.43, 0.0), v(0.055, 0.15, 0.055), 0.027),
-    (v(0.28, 1.13, 0.0), v(0.045, 0.14, 0.045), 0.016),
-    (v(0.28, 0.93, 0.0), v(0.045, 0.05, 0.025), 0.006),
-    (v(0.1, 0.7, 0.0), v(0.075, 0.2, 0.075), 0.142),
-    (v(0.1, 0.3, 0.0), v(0.055, 0.19, 0.055), 0.043),
-    (v(0.1, 0.05, 0.05), v(0.055, 0.04, 0.13), 0.014),
+    (v(0.0, 0.986, 0.012), v(0.152, 0.127, 0.107), 0.130),
+    (v(0.0, 1.343, 0.015), v(0.134, 0.229, 0.109), 0.305),
+    (v(0.0, 1.682, 0.058), v(0.086, 0.149, 0.104), 0.069),
+    (v(-0.195, 1.304, 0.0), v(0.054, 0.156, 0.084), 0.027),
+    (v(-0.237, 1.024, 0.034), v(0.036, 0.131, 0.038), 0.016),
+    (v(-0.258, 0.791, 0.126), v(0.032, 0.115, 0.066), 0.006),
+    (v(-0.108, 0.742, 0.009), v(0.083, 0.219, 0.072), 0.142),
+    (v(-0.122, 0.317, -0.058), v(0.052, 0.207, 0.055), 0.043),
+    (v(-0.155, 0.065, 0.016), v(0.063, 0.065, 0.127), 0.014),
+    (v(0.195, 1.304, 0.0), v(0.054, 0.156, 0.084), 0.027),
+    (v(0.237, 1.024, 0.034), v(0.036, 0.131, 0.038), 0.016),
+    (v(0.258, 0.791, 0.126), v(0.032, 0.115, 0.066), 0.006),
+    (v(0.108, 0.742, 0.009), v(0.083, 0.219, 0.072), 0.142),
+    (v(0.122, 0.317, -0.058), v(0.052, 0.207, 0.055), 0.043),
+    (v(0.155, 0.065, 0.016), v(0.063, 0.065, 0.127), 0.014),
 ];
 
 /// A joint: child and parent segment, where (standing, above the feet), its axis, and what
@@ -60,23 +70,30 @@ const fn hinge(lo: f64, hi: f64) -> Kind {
     }
 }
 
-/// The joints: back, neck; each side's shoulder, elbow, wrist, hip, knee, ankle.
+/// The joints: back, neck; each side's shoulder, elbow, wrist, hip, knee, ankle. Where the
+/// engineer has them (as the segments): the back at the waist (omphalion), the neck at the
+/// seventh cervical vertebra's height, the limbs' at their joints' centres.
 pub(crate) const LINKS: [Link; 14] = [
-    (1, 0, v(0.0, 1.1, 0.0), DVec3::Y, ball(0.6, 0.5)),
-    (2, 1, v(0.0, 1.6, 0.0), DVec3::Y, ball(0.7, 1.0)),
-    (3, 1, v(-0.28, 1.58, 0.0), DVec3::NEG_Y, ball(1.6, 1.0)),
-    (4, 3, v(-0.28, 1.28, 0.0), DVec3::X, hinge(0.0, 2.5)),
-    (5, 4, v(-0.28, 0.99, 0.0), DVec3::X, hinge(-1.0, 1.0)),
-    (6, 0, v(-0.1, 0.9, 0.0), DVec3::NEG_Y, ball(1.4, 0.6)),
-    (7, 6, v(-0.1, 0.5, 0.0), DVec3::X, hinge(-2.4, 0.0)),
-    (8, 7, v(-0.1, 0.1, 0.0), DVec3::X, hinge(-0.6, 0.6)),
-    (9, 1, v(0.28, 1.58, 0.0), DVec3::NEG_Y, ball(1.6, 1.0)),
-    (10, 9, v(0.28, 1.28, 0.0), DVec3::X, hinge(0.0, 2.5)),
-    (11, 10, v(0.28, 0.99, 0.0), DVec3::X, hinge(-1.0, 1.0)),
-    (12, 0, v(0.1, 0.9, 0.0), DVec3::NEG_Y, ball(1.4, 0.6)),
-    (13, 12, v(0.1, 0.5, 0.0), DVec3::X, hinge(-2.4, 0.0)),
-    (14, 13, v(0.1, 0.1, 0.0), DVec3::X, hinge(-0.6, 0.6)),
+    (1, 0, v(0.0, 1.113, 0.0), DVec3::Y, ball(0.6, 0.5)),
+    (2, 1, v(0.0, 1.56, 0.0), DVec3::Y, ball(0.7, 1.0)),
+    (3, 1, v(-0.186, 1.459, -0.005), DVec3::NEG_Y, ball(1.6, 1.0)),
+    (4, 3, v(-0.223, 1.148, 0.004), DVec3::X, hinge(0.0, 2.5)),
+    (5, 4, v(-0.253, 0.899, 0.076), DVec3::X, hinge(-1.0, 1.0)),
+    (6, 0, v(-0.085, 0.959, 0.0), DVec3::NEG_Y, ball(1.4, 0.6)),
+    (7, 6, v(-0.125, 0.524, -0.038), DVec3::X, hinge(-2.4, 0.0)),
+    (8, 7, v(-0.123, 0.111, -0.053), DVec3::X, hinge(-0.6, 0.6)),
+    (9, 1, v(0.186, 1.459, -0.005), DVec3::NEG_Y, ball(1.6, 1.0)),
+    (10, 9, v(0.223, 1.148, 0.004), DVec3::X, hinge(0.0, 2.5)),
+    (11, 10, v(0.253, 0.899, 0.076), DVec3::X, hinge(-1.0, 1.0)),
+    (12, 0, v(0.085, 0.959, 0.0), DVec3::NEG_Y, ball(1.4, 0.6)),
+    (13, 12, v(0.125, 0.524, -0.038), DVec3::X, hinge(-2.4, 0.0)),
+    (14, 13, v(0.123, 0.111, -0.053), DVec3::X, hinge(-0.6, 0.6)),
 ];
+
+/// The hip joints' height standing: where legs pressed shorter are folded from. Above the
+/// standing body's own hip (`character::HIP`): folding from below the joints left them pulled
+/// apart from the thighs, and the crowd scene's worst tick took 385 ms to pull them back.
+const HIPS: f64 = LINKS[5].2.y;
 
 /// The joints' damping, as a damping ratio of the segment beyond each swinging about it as a
 /// pendulum under standard gravity (a property of the body, not of the planet): a limp
@@ -144,12 +161,12 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
     // to the length they have: laid out standing, they were half a metre in the ground, and
     // its contacts threw them out (a fall of 3 m, ended at rest, then took two healths).
     let feet = x - q * DVec3::Y * CENTRE;
-    let hip = feet + q * DVec3::Y * HIP;
-    let fold = (world.ray(hip, -(q * DVec3::Y), HIP, Some(index)))
-        .map_or(1.0, |h| (h.distance / HIP).clamp(0.1, 1.0));
+    let hip = feet + q * DVec3::Y * HIPS;
+    let fold = (world.ray(hip, -(q * DVec3::Y), HIPS, Some(index)))
+        .map_or(1.0, |h| (h.distance / HIPS).clamp(0.1, 1.0));
     let stand = |p: DVec3| {
-        if p.y < HIP {
-            DVec3::new(p.x, HIP - (HIP - p.y) * fold, p.z)
+        if p.y < HIPS {
+            DVec3::new(p.x, HIPS - (HIPS - p.y) * fold, p.z)
         } else {
             p
         }
@@ -218,7 +235,30 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
         let (m, half) = (SEGMENTS[child].2 * mass, SEGMENTS[child].1);
         world.joint_mut(j).damping = damping(m, half, at_of[child], at);
     }
+    pass_within(world, &parts);
     parts
+}
+
+/// The arms: each side's upper arm, forearm and hand.
+const ARMS: [usize; 6] = [3, 4, 5, 9, 10, 11];
+/// The pelvis, the torso and the head.
+const CORE: [usize; 3] = [0, 1, HEAD];
+
+/// Lets a ragdoll's segments (`parts`, the pelvis first) pass through each other but for the
+/// arms against the pelvis, torso and head: so an arm cannot pass through the chest, while
+/// the limbs' other contacts with each other, as close as a person's limbs hang, kept fallen
+/// ragdolls restless (the contacts found anew each step: G1.8; ADR-0023, amended in G1.3f).
+/// Whoever loads a world with fallen people calls it again: the pairs are not saved.
+pub fn pass_within(world: &mut World, parts: &[usize]) {
+    for (a, &x) in parts.iter().enumerate() {
+        for (b, &y) in parts.iter().enumerate().skip(a + 1) {
+            let arm_on_core = (ARMS.contains(&a) && CORE.contains(&b))
+                || (CORE.contains(&a) && ARMS.contains(&b));
+            if !arm_on_core {
+                world.let_pass(x, y);
+            }
+        }
+    }
 }
 
 /// How far a character may lean before it has toppled (cosine of 45°).

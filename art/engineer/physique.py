@@ -32,6 +32,9 @@ GIRTHS = [(0.91, 0.332, 0.222), (1.083, 0.297, 0.208), (1.323, 0.282, 0.231)]
 THIGH, CALF = (0.80, 0.574), (0.36, 0.372)
 UPPER_ARM = 0.330
 BIDELTOID = 0.490
+# Where it is measured: across the deltoids, between the armpits and the shoulders' points
+# (ANSUR II's axilla and acromion heights at 1.80 m).
+DELTOIDS = (1.362, 1.477)
 # The base of the neck: the jugular notch (the fitted body's, in front of the neck) and the
 # seventh cervical vertebra (ANSUR's cervicale height, behind it), and the group's girth there;
 # the neck below the larynx, square to its axis, and its girth (only measured).
@@ -205,17 +208,30 @@ def lower_shoulders(b):
     return lo, before, neck_base(b.co)
 
 
-def arms_in(b):
+def arms_in(b, rounds=4):
     """How far the arms move in for the breadth across the shoulders and upper arms, hanging, to
-    be the target's: measured on the upper arms posed as they will be."""
-    reach = 0.0
-    for side in (-1, 1):
-        s, e = (np.array(B.joint(n, side)) for n in ("shoulder", "elbow"))
-        along = (b.co - s) @ (e - s) / ((e - s) @ (e - s))
-        upper = b.co[(b.arm[side] > 0.5) & (along < 0.8)]
-        posed = [B.posed(Vector(c), side, "arm") for c in upper]
-        reach = max(reach, max(side * p.x for p in posed))
-    return max(0.0, reach - BIDELTOID / 2)
+    be the target's: measured on the shoulders and upper arms posed as the pose blends them
+    (the shoulders turn partly with the trunk), in a few rounds, as a vertex moves in only by
+    its share of the arm."""
+    weights = B.weights(b.mesh)
+    near = np.nonzero((b.co[:, 2] > 1.2) & (b.co[:, 2] < 1.55) & (b.arms > 0.05))[0]
+    shift = 0.0
+    for _ in range(rounds):
+        B.ARM_IN = shift
+        reach = 0.0
+        for i in near:
+            p = Vector(b.co[i])
+            p.x -= shift * (b.arm[1][i] - b.arm[-1][i])
+            q = p.copy()
+            for (limb, side), a in weights.items():
+                if a[i]:
+                    start = B.posed(p, side, "arm") if limb == "forearm" else p
+                    q += a[i] * (B.posed(p, side, limb) - start)
+            if DELTOIDS[0] < q.z < DELTOIDS[1]:
+                reach = max(reach, abs(q.x))
+        shift = max(0.0, shift + reach - BIDELTOID / 2)
+    B.ARM_IN = 0.0
+    return shift
 
 
 def trunk(b, arm_in):
@@ -300,7 +316,7 @@ def measure(skin):
         lines.append(f"at {z} m: {np.ptp(co[near, 0]):.3f} × {np.ptp(co[near, 1]):.3f} (target {breadth} × {depth})")
     lines.append(f"neck's base girth {neck_base(co):.3f} (target {NECK_BASE[2]})")
     lines.append(f"neck girth {neck_base(co, NECK):.3f} (theirs {NECK[2]})")
-    band = (co[:, 2] > 1.25) & (co[:, 2] < 1.5)
+    band = (co[:, 2] > DELTOIDS[0]) & (co[:, 2] < DELTOIDS[1])
     lines.append(f"across the deltoids {2 * np.abs(co[band, 0]).max():.3f} (target {BIDELTOID:.3f})")
     for name, (z, target) in (("thigh", THIGH), ("calf", CALF)):
         near = on_trunk & (co[:, 0] > 0.02) & (np.abs(co[:, 2] - z) < 0.006)

@@ -85,8 +85,11 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// *crowd*: 446 with its players standing (G1.2a); since G1.2d its knocked-down players lie
 /// under the crates it drops, 4,730 at tick 102, and the user accepted that measurement as
 /// the gate after P1's first pass (2026-10-18, ADR-0024 "Outcome of the first pass": no lever
-/// measured cuts it by the factor 490 asked). G1.8 brings it back down.
-const WORK: [(&str, u64); 1] = [("crowd", 5_200)];
+/// measured cuts it by the factor 490 asked). With the ragdoll moved to a real person's
+/// proportions (G1.3f), 6,651 at tick 82, a crate landing on a fallen player; the old ragdoll
+/// reached 6,347 at full length, and the scene's times fell (p99 15.1 → 10.6 ms, worst 35 →
+/// 28 ms at full length). The user accepted it (2026-10-21). G1.8 brings it back down.
+const WORK: [(&str, u64); 1] = [("crowd", 7_300)];
 
 #[test]
 #[ignore = "measures the work ceilings"]
