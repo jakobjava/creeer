@@ -137,7 +137,8 @@ def _pattern(t, kind, uv, obj):
 
 def surface(mat, info, wears, ages):
     """Fills `mat`'s node tree with the preview of a token: `info` its (rgb, roughness, metalness,
-    pattern); `wears` and `ages` the linear colours it wears and ages to (or None)."""
+    pattern); `wears` the (rgb, roughness, metalness) of the token it wears to and `ages` the
+    linear colour it ages to (each None without one)."""
     rgb, rough, metal, kind = info
     t = _Tree(mat)
     bsdf = next(n for n in t.nodes if n.type == "BSDF_PRINCIPLED")
@@ -202,18 +203,28 @@ def surface(mat, info, wears, ages):
     streaks = t.math("MULTIPLY", t.math("MULTIPLY", streak, sides), t.math("MULTIPLY", age, 0.3))
     colour = t.scale(colour, t.math("SUBTRACT", 1.0, streaks))
 
-    # 6: chips on worn edges: in patches along them, never a continuous line (no outlines,
-    # art-style.md §5), more of them as the object ages.
-    chips = t.smoothstep(t.math("MULTIPLY", wear, t.noise(obj, 30.0, 4.0)),
-                         0.6, 0.72)
+    # 6: wear on edges, in patches a few centimetres long (never a continuous line, no
+    # outlines, art-style.md §5), more as the object ages. It reveals the token beneath with
+    # its own finish; what is revealed weathers and dirties too, lagging the surface: fresh on
+    # a new object, mostly its surface on an old one.
+    chips = t.smoothstep(t.math("MULTIPLY", wear, t.noise(obj, 9.0, 3.0)), 0.58, 0.72)
     chips = t.math("MULTIPLY", chips, t.math("ADD", t.math("MULTIPLY", object_age, 1.2), 0.1), clamp=True)
+    fresh = t.math("MULTIPLY", chips, t.math("SUBTRACT", 0.7, t.math("MULTIPLY", age, 0.55)))
+    roughness = t.math("ADD", rough, t.math("MULTIPLY", grime, 0.15))
+    metallic = metal
     if wears is not None:
-        colour = t.mix(colour, wears, t.math("MULTIPLY", chips, 0.7))
+        wears_rgb, wears_rough, wears_metal = wears
+        revealed = t.mix(wears_rgb, wears_rgb, 0.0)
+        if pattern is not None:
+            revealed = t.scale(revealed, pattern)
+        colour = t.mix(colour, revealed, fresh)
+        lerp = lambda a, b: t.math("ADD", a, t.math("MULTIPLY", t.math("SUBTRACT", b, a), fresh))  # noqa: E731
+        roughness = lerp(roughness, wears_rough)
+        metallic = lerp(metal, wears_metal)
+        t.link(metallic, bsdf.inputs["Metallic"])
 
     # 7: the baked occlusion, previewed on the colour.
     colour = t.scale(colour, t.math("POWER", ao, 0.8))
     t.link(colour, bsdf.inputs["Base Color"])
-    roughness = t.math("ADD", rough, t.math("SUBTRACT", t.math("MULTIPLY", grime, 0.15),
-                                            t.math("MULTIPLY", chips, 0.2)), clamp=True)
-    t.link(roughness, bsdf.inputs["Roughness"])
+    t.link(t.math("ADD", roughness, 0.0, clamp=True), bsdf.inputs["Roughness"])
     mat.diffuse_color = (*rgb, 1.0)

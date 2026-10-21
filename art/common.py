@@ -92,8 +92,9 @@ def material(token):
     mat = bpy.data.materials.new(token)
     mat.use_nodes = True
     mat.use_backface_culling = True
-    colour = lambda name: tokens[name][0] if name else None  # noqa: E731
-    preview.surface(mat, (rgb, rough, metal, pattern), colour(wears_to), colour(ages_to))
+    wears = tokens[wears_to][:3] if wears_to else None
+    ages = tokens[ages_to][0] if ages_to else None
+    preview.surface(mat, (rgb, rough, metal, pattern), wears, ages)
     return mat
 
 

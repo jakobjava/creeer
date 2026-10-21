@@ -256,7 +256,7 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
 
 The style board and a walk in the planet sandbox, shown to the user: the engineer walking, jumping, swimming, flying and falling, crates being pushed, the terrain at noon and in the evening. The look is accepted, or changed, before G1.4 begins.
 
-**Order:** G1.3a → G1.3b → G1.3f's blockout (so the user sees the direction early) → G1.3c → G1.3d → G1.3e → G1.3f's model → G1.3g → G1.3h → G1.3i. Each step ends with `cargo xtask ci` green and a commit pushed to `g1`.
+**Order:** G1.3a → G1.3b → G1.3c → G1.3f, the engineer (blockout, then the models) → G1.3d → G1.3e → G1.3g → G1.3h → G1.3i. The user, 2026-10-21: "lets finish 1.3c and then just do 1.3f (the engineer) before d and e". The engineer is modelled and approved in Blender first, and drawn in the game once G1.3e skins it. Each step ends with `cargo xtask ci` green and a commit pushed to `g1`.
 
 ### G1.4 Tools, reach and carrying
 

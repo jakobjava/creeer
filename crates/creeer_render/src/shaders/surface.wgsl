@@ -184,14 +184,18 @@ fn model_surface(
     let streak = smoothstep(0.5, 0.72, fbm(at.local * vec3<f32>(50.0, 1.5, 50.0), 3u, at.footprint * 50.0));
     colour *= 1.0 - streak * (1.0 - abs(at.normal.y)) * film_age * 0.3;
 
-    // 6: chips along worn edges, in patches (never a continuous line, art-style.md §5),
-    // growing with age and use, revealing the token beneath.
+    // 6: wear along edges, in patches a few centimetres long (never a continuous line,
+    // art-style.md §5), growing with age and use. It reveals the token beneath, with its own
+    // finish (painted steel's bare metal, timber's cut wood). What is revealed weathers and
+    // dirties too, lagging the surface: fresh on a new object, mostly its surface on an old one.
     let worn = clamp(max(object_age, used) * 1.2 + 0.1, 0.0, 1.0);
-    let chips = smoothstep(0.6, 0.72, wear * local_fbm(at, 30.0, 4u)) * worn;
-    colour = mix(colour, palette[token.wears_to].colour, chips * 0.7);
+    let chips = smoothstep(0.58, 0.72, wear * local_fbm(at, 9.0, 3u)) * worn;
+    let fresh = chips * (0.7 - 0.55 * film_age);
+    let beneath = palette[token.wears_to];
+    colour = mix(colour, beneath.colour * pattern, fresh);
 
-    let roughness = clamp(token.roughness + grime * 0.15 - chips * 0.2, 0.0, 1.0);
-    return Surface(colour, roughness, token.metalness);
+    let roughness = mix(token.roughness + grime * 0.15, beneath.roughness, fresh);
+    return Surface(colour, clamp(roughness, 0.0, 1.0), mix(token.metalness, beneath.metalness, fresh));
 }
 
 /// A procedural mesh's surface: its instance's material with mottling and fine grain only (it
