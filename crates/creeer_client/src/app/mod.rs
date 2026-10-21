@@ -201,7 +201,7 @@ impl Running {
         .map_err(|e| e.to_string())?;
         let info = renderer.adapter_info();
         let adapter_label = format!("{} ({:?})", info.name, info.backend);
-        let meshes = DemoMeshes::register(&mut renderer.meshes);
+        let meshes = DemoMeshes::register_for(&mut renderer);
 
         let egui_ctx = egui::Context::default();
         #[allow(clippy::cast_possible_truncation)] // DPI scale factors are small (1.0–4.0)

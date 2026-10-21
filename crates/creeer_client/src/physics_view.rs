@@ -143,6 +143,8 @@ pub fn draw(
         }
         #[allow(clippy::cast_possible_truncation)] // render-space sizes
         let scale = Vec3::new(2.0 * radius as f32, length as f32, 2.0 * radius as f32);
+        // A snapshot without temperatures (the planet's) shows members unheated.
+        let heat = current.beam_heat.get(k).copied().unwrap_or(f32::NAN);
         scene.add(
             meshes.cylinder,
             Instance {
@@ -154,11 +156,9 @@ pub fn draw(
                 material: if broken {
                     BROKEN
                 } else {
-                    incandescent(STEEL, current.beam_heat[k])
+                    incandescent(STEEL, heat)
                 },
-                heat: utilisation
-                    .then_some(usage * 100.0)
-                    .or(shown(current.beam_heat[k])),
+                heat: utilisation.then_some(usage * 100.0).or(shown(heat)),
             },
         );
     }
@@ -171,8 +171,10 @@ pub fn draw(
         } else {
             (c, q)
         };
-        let t = current.box_heat[k];
-        let material = match current.box_look[k] {
+        // A snapshot without looks (the planet's) shows crates, without heat.
+        let t = current.box_heat.get(k).copied().unwrap_or(f32::NAN);
+        let look = current.box_look.get(k).copied().unwrap_or(Look::Crate);
+        let material = match look {
             Look::Crate => CRATE,
             Look::Steel => incandescent(STEEL, t),
             Look::Concrete => CONCRETE,
@@ -180,7 +182,19 @@ pub fn draw(
             Look::Canvas => CANVAS,
             Look::Water => WATER,
         };
-        add_box(scene, meshes, origin, (c, q, half), material, shown(t));
+        match meshes.models.crate_box {
+            // The 1 m crate is drawn as its model, from the centre of its base (G1.3b).
+            Some(model) if look == Look::Crate && is_crate(half) => scene.add(
+                model,
+                Instance {
+                    frame: Frame64::new(origin + c - q * DVec3::Y * half.y, q),
+                    scale: Vec3::ONE,
+                    material,
+                    heat: shown(t),
+                },
+            ),
+            _ => add_box(scene, meshes, origin, (c, q, half), material, shown(t)),
+        }
     }
     for (k, &(c, q, index)) in current.hulls.iter().enumerate() {
         let (c, q) = if same {
@@ -220,6 +234,11 @@ pub fn draw(
     for &wall in &current.walls {
         add_box(scene, meshes, origin, wall, CONCRETE, None);
     }
+}
+
+/// Whether a box of `half` extents is the 1 m crate the crate model draws (to a millimetre).
+fn is_crate(half: DVec3) -> bool {
+    (half - DVec3::splat(0.5)).abs().max_element() < 1e-3
 }
 
 fn add_box(

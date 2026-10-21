@@ -20,6 +20,11 @@ pub struct Material {
     /// Light emitted, as a multiple of the base colour (0: none). A star is drawn with it;
     /// it is unaffected by lighting and shadows.
     pub emission: f32,
+    /// How long the object has weathered, in years at the reference rate (`art-style.md`
+    /// §6b): each palette token ages by it at its own rate. 0: new.
+    pub exposure: f32,
+    /// Wear from use, 0 (none) to 1 (battered): chipped edges.
+    pub wear: f32,
 }
 
 impl Material {
@@ -30,6 +35,8 @@ impl Material {
             roughness,
             metalness: 0.0,
             emission: 0.0,
+            exposure: 0.0,
+            wear: 0.0,
         }
     }
 
@@ -40,6 +47,8 @@ impl Material {
             roughness,
             metalness: 1.0,
             emission: 0.0,
+            exposure: 0.0,
+            wear: 0.0,
         }
     }
 
@@ -50,6 +59,17 @@ impl Material {
             roughness: 1.0,
             metalness: 0.0,
             emission: strength,
+            exposure: 0.0,
+            wear: 0.0,
+        }
+    }
+
+    /// This material on an object that has weathered `exposure` years and has `wear` from use.
+    pub const fn aged(self, exposure: f32, wear: f32) -> Self {
+        Self {
+            exposure,
+            wear,
+            ..self
         }
     }
 }
@@ -70,7 +90,7 @@ pub struct Instance {
 /// Marks "no overlay value" on the GPU (below any real measurement).
 pub(crate) const NO_HEAT: f32 = -3.0e38;
 
-/// Instance data as uploaded to the GPU (64 bytes).
+/// Instance data as uploaded to the GPU (80 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub(crate) struct InstanceRaw {
@@ -83,6 +103,8 @@ pub(crate) struct InstanceRaw {
     pub roughness: f32,
     /// Linear base colour; alpha carries the overlay value (or [`NO_HEAT`]).
     pub color: [f32; 4],
+    /// The object's weathering (years) and wear (0–1); two unused.
+    pub ageing: [f32; 4],
 }
 
 /// Sun and ambient light.
@@ -147,6 +169,11 @@ impl Scene {
     pub fn instance_count(&self) -> usize {
         self.batches.iter().map(Vec::len).sum()
     }
+
+    /// The instances of `mesh`.
+    pub fn instances_of(&self, mesh: MeshId) -> &[Instance] {
+        self.batches.get(mesh.0 as usize).map_or(&[], Vec::as_slice)
+    }
 }
 
 /// Converts an sRGB-encoded channel (0–1) to linear light.
@@ -174,6 +201,7 @@ impl InstanceRaw {
             scale: instance.scale.to_array(),
             roughness: m.roughness,
             color: [r, g, b, instance.heat.unwrap_or(NO_HEAT)],
+            ageing: [m.exposure, m.wear, 0.0, 0.0],
         }
     }
 }
@@ -269,6 +297,15 @@ mod tests {
         };
         let raw = InstanceRaw::new(&instance, camera);
         assert_eq!(raw.position, [1.5, -2.0, 3.25]);
-        assert_eq!(std::mem::size_of::<InstanceRaw>(), 64);
+        assert_eq!(raw.ageing, [0.0; 4], "new by default");
+        let old = InstanceRaw::new(
+            &Instance {
+                material: instance.material.aged(3.5, 0.25),
+                ..instance
+            },
+            camera,
+        );
+        assert_eq!(old.ageing, [3.5, 0.25, 0.0, 0.0]);
+        assert_eq!(std::mem::size_of::<InstanceRaw>(), 80);
     }
 }

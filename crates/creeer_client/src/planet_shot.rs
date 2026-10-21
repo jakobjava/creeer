@@ -139,7 +139,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut renderer = pollster::block_on(Renderer::new_headless((1600, 900)))?;
-    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let meshes = DemoMeshes::register_for(&mut renderer);
     // Stream until settled.
     let start = Instant::now();
     loop {

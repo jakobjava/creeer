@@ -89,7 +89,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .clone();
     let mut view = SystemView::new(load_universe()?, crate::TICK_RATE_HZ);
     let mut renderer = pollster::block_on(Renderer::new_headless((1600, 900)))?;
-    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let meshes = DemoMeshes::register_for(&mut renderer);
     let (mut scene, mut lines) = (Scene::default(), DebugLines::default());
     wait(0.3);
     let s = now(&view);

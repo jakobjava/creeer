@@ -103,7 +103,7 @@ pub(crate) fn bench(
     factory: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
-    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let meshes = DemoMeshes::register_for(&mut renderer);
     let camera =
         demo::camera_preset(view, DVec3::ZERO).ok_or_else(|| format!("unknown view `{view}`"))?;
     let mut sim = OrbitSandbox::demo();
@@ -185,7 +185,7 @@ pub(crate) fn bench(
 pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = pollster::block_on(Renderer::new_headless(options.size))?;
     renderer.set_shadow_quality(options.shadows);
-    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let meshes = DemoMeshes::register_for(&mut renderer);
     let origin = if options.far { FAR_ORIGIN } else { DVec3::ZERO };
     let camera = demo::camera_preset(&options.view, origin)
         .ok_or_else(|| format!("unknown view `{}`", options.view))?;

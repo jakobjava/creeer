@@ -44,6 +44,7 @@ mod lab_plots;
 mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
+mod models;
 mod physics_bench;
 mod physics_drive;
 mod physics_fluids;
@@ -54,6 +55,8 @@ mod physics_rocks;
 mod physics_sandbox;
 mod physics_scenes;
 mod physics_view;
+#[cfg(test)]
+mod physics_view_tests;
 mod planet_net;
 mod planet_shot;
 mod planet_ui;
@@ -63,6 +66,7 @@ mod profiler_ui;
 #[cfg(test)]
 mod profiler_ui_tests;
 mod sandbox;
+mod style_board;
 mod system_bench;
 mod system_cmd;
 mod system_frame;
@@ -129,6 +133,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--planet") {
         return planet_shot::run(&args);
+    }
+    if args.iter().any(|a| a == "--style-board") {
+        return style_board::run(&args);
     }
     if args.iter().any(|a| a == "--system-bench") {
         return system_bench::run();

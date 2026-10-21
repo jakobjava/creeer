@@ -14,6 +14,7 @@ pub mod renderer;
 pub mod scene;
 mod shadow;
 pub mod terrain;
+pub mod vertex;
 
 pub use atmosphere::{Atmosphere, SeaSurface, Sky};
 pub use camera::Camera;

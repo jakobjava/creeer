@@ -104,7 +104,7 @@ fn phase(
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut view = SystemView::new(load_universe()?, crate::TICK_RATE_HZ);
     let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
-    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let meshes = DemoMeshes::register_for(&mut renderer);
     std::thread::sleep(Duration::from_millis(300));
     let s = view.snapshot().current;
     let home = system_frame::home(&s);

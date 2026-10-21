@@ -43,11 +43,13 @@ pub struct DemoMeshes {
     pub sphere: MeshId,
     /// The physics sandbox's hulls (`hulls.rs`), at their own size.
     pub hulls: [MeshId; crate::hulls::HULLS],
+    /// The authored models (G1.3b), where the packs have them.
+    pub models: crate::models::Models,
 }
 
 impl DemoMeshes {
-    /// Registers unit-sized primitives (1 m across) and the sandbox's hulls in the renderer's
-    /// arena.
+    /// Registers unit-sized primitives (1 m across), the sandbox's hulls and the packs' models
+    /// in the renderer's arena.
     pub fn register(arena: &mut MeshArena) -> Self {
         Self {
             cube: arena.add(&MeshData::cuboid(Vec3::splat(0.5))),
@@ -56,6 +58,7 @@ impl DemoMeshes {
             hulls: crate::hulls::catalogue()
                 .each_ref()
                 .map(|h| arena.add(&crate::hulls::mesh(h))),
+            models: crate::models::register(arena),
         }
     }
 }

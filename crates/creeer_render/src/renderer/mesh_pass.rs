@@ -11,10 +11,8 @@ pub(crate) struct Draw {
     instance_count: u32,
 }
 
-const MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 6 => Uint32];
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
-    wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4];
+const MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 6 => Uint32, 8 => Uint32, 9 => Float32x2];
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 7 => Float32x4];
 
 /// Vertex buffer layouts shared by every pipeline that draws instanced meshes.
 pub(crate) fn instanced_vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
@@ -86,6 +84,8 @@ impl MeshPass {
             include_str!("../shaders/heatmap.wgsl"),
             "\n",
             include_str!("../shaders/lighting.wgsl"),
+            "\n",
+            include_str!("../shaders/surface.wgsl"),
             "\n",
             include_str!("../shaders/mesh.wgsl")
         );

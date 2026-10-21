@@ -2,9 +2,9 @@
 //! its order, which model vertices name by index (`MeshVertex::material`).
 
 use bytemuck::{Pod, Zeroable};
-use creeer_art::{Palette, Shade};
+use creeer_art::{Palette, Pattern, Shade};
 
-/// One token as the mesh shader reads it (32 bytes, `mesh.wgsl`'s `Token`).
+/// One token as the mesh shader reads it (48 bytes, `surface.wgsl`'s `Token`).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub(crate) struct TokenRaw {
@@ -16,7 +16,27 @@ pub(crate) struct TokenRaw {
     pub per_player: f32,
     /// The token wear reveals (its own index when none).
     pub wears_to: u32,
-    pub _pad: u32,
+    /// The token age turns it into (its own index when none).
+    pub ages_to: u32,
+    /// Its pattern (`surface.wgsl`'s `PATTERN_*`).
+    pub pattern: u32,
+    /// The years ageing takes (0 when it does not age).
+    pub weathers_in: f32,
+    pub _pad: [u32; 2],
+}
+
+/// A pattern's number in the shader.
+fn pattern(p: Pattern) -> u32 {
+    match p {
+        Pattern::Plain => 0,
+        Pattern::Wood => 1,
+        Pattern::Paint => 2,
+        Pattern::Metal => 3,
+        Pattern::Stone => 4,
+        Pattern::Fabric => 5,
+        Pattern::Leather => 6,
+        Pattern::Glass => 7,
+    }
 }
 
 /// The tokens of `palette` for the GPU. Never empty: a storage buffer cannot be.
@@ -43,7 +63,10 @@ pub(crate) fn tokens(palette: &Palette) -> Vec<TokenRaw> {
                 0.0
             },
             wears_to: u32::try_from(t.wears_to.unwrap_or(k)).expect("few tokens"),
-            _pad: 0,
+            ages_to: u32::try_from(t.ages_to.unwrap_or(k)).expect("few tokens"),
+            pattern: pattern(t.pattern),
+            weathers_in: t.weathers_in.map_or(0.0, narrow),
+            _pad: [0; 2],
         })
         .collect();
     if out.is_empty() {
@@ -134,7 +157,14 @@ mod tests {
         let palette = Palette::from_data(&Data::base()).expect("the base palette");
         let raw = tokens(&palette);
         assert_eq!(raw.len(), palette.tokens.len());
-        assert_eq!(std::mem::size_of::<TokenRaw>(), 32);
+        assert_eq!(std::mem::size_of::<TokenRaw>(), 48);
+        let timber = palette.index("timber").expect("timber");
+        assert_eq!(raw[timber].pattern, 1);
+        assert_eq!(
+            raw[timber].ages_to as usize,
+            palette.index("timber_weathered").expect("aged")
+        );
+        assert!((raw[timber].weathers_in - 1.0).abs() < 1e-6);
         let k = palette.index("steel_painted").expect("painted steel");
         let steel = palette.index("steel").expect("steel");
         assert_eq!(raw[k].wears_to as usize, steel);
