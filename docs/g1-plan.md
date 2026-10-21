@@ -100,12 +100,13 @@ It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and a
 
 ### G1.3 The look: art direction and the asset pipeline (ADR-0026)
 
-**Planned** (2026-10-21), awaiting the user's review. The look comes first, so that everything after it is made in the style. Its survey of prior work is in ADR-0026, its rules in `docs/art-style.md`, and how Blender is used in `docs/blender-mcp.md`.
+**In progress** (2026-10-21; the plan approved by the user). The look comes first, so that everything after it is made in the style. Its survey of prior work is in ADR-0026, its rules in `docs/art-style.md`, and how Blender is used in `docs/blender-mcp.md`.
 
 The user's direction at its start (2026-10-21, recorded in `art-style.md`'s changelog):
 - **Not futuristic:** the vibe of Factorio.
 - **Not blocky or voxel-like:** no Minecraft geometry; smooth surfaces, for realism.
-- **The engineer** after Factorio's FFF-40 engineer as a very rough guide, without its hard hat, tools and rucksack.
+- **The engineer** after Factorio's FFF-40 engineer as a very rough guide, without its hard hat, tools and rucksack. The user chose: the jetpack as two bottles on a harness frame, a skinned and smooth body, and a hood and goggles with the face open.
+- **Many wearables in future:** a base body ("naked": in a plain base layer) that wears more and more as the player progresses. The starting outfit is itself made of wearables.
 
 Where it starts: meshes are a position and a normal per vertex with one material per instance; the character is drawn as a box and two beams; there is no ambient occlusion; meshes have no surface detail (ADR-0026, "Where it starts"). Blender 5.2 LTS with MCP for Blender is set up and running (`docs/blender-mcp.md`).
 
@@ -167,32 +168,46 @@ Where it starts: meshes are a position and a normal per vertex with one material
   - the visibility-bitmask variant measured if thin members or branches over-darken.
 - **Budget:** ≤ 1 ms at 1080p on min-spec (a GTX 1660-class GPU), projected from the development machine's timestamps.
 
-#### G1.3e Skinning on the ragdoll's bones
+#### G1.3e Skinning on the ragdoll's bones, and wearables
 
-- **Decided at this step** (it replaces the first of the "Decisions to confirm" below): the engineer is a skinned mesh whose fifteen bones are the ragdoll's segments, so the drawn body is the simulated one bone for bone, and smooth across its joints. Rigid segments would show seams and gaps at every bent joint, against `art-style.md` pillar 9.
+- **Decided** (the user, 2026-10-21; it was the first of the "Decisions to confirm" below): the engineer is skinned on fifteen bones that are the ragdoll's segments, so the drawn body is the simulated one bone for bone, and smooth across its joints.
 - **Dual quaternion skinning** (Kavan et al. 2007), in one compute pass a frame. The shadow, prepass and colour passes draw the skinned result as a plain mesh.
-- **Ragdolls known to the client.** A ragdoll segment's spawn says whose it is and which segment (protocol 7), so the client draws the person, not fifteen boxes.
+- **Wearables** (ADR-0026, decision 6):
+  - the base body and every wearable are skinned meshes on the same bones, animated once;
+  - each mesh is divided into regions (head, face, hair, neck, torso, upper arms, forearms, hands, pelvis, thighs, shanks, feet);
+  - a wearable fills slots (head, eyes, face, torso inner and outer, hands, legs, feet, back) and lists the regions it hides, of the body and of the layers beneath;
+  - a wearable's data (its model, slots and hidden regions) lives in the pack (`data/wearables.ron`), checked by the validator;
+  - when an outfit changes, the visible regions of everything worn are merged into one index list, so a character is still one skinning dispatch and one draw.
+- **Ragdolls known to the client.** A ragdoll segment's spawn says whose it is and which segment (protocol 7), so the client draws the person, not fifteen boxes. The protocol also carries each player's outfit, skin tone and hair colour.
 - **Validation:**
   - the bind pose reproduces the rest mesh exactly;
   - a vertex weighted to one bone moves rigidly with it (to f32 rounding);
   - the volume of an elbow bent by 90° kept within 2 % (linear blend skinning measured beside it);
-  - a ragdoll's drawn bones equal its segments' poses.
-- **Budget:** skinning 8 characters ≤ 0.05 ms of GPU time.
+  - a ragdoll's drawn bones equal its segments' poses;
+  - an outfit's merged mesh draws exactly the visible regions (a test outfit of test wearables).
+- **Budget:** skinning 8 characters ≤ 0.05 ms of GPU time; an outfit change ≤ 0.5 ms on the client.
 
 #### G1.3f The engineer
 
-- **The look** (`art-style.md` §3.3, §8): a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood with goggles and a respirator. There is no hard hat, no rucksack and no tools, and no face is modelled.
-- **A blockout first.** Rough shapes on the ragdoll's proportions, judged as a silhouette at 64 px and at 20 m, and shown to the user from the front, side and three-quarter. The detailed model starts only after the user approves it.
-- **The model** (`art/engineer.py`):
+- **The look** (`art-style.md` §3.3, §8). The base body: a person with an open face, short hair and the player's skin tone, in a plain base layer. The starting outfit's wearables: a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood leaving the face open, goggles, and the jetpack (two small nitrogen bottles on a harness frame, on the back slot). There is no hard hat, no rucksack and no tools.
+- **Its survey first** (as every step's): how stylised games with realistic proportions model readable faces without the uncanny valley, and measured human skin colours (for the `skin` tones, within `art-style.md` §4's limits). The skin tones and hair colours go to the user for approval.
+- **A blockout first.** Rough shapes on the ragdoll's proportions, the base body and the outfit, judged as a silhouette at 64 px and at 20 m, and shown to the user from the front, side and three-quarter. The detailed models start only after the user approves it.
+- **The models** (`art/engineer/body.py` and one script per wearable in `art/wear/`):
   - built on the bones the ragdoll has (the table that `creeer_tools` writes from the Rust code);
+  - each wearable fitted over the body (and over the layers it goes on), its regions and slots named;
   - weights painted by the script;
   - bevels and face-weighted normals;
   - occlusion and convexity baked into `COLOR_0`;
-  - at most 15,000 triangles.
-- **Within its segments** (`art-style.md` §2): every vertex weighted mainly to a bone lies within that segment's collision box grown by 3 cm. Where the real shape and a box disagree by more, the box is corrected to the person's dimensions, as a physics change, tested.
-- **The jetpack** (G1.2c) is its own model on the torso's bone: two small nitrogen bottles on a harness frame. Its look waits for the user's choice (below, "Decisions to confirm").
-- **Out of scope:** a pressure suit for vacuum (EVA, G8) is another outfit, made then, in the style of real pressure suits.
-- **Validation:** the validator on the model; golden screenshots standing, walking and fallen, on all five grounds; the silhouette at 64 px; the user's approval of the images.
+  - the body and the outfit, as drawn, at most 15,000 triangles; a wearable at most 4,000.
+- **Within its segments** (`art-style.md` §2): every vertex of the body weighted mainly to a bone lies within that segment's collision box grown by 3 cm, and the starting outfit within 5 cm. Where the real shape and a box disagree by more, the box is corrected to the person's dimensions, as a physics change, tested. Bulky later wearables (a pressure suit, armour) change their segments' boxes and masses when they come.
+- **Out of scope here:** later wearables (a respirator, insulated suits, armour, a pressure suit for EVA in G8) come with what makes them; a character creator beyond skin tone and hair colour (faces, hair styles, body shapes) is recorded in `docs/future-improvements.md`.
+- **Validation:**
+  - the validator on every model;
+  - no poke-through: nothing beneath an outer layer shows through it by more than 2 mm, in the rest pose and in poses at the ragdoll's joint limits, for the base body alone, the full outfit, and each wearable alone;
+  - every hidden region lies inside what hides it (no holes where a region is hidden);
+  - golden screenshots of the base body and the full outfit standing, walking and fallen, on all five grounds;
+  - the silhouette at 64 px;
+  - the user's approval of the images.
 
 #### G1.3g Procedural animation
 
@@ -248,6 +263,7 @@ The style board and a walk in the planet sandbox, shown to the user: the enginee
 - **Capacity by mass and volume, not slots.** The clothes' pockets and a carried pack (an item with its own model, `art-style.md` §8) hold so many litres and the character carries their mass (it walks slower when loaded). Bulk fills by its bulk density.
 - **Dropping and bags.** A dropped bulk becomes a bag: a physics body whose mass is its contents. Dropped tools and logs are their own bodies.
 - **Containers.** A crate holds items, and its physics mass includes them (it changes as items go in and out).
+- **Wearables as items** (G1.3e made them drawable). Putting one on or taking it off is a transaction like any other. A worn piece's mass is added to the segments it is worn on, so the character's and the ragdoll's masses and inertias follow what is worn. The starting outfit comes from the pod.
 - **The landing pod.** Each player starts at a landing pod: a container with the starting kit (suit, tools, a little food for G9), a charger for the jetpack's nitrogen, and the respawn point.
 - **Transactions.** Every move between inventories, containers and the world is one server-authoritative transaction, atomic and ledgered: mass, species and items conserved, tested over random sequences (proptest).
 - **Saves.** New save sections for inventories and containers (save version 7, migration from 6); bags and pods are bodies like any other.
@@ -345,11 +361,11 @@ Each sub-milestone ends with `cargo xtask ci` green and a commit pushed to `g1`.
 
 Recommended here, to be confirmed with the user at the sub-milestone they belong to:
 
-1. **A skinned body on the ragdoll's bones** (G1.3; revised 2026-10-21 from "a segmented suit instead of a skinned body"). The fifteen bones are the ragdoll's segments, so the drawn body is still the simulated one, bone for bone, but smooth across its joints. The user now asks for smooth surfaces (`art-style.md` pillar 9), and rigid segments would show seams at every bent joint. It costs a compute skinning pass, and the ragdoll's segments must be known to the client (protocol 7).
+1. **A skinned body on the ragdoll's bones** (G1.3). **Decided by the user, 2026-10-21** (it replaced "a segmented suit instead of a skinned body"). The fifteen bones are the ragdoll's segments, so the drawn body is still the simulated one, bone for bone, but smooth across its joints. Rigid segments would show seams at every bent joint, against smooth surfaces (`art-style.md` pillar 9). It costs a compute skinning pass, and the ragdoll's segments must be known to the client (protocol 7).
 2. **The landing pod as the start** (G1.6): a starting kit and a respawn point that fit a planet with no one on it.
 3. **Cameras: first and third person** (G1.9). A higher, Factorio-like overview camera for factories is an idea for G3.
 4. **Reach of 2.5 m for survival play** (G1.4), with F5's 500 m commands kept for creative and test servers.
-5. **The jetpack's look** (G1.3f). Recommended: two small nitrogen bottles on a harness frame, a separate model on the torso, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out.
+5. **The jetpack's look** (G1.3f). **Decided by the user, 2026-10-21:** two small nitrogen bottles on a harness frame, a wearable on the back slot, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out.
 
 ## Budgets (development machine; min-spec projections ×2)
 

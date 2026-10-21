@@ -73,8 +73,11 @@ The rocks' colours live in `data/geology/rocks.ron` and are part of this palette
 | `leather` | `#4b2c22` | 0.70 | 0 | Dark oxblood-brown: boots, gloves, belt, straps, knee and elbow pads |
 | `lens` | `#2a3b33` | 0.05 | 0 | Smoky green glass of the goggles |
 | `player_accent` | per player | 0.75 | 0 | The work jacket (§3.6) |
+| `skin` | per player | 0.55 | 0 | A choice of skin tones from measured skin colour data, set in G1.3f with the user's approval |
+| `hair` | per player | 0.70 | 0 | A choice of natural hair colours, set with the skin tones |
+| `base_layer` | set in G1.3f | 0.85 | 0 | The base body's plain vest and shorts |
 
-Buckles, rivets and the goggles' rims are `steel`; the respirator's face piece is `rubber`; its filter canister is `steel_painted` (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 16.9 for `coverall` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them.
+Buckles, rivets and the goggles' rims are `steel`; the jetpack's bottles are `steel_painted` on a `steel` frame with `leather` straps (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 16.9 for `coverall` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them.
 
 ### 3.4 Vegetation
 
@@ -148,7 +151,8 @@ Measured in CIELAB, automated in tests over the palette.
 
 | Asset | Triangles |
 |---|---|
-| The character (all segments) | ≤ 15,000 |
+| The character as drawn: the base body and everything worn, without hidden regions | ≤ 15,000 |
+| A wearable | ≤ 4,000 |
 | A tool | ≤ 2,000 |
 | An item, bag or crate | ≤ 1,000 |
 | The landing pod | ≤ 20,000 |
@@ -160,11 +164,14 @@ Measured in CIELAB, automated in tests over the palette.
 ## 8. Subjects
 
 - **The engineer.** A worker in rugged, padded workwear (pillar 10), not an astronaut. The user's rough guide is Factorio's engineer as first shown in FFF-40 (2014): its layered, padded workwear, chunky gloves and boots, and the player's colour on the jacket. It is not copied, and its hard hat, tools and rucksack are left out.
-  - **Clothes.** A quilted `coverall`, a work jacket in the player's colour (`player_accent`) with a belt, `leather` knee and elbow pads, thick gloves and laced boots.
-  - **Head.** A close-fitting padded hood with goggles (`lens`) and a respirator with a filter canister. The face is covered, and none is modelled.
+  - **A base body that wears things** (the user, 2026-10-21: many wearables in future, "a 'naked' version that can wear more and more cool stuff as you progress"). The engineer is a base body plus whatever it wears. Every piece of clothing and gear is a separate wearable model on the same bones. What a player wears shows their progress, as Factorio's armour does.
+  - **The base body.** A real person's proportions, with an open face, short hair and a skin tone the player chooses. It wears a plain base layer (a vest and shorts), so "naked" is the body without any gear.
+  - **The starting outfit** is made of wearables: a quilted `coverall`, a work jacket in the player's colour (`player_accent`) with a belt, `leather` knee and elbow pads, thick gloves, laced boots, a close-fitting padded hood leaving the face open, goggles (`lens`), and the jetpack (two small nitrogen bottles on a harness frame).
+  - **Later wearables** come with what the player can make: for example a respirator for dust and gases, insulated or fire-resistant suits, armour, and a pressure suit for vacuum (EVA, G8), in the style of real ones. Each has real properties (mass, insulation, protection, pockets) in the simulation, from G1.6 (items) and G9 (needs) on.
+  - **The face** is modelled with real proportions and soft, simple forms: readable at play distance, with no fine detail that would look uncanny up close.
   - **Proportions.** Those of a real person (§2) in bulky clothes: slightly broad at the shoulders, gloves and boots chunky. They read as a person in workwear from 50 m and as a silhouette at 64 px.
-  - **The body.** Its bones are the ragdoll's fifteen segments, one bone per segment, so the drawn body is the simulated one (`docs/g1-plan.md`; ADR-0026). Its surface is smooth across the joints (skinned), never a set of separate blocks.
-  - **Carried things are separate models,** attached to a bone: the jetpack (G1.2c) and, from G1.4, the tool in hand.
+  - **The bones** are the ragdoll's fifteen segments, one bone per segment, so the drawn body is the simulated one (`docs/g1-plan.md`; ADR-0026). The body and every wearable are skinned on them, smooth across the joints, never a set of separate blocks.
+  - **Things held** are separate models attached to a bone: from G1.4, the tool in hand.
 - **Tools.** Wooden handles (`timber`, darkened with use), forged steel heads (`steel` with wear), simple and sturdy. Their outlines differ: pick, axe, shovel and saw are unmistakable.
 - **Trees.** Masses of foliage in clumps, not individual leaves; dark undersides from AO; bark with vertical detail. Stumps and cut ends in `wood_cut`. Species are told apart by shape first (spruce cone, pine umbrella, birch's white trunk, oak's broad crown), colour second.
 - **Machines and structures** (G2 on): painted steel by default, bare where machined or worn, hazard stripes where they move or burn.
@@ -222,3 +229,4 @@ In Factorio's spirit, not a copy of it.
   - **Not futuristic** (pillar 10). The user: "i do not want a futuristic art style but something similar to the vibe of factorio".
   - **The engineer** (§3.3, §8): workwear after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)". The off-white suit, bellows joints, helmet and visor were replaced by `coverall`, `leather`, `lens` and the jacket in `player_accent` (roughness 0.75, a fabric). The body is skinned on the ragdoll's segments instead of drawn as rigid segments, for smooth surfaces (ADR-0026).
   - **§1b** gained what the survey took from Factorio; **§11.3**: models come from scripts in Blender (`docs/blender-mcp.md`).
+  - **The user's choices on the engineer** (2026-10-21): the jetpack as bottles on a harness frame; the body skinned and smooth; a hood and goggles with the face open (so no respirator in the starting outfit). Then: "in future I want to have many wearables, so there should [be] a 'naked' version that can wear more and more cool stuff as you progress". §8 now has a base body (base layer, open face, skin tone and hair chosen by the player) and wearables on the same bones; §3.3 gained `skin`, `hair` and `base_layer`.

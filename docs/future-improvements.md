@@ -181,6 +181,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **A sky-view table** for the atmosphere | Only if the per-pixel ray march becomes a bottleneck | S | Small | ADR-0003 |
 | **Temporal upscaling** (beside the planned quality presets and render-scale slider) | Later | S | Large | plan.md |
 | **MSAA memory** (4× on Rgba16Float, about 32 MB at 1080p): a quality setting could lower it | Not needed yet | S | Small | ADR-0003 |
+| **A character creator** beyond skin tone and hair colour: faces, hair styles, body shapes (each body shape changing the ragdoll's segments and masses, de Leva's data per build) | G1.3 makes one base body; wearables come first (the user, 2026-10-21) | G, R | Medium | ADR-0026; `docs/g1-plan.md` G1.3f |
 
 ## Networking
 

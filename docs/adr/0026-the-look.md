@@ -1,6 +1,6 @@
 # ADR-0026: The look: models, materials, ambient occlusion and the engineer (G1.3)
 
-**Status:** proposed (2026-10-21), awaiting the user's review of the plan (`docs/g1-plan.md`, G1.3).
+**Status:** in progress (2026-10-21). The user approved the plan (`docs/g1-plan.md`, G1.3) and chose the jetpack on a harness, the skinned body, and a hood and goggles with the face open. The user then added the base body and wearables (decision 6).
 **Context:** G1.3 makes `docs/art-style.md` real, so that everything after it (tools, items, trees, the pod) is made in the style from its first version. The user, at its start: the engineer after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)"; "i do not want a futuristic art style but something similar to the vibe of factorio"; "i do not want a blocky or voxy like game (no minecraft geometry, i want smooth surfaces ==> realism)".
 **Builds on:** ADR-0003 (the renderer: forward, 4× MSAA, HDR, cascaded shadows, PBR-lite, Khronos PBR Neutral), ADR-0018 (data packs and the validator), ADR-0022 and ADR-0023 (joints, the character and its ragdoll).
 **Evidence:** to come with each sub-milestone (G1.3a–i).
@@ -35,6 +35,10 @@
 | Curvature-based wear: Blender's Pointiness and Dirty Vertex Colors; Substance's curvature masks; Unigine's screen-space curvature | Convex edges chip to the bare material and concave areas gather grime; the masks broken up by noise. Screen-space curvature aliases at distance (reported) | Taken: convexity and occlusion baked per vertex at export, broken up by triplanar noise. Screen-space curvature not taken |
 | Blender MCP practice (agent-skills notes on `blender-mcp`) | Exports through the MCP time out; run them in headless Blender | Taken: the MCP for live work, exports by `blender --background` from committed scripts (`docs/blender-mcp.md`) |
 | glTF 2.0 (Khronos); the `gltf` crate 1.4.1 | The standard format, with skins, animations and vertex colours; custom attributes need the crate's `extras` feature | Taken; the baked masks go in `COLOR_0`, so no custom attributes are needed |
+| World of Warcraft's geosets ([warcraft.wiki.gg](https://warcraft.wiki.gg/wiki/Character_model)) | The player model is divided into pieces of geometry that equipment toggles or swaps | Taken: the base body in regions that worn things hide |
+| Bethesda's biped slots (Skyrim; [UESP](https://ck.uesp.net/wiki/Skyrim_bodyparts_number)) | Each armour piece fills numbered body slots; its mesh is partitioned by body part, often carrying the body beneath it | Taken: wearables fill slots. Not taken: carrying a copy of the body in each piece (a body per piece to keep in step) |
+| inZOI's masking system ([ModKit](https://mod-docs.playinzoi.com/ModKit/project/CAZ/Guide/03.%20Masking%20System.html)) | Each outfit names the lower layers' regions it covers and the body regions it hides, "to prevent body parts from poking through shirts, pants, shoes" | Taken: each wearable lists the regions it hides, of the body and of the layers beneath |
+| Modular characters in practice (Unreal's leader pose; [gamedev.net](https://gamedev.net/forums/topic/710077-how-to-implement-a-modular-clothing-system); [polycount](https://polycount.com/discussion/comment/2636650)) | All parts share one skeleton, animated once; covered meshes are not drawn. Practitioners warn that skin hidden only partly will still clip through clothes in some poses, and prefer replacing whole segments | Taken: one skeleton animated once; whole regions hidden, never a part of one; poke-through measured in extreme poses |
 
 ## Decision (proposed)
 
@@ -52,10 +56,16 @@
    - Dual quaternion skinning, in one compute pass per frame.
    - A ragdoll's segments say whose they are and which segment they are (protocol 7), so the client can draw the person.
    - This replaces `docs/g1-plan.md`'s first decision to confirm (a segmented suit). Smooth surfaces are now a rule (`art-style.md` pillar 9), and rigid segments would show seams and gaps at every bent joint.
-6. **The engineer's look**, as `art-style.md` §8 says. A blockout from the ragdoll's proportions comes first, judged by its silhouette and approved by the user before the detailed model.
-7. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
-8. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
-9. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
+6. **A base body and wearables** (the user, 2026-10-21: "in future I want to have many wearables, so there should [be] a 'naked' version that can wear more and more cool stuff as you progress").
+   - **One skeleton, animated once.** The base body and every wearable are skinned meshes on the same fifteen bones.
+   - **Regions.** The base body and every wearable are divided into regions (head, face, hair, neck, torso, upper arms, forearms, hands, pelvis, thighs, shanks, feet). A wearable fills slots (head, eyes, face, torso inner and outer, hands, legs, feet, back) and lists the regions it hides, of the body and of the layers beneath (geosets, biped slots, inZOI's covering regions).
+   - **Drawn as one.** When an outfit changes, the visible regions of everything worn are merged into one index list, skinned and drawn as one mesh.
+   - **The starting outfit is made of wearables** (`art-style.md` §8), so the same system carries every later piece.
+   - **Gameplay comes later.** Wearables become items in G1.6 (each worn piece's mass on its segments), and their insulation and protection count from G9.
+7. **The engineer's look**, as `art-style.md` §8 says: the base body with an open face and the player's skin tone, in the starting outfit. A blockout from the ragdoll's proportions comes first, judged by its silhouette and approved by the user before the detailed models.
+8. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
+9. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
+10. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
 
 ## Measured and rejected
 
@@ -69,7 +79,8 @@ Planned per sub-milestone in `docs/g1-plan.md` (G1.3a–i). Among them:
 - GTAO against analytic occlusion (a sphere on a plane, a 90° crease) and a ray-traced reference;
 - dual-quaternion skinning exactly rigid for single-bone vertices;
 - the validator refusing a set of broken models;
-- the engineer's skin within its ragdoll segments' boxes.
+- the engineer's skin within its ragdoll segments' boxes;
+- wearables: nothing beneath pokes through an outer layer by more than 2 mm in the rest pose and in poses at the ragdoll's joint limits, and every hidden region lies inside what hides it.
 
 ## Cost
 
