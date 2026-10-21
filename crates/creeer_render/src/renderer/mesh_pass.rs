@@ -12,7 +12,7 @@ pub(crate) struct Draw {
 }
 
 const MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 6 => Uint32, 8 => Uint32, 9 => Float32x2];
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 7 => Float32x4];
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x3, 7 => Uint32, 5 => Float32x4];
 
 /// Vertex buffer layouts shared by every pipeline that draws instanced meshes.
 pub(crate) fn instanced_vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
@@ -60,8 +60,11 @@ impl MeshBuffers<'_> {
 /// Instanced mesh rendering. One instance buffer holds the instances visible to the camera,
 /// followed by the shadow casters of each cascade.
 pub(super) struct MeshPass {
-    pipeline: wgpu::RenderPipeline,
-    /// The tokens model vertices name (bind group 2).
+    /// Procedural meshes, in their instance's material.
+    plain: wgpu::RenderPipeline,
+    /// Models, with the full surface (ADR-0026).
+    model: wgpu::RenderPipeline,
+    /// The tokens model vertices name and the noise (bind group 2).
     palette: GpuPalette,
     vertices: Option<wgpu::Buffer>,
     indices: Option<wgpu::Buffer>,
@@ -70,13 +73,16 @@ pub(super) struct MeshPass {
     /// Per pass (camera, then cascades): instances gathered this frame.
     pass_scratch: Vec<Vec<InstanceRaw>>,
     scratch: Vec<InstanceRaw>,
+    /// The camera's draws: of procedural meshes, and of models.
     draws: Vec<Draw>,
+    model_draws: Vec<Draw>,
     pub(super) shadow_draws: [Vec<Draw>; CASCADES],
 }
 
 impl MeshPass {
     pub(super) fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         globals_layout: &wgpu::BindGroupLayout,
         shadow_sample_layout: &wgpu::BindGroupLayout,
     ) -> Self {
@@ -90,7 +96,7 @@ impl MeshPass {
             include_str!("../shaders/mesh.wgsl")
         );
         let module = shader(device, "mesh", source);
-        let palette = GpuPalette::new(device);
+        let palette = GpuPalette::new(device, queue);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("mesh"),
             bind_group_layouts: &[
@@ -100,33 +106,36 @@ impl MeshPass {
             ],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("mesh"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &instanced_vertex_layouts(),
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: scene_depth_state(),
-            multisample: scene_multisample(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(HDR_FORMAT.into())],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = |label, vertex, fragment| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vertex),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &instanced_vertex_layouts(),
+                },
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: scene_depth_state(),
+                multisample: scene_multisample(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fragment),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(HDR_FORMAT.into())],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
         let instance_capacity = 1024;
         Self {
-            pipeline,
+            plain: pipeline("mesh", "vs_plain", "fs_plain"),
+            model: pipeline("model", "vs_main", "fs_main"),
             palette,
             vertices: None,
             indices: None,
@@ -135,6 +144,7 @@ impl MeshPass {
             pass_scratch: vec![Vec::new(); 1 + CASCADES],
             scratch: Vec::new(),
             draws: Vec::new(),
+            model_draws: Vec::new(),
             shadow_draws: std::array::from_fn(|_| Vec::new()),
         }
     }
@@ -231,14 +241,20 @@ impl MeshPass {
             self.scratch.extend_from_slice(list);
         }
         let mut lists = pass_draws.into_iter();
-        self.draws = lists.next().unwrap_or_default();
+        (self.model_draws, self.draws) = lists
+            .next()
+            .unwrap_or_default()
+            .into_iter()
+            .partition(|draw| meshes.ranges[draw.mesh].model);
         for (target, list) in self.shadow_draws.iter_mut().zip(lists) {
             *target = list;
         }
 
         stats.instances_drawn = self.pass_scratch[0].len();
         stats.shadow_instances = self.pass_scratch[1..].iter().map(Vec::len).sum();
-        stats.draw_calls = self.draws.len() + self.shadow_draws.iter().map(Vec::len).sum::<usize>();
+        stats.draw_calls = self.draws.len()
+            + self.model_draws.len()
+            + self.shadow_draws.iter().map(Vec::len).sum::<usize>();
 
         if self.scratch.len() > self.instance_capacity {
             self.instance_capacity = self.scratch.len().next_power_of_two();
@@ -265,10 +281,16 @@ impl MeshPass {
         let Some(buffers) = self.buffers() else {
             return;
         };
-        pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(1, shadow_sampling, &[]);
         pass.set_bind_group(2, &self.palette.bind_group, &[]);
-        buffers.draw(pass, meshes, &self.draws);
+        if !self.draws.is_empty() {
+            pass.set_pipeline(&self.plain);
+            buffers.draw(pass, meshes, &self.draws);
+        }
+        if !self.model_draws.is_empty() {
+            pass.set_pipeline(&self.model);
+            buffers.draw(pass, meshes, &self.model_draws);
+        }
     }
 
     /// Replaces the palette model vertices name.

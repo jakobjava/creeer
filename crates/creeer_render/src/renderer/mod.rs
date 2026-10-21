@@ -28,6 +28,7 @@ mod encode;
 mod exposure_pass;
 mod line_pass;
 mod mesh_pass;
+mod noise;
 mod palette;
 mod readback;
 mod sea_pass;

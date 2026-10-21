@@ -1,8 +1,9 @@
 // Instanced meshes with "PBR-lite" shading (ADR-0003): GGX specular + Lambert diffuse from
 // the sun with cascaded shadows, hemispheric sky/ground ambient. Positions are
-// camera-relative (camera at origin). Model vertices name palette tokens and carry their bake;
-// their surfaces are surface.wgsl's (G1.3b–c, ADR-0026). Procedural vertices take their
-// instance's material.
+// camera-relative (camera at origin). Two pipelines (G1.3c, ADR-0026): procedural meshes
+// (vs_plain, fs_plain) take their instance's material; models (vs_main, fs_main) name palette
+// tokens, carry their bake, and are drawn with surface.wgsl's full surface. Neither pays for
+// what the other needs.
 
 @group(1) @binding(0) var shadow_map: texture_depth_2d_array;
 @group(1) @binding(1) var shadow_sampler: sampler_comparison;
@@ -22,44 +23,75 @@ struct InstanceIn {
     @location(2) rotation: vec4<f32>,
     // xyz: camera-relative position, w: metalness
     @location(3) position_metal: vec4<f32>,
-    // xyz: scale, w: roughness
-    @location(4) scale_rough: vec4<f32>,
+    @location(4) scale: vec3<f32>,
+    // Bits 0–7 roughness, 8–15 wear from use, 16–31 years weathered (a half float).
+    @location(7) surface: u32,
     @location(5) color: vec4<f32>,
-    // x: years weathered, y: wear from use.
-    @location(7) ageing: vec4<f32>,
 };
 
-struct VertexOut {
+struct PlainOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) world: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) color: vec3<f32>,
+    // Position in the mesh's own space (m, scaled), for its surface.
+    @location(2) local: vec3<f32>,
+    @location(3) @interpolate(flat) color: vec3<f32>,
     // x: metalness, y: roughness
-    @location(3) material: vec2<f32>,
+    @location(4) @interpolate(flat) material: vec2<f32>,
     // Engineering overlay value (or a huge negative number for "none").
-    @location(4) @interpolate(flat) heat: f32,
-    @location(5) @interpolate(flat) token: u32,
+    @location(5) @interpolate(flat) heat: f32,
+};
+
+struct ModelOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) world: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) local: vec3<f32>,
+    @location(3) @interpolate(flat) color: vec3<f32>,
+    @location(4) @interpolate(flat) material: vec2<f32>,
+    @location(5) @interpolate(flat) heat: f32,
+    @location(6) @interpolate(flat) token: u32,
     // x: baked occlusion, y: edge wear, z: the part's tone, w: height above the base (0–1).
-    @location(6) masks: vec4<f32>,
-    // Position and normal in the model's own space (m, scaled), for its surface.
-    @location(7) local: vec3<f32>,
+    @location(7) masks: vec4<f32>,
+    // The normal in the model's own space.
     @location(8) local_normal: vec3<f32>,
     @location(9) grain: vec2<f32>,
     // x: years weathered, y: wear from use.
     @location(10) @interpolate(flat) ageing: vec2<f32>,
 };
 
+/// An instance's metalness and roughness.
+fn instance_material(i: InstanceIn) -> vec2<f32> {
+    return vec2<f32>(i.position_metal.w, f32(i.surface & 0xffu) / 255.0);
+}
+
 @vertex
-fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
-    let local = v.position * i.scale_rough.xyz;
+fn vs_plain(v: VertexIn, i: InstanceIn) -> PlainOut {
+    let local = v.position * i.scale;
     let world = rotate(i.rotation, local) + i.position_metal.xyz;
-    var out: VertexOut;
+    var out: PlainOut;
     out.clip = globals.view_proj * vec4<f32>(world, 1.0);
     out.world = world;
     // Inverse-transpose for non-uniform scale: divide by scale, then rotate.
-    out.normal = rotate(i.rotation, v.normal / i.scale_rough.xyz);
+    out.normal = rotate(i.rotation, v.normal / i.scale);
+    out.local = local;
     out.color = i.color.rgb;
-    out.material = vec2<f32>(i.position_metal.w, i.scale_rough.w);
+    out.material = instance_material(i);
+    out.heat = i.color.a;
+    return out;
+}
+
+@vertex
+fn vs_main(v: VertexIn, i: InstanceIn) -> ModelOut {
+    let local = v.position * i.scale;
+    let world = rotate(i.rotation, local) + i.position_metal.xyz;
+    var out: ModelOut;
+    out.clip = globals.view_proj * vec4<f32>(world, 1.0);
+    out.world = world;
+    out.normal = rotate(i.rotation, v.normal / i.scale);
+    out.local = local;
+    out.color = i.color.rgb;
+    out.material = instance_material(i);
     out.heat = i.color.a;
     out.token = v.material & 0xffffu;
     out.masks = vec4<f32>(
@@ -68,44 +100,54 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
         f32(v.detail & 0xffu) / 255.0,
         f32(v.detail >> 16u) / 65535.0,
     );
-    out.local = local;
-    out.local_normal = normalize(v.normal / i.scale_rough.xyz);
+    out.local_normal = normalize(v.normal / i.scale);
     out.grain = v.grain;
-    out.ageing = i.ageing.xy;
+    out.ageing = vec2<f32>(unpack2x16float(i.surface).y, f32((i.surface >> 8u) & 0xffu) / 255.0);
     return out;
 }
 
 @fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    // Footprints first: derivatives need uniform control flow.
+fn fs_plain(in: PlainOut) -> @location(0) vec4<f32> {
+    // The footprint first: derivatives need uniform control flow.
     let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
-    let grain_footprint = max(abs(dpdx(in.grain)), abs(dpdy(in.grain)));
     // Metalness from 2 up marks a light source emitting (w − 2) times its colour.
     if in.material.x >= 2.0 {
         return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
-    let n = normalize(in.normal);
-    let v = normalize(-in.world);
-    let l = globals.sun_direction.xyz;
-    let up = globals.up.xyz;
-    let at = Place(in.local, normalize(in.local_normal), in.grain, footprint, grain_footprint);
-    var surface: Surface;
-    if in.token != NO_TOKEN {
-        surface = model_surface(
-            in.token, in.color, in.masks.x, in.masks.y, in.masks.z, in.masks.w,
-            in.ageing.x, in.ageing.y, at,
-        );
-    } else {
-        surface = plain_surface(in.color, in.material.y, in.material.x, at);
+    let at = Place(in.local, vec3<f32>(0.0, 1.0, 0.0), vec2<f32>(0.0), footprint, vec2<f32>(0.0));
+    let surface = plain_surface(in.color, in.material.y, in.material.x, at);
+    return vec4<f32>(lit(in.world, in.normal, surface, in.heat, 1.0), 1.0);
+}
+
+@fragment
+fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
+    let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
+    let grain_footprint = max(abs(dpdx(in.grain)), abs(dpdy(in.grain)));
+    if in.material.x >= 2.0 {
+        return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
+    let at = Place(in.local, normalize(in.local_normal), in.grain, footprint, grain_footprint);
+    let surface = model_surface(
+        in.token, in.color, in.masks.x, in.masks.y, in.masks.z, in.masks.w,
+        in.ageing.x, in.ageing.y, at,
+    );
+    return vec4<f32>(lit(in.world, in.normal, surface, in.heat, in.masks.x), 1.0);
+}
+
+/// `surface` at `world` lit by the sun (with its shadows) and the sky; `occlusion` shades the
+/// ambient light only. With the engineering overlay on, `heat` replaces the material.
+fn lit(world: vec3<f32>, normal: vec3<f32>, surface: Surface, heat: f32, occlusion: f32) -> vec3<f32> {
+    let n = normalize(normal);
+    let v = normalize(-world);
+    let l = globals.sun_direction.xyz;
     var base = surface.colour;
     var metal = surface.metalness;
     var roughness = clamp(surface.roughness, 0.045, 1.0);
     if globals.heatmap.x > 0.5 {
-        if in.heat > -1.0e37 {
+        if heat > -1.0e37 {
             // Overlay: the measured value replaces the material; keep a matte finish so
             // reflections cannot be mistaken for data.
-            base = heatmap_color(in.heat);
+            base = heatmap_color(heat);
             metal = 0.0;
             roughness = 0.8;
         } else {
@@ -117,12 +159,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
     var visibility = 0.0;
     if dot(n, l) > 0.0 {
-        visibility = sun_visibility(in.world, n);
+        visibility = sun_visibility(world, n);
     }
     let direct = direct_light(n, v, l, base, metal, roughness, globals.sun_color.rgb, visibility);
-    // Baked occlusion shades the ambient light only: the sun has its shadows.
-    let ambient = in.masks.x * ambient_light(
-        n, v, up, base, metal, roughness, globals.sky_ambient.rgb, globals.ground_ambient.rgb,
+    let ambient = occlusion * ambient_light(
+        n, v, globals.up.xyz, base, metal, roughness, globals.sky_ambient.rgb,
+        globals.ground_ambient.rgb,
     );
-    return vec4<f32>(direct + ambient, 1.0);
+    return direct + ambient;
 }

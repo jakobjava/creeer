@@ -150,6 +150,8 @@ pub(crate) struct MeshRange {
     pub index_count: u32,
     pub base_vertex: i32,
     pub bounding_radius: f32,
+    /// A model's (its vertices name palette tokens): drawn with the full surface.
+    pub model: bool,
 }
 
 /// All meshes in one vertex and one index buffer (ADR-0003).
@@ -169,6 +171,10 @@ impl MeshArena {
             index_count: u32::try_from(mesh.indices.len()).expect("mesh too large"),
             base_vertex: i32::try_from(self.vertices.len()).expect("arena too large"),
             bounding_radius: mesh.bounding_radius(),
+            model: mesh
+                .vertices
+                .iter()
+                .any(|v| v.material & 0xffff != u32::from(NO_TOKEN)),
         };
         self.vertices.extend_from_slice(&mesh.vertices);
         self.indices.extend_from_slice(&mesh.indices);
@@ -257,6 +263,17 @@ mod tests {
         let range_b = arena.ranges[b.0 as usize];
         assert_eq!(range_b.first_index, 36);
         assert_eq!(range_b.base_vertex, 24);
+        assert!(
+            !range_b.model,
+            "procedural meshes take their instance's material"
+        );
+        let mut model = MeshData::cuboid(Vec3::ONE);
+        model.vertices[0].material = crate::vertex::pack_material(3, 1.0, 0.0);
+        let c = arena.add(&model);
+        assert!(
+            arena.ranges[c.0 as usize].model,
+            "a vertex naming a token makes a model"
+        );
         assert!(arena.take_upload().is_some());
         assert!(arena.take_upload().is_none(), "uploads only when changed");
     }

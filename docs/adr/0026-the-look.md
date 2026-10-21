@@ -98,6 +98,16 @@
 | Byte equality for `art --check` | Still one build in six differed: Blender's normals vary in their last bits between runs, and the exporter shares vertices by them | Geometry compared: every triangle's corners quantised (10 µm, 10⁻⁴, 10⁻³), sorted, equal to one unit. A 2 mm change in the boards' gaps is caught |
 | Blender's Wave texture for wood grain | Its band direction and distortion drew zigzags or ran across the boards | Grain lines written out: the crests of a sine across the grain, displaced by slow noise along it (also what the game shader computes) |
 
+### Drawing the surfaces (G1.3c, 2026-10-21)
+
+Measured with `creeer_client --bench 600 --view factory` (10,015 parts, 1080p, an RTX 4070 Super), each run alternated with a build from before the surfaces (2.20 ms p50). The rejected versions are commit `090d95d`'s `mesh.wgsl`, `surface.wgsl` and `scene.rs`.
+
+| Tried | Measured | Why rejected, and what replaced it |
+|---|---|---|
+| Value noise computed from hashes: eight hashes and seven interpolations a sample | 2.64 ms p50, 20 % over before; the noise on procedural parts alone 0.14 ms | One fetch a sample from a 32³ noise volume, its fraction warped by a quintic (Quilez's texture interpolation). Octaves finer than a pixel are their mean, without a fetch |
+| One pipeline for models and procedural meshes, branching per fragment | The full surface's registers and outputs slowed every procedural part, with no model on screen: about 0.12 ms | Two pipelines: procedural meshes with a lean vertex output and mottling only; models with the full surface |
+| The instance grown by 16 bytes for its age and wear (80 bytes) | 0.08 ms: each instance is copied for the camera and for every shadow cascade it reaches | Packed into the 4 bytes roughness had: roughness and wear 8 bits each, the years a half float. 64 bytes again |
+
 ### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
 
 The first run of the style's checks found the sixteen player colours of `art-style.md` §3.6 confused under simulated colour-vision deficiencies (Machado et al. 2009, `creeer_art::vision`). For deuteranopes, blue and violet are ΔE₀₀ 1.3 apart, violet and indigo 1.3, and orange and ochre 1.7. For protanopes, violet and indigo are 2.9 apart. In normal vision the closest pair is blue and indigo, at 8.5.
@@ -122,24 +132,34 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - Its exported masks are the baked values unconverted: alpha equals each vertex's height over 2 m, and Blender's occlusion 0.6875 and 0.6458 at two corners read back exactly.
   - Its grain runs along its boards: u's gradient on their faces is (1, 0).
   - `xtask art --check` passes on unchanged scripts and catches a 2 mm change.
-- **Drawing (G1.3c).** A snapshot without looks (the planet's) draws the 1 m crate as its model, from its base.
+- **Drawing (G1.3c).** A snapshot without looks (the planet's) draws the 1 m crate as its model, from its base. Meshes whose vertices name tokens are drawn by the model pipeline, the rest by the plain one. The noise volume is the same on every run, and evenly spread. An instance's packed roughness, wear and years read back exactly, and years beyond 65,000 are capped below infinity.
 - **Ageing (G1.3c).**
   - A year of exposure per game day in air, and three in the sea.
   - A 200 kg crate dropped from 3 m is worn 0.091, which is 4.5 kJ beyond the coating's 10 J (its bottom fell about 2.3 m). One placed gently is worn 0.
   - Ages survive a save exactly (version 9, its fixture), and a client is told every crate's age and its wear when it changes (protocol 7).
 
 **Still to come:**
-- CIEDE2000 against Sharma, Wu & Dalal's test pairs;
-- colour-vision simulation against Machado et al. (2009);
+- colour-vision simulation against Machado et al.'s published examples (set aside with the colour-blind mode);
 - GTAO against analytic occlusion (a sphere on a plane, a 90° crease) and a ray-traced reference;
 - dual-quaternion skinning exactly rigid for single-bone vertices;
-- the validator refusing a set of broken models;
 - the engineer's skin within its ragdoll segments' boxes;
 - wearables: nothing beneath pokes through an outer layer by more than 2 mm in the rest pose and in poses at the ragdoll's joint limits, and every hidden region lies inside what hides it.
 
 ## Cost
 
 Budgets in `docs/g1-plan.md`. Ambient occlusion ≤ 1 ms at 1080p on min-spec (a GTX 1660-class GPU), measured with GPU timestamps on the development machine and projected. XeGTAO's "High" costs 0.56 ms on an RTX 2060, a GPU somewhat faster than min-spec.
+
+**The surfaces (G1.3c), measured:** within the plan's 10 % in every view, at p50 and at p99. Frame time p50, before → with the surfaces (1080p, RTX 4070 Super):
+
+| View | Before | With | Change |
+|---|---|---|---|
+| factory (10,015 parts) | 2.19 ms | 2.29 ms | +4.6 % |
+| closeup | 1.67 ms | 1.77 ms | +6.0 % |
+| overview | 1.85 ms | 1.94 ms | +4.9 % |
+| horizon | 1.47 ms | 1.55 ms | +5.4 % |
+| physics | 1.63 ms | 1.70 ms | +4.3 % |
+
+Of the factory's 0.10 ms, the mottling on procedural parts takes about 0.08 ms and the larger vertex (40 bytes, from 28) about 0.02 ms.
 
 ## Limits
 

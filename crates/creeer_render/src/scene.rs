@@ -4,6 +4,7 @@
 //! only when the frame is built, so they stay precise anywhere in a solar system.
 
 use crate::mesh::MeshId;
+use crate::vertex::quantise;
 use bytemuck::{Pod, Zeroable};
 use creeer_math::Frame64;
 use creeer_math::glam::{DVec3, Mat4, Vec3, Vec4};
@@ -90,7 +91,8 @@ pub struct Instance {
 /// Marks "no overlay value" on the GPU (below any real measurement).
 pub(crate) const NO_HEAT: f32 = -3.0e38;
 
-/// Instance data as uploaded to the GPU (80 bytes).
+/// Instance data as uploaded to the GPU (64 bytes: one is copied for the camera and each shadow
+/// cascade it reaches; 16 bytes more cost 0.08 ms of a frame of 10,000 parts, ADR-0026).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub(crate) struct InstanceRaw {
@@ -100,11 +102,11 @@ pub(crate) struct InstanceRaw {
     pub position: [f32; 3],
     pub metalness: f32,
     pub scale: [f32; 3],
-    pub roughness: f32,
+    /// Its surface: roughness (bits 0–7) and wear from use (8–15), both 0–1, and the years it
+    /// has weathered (16–31, a half float).
+    pub surface: u32,
     /// Linear base colour; alpha carries the overlay value (or [`NO_HEAT`]).
     pub color: [f32; 4],
-    /// The object's weathering (years) and wear (0–1); two unused.
-    pub ageing: [f32; 4],
 }
 
 /// Sun and ambient light.
@@ -199,11 +201,17 @@ impl InstanceRaw {
                 m.metalness
             },
             scale: instance.scale.to_array(),
-            roughness: m.roughness,
+            surface: pack_surface(m.roughness, m.wear, m.exposure),
             color: [r, g, b, instance.heat.unwrap_or(NO_HEAT)],
-            ageing: [m.exposure, m.wear, 0.0, 0.0],
         }
     }
+}
+
+/// Packs an instance's roughness and wear (0–1, 8 bits each, as textures store them) and the
+/// years it has weathered (a half float: 0.05 % steps, capped at 65,000 years).
+pub(crate) fn pack_surface(roughness: f32, wear: f32, years: f32) -> u32 {
+    let years = crate::half::f16_bits(years.clamp(0.0, 65_000.0));
+    quantise(roughness, 8) | quantise(wear, 8) << 8 | u32::from(years) << 16
 }
 
 /// View frustum planes for culling in camera-relative space. With an infinite projection
@@ -297,7 +305,7 @@ mod tests {
         };
         let raw = InstanceRaw::new(&instance, camera);
         assert_eq!(raw.position, [1.5, -2.0, 3.25]);
-        assert_eq!(raw.ageing, [0.0; 4], "new by default");
+        assert_eq!(raw.surface, 128, "roughness 0.5, new by default");
         let old = InstanceRaw::new(
             &Instance {
                 material: instance.material.aged(3.5, 0.25),
@@ -305,7 +313,11 @@ mod tests {
             },
             camera,
         );
-        assert_eq!(old.ageing, [3.5, 0.25, 0.0, 0.0]);
-        assert_eq!(std::mem::size_of::<InstanceRaw>(), 80);
+        // 3.5 years is exact in half precision (0x4300); wear 0.25 is 64 of 255.
+        assert_eq!(old.surface, 0x4300 << 16 | 64 << 8 | 128);
+        assert_eq!(std::mem::size_of::<InstanceRaw>(), 64);
+        let ancient = pack_surface(1.0, 1.0, 1.0e9);
+        assert_eq!(ancient >> 16, 0x7bef, "capped below infinity");
+        assert_eq!(ancient & 0xffff, 0xffff);
     }
 }

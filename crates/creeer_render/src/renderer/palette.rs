@@ -81,40 +81,65 @@ fn narrow(x: f64) -> f32 {
     f
 }
 
-/// The palette's buffer and its bind group (group 2 of the mesh pipeline).
+/// What the surfaces read (group 2 of the mesh pipelines): the palette's buffer, and the
+/// noise volume (`noise.rs`) with its sampler.
 pub(crate) struct GpuPalette {
     pub layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
     buffer: wgpu::Buffer,
+    noise: (wgpu::TextureView, wgpu::Sampler),
 }
 
 impl GpuPalette {
-    /// An empty palette: until one is set, model vertices draw neutral grey.
-    pub fn new(device: &wgpu::Device) -> Self {
+    /// An empty palette (until one is set, model vertices draw neutral grey), and the noise.
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let fragment = wgpu::ShaderStages::FRAGMENT;
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("palette"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: fragment,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: fragment,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: fragment,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
-        let (buffer, bind_group) = Self::make(device, &layout, &tokens(&Palette::default()));
+        let noise = super::noise::upload(device, queue);
+        let (buffer, bind_group) =
+            Self::make(device, &layout, &noise, &tokens(&Palette::default()));
         Self {
             layout,
             bind_group,
             buffer,
+            noise,
         }
     }
 
     fn make(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
+        (view, sampler): &(wgpu::TextureView, wgpu::Sampler),
         tokens: &[TokenRaw],
     ) -> (wgpu::Buffer, wgpu::BindGroup) {
         let buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -128,10 +153,20 @@ impl GpuPalette {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("palette"),
             layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
         });
         (buffer, bind_group)
     }
@@ -142,7 +177,7 @@ impl GpuPalette {
         if std::mem::size_of_val(tokens.as_slice()) as u64 == self.buffer.size() {
             queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&tokens));
         } else {
-            (self.buffer, self.bind_group) = Self::make(device, &self.layout, &tokens);
+            (self.buffer, self.bind_group) = Self::make(device, &self.layout, &self.noise, &tokens);
         }
     }
 }

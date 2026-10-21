@@ -1,7 +1,8 @@
 // Procedural surfaces: grainy, weathered, used (G1.3c, ADR-0026, docs/art-style.md §6). The
 // layers in order, as art/preview.py previews them in Blender: the part's tone, the token's
-// pattern, mottling and fine grain, age, grime, rain streaks, edge chips. Noise is value noise,
-// filtered by its footprint on screen: an octave finer than a pixel fades to its mean.
+// pattern, mottling and fine grain, age, grime, rain streaks, edge chips. Noise is value noise
+// from a small volume, filtered by its footprint on screen: an octave finer than a pixel fades
+// to its mean.
 
 // One palette token (renderer/palette.rs, `TokenRaw`).
 struct Token {
@@ -38,25 +39,18 @@ const GRIME: vec3<f32> = vec3<f32>(0.022, 0.018, 0.013);
 const GRAIN_LINES: f32 = 45.0;
 const GRAIN_WANDER: f32 = 6.0;
 
-fn hash3(p: vec3<i32>) -> f32 {
-    var h = bitcast<u32>(p.x) * 0x8da6b343u ^ bitcast<u32>(p.y) * 0xd8163841u
-        ^ bitcast<u32>(p.z) * 0xcb1ab31fu;
-    h = (h ^ (h >> 16u)) * 0x7feb352du;
-    h = (h ^ (h >> 15u)) * 0x846ca68bu;
-    h = h ^ (h >> 16u);
-    return f32(h) * (1.0 / 4294967295.0);
-}
+// The noise volume (renderer/noise.rs): random values on a tiling lattice of NOISE_SIZE³.
+@group(2) @binding(1) var noise_volume: texture_3d<f32>;
+@group(2) @binding(2) var noise_sampler: sampler;
+const NOISE_SIZE: f32 = 32.0;
 
-/// Value noise in [0, 1], smooth (quintic) between lattice points.
+/// Value noise in [0, 1], smooth (quintic) between lattice points: one linear fetch at the
+/// fraction warped by the quintic (Quilez's improved texture interpolation).
 fn noise(p: vec3<f32>) -> f32 {
-    let i = vec3<i32>(floor(p));
-    let f = fract(p);
+    let i = floor(p);
+    let f = p - i;
     let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-    let x00 = mix(hash3(i), hash3(i + vec3<i32>(1, 0, 0)), u.x);
-    let x10 = mix(hash3(i + vec3<i32>(0, 1, 0)), hash3(i + vec3<i32>(1, 1, 0)), u.x);
-    let x01 = mix(hash3(i + vec3<i32>(0, 0, 1)), hash3(i + vec3<i32>(1, 0, 1)), u.x);
-    let x11 = mix(hash3(i + vec3<i32>(0, 1, 1)), hash3(i + vec3<i32>(1, 1, 1)), u.x);
-    return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
+    return textureSampleLevel(noise_volume, noise_sampler, (i + u + 0.5) / NOISE_SIZE, 0.0).r;
 }
 
 /// Fractal noise of `octaves` octaves in [0, 1]. `footprint` is a pixel's size in `p`'s
@@ -69,7 +63,12 @@ fn fbm(p: vec3<f32>, octaves: u32, footprint: f32) -> f32 {
     var fp = footprint;
     for (var k = 0u; k < octaves; k++) {
         let seen = 1.0 - smoothstep(0.25, 0.5, fp);
-        sum += amplitude * mix(0.5, noise(q), seen);
+        // Faded octaves are their mean without a fetch (and every finer one after them).
+        var value = 0.5;
+        if seen > 0.0 {
+            value = mix(0.5, noise(q), seen);
+        }
+        sum += amplitude * value;
         total += amplitude;
         q = q * 2.03 + vec3<f32>(17.1, 31.7, 7.3);
         fp *= 2.03;

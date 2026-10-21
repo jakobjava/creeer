@@ -29,7 +29,7 @@ pub struct MeshVertex {
 pub const NO_TOKEN: u16 = u16::MAX;
 
 /// `x` (0–1) in `bits` bits, rounded.
-fn quantise(x: f32, bits: u32) -> u32 {
+pub(crate) fn quantise(x: f32, bits: u32) -> u32 {
     #[allow(clippy::cast_precision_loss)] // at most 16 bits
     let top = ((1_u32 << bits) - 1) as f32;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=top

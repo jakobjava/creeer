@@ -175,7 +175,7 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - members (cylinders) and spheres get levels of detail chosen by screen-space error (half a pixel), not by distance;
   - the terrain's normals and dug craters checked to be smooth at every level of detail, with close-up screenshots.
 - **Validation:** golden screenshots of the crate, members and spheres at noon and in the evening, close and at 20 m; the facets' screen-space error measured on the levels of detail.
-- **Budget:** the F1 mesh budget (10,000 instanced parts at 60 FPS on min-spec) still met; the mesh pass at most 10 % slower than now.
+- **Budget:** the F1 mesh budget (10,000 instanced parts at 60 FPS on min-spec) still met; the mesh pass at most 10 % slower than now. For the surfaces: met, +4 to +6 % frame time across the bench views (ADR-0026, Cost).
 
 #### G1.3d Ambient occlusion (GTAO)
 

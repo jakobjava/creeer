@@ -134,7 +134,7 @@ impl Renderer {
             GLOBALS_WGSL,
             ShadowQuality::default().map_size(),
         );
-        let mesh_pass = MeshPass::new(&device, &globals_layout, &shadows.sample_layout);
+        let mesh_pass = MeshPass::new(&device, &queue, &globals_layout, &shadows.sample_layout);
         let line_pass = LinePass::new(&device, &globals_layout);
         let sky_pipeline = SkyPass::new(&device, &globals_layout);
         let terrain = TerrainPass::new(
