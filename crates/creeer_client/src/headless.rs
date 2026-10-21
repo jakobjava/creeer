@@ -101,9 +101,18 @@ pub(crate) fn bench(
     frames: usize,
     view: &str,
     factory: bool,
+    players: Option<(&str, usize)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
     let meshes = DemoMeshes::register_for(&mut renderer);
+    let players = match players {
+        Some((path, count)) => {
+            let (mesh, triangles) = crate::players_bench::load(path, &mut renderer.meshes)?;
+            println!("  {count} stand-in players of {triangles} triangles ({path})");
+            Some((mesh, count))
+        }
+        None => None,
+    };
     let camera =
         demo::camera_preset(view, DVec3::ZERO).ok_or_else(|| format!("unknown view `{view}`"))?;
     let mut sim = OrbitSandbox::demo();
@@ -135,6 +144,9 @@ pub(crate) fn bench(
             overlay: Overlay::Off,
         };
         demo::build(&mut scene, &mut lines, &meshes, &demo);
+        if let Some((mesh, count)) = players {
+            crate::players_bench::add(&mut scene, &camera, mesh, count, 0.0);
+        }
         let built = start.elapsed();
         renderer.render_offscreen(Frame {
             camera: &camera,

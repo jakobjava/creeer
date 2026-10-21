@@ -11,7 +11,7 @@
 //! [--time <s>] [--overlay <off|temperature|stress|utilisation>] [--physics <bridge|crash|stacking|rock>
 //! [--physics-time <s>]]` renders
 //! one frame headless (no window) and saves it, for reviewing rendering changes.
-//! `creeer_client --bench <frames> [--view <name>] [--no-factory]` renders frames headless
+//! `creeer_client --bench <frames> [--view <name>] [--no-factory] [--players <glb> <n>]` renders frames headless
 //! and reports frame-time percentiles (CPU scene build + GPU, no vsync).
 //! `creeer_client --style-board <file.png>` and `creeer_client --shimmer [--frames <n>]` judge
 //! the look (G1.3): the crate at its ages, and how much of the image flickers in slow motion.
@@ -63,6 +63,7 @@ mod planet_net;
 mod planet_shot;
 mod planet_ui;
 mod planet_view;
+mod players_bench;
 mod powerhouse_panel;
 mod profiler_ui;
 #[cfg(test)]
@@ -126,7 +127,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|i| args.get(i + 1))
             .map_or("overview", String::as_str);
         let factory = !args.iter().any(|a| a == "--no-factory");
-        return bench(frames, view, factory);
+        // Stand-in players (G1.3f): `--players <glb> <count>`.
+        let players = (args.iter().position(|a| a == "--players"))
+            .map(|i| {
+                let path = args.get(i + 1).ok_or("--players needs a model")?;
+                let count = (args.get(i + 2))
+                    .and_then(|n| n.parse().ok())
+                    .ok_or("--players needs a count")?;
+                Ok::<_, &str>((path.as_str(), count))
+            })
+            .transpose()?;
+        return bench(frames, view, factory, players);
     }
     if args.iter().any(|a| a == "--physics-bench") {
         return physics_bench::bench(&args).map_err(Into::into);

@@ -212,7 +212,7 @@ The server keeps each object's age (its exposure so far, the rate it ages at now
 
 | Asset | Triangles |
 |---|---|
-| The character as drawn (the base body and everything worn, without hidden regions), in levels of detail chosen by screen error | close-up about 30,000–40,000, its limit measured first (G1.3f); mid 10,000–15,000; far, at play distance and in shadows, 2,000–4,000 |
+| The character as drawn (the base body and everything worn, without hidden regions), in levels of detail chosen by screen error | close-up 40,000; mid 15,000; far, at play distance and in shadows, 3,000 (measured: ADR-0026, Cost) |
 | A wearable | ≤ 4,000 at the mid level; at the others in proportion |
 | A tool | ≤ 2,000 |
 | An item, bag or crate | ≤ 1,000 |

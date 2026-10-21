@@ -238,6 +238,18 @@ Of the factory's 0.10 ms, the mottling on procedural parts takes about 0.08 ms a
 
 p99 likewise: the close-up 2.00 ms against 1.91, the rest at or below before.
 
+**The engineer's levels (G1.3f), measured before modelling** (`creeer_client --bench 600 --view <v> --players <glb> <n>`): the approved blockout's outfit decimated to each level's triangle count, drawn where players stand, in the main pass and every shadow cascade. Frame time p50 (1080p, RTX 4070 Super):
+
+| Players | Factory view, 16 players | Close-up view, 1 player 3 m away |
+|---|---|---|
+| None | 2.13 ms | 1.74 ms |
+| 3,000 triangles each | 2.23 ms (+0.006 ms a player) | 1.75 ms |
+| 15,000 | 2.38 ms (+0.016) | 1.75 ms |
+| 40,000 | 2.72 ms (+0.037) | 1.76 ms |
+| 80,000 | 3.05 ms (+0.057) | 1.78 ms |
+
+The cost follows the triangles, shadows included; one player close to the camera costs 0.02 ms at 40,000 and 0.04 ms at 80,000. Close-up detail is cheap, as one or two players are ever that close; a crowd is what the far levels are for. **The levels: close-up 40,000, mid 15,000, far 3,000.** Eight players, one close up and seven at the mid level, add about 0.13 ms (0.26 ms projected to min-spec); 80,000 close up would still fit, if the close-up level's facets show at the nearest camera.
+
 ## Limits
 
 To be written as the work finds them; each also in `docs/future-improvements.md`.
