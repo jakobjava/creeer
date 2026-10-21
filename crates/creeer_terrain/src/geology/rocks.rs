@@ -32,6 +32,8 @@ pub struct Rock {
     pub minerals: Vec<(usize, f64)>,
     /// Bulk density (kg/m³).
     pub density: f64,
+    /// Whether it is an ore (the art style lets its colour be more saturated).
+    pub ore: bool,
 }
 
 /// All minerals and rocks.
@@ -57,6 +59,8 @@ struct RockDef {
     name: String,
     color: String,
     porosity: f64,
+    #[serde(default)]
+    ore: bool,
     minerals: Vec<(String, f64)>,
 }
 
@@ -143,6 +147,7 @@ impl RockTable {
                 color: parse_color(&r.color).ok_or_else(|| context("bad colour".into()))?,
                 porosity: r.porosity,
                 density: (1.0 - r.porosity) * solid,
+                ore: r.ore,
                 minerals,
                 name: r.name,
             });

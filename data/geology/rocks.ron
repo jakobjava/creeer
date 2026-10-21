@@ -3,7 +3,8 @@
 // the art style of plan.md). Bulk density follows from minerals and porosity (dry pores).
 //
 // Ore rocks carry their deposit's ore minerals at the deposit's average grade; inside a
-// deposit the grade varies around that (geology/deposits).
+// deposit the grade varies around that (geology/deposits). An ore is marked `ore: true`: the
+// art style lets it be more saturated than its host rocks (docs/art-style.md §4).
 [
     // Surface materials
     (name: "soil", color: "#6b4f35", porosity: 0.45, minerals: [
@@ -38,24 +39,24 @@
     (name: "marble", color: "#e6e2d9", porosity: 0.005, minerals: [
         ("calcite", 0.95), ("dolomite", 0.05)]),
     // Ores
-    (name: "porphyry copper ore", color: "#c0773f", porosity: 0.02, minerals: [
+    (name: "porphyry copper ore", color: "#c0773f", porosity: 0.02, ore: true, minerals: [
         ("quartz", 0.36), ("orthoclase", 0.30), ("plagioclase", 0.16), ("biotite", 0.1255),
         ("pyrite", 0.04), ("chalcopyrite", 0.012), ("bornite", 0.002), ("molybdenite", 0.0005)]),
-    (name: "banded iron formation", color: "#80352b", porosity: 0.03, minerals: [
+    (name: "banded iron formation", color: "#80352b", porosity: 0.03, ore: true, minerals: [
         ("quartz", 0.45), ("magnetite", 0.25), ("hematite", 0.25), ("goethite", 0.05)]),
-    (name: "gold placer gravel", color: "#b49a52", porosity: 0.30, minerals: [
+    (name: "gold placer gravel", color: "#b49a52", porosity: 0.30, ore: true, minerals: [
         ("quartz", 0.70), ("orthoclase", 0.18), ("plagioclase", 0.08), ("magnetite", 0.02),
         ("ilmenite", 0.0199998), ("gold", 0.0000002)]),
-    (name: "laterite bauxite", color: "#b8552d", porosity: 0.25, minerals: [
+    (name: "laterite bauxite", color: "#b8552d", porosity: 0.25, ore: true, minerals: [
         ("gibbsite", 0.62), ("boehmite", 0.12), ("goethite", 0.12), ("hematite", 0.07), ("kaolinite", 0.07)]),
-    (name: "rock salt", color: "#ece4ee", porosity: 0.01, minerals: [
+    (name: "rock salt", color: "#ece4ee", porosity: 0.01, ore: true, minerals: [
         ("halite", 0.90), ("anhydrite", 0.05), ("sylvite", 0.03), ("gypsum", 0.02)]),
-    (name: "coal", color: "#1f1d1b", porosity: 0.05, minerals: [
+    (name: "coal", color: "#1f1d1b", porosity: 0.05, ore: true, minerals: [
         ("coal matter", 0.85), ("illite", 0.10), ("quartz", 0.04), ("pyrite", 0.01)]),
-    (name: "nickel sulfide ore", color: "#7a7140", porosity: 0.005, minerals: [
+    (name: "nickel sulfide ore", color: "#7a7140", porosity: 0.005, ore: true, minerals: [
         ("olivine", 0.55), ("augite", 0.25), ("pyrrhotite", 0.10), ("magnetite", 0.05),
         ("pentlandite", 0.04), ("chalcopyrite", 0.01)]),
-    (name: "uranium sandstone", color: "#b4ad55", porosity: 0.15, minerals: [
+    (name: "uranium sandstone", color: "#b4ad55", porosity: 0.15, ore: true, minerals: [
         ("quartz", 0.84), ("orthoclase", 0.10), ("kaolinite", 0.055), ("pyrite", 0.0045), ("uraninite", 0.0005)]),
     // Airless worlds (moons, asteroids): impact-gardened regolith over plagioclase-rich
     // highland crust and dark plains basalt, after the lunar samples.
@@ -65,6 +66,6 @@
         ("plagioclase", 0.92), ("augite", 0.06), ("olivine", 0.02)]),
     // High-titanium plains basalt: an ore of titanium (TiO₂ about 13 %, as in Apollo 11 and 17
     // samples).
-    (name: "ilmenite basalt", color: "#2f2f35", porosity: 0.05, minerals: [
+    (name: "ilmenite basalt", color: "#2f2f35", porosity: 0.05, ore: true, minerals: [
         ("plagioclase", 0.35), ("augite", 0.35), ("ilmenite", 0.18), ("olivine", 0.12)]),
 ]

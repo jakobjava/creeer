@@ -56,7 +56,8 @@ The rocks' colours live in `data/geology/rocks.ron` and are part of this palette
 | `steel_painted` | `#6f7a6c` | 0.60 | 0 | Default paint for built steel (a muted industrial green-grey) |
 | `steel_rust` | `#8b4a2b` | 0.90 | 0 | Rust, as wear on bare steel only |
 | `aluminium` | `#c9ccd0` | 0.35 | 1 | |
-| `copper` | `#c46f3e` | 0.35 | 1 | Patina (`#5f9b84`) only as wear on old copper |
+| `copper` | `#c46f3e` | 0.35 | 1 | |
+| `copper_patina` | `#5f9b84` | 0.80 | 0 | Patina, only as wear on old copper |
 | `titanium` | `#9a958e` | 0.40 | 1 | |
 | `timber` | `#c8a16a` | 0.70 | 0 | Sawn spruce; other woods' tones in §3.4 |
 | `concrete` | `#a7a39b` | 0.90 | 0 | |
@@ -84,7 +85,8 @@ Buckles, rivets and the goggles' rims are `steel`; the jetpack's bottles are `st
 | Token | Colour | Roughness | Notes |
 |---|---|---|---|
 | `bark_spruce` | `#5a4632` | 0.90 | |
-| `bark_birch` | `#d6d1c4` | 0.85 | Dark marks (`#3b3631`) as detail |
+| `bark_birch` | `#d6d1c4` | 0.85 | |
+| `bark_birch_marks` | `#3b3631` | 0.90 | Birch bark's dark marks, as detail |
 | `bark_oak` | `#4f4537` | 0.95 | |
 | `leaves_spruce` | `#3f5a35` | 0.80 | |
 | `leaves_pine` | `#4b6338` | 0.80 | |
@@ -97,12 +99,12 @@ Buckles, rivets and the goggles' rims are `steel`; the jetpack's bottles are `st
 
 Saturated colour is reserved for what matters. Nothing else may be as saturated as these.
 
-| Token | Colour | Use |
-|---|---|---|
-| `hazard_yellow` | `#e8b400` | Danger markings, with `hazard_black` stripes |
-| `hazard_black` | `#22201e` | |
-| `hot` | from temperature | Glowing metal, embers: blackbody colour from the real temperature (Planck), strength from the emitted radiance, above about 525 °C (Draper point) |
-| `signal_green` / `signal_red` | `#5fbf3a` / `#d8402c` | Lamps and indicators that are on |
+| Token | Colour | Roughness | Use |
+|---|---|---|---|
+| `hazard_yellow` | `#e8b400` | 0.60 | Danger markings, with `hazard_black` stripes |
+| `hazard_black` | `#22201e` | 0.60 | |
+| `hot` | from temperature | | Glowing metal, embers: blackbody colour from the real temperature (Planck), strength from the emitted radiance, above about 525 °C (Draper point) |
+| `signal_green` / `signal_red` | `#5fbf3a` / `#d8402c` | 0.30 | Lamps and indicators that are on |
 
 ### 3.6 Player colours
 

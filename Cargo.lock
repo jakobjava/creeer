@@ -545,6 +545,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "creeer_art"
+version = "0.0.1"
+dependencies = [
+ "creeer_data",
+ "creeer_math",
+ "ron",
+ "serde",
+]
+
+[[package]]
 name = "creeer_audio"
 version = "0.0.1"
 
