@@ -3,7 +3,8 @@
 // exception that is no longer needed.
 //
 // rules: Contrast("<ground>") lets edge wear and occlusion carry the contrast against that
-// ground; Chroma lets the subject be more saturated than its group's limit.
+// ground; Chroma lets the subject be more saturated than its group's limit; Lightness lets it
+// lie outside L* 8-92. A subject is a token, a rock, or a player's choice (`skin 1`).
 [
     (subject: "steel", rules: [Contrast("gravel")], why: "the original colour kept; bare steel's edge wear and reflections carry it (ΔE00 10.3)", approved: "2026-10-21"),
     (subject: "titanium", rules: [Contrast("gravel")], why: "the original colour kept; edge wear and reflections carry it (ΔE00 7.5)", approved: "2026-10-21"),
@@ -11,4 +12,7 @@
     (subject: "rubber", rules: [Contrast("basalt")], why: "no colour above pure black reaches 12 on basalt; edge wear and occlusion carry it (ΔE00 7.8)", approved: "2026-10-21"),
     (subject: "copper", rules: [Chroma], why: "the original colour kept (chroma 50.7)", approved: "2026-10-21"),
     (subject: "laterite bauxite", rules: [Chroma], why: "the original colour kept (chroma 55.8 for an ore's 55)", approved: "2026-10-21"),
+    (subject: "skin 1", rules: [Lightness], why: "the Monk scale's tone kept (L* 94.2)", approved: "2026-10-21"),
+    (subject: "skin 2", rules: [Lightness], why: "the Monk scale's tone kept (L* 92.3)", approved: "2026-10-21"),
+    (subject: "skin 3", rules: [Lightness], why: "the Monk scale's tone kept (L* 93.1)", approved: "2026-10-21"),
 ]

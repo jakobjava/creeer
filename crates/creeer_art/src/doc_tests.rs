@@ -181,18 +181,40 @@ fn every_token_in_the_style_is_in_the_data_and_nothing_else() {
     }
 }
 
-#[test]
-fn player_colours_are_the_styles() {
-    let palette = Palette::from_data(&Data::base()).expect("the base palette loads");
-    let text = section("### 3.6 Player colours");
-    let mut listed = Vec::new();
+/// The colours listed in `text` as "`#rrggbb` name, …", in order.
+fn listed(text: &str) -> Vec<(String, Srgb)> {
+    let mut out = Vec::new();
     for piece in text.split('`').collect::<Vec<_>>().windows(2) {
         if let Some(colour) = Srgb::parse(piece[0]) {
             let name = piece[1].trim_start().split([',', '.']).next().unwrap_or("");
-            listed.push((name.trim().to_owned(), colour));
+            out.push((name.trim().to_owned(), colour));
         }
     }
-    assert_eq!(listed, palette.players);
+    out
+}
+
+/// The paragraph of `section` that begins with `start`.
+fn paragraph(section: &'static str, start: &str) -> &'static str {
+    let from = section
+        .find(start)
+        .unwrap_or_else(|| panic!("{start} not found"));
+    let rest = &section[from..];
+    &rest[..rest.find("\n\n").unwrap_or(rest.len())]
+}
+
+#[test]
+fn player_colours_are_the_styles() {
+    let palette = Palette::from_data(&Data::base()).expect("the base palette loads");
+    assert_eq!(listed(section("### 3.6 Player colours")), palette.players);
+}
+
+#[test]
+fn skin_tones_and_hair_colours_are_the_styles() {
+    let palette = Palette::from_data(&Data::base()).expect("the base palette loads");
+    let text = section("### 3.3 The character");
+    assert_eq!(listed(paragraph(text, "**Skin tones.**")), palette.skin);
+    assert_eq!(listed(paragraph(text, "**Hair colours.**")), palette.hair);
+    assert_eq!((palette.skin.len(), palette.hair.len()), (10, 9));
 }
 
 #[test]
@@ -224,6 +246,7 @@ fn the_approved_exceptions_are_the_styles() {
         let rule = match cells[1].strip_prefix("contrast against ") {
             Some(ground) => Rule::Contrast(ground.to_owned()),
             None if cells[1] == "chroma" => Rule::Chroma,
+            None if cells[1] == "lightness" => Rule::Lightness,
             None => panic!("unknown limit {:?}", cells[1]),
         };
         in_doc.push((subject, rule, cells[3].to_owned()));

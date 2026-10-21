@@ -1,0 +1,34 @@
+// The colours each player chooses from (docs/art-style.md §3.3), approved by the user
+// (2026-10-21, G1.3f): the `skin` and `hair` tokens' choices. A test reads art-style.md's lists
+// and fails if this file differs.
+//
+// Skin: the Monk Skin Tone Scale (Ellis Monk with Google, 2022; skintone.google, CC BY 4.0),
+// lightest first. Tones 1-3 are lighter than §4's L* 92 (approved exceptions).
+// Hair: measured, not painted. Dark brown to red and blond: Mengel-From et al. (2009),
+// spectrophotometry of 107 Scots; black and light brown from a cosmetics journal's samples;
+// grey from a natural grey sample. CIELAB (D65) converted to sRGB.
+(
+    skin: [
+        ("1", "#f6ede4"),
+        ("2", "#f3e7db"),
+        ("3", "#f7ead0"),
+        ("4", "#eadaba"),
+        ("5", "#d7bd96"),
+        ("6", "#a07e56"),
+        ("7", "#825c43"),
+        ("8", "#604134"),
+        ("9", "#3a312a"),
+        ("10", "#292420"),
+    ],
+    hair: [
+        ("black", "#2c2928"),
+        ("dark brown", "#3c332d"),
+        ("brown", "#4f3f35"),
+        ("light brown", "#5f4836"),
+        ("dark blond", "#765f49"),
+        ("blond", "#90785c"),
+        ("auburn", "#5e4031"),
+        ("red", "#7b563f"),
+        ("grey", "#968a72"),
+    ],
+)

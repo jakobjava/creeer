@@ -197,6 +197,7 @@ fn player_colours_too_alike_are_found() {
     let palette = Palette {
         tokens: Vec::new(),
         players,
+        ..Palette::default()
     };
     let found = check(&palette, &[], &[]);
     let pairs: Vec<_> = found
@@ -204,6 +205,47 @@ fn player_colours_too_alike_are_found() {
         .filter(|f| matches!(f, Finding::Players { .. }))
         .collect();
     assert_eq!(pairs.len(), 1, "{found:?}");
+}
+
+#[test]
+fn skin_tones_and_hair_colours_load_and_are_held_to_the_limits() {
+    let people = r##"(skin: [("1", "#f6ede4"), ("6", "#a07e56")], hair: [("red", "#7b563f")])"##;
+    let palette = with_grounds("").with_people(people).expect("they load");
+    assert_eq!(palette.person("skin 6"), Some(Srgb([0xa0, 0x7e, 0x56])));
+    assert_eq!(palette.person("hair red"), Some(Srgb([0x7b, 0x56, 0x3f])));
+    assert_eq!(palette.person("hair 6"), None);
+    // The lightest tone is too light (L* 94.2) until an exception lets it be.
+    let found = check(&palette, &[], &[]);
+    assert!(
+        matches!(found.as_slice(), [Finding::Lightness { what, .. }] if what == "skin 1"),
+        "{found:?}"
+    );
+    let kept = exception("skin 1", Rule::Lightness);
+    assert!(check(&palette, &[], std::slice::from_ref(&kept)).is_empty());
+    let needless = [kept, exception("skin 6", Rule::Lightness)];
+    let found = check(&palette, &[], &needless);
+    assert!(
+        matches!(found.as_slice(), [Finding::NeedlessException { subject, .. }] if subject == "skin 6"),
+        "{found:?}"
+    );
+    for (bad, says) in [
+        (
+            r##"(skin: [("1", "#f6ede")], hair: [("red", "#7b563f")])"##,
+            "bad colour",
+        ),
+        (
+            r##"(skin: [("1", "#f6ede4"), ("1", "#a07e56")], hair: [("red", "#7b563f")])"##,
+            "twice",
+        ),
+        (
+            r##"(skin: [], hair: [("red", "#7b563f")])"##,
+            "no skin tones",
+        ),
+        (r##"(skin: [("1", "#f6ede4")])"##, "hair"),
+    ] {
+        let err = parse("[]").and_then(|p| p.with_people(bad)).expect_err(bad);
+        assert!(err.contains(says), "{bad}: {err}");
+    }
 }
 
 #[derive(Deserialize)]

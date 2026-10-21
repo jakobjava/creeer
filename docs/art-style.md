@@ -77,9 +77,13 @@ The surface columns (§6): **Pattern** is what the renderer draws within the col
 | `leather` | `#4b2c22` | 0.70 | 0 | Leather | Dark oxblood-brown: boots, gloves, belt, straps, knee and elbow pads |
 | `lens` | `#2a3b33` | 0.05 | 0 | Glass | Smoky green glass of the goggles |
 | `player_accent` | per player | 0.75 | 0 | Fabric | The work jacket (§3.6) |
-| `skin` | per player | 0.55 | 0 | Plain | A choice of skin tones from measured skin colour data, set in G1.3f with the user's approval |
-| `hair` | per player | 0.70 | 0 | Plain | A choice of natural hair colours, set with the skin tones |
+| `skin` | per player | 0.55 | 0 | Plain | One of the ten skin tones below, the player's choice |
+| `hair` | per player | 0.70 | 0 | Plain | One of the nine hair colours below, the player's choice |
 | `base_layer` | `#797e86` | 0.85 | 0 | Fabric | The base body's plain vest and shorts: mid grey, apart from every skin tone (the user's choice) |
+
+**Skin tones.** The Monk Skin Tone Scale (Ellis Monk with Google, 2022; skintone.google, CC BY 4.0), ten tones spanning human skin, lightest first: `#f6ede4` 1, `#f3e7db` 2, `#f7ead0` 3, `#eadaba` 4, `#d7bd96` 5, `#a07e56` 6, `#825c43` 7, `#604134` 8, `#3a312a` 9, `#292420` 10. Tones 1–3 are lighter than §4's L* 92, and 9–10 nearly grey (chroma 6.5 and 3.8): display swatches rather than measured skin. The user kept them (approved exceptions, §4).
+
+**Hair colours.** Measured, not painted (real hair measures darker than painted game hair: its shine comes from the light). Dark brown to red and blond from Mengel-From et al. (2009), who measured 107 Scots with a spectrophotometer; black and light brown from a cosmetics journal's samples; grey from a natural grey sample: `#2c2928` black, `#3c332d` dark brown, `#4f3f35` brown, `#5f4836` light brown, `#765f49` dark blond, `#90785c` blond, `#5e4031` auburn, `#7b563f` red, `#968a72` grey.
 
 Buckles, rivets and the goggles' rims are `steel`; the jetpack's bottles are `steel_painted` on a `steel` frame with `leather` straps (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 16.9 for `coverall` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them.
 
@@ -137,6 +141,9 @@ Measured in CIELAB, automated in tests over the palette.
 | `rubber` | contrast against basalt | No colour above pure black reaches 12 on basalt (ΔE₀₀ 7.8) | 2026-10-21 |
 | `copper` | chroma | Original colour kept (chroma 50.7) | 2026-10-21 |
 | laterite bauxite | chroma | Original colour kept (chroma 55.8, against an ore's 55) | 2026-10-21 |
+| skin 1 | lightness | The Monk scale's tone kept (L* 94.2) | 2026-10-21 |
+| skin 2 | lightness | The Monk scale's tone kept (L* 92.3) | 2026-10-21 |
+| skin 3 | lightness | The Monk scale's tone kept (L* 93.1) | 2026-10-21 |
 
 ## 5. Light and the frame
 
@@ -301,3 +308,4 @@ In Factorio's spirit, not a copy of it.
   - **An average man** ("too muscular", "still way to buff, to broad", "the hip is too wide"): fitted to ANSUR II's men of normal weight. §8's "bulky clothes, slightly broad at the shoulders" became thin workwear on a man neither broad nor muscular.
   - **Thin clothes** ("really really thick", "still too thick"), a seat that is not accentuated, and a stand collar instead of a rolled one ("remove this weird sausage like feature").
   - **The base layer is mid grey** (the user's pick), `#797e86`: nudged ΔE₀₀ 1.6 from the first proposal `#7c8187` to keep ΔE₀₀ 12 from gravel.
+  - **Skin tones and hair colours** (§3.3; the user: "skin tone and hair is good"): the Monk scale's ten tones, its lightest three as approved exceptions (§4), and nine measured hair colours (`data/art/people.ron`).

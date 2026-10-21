@@ -13,13 +13,15 @@ pub enum Rule {
     Contrast(String),
     /// The chroma limit of the subject's group.
     Chroma,
+    /// The lightness range (no pure black or white).
+    Lightness,
 }
 
 /// One approved exception.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Exception {
-    /// A token or a rock.
+    /// A token, a rock, or a skin tone or hair colour (`skin 1`, `hair red`).
     pub subject: String,
     pub rules: Vec<Rule>,
     /// Why it is accepted.

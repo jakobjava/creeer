@@ -1,7 +1,8 @@
-//! The palette in data (`data/art/palette.ron`, `data/art/players.ron`): every token of
-//! `docs/art-style.md` §3 and §10, which models and the renderer name instead of colours. A
-//! pack recolours a token by naming it again (ADR-0018's tables); the player colours are one
-//! file, replaced whole by the last pack that has it.
+//! The palette in data (`data/art/palette.ron`, `data/art/players.ron`,
+//! `data/art/people.ron`): every token of `docs/art-style.md` §3 and §10, which models and the
+//! renderer name instead of colours, and the colours each player chooses from. A pack recolours
+//! a token by naming it again (ADR-0018's tables); the player colours, and the skin tones and
+//! hair colours, are one file each, replaced whole by the last pack that has it.
 
 use crate::colour::Srgb;
 use creeer_data::Data;
@@ -95,6 +96,17 @@ pub struct Palette {
     pub tokens: Vec<Token>,
     /// (name, colour) in the order players are given them.
     pub players: Vec<(String, Srgb)>,
+    /// The skin tones a player chooses from for `skin`, (name, colour), lightest first.
+    pub skin: Vec<(String, Srgb)>,
+    /// The hair colours a player chooses from for `hair`, (name, colour).
+    pub hair: Vec<(String, Srgb)>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PeopleDef {
+    skin: Vec<(String, String)>,
+    hair: Vec<(String, String)>,
 }
 
 #[derive(Deserialize)]
@@ -133,6 +145,8 @@ fn matte() -> f64 {
 pub const TOKENS_FILE: &str = "art/palette.ron";
 /// Where the player colours live in a pack.
 pub const PLAYERS_FILE: &str = "art/players.ron";
+/// Where the skin tones and hair colours live in a pack.
+pub const PEOPLE_FILE: &str = "art/people.ron";
 
 impl Palette {
     /// The palette as the packs of `data` merge it.
@@ -145,7 +159,19 @@ impl Palette {
             .merge_traced(ron_list, |t: &TokenDef| &t.name)
             .map_err(|e| e.to_string())?;
         let players = data.file(PLAYERS_FILE).map_err(|e| e.to_string())?;
-        Self::build(defs, players)
+        let people = data.file(PEOPLE_FILE).map_err(|e| e.to_string())?;
+        Self::build(defs, players)?.with_people(people)
+    }
+
+    /// The palette with the skin tones and hair colours in `text` (`people.ron`'s form).
+    ///
+    /// # Errors
+    /// If it does not parse, a list is empty, a colour is malformed or a name repeats.
+    pub fn with_people(mut self, text: &str) -> Result<Self, String> {
+        let def: PeopleDef = ron::from_str(text).map_err(|e| format!("{PEOPLE_FILE}: {e}"))?;
+        self.skin = named(PEOPLE_FILE, "skin tones", def.skin)?;
+        self.hair = named(PEOPLE_FILE, "hair colours", def.hair)?;
+        Ok(self)
     }
 
     /// The palette from the texts of its two files (tests, tools).
@@ -210,22 +236,22 @@ impl Palette {
         }
         let pairs: Vec<(String, String)> =
             ron_list(players).map_err(|e| format!("{PLAYERS_FILE}: {e}"))?;
-        let mut list = Vec::with_capacity(pairs.len());
-        for (name, hex) in pairs {
-            let colour = Srgb::parse(&hex)
-                .ok_or_else(|| format!("{PLAYERS_FILE}: {name}: bad colour {hex:?}"))?;
-            if list.iter().any(|(n, _)| n == &name) {
-                return Err(format!("{PLAYERS_FILE}: {name} is listed twice"));
-            }
-            list.push((name, colour));
-        }
-        if list.is_empty() {
-            return Err(format!("{PLAYERS_FILE}: no player colours"));
-        }
         Ok(Self {
             tokens,
-            players: list,
+            players: named(PLAYERS_FILE, "player colours", pairs)?,
+            skin: Vec::new(),
+            hair: Vec::new(),
         })
+    }
+
+    /// The skin tone or hair colour a check names `skin <name>` or `hair <name>`.
+    pub fn person(&self, what: &str) -> Option<Srgb> {
+        let (list, name) = match what.split_once(' ')? {
+            ("skin", name) => (&self.skin, name),
+            ("hair", name) => (&self.hair, name),
+            _ => return None,
+        };
+        list.iter().find(|(n, _)| n == name).map(|(_, c)| *c)
     }
 
     /// The index of token `name`.
@@ -237,4 +263,25 @@ impl Palette {
     pub fn token(&self, name: &str) -> Option<&Token> {
         self.index(name).map(|k| &self.tokens[k])
     }
+}
+
+/// `pairs` of (name, hex) as colours, refused if empty, malformed or a name repeats.
+fn named(
+    file: &str,
+    what: &str,
+    pairs: Vec<(String, String)>,
+) -> Result<Vec<(String, Srgb)>, String> {
+    let mut list = Vec::with_capacity(pairs.len());
+    for (name, hex) in pairs {
+        let colour =
+            Srgb::parse(&hex).ok_or_else(|| format!("{file}: {name}: bad colour {hex:?}"))?;
+        if list.iter().any(|(n, _)| n == &name) {
+            return Err(format!("{file}: {name} is listed twice"));
+        }
+        list.push((name, colour));
+    }
+    if list.is_empty() {
+        return Err(format!("{file}: no {what}"));
+    }
+    Ok(list)
 }

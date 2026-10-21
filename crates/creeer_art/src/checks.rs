@@ -1,5 +1,5 @@
-//! The style's automated checks (`docs/art-style.md` §4, §3.6): contrast against the grounds,
-//! chroma and lightness limits, and player colours told apart. Each finding names what failed
+//! The style's automated checks (`docs/art-style.md` §4, §3.3, §3.6): contrast against the
+//! grounds, chroma and lightness limits, and player colours told apart. Each finding names what failed
 //! and by how much; the user's approved exceptions are honoured, and reported once they are
 //! no longer needed.
 
@@ -141,6 +141,15 @@ pub fn check(palette: &Palette, rocks: &[Rock], exceptions: &[Exception]) -> Vec
     for (name, colour) in &palette.players {
         lightness(&format!("player {name}"), *colour, &mut found);
     }
+    // The skin tones and hair colours are the character's: its chroma limit and the lightness
+    // range. Like the player colours they are not held against the grounds: the clothes are.
+    for (kind, list) in [("skin", &palette.skin), ("hair", &palette.hair)] {
+        for (name, colour) in list {
+            let what = format!("{kind} {name}");
+            chroma(&what, *colour, Some(OBJECT_CHROMA), &mut found);
+            lightness(&what, *colour, &mut found);
+        }
+    }
     players(&palette.players, &mut found);
     excuse(found, palette, rocks, exceptions)
 }
@@ -158,6 +167,7 @@ fn excuse(
             token == &e.subject && ground == g
         }
         (Rule::Chroma, Finding::Chroma { what, .. }) => what == &e.subject,
+        (Rule::Lightness, Finding::Lightness { what, .. }) => what == &e.subject,
         _ => false,
     };
     let mut out: Vec<Finding> = found
@@ -170,12 +180,13 @@ fn excuse(
         .cloned()
         .collect();
     for e in exceptions {
-        let known =
-            palette.token(&e.subject).is_some() || rocks.iter().any(|r| r.name == e.subject);
+        let known = palette.token(&e.subject).is_some()
+            || rocks.iter().any(|r| r.name == e.subject)
+            || palette.person(&e.subject).is_some();
         for rule in &e.rules {
             let ground_known = match rule {
                 Rule::Contrast(g) => GROUNDS.contains(&g.as_str()),
-                Rule::Chroma => true,
+                Rule::Chroma | Rule::Lightness => true,
             };
             let (subject, rule) = (e.subject.clone(), rule.clone());
             if !known || !ground_known {
