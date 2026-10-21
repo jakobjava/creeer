@@ -30,3 +30,4 @@ cargo run -p creeer_client --release -- --connect 127.0.0.1:27015 --name ada   #
 - `xtask/`: project automation.
 - `data/`: game content (materials, reactions, parts, planets, solar systems) as RON files.
 - `docs/adr/`: architecture decision records. `docs/physics/`: derivations and validation reports.
+- `docs/art-style.md`: how the game looks (the authority). `docs/blender-mcp.md`: making models in Blender, driven by Claude through the MCP.

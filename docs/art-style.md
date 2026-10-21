@@ -1,8 +1,13 @@
 # Creëer art style
 
-**Factorio's vibe, in 3D.** This file is the authority on how Creëer looks. Every asset, shader, effect and UI element is made to it. It changes only with the user's approval, recorded in the changelog at the end. plan.md's pillar: *"Factorio-like. Stylised, readable, softly textured, strong colours per material. Neither low-poly nor realistic."*
+**Factorio's vibe, in 3D.** This file is the authority on how Creëer looks. Every asset, shader, effect and UI element is made to it. It changes only with the user's approval, recorded in the changelog at the end. plan.md's pillar: *"Factorio-like. Stylised, readable, softly textured, strong colours per material. Real, smooth shapes: never blocky, voxel-like or low-poly. Grounded and industrial, never futuristic. Stylised in its surfaces and palette, not photographic."*
 
-Status: written 2026-10-18, before G1. Its palette and checks are implemented in G1.3 (`docs/g1-plan.md`); until then the rules apply to whatever is made.
+Status: written 2026-10-18, before G1. Its palette and checks are implemented in G1.3 (`docs/g1-plan.md`, ADR-0026); until then the rules apply to whatever is made. Models are made in Blender (`docs/blender-mcp.md`).
+
+**In short, what Creëer is not:**
+- **Not blocky or voxel-like.** No Minecraft geometry: no cubes as the world's unit, no stair-stepped ground, no blocky people. Surfaces are smooth and shapes are real (§1, pillar 9).
+- **Not futuristic.** No science-fiction look: no glowing panels, holograms, neon or sleek space suits. It looks like the workshops, mines and machines of the last hundred years (§1, pillar 10).
+- **Not photographic.** No photo textures. The detail is soft and made by procedure (§6).
 
 ## 1. The pillars
 
@@ -13,11 +18,23 @@ Status: written 2026-10-18, before G1. Its palette and checks are implemented in
 5. **Weight and contact.** Strong sun shadows and ambient occlusion sit everything firmly on the ground; nothing floats visually.
 6. **Chunky, mechanical, believable.** Shapes look like what they are and how they were made: bevels, bolts, welds, rivets, handles. They are slightly chunky in their small details, never cartoonish in their proportions.
 7. **Dense and lived-in.** The ground between things is never empty: pebbles, grass, bushes and fallen branches are everywhere.
-8. **Real where physics speaks.** Hot metal glows at its real temperature, and water, air and sunlight are the simulation's own (ADR-0003). Stylisation lives in surfaces, palette and shapes, never in contradicting the physics.
+8. **Real where physics speaks.** Hot metal glows at its real temperature, and water, air and sunlight are the simulation's own (ADR-0003). Stylisation lives in surfaces, palette and readable shapes, never in contradicting the physics.
+9. **Smooth, real shapes; never blocky.** Creëer is not a blocky or voxel game, and nothing in it looks like Minecraft. Smooth geometry is where its realism lives.
+   - **The ground** is a smooth surface. Its voxels are only how it is stored; it is meshed with Surface Nets and shaded with exact, smooth normals (ADR-0006). A dug hole is a smooth crater, never a cube taken out.
+   - **Curved things are round** at every distance (the rules in §7): a pipe, a wheel, a trunk, a person's arm.
+   - **Organic shapes are modelled as they are:** people, trees and rocks. There is no faceted "low-poly" look, and no cube heads or limbs.
+   - **Building is free-form** (plan.md): parts have their real profiles and lengths. There is no block grid that shapes the world.
+10. **Grounded, never futuristic.** The technology is what the player builds from the ground up, and it looks like the workshops, mines, mills and machines of the last hundred years: steel, timber, rivets, welds, paint, rust and grease. There are no glowing panels, holograms, neon, sleek glossy plastics or space-suit chrome. The engineer is a worker in workwear, not an astronaut. Even rockets (G8) look like real hardware bolted together from real parts.
 
 ## 1b. References before making
 
 Before a kind of asset, shader, effect or UI is made, study how others did it: Factorio's own art and its developers' write-ups (the FFF blog), and stylised 3D games with readable, material-led looks. Note what was taken from where (in the asset's ADR or this file's changelog). The style is ours; the craft is learned from those who did it first (plan.md §1, principle 12).
+
+What G1.3's survey took from Factorio (ADR-0026, Prior work):
+- **Its art is made in Blender** (FFF-146, FFF-218), and so is Creëer's (`docs/blender-mcp.md`).
+- **Hand-painted contrast.** Factorio's renders are finished by hand-painted masks "to enforce contrast, make edges clearer, define shape of entities better" (FFF-146). In real time, Creëer gets that from ambient occlusion, edge wear and the contrast rules of §4.
+- **The player's colour** is a tint on a desaturated region of the engineer, at half strength (FFF-218). Here it is the `player_accent` material on the jacket (§3.3, §8).
+- **Restraint in saturation.** The terrain is a background that should give "a good and comfortable contrast with the entities and the icons"; players warned that too much saturation turns it into a "plastic playground" (FFF-320). This is what §4's limits are for.
 
 ## 2. The physical shape comes first
 
@@ -52,10 +69,12 @@ The rocks' colours live in `data/geology/rocks.ron` and are part of this palette
 
 | Token | Colour | Roughness | Metalness | Notes |
 |---|---|---|---|---|
-| `suit` | `#d9d4c7` | 0.70 | 0 | Off-white work suit |
-| `suit_joint` | `#3a3836` | 0.80 | 0 | Bellows, gloves, boots |
-| `visor` | `#4a3418` | 0.05 | 0 | Dark amber, sun-filtering |
-| `player_accent` | per player | 0.55 | 0 | Shoulders, helmet stripe, backpack (§3.6) |
+| `coverall` | `#8c99a6` | 0.85 | 0 | Quilted cool grey-blue work coverall: arms, legs, hood |
+| `leather` | `#4b2c22` | 0.70 | 0 | Dark oxblood-brown: boots, gloves, belt, straps, knee and elbow pads |
+| `lens` | `#2a3b33` | 0.05 | 0 | Smoky green glass of the goggles |
+| `player_accent` | per player | 0.75 | 0 | The work jacket (§3.6) |
+
+Buckles, rivets and the goggles' rims are `steel`; the respirator's face piece is `rubber`; its filter canister is `steel_painted` (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 16.9 for `coverall` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them.
 
 ### 3.4 Vegetation
 
@@ -120,6 +139,9 @@ Measured in CIELAB, automated in tests over the palette.
 ## 7. Shapes and models
 
 - **Bevel every hard edge**: 1–2 % of the part's smallest dimension, at least 5 mm, at most 3 cm. Bevels catch the light and give the Factorio "rendered" look.
+- **Smooth curves** (pillar 9). A curved surface's facets stay within 1 % of its radius of the true surface at LOD 0: a full circle has at least 24 segments, so the faces on either side of a smoothly shaded edge differ by at most 15°. At every distance, the facets stay within half a pixel on screen: a level of detail is chosen by that screen-space error, never by a fixed distance. The validator checks the 15° on every model.
+- **Smooth shading, real edges.** Normals are smooth across curved surfaces. An edge is shaded hard only where the object has a real edge, and that edge is bevelled. Hard-surface models use face-weighted normals (Blender's Weighted Normal modifier), so flat faces stay flat and their bevels soft.
+- **No faceted organics.** People, trees and rocks never show flat facets at play distance. Rocks keep their real fracture edges crisp (a crease angle), but their faces are curved. Boulders' collision hulls (G1.5) need enough points for that, and their cost is measured there.
 - **Show how it was made**: welds as beads, bolted joints with bolt heads, plates with their thickness visible, castings rounded, machined faces flat and slightly shinier (roughness −0.1).
 - **Distinct silhouettes**: every tool and item is recognisable as a black silhouette at 64 px and at 20 m in third person. The test: the icon silhouettes of any two items overlap by IoU < 0.8.
 - **Triangle budgets** (LOD 0):
@@ -137,7 +159,12 @@ Measured in CIELAB, automated in tests over the palette.
 
 ## 8. Subjects
 
-- **The engineer.** A chunky work suit and helmet: wide shoulders, thick bellows joints, boots, a backpack with the jetpack's tanks. It reads as a person in a suit from 50 m. The body is made of rigid segments, one per ragdoll segment (`docs/g1-plan.md`, decisions). The player accent goes on the shoulders, the helmet stripe and the backpack. No face is shown behind the visor.
+- **The engineer.** A worker in rugged, padded workwear (pillar 10), not an astronaut. The user's rough guide is Factorio's engineer as first shown in FFF-40 (2014): its layered, padded workwear, chunky gloves and boots, and the player's colour on the jacket. It is not copied, and its hard hat, tools and rucksack are left out.
+  - **Clothes.** A quilted `coverall`, a work jacket in the player's colour (`player_accent`) with a belt, `leather` knee and elbow pads, thick gloves and laced boots.
+  - **Head.** A close-fitting padded hood with goggles (`lens`) and a respirator with a filter canister. The face is covered, and none is modelled.
+  - **Proportions.** Those of a real person (§2) in bulky clothes: slightly broad at the shoulders, gloves and boots chunky. They read as a person in workwear from 50 m and as a silhouette at 64 px.
+  - **The body.** Its bones are the ragdoll's fifteen segments, one bone per segment, so the drawn body is the simulated one (`docs/g1-plan.md`; ADR-0026). Its surface is smooth across the joints (skinned), never a set of separate blocks.
+  - **Carried things are separate models,** attached to a bone: the jetpack (G1.2c) and, from G1.4, the tool in hand.
 - **Tools.** Wooden handles (`timber`, darkened with use), forged steel heads (`steel` with wear), simple and sturdy. Their outlines differ: pick, axe, shovel and saw are unmistakable.
 - **Trees.** Masses of foliage in clumps, not individual leaves; dark undersides from AO; bark with vertical detail. Stumps and cut ends in `wood_cut`. Species are told apart by shape first (spruce cone, pine umbrella, birch's white trunk, oak's broad crown), colour second.
 - **Machines and structures** (G2 on): painted steel by default, bare where machined or worn, hazard stripes where they move or burn.
@@ -174,7 +201,8 @@ In Factorio's spirit, not a copy of it.
 
 1. **This file is the authority.** Plans and code refer to it; nothing restates it differently.
 2. **Palette in data, checked against this file.** `data/art/palette.ron` (G1.3) is tested against the tables here. The UI theme's constants are tested the same way.
-3. **Models use tokens only.** The validator (`creeer_tools validate`) refuses a model with raw colours, unknown tokens, too many triangles, or the wrong scale or origin.
+3. **Models use tokens only.** The validator (`creeer_tools validate`) refuses a model with raw colours or image textures, unknown tokens, too many triangles, facets over 15° on smoothly shaded edges (§7), or the wrong scale or origin.
+   - **Models come from scripts.** Every authored model is built by a Blender script in `art/`, which is its source; the exported `.glb` is regenerated from it (`docs/blender-mcp.md`). A change to a model is a change to its script, which can be read and reviewed.
 4. **Automated style checks** in CI:
    - the ΔE contrast against the grounds (§4);
    - the chroma and L\* limits (§4);
@@ -189,3 +217,8 @@ In Factorio's spirit, not a copy of it.
 
 - 2026-10-18: written, before G1 (the user: "i want a factorio like vibe art style wise").
 - 2026-10-18: §1b, references before making (the user: "proper research is really important: record that in all docs").
+- 2026-10-21, at the start of G1.3, on the user's instructions:
+  - **Not blocky** (pillar 9, §7's smoothness rules). The user: "make sure in the art-style.md that it is clear that i do not want a blocky or voxy like game (no minecraft geometry, i want smooth surfaces ==> realism)". The pillar's "neither low-poly nor realistic" became "real, smooth shapes; stylised surfaces, not photographic".
+  - **Not futuristic** (pillar 10). The user: "i do not want a futuristic art style but something similar to the vibe of factorio".
+  - **The engineer** (§3.3, §8): workwear after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)". The off-white suit, bellows joints, helmet and visor were replaced by `coverall`, `leather`, `lens` and the jacket in `player_accent` (roughness 0.75, a fabric). The body is skinned on the ragdoll's segments instead of drawn as rigid segments, for smooth surfaces (ADR-0026).
+  - **§1b** gained what the survey took from Factorio; **§11.3**: models come from scripts in Blender (`docs/blender-mcp.md`).

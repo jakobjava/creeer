@@ -13,7 +13,7 @@
 - **Light survival:** health, hunger, thirst, oxygen and suit pressure, temperature, fall damage.
 - **PvE and PvP:** fauna, environmental hazards, player-built physical weapons and raids.
 - **Multiplayer:** server-authoritative. Players can host (2-16 players), or run a headless dedicated server.
-- **Art style:** Factorio-like. Stylised, readable, softly textured, strong colours per material. Neither low-poly nor realistic. The rules, palette and checks that keep it from drifting: `docs/art-style.md`.
+- **Art style:** Factorio-like. Stylised, readable, softly textured, strong colours per material. Real, smooth shapes, never blocky, voxel-like or low-poly (no Minecraft geometry). Grounded and industrial, never futuristic. Stylised in its surfaces and palette, not photographic. The rules, palette and checks that keep it from drifting: `docs/art-style.md`; models are made in Blender (`docs/blender-mcp.md`).
 - **Data-driven and mod-ready:** all content lives in data files.
 - **Tech decision:** a custom engine in Rust instead of Godot. The reasons: full control over performance, threading, the GPU and precision; very little need for an editor because content is procedural or player-built; precedent from Factorio, Teardown and Kitten Space Agency.
 - **Working style:** Claude writes most of the code, and the user understands code at a basic level. That makes the process **iterative**, with heavy testing and documented, double-checked decisions.

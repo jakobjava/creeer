@@ -25,9 +25,11 @@ What makes Factorio's look, and how Creëer carries it into 3D: a summary. The r
 - **A grounded, earthy, industrial palette.** The terrain is muted and earthy (as it is now). Objects sit slightly brighter and more saturated than the ground they stand on, so they read against it. Saturated accents are saved for what matters: hazard yellow and black, glowing hot metal, a player's own colour.
 - **Soft detail, no photos.** Surfaces get procedural detail (triplanar noise, as the terrain already has), wear and grime on edges and in creases (from curvature and ambient occlusion), and never photographic textures.
 - **Weight and contact.** Strong sun shadows, ambient occlusion (SSAO, new in G1.3) and contact shadows ground everything; Factorio's pre-rendered look owes much of its density to them. The tonemapper keeps authored colours (ADR-0003, Khronos PBR Neutral).
-- **Chunky, mechanical, believable shapes.** Things look like what they are and how they are made: bevelled edges that catch the light, bolts, rivets, welds, handles. Proportions are slightly exaggerated (thicker handles, a chunkier suit) so they read at a distance.
+- **Chunky, mechanical, believable shapes.** Things look like what they are and how they are made: bevelled edges that catch the light, bolts, rivets, welds, handles. Small details are slightly exaggerated (thicker handles, chunkier gloves and boots) so they read at a distance.
+- **Smooth, real shapes; never blocky** (`art-style.md` pillar 9, the user, 2026-10-21). No Minecraft geometry and no faceted low-poly look: the ground is smooth, curved things are round, and people, trees and rocks are modelled as they are.
+- **Grounded, never futuristic** (pillar 10). Workshops, mines and machines of the last hundred years, not science fiction.
 - **Dense, lived-in ground.** Pebbles, grass tufts, bushes and fallen branches, instanced in their thousands, so the planet never looks empty between the trees.
-- **The engineer.** The character wears a chunky work suit and helmet, readable as a silhouette, with an accent in the player's own colour (as Factorio colours its players).
+- **The engineer.** A worker in padded workwear (Factorio's engineer as a very rough guide, without its hard hat, tools and rucksack), readable as a silhouette, with a jacket in the player's own colour (as Factorio colours its players).
 - **Icons from the models.** Every item's icon is rendered by our own renderer from its 3D model, in one fixed three-quarter view and lighting: consistent, like Factorio's icons, and none drawn by hand.
 - **The UI.** In Factorio's spirit, not a copy of it: dark, warm grey panels, bevelled buttons, one warm highlight colour, and dense tooltips full of real numbers (mass, composition, temperature).
 
@@ -68,7 +70,7 @@ The physics has contacts and welded members, but no articulation. The ragdoll ne
 - **G1.2d done** (2026-10-18): knocked down (a lean past 45° or a jolt over 2 m/s), the ragdoll (15 segments, momentum kept exactly), injury from mechanics (pulses on a person's stiffness, HIC for the head), people on the server (health, falling, standing up, death and respawn), the player told (`Own`: health, down), saves (`PEOP`). Its cost on the ground took *crowd* to 58 ms worst: **P1 (G1.8) is brought forward and comes next**, before G1.2e.
 - **P1's first pass done** (ADR-0024, "Outcome of the first pass"): the legs became a strut solved in the step (a stiff load on a light body was the crowd's 58 ms tick), falls corrected (injury by region, the ragdoll laid out with the legs it has), about 8 % off a ragdoll's step by exact, profile-found changes. The contact core's redesigns (friction within Newton with the joint tree, contacts that persist) go back to G1.8, where they were planned. *crowd's* CI work gate re-set to its measured 4,730 a tenth above (5,200), by the user's decision; its time gates stay for G1.8.
 - **G1.2e done** (2026-10-21, ADR-0025): the bodies near the avatar (12 within 6 m) are predicted with it, set back only where the server says it mispredicted; snapshots list the nearby bodies their budget left out; protocol 6. Walking into crates: corrections over 1 cm 44 % → 0.6 % lossless (3.4 % over 100–130 ms with 5 % loss), the largest 38 → 5.5 cm; on bare terrain none over 1 cm now. G1.2 is complete.
-- **Next:** G1.3: the look (art direction and the asset pipeline, with Blender).
+- **Next:** G1.3: the look (art direction and the asset pipeline, with Blender), planned 2026-10-21 (below; ADR-0026).
 - **Climbing** waits for something to climb: G2's ladders and handholds.
 
 It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and are measured, not assumed.
@@ -96,25 +98,128 @@ It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and a
   - determinism; a save with characters standing, swimming and ragdolled.
 - **Budget:** a standing or walking character ≤ 0.03 ms a tick; a ragdolled one ≤ 0.1 ms.
 
-### G1.3 The look: art direction and the asset pipeline
+### G1.3 The look: art direction and the asset pipeline (ADR-0026)
 
-The look first, so that everything after it is made in the style.
+**Planned** (2026-10-21), awaiting the user's review. The look comes first, so that everything after it is made in the style. Its survey of prior work is in ADR-0026, its rules in `docs/art-style.md`, and how Blender is used in `docs/blender-mcp.md`.
 
-- **`docs/art-style.md` made real** (§11 there):
-  - its palette moves into data (`data/art/palette.ron`), tested against the file's tables;
-  - its automated style checks run in CI (contrast, chroma, silhouettes, player colours, forbidden effects);
-  - the style board (`--style-board`) and its golden images.
-- **Blender for authored models.** The Blender MCP is set up here (below, "Blender MCP"). Authored assets are the character, tools, the landing pod, bags and crates. Everything procedural stays procedural: terrain, trees, structures and decoratives come from code.
-- **Pipeline.** `.blend` sources live in `art/`, exported glTF binaries (`.glb`) in the base pack (`data/models/`). The renderer loads glTF meshes (the `gltf` crate, pinned). A mesh's material slots name palette materials (`"steel"`, `"suit"`, `"player_accent"`) instead of carrying textures, so a mod can recolour a material once. The validator checks every model: it loads, its material names exist, it stays under its triangle budget, and it is the right size in metres.
-- **Renderer additions.**
-  - SSAO (ambient occlusion in screen space; half resolution on low settings).
-  - Procedural detail and edge wear on meshes, as on the terrain (triplanar noise, plus wear from curvature baked into vertex data at export).
-  - Per-vertex material slots (today a mesh vertex is only a position and a normal; colour and roughness come per instance).
-- **The character's look.** A segmented suit: each ragdoll segment is a rigid mesh, so the drawn body is exactly the simulated one, with no skinning needed. A helmet, a backpack with the jetpack, and the player-colour accent.
-- **Procedural animation.** Feet placed on the ground by IK from the legs' spring, arm swing, tool swings timed to the strikes the server applies. Clients animate from the replicated state and inputs, so nothing extra goes over the network.
-- **Icons.** Item icons rendered offscreen from their models (`--icon <model>`), cached per pack's content hash.
-- **Validation:** golden screenshots of the character, every tool and the pod (headless, `--planet` views); the validator's checks on a set of broken models; SSAO's cost measured.
-- **Budget:** SSAO ≤ 1 ms at 1080p on min-spec projected; a model's load ≤ 5 ms.
+The user's direction at its start (2026-10-21, recorded in `art-style.md`'s changelog):
+- **Not futuristic:** the vibe of Factorio.
+- **Not blocky or voxel-like:** no Minecraft geometry; smooth surfaces, for realism.
+- **The engineer** after Factorio's FFF-40 engineer as a very rough guide, without its hard hat, tools and rucksack.
+
+Where it starts: meshes are a position and a normal per vertex with one material per instance; the character is drawn as a box and two beams; there is no ambient occlusion; meshes have no surface detail (ADR-0026, "Where it starts"). Blender 5.2 LTS with MCP for Blender is set up and running (`docs/blender-mcp.md`).
+
+#### G1.3a The palette in data and the style checks
+
+- **The palette.** `data/art/palette.ron` holds every token of `art-style.md` §3 and §10: its colour, roughness, metalness and group (terrain, material, character, vegetation, accent, player, UI), and, for wear, the token beneath it (`steel_painted` wears to `steel`). A test reads the tables of `art-style.md` and fails if the two differ. The validator checks it with the pack (ADR-0018).
+- **Colour science** in a small crate, `creeer_art`: sRGB ↔ CIELAB, CIEDE2000, and colour-vision simulation (Machado, Oliveira and Fernandes 2009: deuteranopia and protanopia).
+- **The checks, in CI** (`art-style.md` §4, §3.6, §5):
+  - every object token at least ΔE₀₀ 12 from the five grounds, or listed as carried by its wear and occlusion (then shown on the style board);
+  - chroma and L\* limits per group;
+  - the sixteen player colours told apart under both simulated deficiencies (a minimum ΔE₀₀ between any two, set from the measured spread);
+  - the renderer's post-processing chain holding no forbidden effect.
+- **What fails today goes to the user,** not quietly into the palette: `rubber` against basalt (ΔE₀₀ 7.8) and `steel` against gravel (10.3) already miss the 12. Each gets a proposed new colour, or is listed as carried by wear, with the user's approval in the changelog.
+- **Validation:** CIEDE2000 against Sharma, Wu and Dalal's 34 test pairs (to 10⁻⁴); the colour-vision matrices against the paper's tables; sRGB white at L\* = 100.
+
+#### G1.3b Models: glTF, materials as tokens, the validator
+
+- **Loading.** The renderer loads `.glb` files with the `gltf` crate (1.4.1, pinned). Meshes, skins and animations are read. Image textures are refused.
+- **Vertices** gain the palette token's index, the baked occlusion and the convexity (from `COLOR_0`). A mesh is still one draw. Procedural meshes keep one material per instance through a reserved index.
+- **Instances** gain the player's accent colour and how worn they are (new = none, old = full), beside the overlay value.
+- **The models' manifest**, `data/models/models.ron`: each model's class, triangle budget, size and origin.
+- **The validator** (`creeer_tools validate`) checks every model:
+  - it loads;
+  - every material is a palette token, and no image is used;
+  - it stays within its triangle budget;
+  - its size in metres and its origin are as the manifest says;
+  - smoothly shaded edges join faces at most 15° apart (`art-style.md` §7);
+  - normals are unit, and no triangle is degenerate;
+  - a skinned model's bones are the ragdoll's segments, named and placed as `creeer_sim::character::ragdoll` has them.
+- **`cargo xtask art`**: runs headless Blender on the scripts in `art/` and writes the `.glb` files. `--check` fails on any difference from the committed files; `--blend` also writes a `.blend` to open by hand (`docs/blender-mcp.md`).
+- **The first model is a crate** (`art/crate.py`): timber boards on a steel frame, bevelled, at the sandbox crates' real size. It proves the pipeline from script to screen.
+- **Validation:** a set of broken models in `tests/models/`, each refused for its own reason (an unknown token, an image, over budget, wrong scale, a coarse facet, a misplaced bone); the crate drawn in the sandbox; the crate's script rebuilt to the identical file.
+- **Budget:** a model's load ≤ 5 ms.
+
+#### G1.3c Surfaces and smooth geometry
+
+- **Surface detail on meshes** (`art-style.md` §6):
+  - triplanar value noise of ±12 % on the base colour, fixed in world metres (about 5 cm);
+  - edge wear on convex edges, revealing the token beneath, by the baked convexity broken up by noise, scaled by the instance's wear;
+  - grime in creases from the baked occlusion, up to 30 %;
+  - machined faces a little shinier.
+- **Smooth geometry everywhere** (`art-style.md` pillar 9, §7):
+  - the sandbox's flat-shaded primitives become smooth ones: bevelled boxes with face-weighted normals, and cylinders and spheres with at least 24 segments;
+  - members (cylinders) and spheres get levels of detail chosen by screen-space error (half a pixel), not by distance;
+  - the terrain's normals and dug craters checked to be smooth at every level of detail, with close-up screenshots.
+- **Validation:** golden screenshots of the crate, members and spheres at noon and in the evening, close and at 20 m; the facets' screen-space error measured on the levels of detail.
+- **Budget:** the F1 mesh budget (10,000 instanced parts at 60 FPS on min-spec) still met; the mesh pass at most 10 % slower than now.
+
+#### G1.3d Ambient occlusion (GTAO)
+
+- **GPU timestamps** first (wgpu's timestamp queries), shown per pass in the F9 profiler. Every GPU budget from here on is measured with them.
+- **GTAO** after XeGTAO (ADR-0026): depth MIPs, the main pass and a spatial denoise, applied to ambient light only, with the multi-bounce fit. It darkens creases by at most 50 % (`art-style.md` §5).
+- **How it meets the MSAA forward pass,** decided by measuring both: (a) a depth and normal prepass (as Bevy does), or (b) ambient light written to its own target and occluded when composited. Measured: cost at 1080p, and the quality at MSAA edges.
+- **Quality presets** (low, medium, high), with half resolution on low.
+- **Validation:**
+  - against analytic occlusion: a sphere on a plane (its closed form), and a 90° crease (half the hemisphere, cosine-weighted);
+  - against a ray-traced reference of the style board's scene, computed on the CPU (XeGTAO's own method: the error measured and recorded);
+  - no flicker under a slow camera move (the frame-to-frame difference measured);
+  - the visibility-bitmask variant measured if thin members or branches over-darken.
+- **Budget:** ≤ 1 ms at 1080p on min-spec (a GTX 1660-class GPU), projected from the development machine's timestamps.
+
+#### G1.3e Skinning on the ragdoll's bones
+
+- **Decided at this step** (it replaces the first of the "Decisions to confirm" below): the engineer is a skinned mesh whose fifteen bones are the ragdoll's segments, so the drawn body is the simulated one bone for bone, and smooth across its joints. Rigid segments would show seams and gaps at every bent joint, against `art-style.md` pillar 9.
+- **Dual quaternion skinning** (Kavan et al. 2007), in one compute pass a frame. The shadow, prepass and colour passes draw the skinned result as a plain mesh.
+- **Ragdolls known to the client.** A ragdoll segment's spawn says whose it is and which segment (protocol 7), so the client draws the person, not fifteen boxes.
+- **Validation:**
+  - the bind pose reproduces the rest mesh exactly;
+  - a vertex weighted to one bone moves rigidly with it (to f32 rounding);
+  - the volume of an elbow bent by 90° kept within 2 % (linear blend skinning measured beside it);
+  - a ragdoll's drawn bones equal its segments' poses.
+- **Budget:** skinning 8 characters ≤ 0.05 ms of GPU time.
+
+#### G1.3f The engineer
+
+- **The look** (`art-style.md` §3.3, §8): a quilted coverall, a work jacket in the player's colour with a belt, leather knee and elbow pads, thick gloves, laced boots, a padded hood with goggles and a respirator. There is no hard hat, no rucksack and no tools, and no face is modelled.
+- **A blockout first.** Rough shapes on the ragdoll's proportions, judged as a silhouette at 64 px and at 20 m, and shown to the user from the front, side and three-quarter. The detailed model starts only after the user approves it.
+- **The model** (`art/engineer.py`):
+  - built on the bones the ragdoll has (the table that `creeer_tools` writes from the Rust code);
+  - weights painted by the script;
+  - bevels and face-weighted normals;
+  - occlusion and convexity baked into `COLOR_0`;
+  - at most 15,000 triangles.
+- **Within its segments** (`art-style.md` §2): every vertex weighted mainly to a bone lies within that segment's collision box grown by 3 cm. Where the real shape and a box disagree by more, the box is corrected to the person's dimensions, as a physics change, tested.
+- **The jetpack** (G1.2c) is its own model on the torso's bone: two small nitrogen bottles on a harness frame. Its look waits for the user's choice (below, "Decisions to confirm").
+- **Out of scope:** a pressure suit for vacuum (EVA, G8) is another outfit, made then, in the style of real pressure suits.
+- **Validation:** the validator on the model; golden screenshots standing, walking and fallen, on all five grounds; the silhouette at 64 px; the user's approval of the images.
+
+#### G1.3g Procedural animation
+
+- **Its survey first:** gait data, meaning stride length and cadence against speed from published measurements of human walking and running.
+- **Poses.** A handful authored in the engineer's script and exported as glTF animations: standing, walking (contact and passing), running, landing, jumping, swimming, hovering on the jetpack, and bracing for a fall. They are blended by gait phase and speed (Rosen 2014).
+- **Feet.** The feet are placed by two-bone inverse kinematics on the ground the legs' rays find, and the hips are lowered where a foot cannot reach (Johansen 2009). They turn to the ground's slope.
+- **The rest of the body.** The torso is exactly the simulated body. The arms swing against the legs. A tool's swing is timed to the server's strikes (the hook is made here; the swings come with G1.4's tools).
+- **Fallen:** the bones are the ragdoll's segments exactly. Getting up blends from the lying pose to standing over the rise time the server sets.
+- **On the client only:** it is driven by the replicated state and inputs, sends nothing, and is not part of the simulation's hash.
+- **Validation:**
+  - feet within 1 cm of the ground on slopes up to the friction angle;
+  - no foot sliding while it is planted (its drift measured);
+  - stride and cadence against the gait data;
+  - golden frames of a walk cycle.
+- **Budget:** ≤ 0.05 ms of CPU a character a frame.
+
+#### G1.3h Icons and the style board
+
+- **Icons** (`art-style.md` §9): `--icon <model>` renders orthographic three-quarter views at 64 and 128 px on a transparent background, cached by the pack's content hash. Silhouettes of any two items must overlap by IoU < 0.8; the test runs for the items there are (the crate and the jetpack now; tools come in G1.4).
+- **The style board** (`--style-board`): every model on the five grounds, at noon and in the evening. The HUD and the inventory join it in G1.9.
+- **Golden images.** They are compared on the development machine with a perceptual tolerance, because rendering differs between GPUs (`cargo xtask style-board --check`). An intended change is approved by the user with the image.
+
+#### G1.3i The review
+
+The style board and a walk in the planet sandbox, shown to the user: the engineer walking, jumping, swimming, flying and falling, crates being pushed, the terrain at noon and in the evening. The look is accepted, or changed, before G1.4 begins.
+
+**Order:** G1.3a → G1.3b → G1.3f's blockout (so the user sees the direction early) → G1.3c → G1.3d → G1.3e → G1.3f's model → G1.3g → G1.3h → G1.3i. Each step ends with `cargo xtask ci` green and a commit pushed to `g1`.
 
 ### G1.4 Tools, reach and carrying
 
@@ -140,13 +245,13 @@ The look first, so that everything after it is made in the style.
 - **Items.**
   - **Bulk:** a mass, a composition (minerals or species, mass fractions), a temperature and a particle size. Merging two bulks of any composition conserves mass and each species exactly (the composition is the mass-weighted mix) and energy (the temperature follows the heat capacities, `creeer_materials`).
   - **Discrete:** a part kind, a material, dimensions, a quality, and its plastic deformation if it has any.
-- **Capacity by mass and volume, not slots.** The suit's pockets and backpack hold so many litres and the character carries their mass (it walks slower when loaded). Bulk fills by its bulk density.
+- **Capacity by mass and volume, not slots.** The clothes' pockets and a carried pack (an item with its own model, `art-style.md` §8) hold so many litres and the character carries their mass (it walks slower when loaded). Bulk fills by its bulk density.
 - **Dropping and bags.** A dropped bulk becomes a bag: a physics body whose mass is its contents. Dropped tools and logs are their own bodies.
 - **Containers.** A crate holds items, and its physics mass includes them (it changes as items go in and out).
 - **The landing pod.** Each player starts at a landing pod: a container with the starting kit (suit, tools, a little food for G9), a charger for the jetpack's nitrogen, and the respawn point.
 - **Transactions.** Every move between inventories, containers and the world is one server-authoritative transaction, atomic and ledgered: mass, species and items conserved, tested over random sequences (proptest).
 - **Saves.** New save sections for inventories and containers (save version 7, migration from 6); bags and pods are bodies like any other.
-- **Validation:** conservation under random transfers; a crate's mass and inertia following its contents; a full backpack slowing the walk; save and load mid-transfer; a client asking to move what it does not have is refused.
+- **Validation:** conservation under random transfers; a crate's mass and inertia following its contents; a full pack slowing the walk; save and load mid-transfer; a client asking to move what it does not have is refused.
 
 ### G1.7 Trees and vegetation
 
@@ -215,14 +320,14 @@ G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock p
 
 ## Blender MCP
 
-**When:** at the start of G1.3, when the first authored models are needed (the character, the tools, the pod). Until then nothing needs it: everything before G1.3 is code and data, and terrain, trees and structures stay procedural after it too.
+**Set up and running** (2026-10-21): Blender 5.2 LTS with MCP for Blender (add-on 1.8), registered with Claude Code for this project only, telemetry off, its asset libraries and model generators off. How it is used, its conventions, safety and troubleshooting: **`docs/blender-mcp.md`**.
 
-**What it takes:**
-- Blender installed (a current 4.x release);
-- a Blender MCP server (the community `blender-mcp` add-on is the usual one; checked at setup time for what is current) added to Claude Code's MCP settings;
-- the folders `art/` (sources) and `data/models/` (exports).
+In short:
+- each authored model is a Blender script in `art/`, run live in your Blender through the MCP while it is made (you can watch and comment);
+- exports run headless (`cargo xtask art`) into `data/models/`;
+- the `.glb` files are committed, the `.blend` files are not.
 
-The MCP lets Claude build and change models in your running Blender, export them and render previews. You can open and adjust the same files by hand.
+Terrain, trees and structures stay procedural.
 
 **One note:** the add-on runs Python inside Blender that Claude writes. It is your local Blender, and you see the scene as it changes, but it has the access Blender has on your machine.
 
@@ -240,10 +345,11 @@ Each sub-milestone ends with `cargo xtask ci` green and a commit pushed to `g1`.
 
 Recommended here, to be confirmed with the user at the sub-milestone they belong to:
 
-1. **A segmented suit instead of a skinned body** (G1.3): the drawn body is the simulated one, and the renderer needs no skinning. A skinned body looks softer, but costs a skinning pipeline and a mismatch with the ragdoll.
+1. **A skinned body on the ragdoll's bones** (G1.3; revised 2026-10-21 from "a segmented suit instead of a skinned body"). The fifteen bones are the ragdoll's segments, so the drawn body is still the simulated one, bone for bone, but smooth across its joints. The user now asks for smooth surfaces (`art-style.md` pillar 9), and rigid segments would show seams at every bent joint. It costs a compute skinning pass, and the ragdoll's segments must be known to the client (protocol 7).
 2. **The landing pod as the start** (G1.6): a starting kit and a respawn point that fit a planet with no one on it.
 3. **Cameras: first and third person** (G1.9). A higher, Factorio-like overview camera for factories is an idea for G3.
 4. **Reach of 2.5 m for survival play** (G1.4), with F5's 500 m commands kept for creative and test servers.
+5. **The jetpack's look** (G1.3f). Recommended: two small nitrogen bottles on a harness frame, a separate model on the torso, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out.
 
 ## Budgets (development machine; min-spec projections ×2)
 
@@ -256,6 +362,9 @@ Recommended here, to be confirmed with the user at the sub-milestone they belong
 | A tree becoming a structure | ≤ 1 ms, no tick more than 2 ms extra |
 | 100,000 standing trees | 0 ms a tick; 60 FPS on min-spec |
 | SSAO at 1080p | ≤ 1 ms min-spec |
+| A model's load | ≤ 5 ms |
+| Skinning 8 characters / animating one | ≤ 0.05 ms GPU / ≤ 0.05 ms CPU a frame |
+| The mesh pass with surface detail | the F1 budget met; ≤ 10 % slower than before G1.3 |
 | Bandwidth in *crowd* | ≤ 256 kbit/s per client |
 | Prediction corrections over 1 cm | ≤ 1 % of corrections |
 | The reference tick (plan.md §5) | still ≤ 10 ms projected |

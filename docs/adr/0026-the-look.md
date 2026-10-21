@@ -1,0 +1,80 @@
+# ADR-0026: The look: models, materials, ambient occlusion and the engineer (G1.3)
+
+**Status:** proposed (2026-10-21), awaiting the user's review of the plan (`docs/g1-plan.md`, G1.3).
+**Context:** G1.3 makes `docs/art-style.md` real, so that everything after it (tools, items, trees, the pod) is made in the style from its first version. The user, at its start: the engineer after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)"; "i do not want a futuristic art style but something similar to the vibe of factorio"; "i do not want a blocky or voxy like game (no minecraft geometry, i want smooth surfaces ==> realism)".
+**Builds on:** ADR-0003 (the renderer: forward, 4× MSAA, HDR, cascaded shadows, PBR-lite, Khronos PBR Neutral), ADR-0018 (data packs and the validator), ADR-0022 and ADR-0023 (joints, the character and its ragdoll).
+**Evidence:** to come with each sub-milestone (G1.3a–i).
+
+## Where it starts
+
+- **Meshes** are a position and a normal per vertex (`creeer_render::mesh`). Colour, roughness and metalness come per instance, so a mesh has one material.
+- **Characters** are drawn as a box and two beams (`creeer_client::planet_net`). A fallen character's fifteen ragdoll segments become entities of their own, and the client cannot tell they belong to a person.
+- **No ambient occlusion and no depth prepass.** One forward pass draws into a 4× MSAA HDR target. The ambient light is hemispheric and unoccluded, so objects do not sit on the ground.
+- **Surfaces.** The terrain has triplanar noise; meshes have none.
+- **No models, no palette data, no style checks.**
+
+## Prior work
+
+| Work | What it does | What it means here |
+|---|---|---|
+| Factorio, FFF-146 "The GFX workflow" ([2016](https://factorio.com/blog/post/fff-146)) | Entities are modelled and rendered in Blender, in layers. The renders are finished with hand-painted masks "to enforce contrast, make edges clearer, define shape of entities better" | Taken: Blender as the modelling tool. Their painted contrast has to come, in real time, from ambient occlusion, edge wear and the palette's contrast rules (`art-style.md` §4) |
+| Factorio, FFF-218 ([2017](https://factorio.com/blog/post/fff-218)) | The engineer merged into one Blender file of 21 scenes; scripts link shared meshes and materials so edits propagate. The player's colour is a tint mask over desaturated areas, at half strength; the default colour is orange | Taken: scripted sources; the player's colour as a material on a neutral region (the jacket) |
+| Factorio, FFF-320 "Color correction" ([2019](https://factorio.com/blog/post/fff-320)) | More light and a little saturation, while "the terrain is a background that should provide a good and comfortable contrast with the entities and the icons"; players warned of a "plastic playground" | Confirms `art-style.md` §4: chroma caps, objects contrasted against the ground |
+| Factorio, FFF-40 ([2014](https://factorio.com/blog/post/fff-40)) | The engineer's renders: padded, layered workwear, goggles, hard hat, a rucksack with tools; a "solitary explorer" | The user's rough guide for the engineer, without the hard hat, tools and rucksack |
+| Foxhole (Clapfoot; [concept art devblog](https://www.foxholegame.com/post/the-concept-art-of-foxhole-inferno)) | Facilities "old, well used, all metal"; original designs rather than historical copies | The tone of `art-style.md` pillar 10: grounded, used, industrial, not futuristic |
+| Stylised PBR: *Agents of Mayhem* (Volition, GDC 2017); Riot's character shape language ([80.lv](https://80.lv/articles/character-design-shape-language-and-readability/)) | Full PBR with the style in colours and shapes; silhouettes judged zoomed out from large blockouts | Taken: the lighting stays physical (ADR-0003) and the style lives in palette and shapes; blockout and silhouette first |
+| GTAO: Jimenez et al., "Practical Real-Time Strategies for Accurate Indirect Occlusion" (SIGGRAPH 2016 course) | Horizon-based, cosine-weighted visibility that matches ray-traced ambient occlusion, with a multi-bounce fit for bright albedos | Taken |
+| XeGTAO (Intel, 2021, [MIT](https://github.com/GameTechDev/XeGTAO); archived) | GTAO in three compute passes (depth MIPs, main, denoise). "High" (18 samples a pixel) costs 0.56 ms at 1080p on an RTX 2060. Tuned by searching heuristics for the lowest error against ray-traced references. Optional bent normals (+25 %) | Taken as the reference implementation; its tuning against ray-traced references taken as our validation |
+| Bevy's SSAO (MIT/Apache) | XeGTAO ported to WGSL on wgpu, after a depth and normal prepass; paired with TAA for noise | Shows that the method maps onto our API; a reference for the port |
+| Visibility bitmask: Therrien et al., "Screen Space Indirect Lighting with Visibility Bitmask" ([2023](https://arxiv.org/abs/2301.11376)) | Replaces GTAO's two horizon angles by a bitmask, so light passes behind thin occluders instead of over-occluding | The variant to measure if thin geometry (members, branches) is over-darkened |
+| Kavan et al., "Skinning with Dual Quaternions" ([I3D 2007](https://users.cs.utah.edu/~ladislav/kavan07skinning/kavan07skinning.html)); TOG 2008 | Blends rigid transforms without linear blend skinning's volume loss at bends and twists, at about 7 more vertex-shader instructions; no scale or shear | Taken: the bones are rigid segments, with no scale |
+| Unreal's Physics Asset ([docs](https://dev.epicgames.com/documentation/unreal-engine/physics-asset-editor-in-unreal-engine)); Unity's ragdolls | A skinned mesh's bones each carry one physics body; the ragdoll moves the bones, and the skin follows | Taken: the ragdoll's fifteen segments are the skeleton's bones |
+| Unreal's GPU skin cache | Skins each mesh once a frame in a compute pass; every later pass (shadows, depth, colour) draws the result | Taken: one compute pass skins the characters, and every pass draws them as plain meshes |
+| Rosen, "An Indie Approach to Procedural Animation" (GDC 2014, *Overgrowth*) | Interactive animation from very few key poses, blended procedurally with springs and physics | Taken: a handful of poses authored in Blender, blended by gait phase and speed |
+| Johansen, *Automated Semi-Procedural Animation for Character Locomotion* ([Aarhus, 2009](https://runevision.com/thesis/)) | Cycles analysed at design time; at run time the legs are fitted by inverse kinematics so the feet land on uneven ground (the "footbase", ground height) | Taken: the feet placed on the ground the legs' rays find, by two-bone inverse kinematics |
+| Curvature-based wear: Blender's Pointiness and Dirty Vertex Colors; Substance's curvature masks; Unigine's screen-space curvature | Convex edges chip to the bare material and concave areas gather grime; the masks broken up by noise. Screen-space curvature aliases at distance (reported) | Taken: convexity and occlusion baked per vertex at export, broken up by triplanar noise. Screen-space curvature not taken |
+| Blender MCP practice (agent-skills notes on `blender-mcp`) | Exports through the MCP time out; run them in headless Blender | Taken: the MCP for live work, exports by `blender --background` from committed scripts (`docs/blender-mcp.md`) |
+| glTF 2.0 (Khronos); the `gltf` crate 1.4.1 | The standard format, with skins, animations and vertex colours; custom attributes need the crate's `extras` feature | Taken; the baked masks go in `COLOR_0`, so no custom attributes are needed |
+
+## Decision (proposed)
+
+1. **Models from scripts.** Each authored model is built by a Blender script in `art/`, deterministic, run live through the MCP while it is made and headless (`cargo xtask art`) for export. The `.glb` files go in `data/models/` with a manifest (`models.ron`: each model's class, triangle budget, size and origin), and `.blend` files are not committed (`docs/blender-mcp.md`).
+2. **Materials are palette tokens.** `data/art/palette.ron` holds every token of `art-style.md`, tested against the file's tables.
+   - Each mesh vertex carries its token's index, its baked occlusion and its convexity.
+   - Each instance carries the player's accent, how worn it is, and the overlay value.
+   - A token can name the material that wear reveals (painted steel wears to `steel`).
+   - Procedural meshes (members, the sandbox's bodies) keep a per-instance material, as now.
+3. **Surface detail on meshes**: triplanar noise (±12 %, 5 cm), edge wear from the baked convexity, grime from the baked occlusion, as `art-style.md` §6 says.
+4. **Ambient occlusion: GTAO** after XeGTAO, applied to ambient light only (the sun has its shadows), with the multi-bounce fit.
+   - How it fits the MSAA forward pass is decided by measuring both options: (a) a depth and normal prepass, as Bevy does, or (b) ambient light written to its own target in the main pass and occluded when composited.
+   - Quality presets, with half resolution on low.
+5. **The engineer is skinned on the ragdoll's bones.** Fifteen bones, one per segment, so the drawn body is the simulated one bone for bone, smooth across its joints.
+   - Dual quaternion skinning, in one compute pass per frame.
+   - A ragdoll's segments say whose they are and which segment they are (protocol 7), so the client can draw the person.
+   - This replaces `docs/g1-plan.md`'s first decision to confirm (a segmented suit). Smooth surfaces are now a rule (`art-style.md` pillar 9), and rigid segments would show seams and gaps at every bent joint.
+6. **The engineer's look**, as `art-style.md` §8 says. A blockout from the ragdoll's proportions comes first, judged by its silhouette and approved by the user before the detailed model.
+7. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
+8. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
+9. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
+
+## Measured and rejected
+
+Nothing yet.
+
+## Validation
+
+Planned per sub-milestone in `docs/g1-plan.md` (G1.3a–i). Among them:
+- CIEDE2000 against Sharma, Wu & Dalal's test pairs;
+- colour-vision simulation against Machado et al. (2009);
+- GTAO against analytic occlusion (a sphere on a plane, a 90° crease) and a ray-traced reference;
+- dual-quaternion skinning exactly rigid for single-bone vertices;
+- the validator refusing a set of broken models;
+- the engineer's skin within its ragdoll segments' boxes.
+
+## Cost
+
+Budgets in `docs/g1-plan.md`. Ambient occlusion ≤ 1 ms at 1080p on min-spec (a GTX 1660-class GPU), measured with GPU timestamps on the development machine and projected. XeGTAO's "High" costs 0.56 ms on an RTX 2060, a GPU somewhat faster than min-spec.
+
+## Limits
+
+To be written as the work finds them; each also in `docs/future-improvements.md`.
