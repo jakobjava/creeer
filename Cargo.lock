@@ -582,6 +582,7 @@ dependencies = [
 name = "creeer_client"
 version = "0.0.1"
 dependencies = [
+ "creeer_art",
  "creeer_chem",
  "creeer_core",
  "creeer_data",
