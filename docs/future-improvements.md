@@ -188,7 +188,8 @@ Limits that later work already lifted are not listed. Examples: members that cou
 |---|---|---|---|---|
 | **Secure connections** (connect tokens) for public servers | Unsecured netcode first | G | Medium | ADR-0008 |
 | **Structures' elastic vibration on clients** (only lasting shape changes over a centimetre are sent) | Bandwidth | R | Medium | ADR-0008 |
-| **Predicting bumps into things**: the prediction world holds only the avatar and the terrain (bumps are corrected, not predicted) | Cost and complexity | G | Large | ADR-0008 |
+| **Predicting other players and ragdolls**: the bodies near the avatar are predicted (G1.2e), but not other characters (their inputs are their own) nor jointed bodies (the client has no joints): walking into another player is corrected a round trip late | Their inputs would have to be guessed (Rocket League repeats the last; error then grows with the ping), and ragdolls need the joints sent | G | Medium | ADR-0025 |
+| **A bubble body pushed from outside the bubble** is predicted as if untouched until the server says otherwise; the replay costs about 2 ms a snapshot on a slow link (a few on a misprediction) | The bubble is the cost's bound (12 bodies within 6 m) | G, S | Small | ADR-0025 |
 | **Prediction drifts from the server's by over a centimetre on about 5 % of corrections**, even on a lossless link: the snapshot carries quantised state, and neither the solver's history nor the friction anchors | Measured in F6; the netcode test holds 5 % | G | Medium | this list (F6) |
 | **A second copy of the terrain's caches** in singleplayer (server and client) | Same code for single- and multiplayer | S | Medium | ADR-0008 |
 

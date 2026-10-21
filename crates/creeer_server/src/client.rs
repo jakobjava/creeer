@@ -323,10 +323,20 @@ impl Connection {
         if self.fallen {
             return poses;
         }
-        if let (Some(w), Some(pose)) = (
-            &self.welcome,
-            self.predicted.as_ref().and_then(Predicted::pose),
-        ) {
+        let Some(p) = &self.predicted else {
+            return poses;
+        };
+        // Bodies just out of the prediction slide to where they are interpolated; those in it
+        // are drawn as predicted (ADR-0025).
+        for (id, pose) in &mut poses {
+            pose.position += p.released(*id);
+        }
+        for (id, pose) in p.nearby() {
+            if poses.contains_key(&id) {
+                poses.insert(id, pose);
+            }
+        }
+        if let (Some(w), Some(pose)) = (&self.welcome, p.pose()) {
             poses.insert(w.avatar, pose);
         }
         poses

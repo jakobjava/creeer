@@ -2,6 +2,8 @@
 //! view, the snapshots, and its own character's state only the server knows.
 
 use super::{Connection, Status, Welcome};
+use creeer_net::channel::TICK_RATE;
+use creeer_net::interp::sample;
 use creeer_net::message::ServerMessage;
 
 impl Connection {
@@ -49,17 +51,15 @@ impl Connection {
     }
 
     pub(super) fn snapshot(&mut self, bytes: &[u8]) {
+        // Where each entity is drawn before this snapshot (a body coming into the prediction
+        // slides from there).
+        let drawn = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
         let Ok(snapshot) = self.receiver.read(bytes) else {
             return;
         };
-        let (tick, last_input) = (snapshot.tick, snapshot.last_input);
-        let mine = self
-            .welcome
-            .as_ref()
-            .and_then(|w| snapshot.states.get(&w.avatar))
-            .copied();
-        if let (Some(state), Some(p)) = (mine, &mut self.predicted) {
-            p.reconcile(tick, &state, last_input);
+        if let (Some(w), Some(p)) = (&self.welcome, &mut self.predicted) {
+            let at = |id| drawn.get(&id).map(|pose| pose.position);
+            p.reconcile(snapshot, (w.avatar, &self.kinds), at);
         }
     }
 }

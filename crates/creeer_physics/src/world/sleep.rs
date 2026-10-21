@@ -44,6 +44,18 @@ impl Body {
         }
     }
 
+    /// Puts the body to sleep where it is, at rest under its present loads: a body mirrored
+    /// asleep from another world (a client's prediction of what the server has asleep,
+    /// ADR-0025). It wakes as any sleeping body does.
+    pub fn sleep_now(&mut self) {
+        let s = &mut self.structure;
+        s.velocity.fill(DVec3::ZERO);
+        s.angular_velocity.fill(DVec3::ZERO);
+        self.sleep.load.clone_from(&s.load);
+        self.sleep.asleep = true;
+        self.solver.reset_history(&self.structure);
+    }
+
     fn is_still(&self) -> bool {
         let s = &self.structure;
         s.velocity.iter().all(|v| v.length() < STILL_SPEED)

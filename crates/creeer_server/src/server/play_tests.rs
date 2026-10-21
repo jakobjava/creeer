@@ -152,11 +152,13 @@ fn over_a_slow_lossy_link_the_avatar_is_rarely_corrected() {
     let c = game.clients[0].0.corrections();
     eprintln!("corrections: {c:?}");
     assert!(c.count > 200, "{c:?}");
+    // (G1.2e: set back only where it was mispredicted. Set back to the quantised state at every
+    // snapshot, 4 in 304 corrections were over a centimetre, the largest 1.4 cm; now none.)
     assert!(
-        f64::from(c.over_a_centimetre) < 0.05 * f64::from(c.count),
+        f64::from(c.over_a_centimetre) <= 0.01 * f64::from(c.count),
         "{c:?}"
     );
-    assert!(c.largest < 0.1, "{c:?}");
+    assert!(c.largest < 0.02, "{c:?}");
 }
 
 #[test]
