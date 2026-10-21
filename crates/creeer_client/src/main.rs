@@ -13,6 +13,8 @@
 //! one frame headless (no window) and saves it, for reviewing rendering changes.
 //! `creeer_client --bench <frames> [--view <name>] [--no-factory]` renders frames headless
 //! and reports frame-time percentiles (CPU scene build + GPU, no vsync).
+//! `creeer_client --style-board <file.png>` and `creeer_client --shimmer [--frames <n>]` judge
+//! the look (G1.3): the crate at its ages, and how much of the image flickers in slow motion.
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
@@ -66,6 +68,7 @@ mod profiler_ui;
 #[cfg(test)]
 mod profiler_ui_tests;
 mod sandbox;
+mod shimmer;
 mod style_board;
 mod system_bench;
 mod system_cmd;
@@ -136,6 +139,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--style-board") {
         return style_board::run(&args);
+    }
+    if args.iter().any(|a| a == "--shimmer") {
+        return shimmer::run(&args);
     }
     if args.iter().any(|a| a == "--system-bench") {
         return system_bench::run();

@@ -155,6 +155,13 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - Each level's error is measured on its drawn geometry: the cylinders' chords at their sagitta to 10⁻⁵; the spheres' deepest faces within their bound and above 90 % of it; the rounded box's deepest corner facet at the error used for it to 10⁻⁴. The cylinder's rims never stray further than its sides. At 24 segments the facets lie within 1 % of the radius.
   - Each instance gets the coarsest level under half a pixel, and the next coarser exceeds it; a cylinder lying along the view is drawn as finely as its near end needs. A cascade takes the coarsest level under half a texel, never coarser for finer texels.
   - The shaders' round constants and placement match `primitives.rs` (checked against `globals.wgsl`).
+- **No shimmer (G1.3c; `creeer_client --shimmer`, and a test wherever there is a GPU).**
+  - **The measure:** crates of three ages from 3 to 35 m, pipes, balls and a long ground, rendered while the camera turns a twentieth of a pixel a frame. A pixel flickers when the root mean square of its second differences in time exceeds 2 levels of 8. At that speed a well-filtered image changes almost linearly, while detail popping between pixels jumps.
+  - **Edges set apart:** the same motion rendered with every surface one colour (the engineering overlay) finds the edges, where 4× multisampling steps as it crosses its samples. Pixels within 2 of them are left out, and the surfaces are judged on the rest.
+  - **The measure tested first,** on rows sliding as the camera turns: broad shading does not flicker; stripes of 0.7 pixels point-sampled flicker everywhere; the same stripes faded to their mean as the shader fades them, and full-contrast stripes of 3 pixels, do not.
+  - **Result (1280 × 720, 32 frames):** the surfaces, 89 % of the image, flicker on 0.079 % of their pixels (p99.9 at 1.8 levels); the gate is 0.2 %. The edges, rendered in one colour, flicker on 1.64 % of the image.
+  - **The check catches shimmer:** with the noise's and the grain lines' footprint fade switched off, the surfaces flicker on 3.48 %, 44 times as much, the distant ground and the crate faces most.
+  - Left for later: the edges' crawl itself (an antialiasing matter; recorded in `docs/future-improvements.md`).
 - **Ageing (G1.3c).**
   - A year of exposure per game day in air, and three in the sea.
   - A 200 kg crate dropped from 3 m is worn 0.091, which is 4.5 kJ beyond the coating's 10 J (its bottom fell about 2.3 m). One placed gently is worn 0.
