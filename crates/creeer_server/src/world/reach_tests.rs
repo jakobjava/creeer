@@ -154,9 +154,13 @@ fn the_sandbox_commands_are_a_creative_servers_alone() {
     let why = w.apply(&Command::Crate(crate_at), Some(ada)).unwrap_err();
     assert!(why.contains("creative"), "{why}");
     assert!(w.apply(&Command::Clear, Some(ada)).is_err());
-    // A player's look and tool are theirs anywhere; the host's own commands are unchecked.
-    w.apply(&Command::Wield { tool: Some(0) }, Some(ada))
-        .unwrap();
+    // A player's look is theirs anywhere; the catalogue's tools a creative server's alone (in
+    // survival a player holds what they made, G1.6b); the host's own commands are unchecked.
+    let why = w
+        .apply(&Command::Wield { tool: Some(0) }, Some(ada))
+        .unwrap_err();
+    assert!(why.contains("make one"), "{why}");
+    w.apply(&Command::Wield { tool: None }, Some(ada)).unwrap();
     w.apply(&Command::Crate(crate_at), None).unwrap();
     w.creative = true;
     w.apply(&Command::Crate(crate_at + up * 1.5), Some(ada))

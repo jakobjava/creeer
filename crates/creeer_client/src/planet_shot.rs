@@ -62,7 +62,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         sun_elevation = -30.0;
     }
 
-    let mut view = PlanetView::singleplayer()?;
+    let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
     play(&mut view, 0.0)?;
     // Where players appear (land with relief at a temperate latitude, G1.3i): bodies are
@@ -246,7 +246,7 @@ pub fn descent_bench(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(40.0);
-    let mut view = PlanetView::singleplayer()?;
+    let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
     let up = fibonacci_sphere(5000)
         .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))

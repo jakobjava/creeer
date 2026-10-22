@@ -117,7 +117,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
             }
             ui.separator();
             ui.horizontal_wrapped(|ui| {
-                ui.label("Creative:");
+                ui.label("Creative servers:");
                 for (k, name) in kit().iter().enumerate() {
                     let at = target(view, camera).map(|t| t.aimed.point);
                     if ui

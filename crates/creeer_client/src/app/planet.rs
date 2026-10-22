@@ -12,7 +12,9 @@ const RUN: f64 = 6.5;
 impl Running {
     /// Opens the planet sandbox, starting in orbit.
     pub(super) fn enter_planet(&mut self) {
-        match PlanetView::singleplayer() {
+        // Survival unless asked for creative (G1.6b: the user, 2026-10-22).
+        let creative = std::env::args().any(|a| a == "--creative");
+        match PlanetView::singleplayer(creative) {
             Ok(view) => {
                 self.camera = view.orbit_camera();
                 self.planet = Some(view);

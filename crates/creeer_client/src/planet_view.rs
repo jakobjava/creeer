@@ -126,12 +126,13 @@ pub fn render_mesh(terrain: &Terrain, key: ChunkKey) -> Option<TerrainMeshData> 
 }
 
 impl PlanetView {
-    /// A singleplayer game on the reference planet (its server hosted in this process).
+    /// A singleplayer game on the reference planet (its server hosted in this process),
+    /// creative or survival (G1.6b).
     ///
     /// # Errors
     /// If the planet cannot be loaded.
-    pub fn singleplayer() -> Result<Self, String> {
-        let (session, terrain) = PlanetSession::singleplayer()?;
+    pub fn singleplayer(creative: bool) -> Result<Self, String> {
+        let (session, terrain) = PlanetSession::singleplayer(creative)?;
         Ok(Self::new(session, terrain))
     }
 

@@ -7,6 +7,9 @@
 //! - camera-relative precision (move the scene 500 km from the origin; nothing jitters),
 //! - the F1 instancing budget (10,000 parts at 60 FPS).
 //!
+//! The planet sandbox is a survival game (G1.6b: the clothes worn and nothing else); started
+//! with `--creative`, it has the sandbox's tools, the jetpack and the creative kit.
+//!
 //! `creeer_client --screenshot <file.png> [--view <name>] [--far] [--no-factory] [--sun <deg>]
 //! [--time <s>] [--overlay <off|temperature|stress|utilisation>] [--physics <bridge|crash|stacking|rock>
 //! [--physics-time <s>]]` renders

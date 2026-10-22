@@ -274,7 +274,9 @@ impl ServerWorld {
         #[allow(clippy::cast_precision_loss)] // a few
         let along = self.players.iter().flatten().count() as f64 * 2.0;
         let feet = self.ground_under(self.spawn + east * along) + up * 0.05;
-        self.add(character::body(feet, up, DT), Some(player.to_owned()))
+        let id = self.add(character::body(feet, up, DT), Some(player.to_owned()));
+        self.equip(id);
+        id
     }
 
     /// Steers avatar `id` by `input` for the next step.
@@ -333,6 +335,9 @@ mod items;
 #[cfg(test)]
 mod items_tests;
 mod spawn;
+mod survival;
+#[cfg(test)]
+mod survival_tests;
 use spawn::ground_under;
 pub use spawn::spawn_point;
 mod hands;

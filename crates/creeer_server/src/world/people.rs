@@ -177,13 +177,11 @@ impl ServerWorld {
         if p.health <= 0.0 {
             p.dead_for = if alive { 0 } else { p.dead_for + 1 };
             if p.dead_for >= RESPAWNS_AFTER {
+                let lay = self.world.bodies[parts[0]].structure.position[0];
                 let feet = self.spawn;
                 self.rise(id, p, Some(feet));
                 p.health = 1.0;
-                if let Some(i) = self.index(id) {
-                    let load = self.load(id);
-                    character::refill(&mut self.world.bodies[i], load);
-                }
+                self.respawned(id, lay);
             }
         } else if p.still >= RISES_AFTER {
             self.rise(id, p, None);

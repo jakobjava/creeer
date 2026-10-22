@@ -115,8 +115,12 @@ impl ServerWorld {
     /// whoever has their character is told again.
     ///
     /// # Errors
-    /// If there is no such tool.
+    /// If there is no such tool, or (in survival) none made.
     pub fn set_wield(&mut self, player: &str, tool: Option<u8>) -> Result<(), String> {
+        // In survival a player holds only what they made (G1.6d), not the catalogue's tools.
+        if !self.creative && tool.is_some() {
+            return Err("no such tool to hand: make one".into());
+        }
         match tool {
             Some(t) if usize::from(t) >= self.tools.len() => {
                 return Err(format!("no tool {t} ({} known)", self.tools.len()));

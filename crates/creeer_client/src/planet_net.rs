@@ -48,16 +48,17 @@ impl std::fmt::Debug for PlanetSession {
 }
 
 impl PlanetSession {
-    /// A singleplayer game on the reference planet: a server hosted in this process, and
+    /// A singleplayer game on the reference planet (`creative`: the sandbox's tools, the
+    /// jetpack and the kit; else survival, G1.6b): a server hosted in this process, and
     /// this client joined to it. Returns it with the client's terrain.
     ///
     /// # Errors
     /// If the planet cannot be loaded.
-    pub fn singleplayer() -> Result<(Self, Arc<Terrain>), String> {
+    pub fn singleplayer(creative: bool) -> Result<(Self, Arc<Terrain>), String> {
         let data = crate::content::data();
         let mut world = ServerWorld::new(Arc::clone(&data), load_terrain(&data, PLANET)?, PLANET);
-        // The planet sandbox: its tools drop crates and dig within 500 m (G1.4d).
-        world.creative = true;
+        // Survival (G1.6b); creative, the sandbox's tools drop crates and dig within 500 m.
+        world.creative = creative;
         let mut server = Server::new(world);
         let end = server.connect_memory();
         let mut connection = Connection::memory(end, PLAYER, data.hash());

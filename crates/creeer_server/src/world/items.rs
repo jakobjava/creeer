@@ -152,7 +152,11 @@ impl ServerWorld {
     }
 
     /// Avatar `by`'s pockets changed by `change`: its body carries their mass.
-    fn change_pockets<T>(&mut self, by: EntityId, change: impl FnOnce(&mut Vec<Store>) -> T) -> T {
+    pub(super) fn change_pockets<T>(
+        &mut self,
+        by: EntityId,
+        change: impl FnOnce(&mut Vec<Store>) -> T,
+    ) -> T {
         let before = self.items.load(by);
         let out = change(self.pockets_of(by));
         let after = self.items.load(by);
@@ -164,7 +168,7 @@ impl ServerWorld {
     }
 
     /// Adds `item` as a body at `at` (lifted clear of what is there if `lift`).
-    fn add_item(&mut self, item: Item, at: DVec3, lift: bool) -> EntityId {
+    pub(super) fn add_item(&mut self, item: Item, at: DVec3, lift: bool) -> EntityId {
         let body = body_of(&item, at);
         let id = if lift {
             self.add(body, None)

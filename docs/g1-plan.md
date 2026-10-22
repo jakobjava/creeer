@@ -385,6 +385,7 @@ Re-planned 2026-10-22 with the user (principles 9–11): no landing pod and no s
 - **Survival** (the default server, and the singleplayer game's: the user, 2026-10-22; `--creative` gives the sandbox's tools). A new player spawns at the world's spawn in the starting outfit, with nothing else: no tools and no food. They have no jetpack: the character has no tank (its dry mass), and thrust is refused. After a death the player respawns at the world's spawn, and what they carried lies where they fell. Nothing refills: today's respawn refills the jetpack (`world/people.rs`), and that is removed.
 - **Creative and test servers** (`--creative`, ADR-0027) keep handing things out: G1.4's four steel tools, the jetpack and its refill, crates, and the 500 m commands. The play scenes use them where they test something else.
 - **Wearables as items** wait for the first wearable a player can make (the jetpack, G3 on). Until then the outfit is fixed.
+- **Done** (2026-10-22, `world/survival.rs`, `survival_tests.rs`): a survival body is its dry mass, so thrust does nothing; tools refused ("make one"); dead, the player starts again at the spawn with empty pockets and nothing refilled, what they carried lying where they fell; creative refills the jetpack. The singleplayer game is survival; `--creative` gives the sandbox.
 
 #### G1.6c Stones and wood on the ground
 
