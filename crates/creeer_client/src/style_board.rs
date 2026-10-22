@@ -138,6 +138,15 @@ impl Board {
         })
     }
 
+    /// The right hand close up, relaxed and gripping (G1.4b), on `scene`'s slab, the sun at
+    /// `sun`.
+    fn hands(&mut self, scene: &Scene, sun: f64) -> Image {
+        let sky = demo::sky(DVec3::ZERO);
+        let at = DVec3::new(0.0, 1.0, 0.0);
+        let lighting = sky.lighting(at, demo::sun_direction(sun), &Lighting::default());
+        crate::style_people::hands_sheet(&mut self.renderer, &self.people, (&sky, &lighting), scene)
+    }
+
     /// A stride of the engineer at `speed` (m/s), on `scene`'s slab, the sun at `sun`.
     fn walk(&mut self, scene: &Scene, sun: f64, speed: f64) -> Image {
         let sky = demo::sky(DVec3::ZERO);
@@ -256,6 +265,7 @@ fn all(
             }
             images.push(("walk".into(), board.walk(&scene, TIMES[0].1, 1.4)));
             images.push(("run".into(), board.walk(&scene, TIMES[0].1, 3.5)));
+            images.push(("hands".into(), board.hands(&scene, TIMES[0].1)));
             // The ten skin tones side by side (G1.3i).
             let mut tones = board.ground(colour);
             crate::style_people::add_tones(&board.people, &mut tones);

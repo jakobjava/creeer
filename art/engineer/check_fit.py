@@ -68,6 +68,7 @@ from mathutils.bvhtree import BVHTree
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import fit_report as F  # noqa: E402  (after the path is set)
+import hands as H  # noqa: E402
 import reach  # noqa: E402
 import wearables as W  # noqa: E402
 
@@ -101,6 +102,9 @@ def part(region):
 
 def chain(region):
     region = region.split("/")[-1]
+    # A finger's bone (G1.4b) is its arm's.
+    if region.split(".")[0] in H.DIGITS:
+        return f"arm.{region[-1]}"
     return CHAINS.get(region) or region.replace("upper_arm", "arm").replace("forearm", "arm").replace("hand", "arm").replace("thigh", "leg").replace("shank", "leg").replace("foot", "leg")
 
 
@@ -141,8 +145,10 @@ def reached(rig, joint, axis, angle):
 
 
 def below(name):
-    """Segment `name` and every segment below it."""
+    """Segment `name` and every segment below it, a hand with its fingers (G1.4b)."""
     out = [name]
+    if name.startswith("hand."):
+        out += [b for b in H.names() if b.endswith(name[-2:])]
     for j in BONES["joints"]:
         if j["parent"] == name:
             out += below(j["child"])
@@ -337,10 +343,16 @@ def main():
     for piece, shares in F.boxes(objects).items():
         for seg, share in sorted(shares.items()):
             print(f"art: fit: {piece} outside {seg}'s box: {100 * share:.1f} %")
-    for name, joint, axis, angle in poses():
-        share = reached(rig, joint, axis, angle)
-        if share < 1.0:
-            name += f" (to {share * abs(angle):.2f}: the arm meets the trunk)"
+    # The joints at rest and their limits; then the fingers bent (G1.4b), relaxed and in a fist.
+    for name, joint, axis, angle in [*poses(), *(("fingers " + f, f, None, 0.0) for f in ("relaxed", "fist"))]:
+        if joint in ("relaxed", "fist"):
+            pose(rig, None, None, 0.0)
+            H.pose(rig, H.RELAXED if joint == "relaxed" else H.FIST)
+            bpy.context.view_layer.update()
+        else:
+            share = reached(rig, joint, axis, angle)
+            if share < 1.0:
+                name += f" (to {share * abs(angle):.2f}: the arm meets the trunk)"
         surfs = surfaces(objects)
         for outfit, worn in outfits(objects):
             hidden = W.hidden(worn, covering, objects)

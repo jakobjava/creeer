@@ -6,6 +6,7 @@ import pathlib
 
 from mathutils import Vector
 
+DIGITS = ("thumb", "index", "middle", "ring", "little")
 BONES = json.loads((pathlib.Path(__file__).resolve().parent / "bones.json").read_text(encoding="utf-8"))
 
 
@@ -33,7 +34,11 @@ def boxes(objects):
                 outside = True
                 for g in v.groups:
                     if g.weight >= 0.2:
-                        c, h = box[names[g.group]]
+                        name = names[g.group]
+                        # A finger's bone (G1.4b) lies in its hand's box.
+                        if name.split(".")[0] in DIGITS:
+                            name = f"hand.{name[-1]}"
+                        c, h = box[name]
                         d = v.co - c
                         outside = outside and any(abs(d[k]) > h[k] + grow for k in range(3))
                 n, bad = counts.get(seg, (0, 0))

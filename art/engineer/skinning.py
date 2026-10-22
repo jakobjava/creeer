@@ -10,12 +10,41 @@ import pathlib
 
 import body as B
 import bpy
+import hands as H
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 
 HERE = pathlib.Path(__file__).resolve().parent
 BONES = json.loads((HERE / "bones.json").read_text(encoding="utf-8"))
 MOST_BONES = 4
+# Each hand's digits (`hands.measure`, by side tag), measured on the posed skin once its
+# weights are complete: their bones are added to the armature, and every piece's hand weight
+# is shared out among them at the export (`skin_groups`).
+FINGERS = {}
+
+
+def measure_fingers(skin, lift):
+    """The digits of both hands of the posed `skin` (its mesh `lift` m above the pose's), and
+    how the skin's hand points share their weight with them (`SHARES`)."""
+    weights = segment_weights(skin)
+    FINGERS.clear()
+    SHARES.clear()
+    for side, tag in ((1, "L"), (-1, "R")):
+        wrist = B.posed(B.joint("wrist", side), side, "forearm") + Vector((0.0, 0.0, lift))
+        FINGERS[tag] = H.measure(skin.data, weights[f"hand.{tag}"], wrist)
+        points = [v for v in skin.data.vertices if weights[f"hand.{tag}"][v.index] > 0.0]
+        tree = KDTree(len(points))
+        for k, v in enumerate(points):
+            tree.insert(v.co, k)
+        tree.balance()
+        SHARES[tag] = (tree, [H.shares(FINGERS[tag], v.co) for v in points])
+
+
+# Each hand's skin points' shares (a tree of them, and each one's digit and shares): every
+# piece takes the shares of the skin point nearest it, as its other weights are the layer
+# beneath it's. By its own place, a glove's point near a finger's root took the next finger
+# and parted from the skin in a fist.
+SHARES = {}
 
 
 def game_to_blender(p):
@@ -49,6 +78,12 @@ def armature(scene):
     for name, (head, tail) in bone_places().items():
         bone = data.edit_bones.new(name)
         bone.head, bone.tail = head, tail
+    # The fingers' bones, each from its joint to the next (the last to the tip).
+    for tag, digits in FINGERS.items():
+        for digit, points in digits.items():
+            for k in range(3):
+                bone = data.edit_bones.new(H.bone(digit, k + 1, tag))
+                bone.head, bone.tail = points[k], points[k + 1]
     bpy.ops.object.mode_set(mode="OBJECT")
     return rig
 
@@ -241,7 +276,23 @@ def skin_groups(obj, rig):
     """The segment weights as at most four vertex groups a vertex, summing to one, and the
     armature that moves them."""
     weights = segment_weights(obj)
-    groups = {name: obj.vertex_groups.new(name=name) for name in B.SEGMENTS}
+    names = list(B.SEGMENTS) + (H.names() if FINGERS else [])
+    groups = {name: obj.vertex_groups.new(name=name) for name in names}
+    # Each hand's weight shared out with its fingers, by where the point lies on them.
+    for tag in FINGERS:
+        hand = weights[f"hand.{tag}"]
+        for name in H.names():
+            if name.endswith(f".{tag}"):
+                weights[name] = [0.0] * len(hand)
+        for v in obj.data.vertices:
+            w = hand[v.index]
+            if w <= 0.0:
+                continue
+            tree, shared = SHARES[tag]
+            digit, shares = shared[tree.find(v.co)[1]]
+            hand[v.index] = w * shares[0]
+            for k in range(3):
+                weights[H.bone(digit, k + 1, tag)][v.index] = w * shares[k + 1]
     for i in range(len(obj.data.vertices)):
         ranked = sorted(((w[i], n) for n, w in weights.items() if w[i] > 0.0), reverse=True)[:MOST_BONES]
         total = sum(w for w, _ in ranked)

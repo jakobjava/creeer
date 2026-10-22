@@ -3,6 +3,7 @@
 //! (`--style-board <file> --walk <sheet.png>`), animated as the game animates him.
 
 use crate::animate::feet::Ground;
+use crate::animate::hands::Hold;
 use crate::animate::{Animator, Body, gait};
 use crate::people::People;
 use creeer_math::Frame64;
@@ -139,6 +140,49 @@ pub fn walk_sheet(
             }));
         }
         t += dt;
+    }
+    side_by_side(&images)
+}
+
+/// The right hand close up (G1.4b): gloved and bare, relaxed and closed on a 35 mm handle, as
+/// one sheet.
+pub fn hands_sheet(
+    renderer: &mut Renderer,
+    people: &People,
+    (sky, lighting): (&Sky, &Lighting),
+    board: &Scene,
+) -> Image {
+    // Beside the board's crates, where the walk goes.
+    let centre = DVec3::new(4.5, character::heights().0, 0.0);
+    let standing = bones::standing_bones(centre, DQuat::IDENTITY);
+    let hand = standing[5].transform_point(bones::centres()[5]);
+    // From in front and to the right, a little below the hand, looking at it.
+    let at = hand + DVec3::new(-0.4, -0.08, 0.55);
+    let d = hand - at;
+    let mut camera = Camera::new(at);
+    camera.yaw = creeer_math::det::atan2(-d.x, -d.z);
+    camera.pitch = creeer_math::det::asin(d.y / d.length());
+    camera.fov_y = 24f32.to_radians();
+    let mut images = Vec::new();
+    for outfit in [&bones::STARTING_OUTFIT[..], &["base_layer"][..]] {
+        for hold in [Hold::Relaxed, Hold::Grip(0.0175)] {
+            let mut scene = board.clone();
+            scene.characters.clear();
+            let drawn = people.holding(&look(outfit), &standing, [hold, Hold::Relaxed]);
+            scene.characters.push(drawn);
+            images.push(renderer.capture(Frame {
+                camera: &camera,
+                scene: &scene,
+                terrain: &[],
+                terrain_frames: &[],
+                lighting,
+                lines: &DebugLines::default(),
+                sky: Some(sky),
+                heatmap: None,
+                overlay: None,
+                clear_color: creeer_render::wgpu::Color::BLACK,
+            }));
+        }
     }
     side_by_side(&images)
 }

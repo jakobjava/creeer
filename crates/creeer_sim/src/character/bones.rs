@@ -46,6 +46,30 @@ pub const JOINT_NAMES: [&str; 14] = [
     "ankle.L",
 ];
 
+/// The digits of a hand, from the thumb (G1.4b, ADR-0027 decision 2): each has three bones
+/// in the skin, `<digit>.<1–3>.<side>` (1 the nearest the hand), the thumb's from its
+/// metacarpal, the fingers' from their proximal phalanges. Drawn only: the ragdoll's hand is one
+/// segment.
+pub const DIGITS: [&str; 5] = ["thumb", "index", "middle", "ring", "little"];
+
+/// Digit `digit`'s bone `k` (1 to 3) on `side` (`R` or `L`).
+pub fn finger_bone(digit: &str, k: usize, side: char) -> String {
+    format!("{digit}.{k}.{side}")
+}
+
+/// Every finger bone: by side (R, L, as the segments), digit and bone.
+pub fn finger_bones() -> Vec<String> {
+    let mut out = Vec::new();
+    for side in ['R', 'L'] {
+        for digit in DIGITS {
+            for k in 1..=3 {
+                out.push(finger_bone(digit, k, side));
+            }
+        }
+    }
+    out
+}
+
 /// Where the table is kept, from the workspace's root.
 pub const PATH: &str = "art/engineer/bones.json";
 
@@ -105,8 +129,40 @@ pub fn json() -> String {
 
 /// What is wrong with a skinned model's skeleton (G1.3f, ADR-0026): its bones must be the
 /// ragdoll's fifteen segments by name, each bone's head at its joint with its parent (the
-/// pelvis's at its centre) within a millimetre, so the drawn body is the simulated one.
+/// pelvis's at its centre) within a millimetre, so the drawn body is the simulated one; and
+/// the fingers' (G1.4b), all of them or none, each head within its hand's box (2 cm about it).
 pub fn skeleton_problems(bones: &[creeer_art::model_skin::Bone]) -> Vec<String> {
+    let mut out = segment_problems(bones);
+    let fingers = finger_bones();
+    let has = |name: &str| bones.iter().find(|b| b.name == name);
+    if fingers.iter().any(|f| has(f).is_some()) {
+        for name in &fingers {
+            let Some(bone) = has(name) else {
+                out.push(format!("no bone {name}"));
+                continue;
+            };
+            let hand = if name.ends_with(".R") { 5 } else { 11 };
+            let (centre, half, _) = SEGMENTS[hand];
+            let at = DVec3::from(bone.head.map(f64::from)) - centre;
+            let outside = (at.abs() - half - DVec3::splat(0.02)).max_element();
+            if outside > 0.0 {
+                out.push(format!(
+                    "bone {name}'s head is {:.0} mm outside its hand",
+                    outside * 1e3
+                ));
+            }
+        }
+    }
+    for bone in bones {
+        if !SEGMENT_NAMES.contains(&bone.name.as_str()) && !fingers.contains(&bone.name) {
+            out.push(format!("bone {} is no segment of the ragdoll", bone.name));
+        }
+    }
+    out
+}
+
+/// The ragdoll's segments' bones, each at its joint.
+fn segment_problems(bones: &[creeer_art::model_skin::Bone]) -> Vec<String> {
     let mut out = Vec::new();
     for (k, name) in SEGMENT_NAMES.iter().enumerate() {
         let want = LINKS
@@ -124,11 +180,6 @@ pub fn skeleton_problems(bones: &[creeer_art::model_skin::Bone]) -> Vec<String> 
                     ));
                 }
             }
-        }
-    }
-    for bone in bones {
-        if !SEGMENT_NAMES.contains(&bone.name.as_str()) {
-            out.push(format!("bone {} is no segment of the ragdoll", bone.name));
         }
     }
     out

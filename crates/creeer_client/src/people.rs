@@ -1,8 +1,10 @@
 //! The players' characters as the client draws them (G1.3e, ADR-0026 decisions 6–8): the
-//! engineer skinned on his ragdoll's fifteen bones, in his look's outfit and colours. Standing,
+//! engineer skinned on his ragdoll's fifteen bones and his fingers' thirty (G1.4b), in his look's
+//! outfit and colours. Standing,
 //! every bone is the body's frame (G1.3g animates the limbs); fallen, each bone is its segment.
 
 use crate::animate::feet::Ground;
+use crate::animate::hands::{Hands, Hold};
 use crate::animate::{Animator, Body};
 use creeer_art::Palette;
 use creeer_art::model::{Entry, Model};
@@ -11,7 +13,7 @@ use creeer_math::Frame64;
 use creeer_net::entity::Look;
 use creeer_render::skin::{OutfitId, SkinnedId, SkinnedMeshData};
 use creeer_render::{Character, Material, Renderer};
-use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT};
+use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT, finger_bones};
 use std::collections::HashMap;
 
 /// The grey the player's colour is laid on at half strength (`art-style.md` §3.3, FFF-218;
@@ -27,14 +29,24 @@ pub struct DrawnPerson {
     pub body: Body,
 }
 
+/// Where a bone of the model is drawn from: a segment of the ragdoll, or a finger bone
+/// (`bones::finger_bones`' order).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Source {
+    Segment(usize),
+    Finger(usize),
+}
+
 /// The engineer, registered with a renderer, and his outfits.
 pub struct People {
     palette: Palette,
     model: Model,
     wearables: Vec<Wearable>,
     id: SkinnedId,
-    /// For each of the model's bones, the ragdoll segment it is.
-    segment_of: Vec<usize>,
+    /// For each of the model's bones, the ragdoll segment it is or the finger bone (G1.4b).
+    bone_of: Vec<Source>,
+    /// The fingers at rest, if the model has them.
+    hands: Option<Hands>,
     outfits: HashMap<Vec<String>, OutfitId>,
     /// Their animation (G1.3g).
     animator: Animator,
@@ -62,11 +74,24 @@ impl People {
             .ok_or("the packs have no engineer")?;
         let bytes = data.binary(&entry.file).map_err(|e| e.to_string())?;
         let model = Model::read(bytes, &palette)?;
-        let segment_of = (model.bones.iter())
-            .map(|b| SEGMENT_NAMES.iter().position(|s| *s == b.name))
-            .collect::<Option<Vec<usize>>>()
-            .filter(|v| v.len() == SEGMENT_NAMES.len())
-            .ok_or("the engineer's bones are not the ragdoll's segments")?;
+        let fingers = finger_bones();
+        let bone_of = (model.bones.iter())
+            .map(|b| {
+                (SEGMENT_NAMES
+                    .iter()
+                    .position(|s| *s == b.name)
+                    .map(Source::Segment))
+                .or_else(|| {
+                    fingers
+                        .iter()
+                        .position(|f| *f == b.name)
+                        .map(Source::Finger)
+                })
+            })
+            .collect::<Option<Vec<Source>>>()
+            .filter(|v| v.iter().filter(|s| matches!(s, Source::Segment(_))).count() == 15)
+            .ok_or("the engineer's bones are not the ragdoll's segments and the fingers")?;
+        let hands = Hands::new(&model.bones);
         let levels = entry.levels.ok_or("the engineer's levels have no errors")?;
         let id = renderer.add_skinned(&SkinnedMeshData::new(&model, levels));
         let mut people = Self {
@@ -74,7 +99,8 @@ impl People {
             wearables: Wearable::all(&data)?,
             model,
             id,
-            segment_of,
+            bone_of,
+            hands,
             outfits: HashMap::new(),
             animator: Animator::default(),
         };
@@ -109,7 +135,7 @@ impl People {
             .iter()
             .map(|p| {
                 let bones = self.animator.bones(p.key, &p.body, dt, ground);
-                self.character(&p.look, &bones)
+                self.holding(&p.look, &bones, self.animator.holds(p.key))
             })
             .collect()
     }
@@ -118,15 +144,26 @@ impl People {
     /// outfit not registered is drawn as the starting one (outfits change from G1.6 on, when
     /// wearables are items).
     pub fn character(&self, look: &Look, bones: &[Frame64]) -> Character {
+        self.holding(look, bones, [Hold::Relaxed; 2])
+    }
+
+    /// Someone looking `look` with `bones` (the ragdoll's order), the hands held `hold` (right,
+    /// left), as the renderer draws them.
+    pub fn holding(&self, look: &Look, bones: &[Frame64], hold: [Hold; 2]) -> Character {
         let start: Vec<String> = STARTING_OUTFIT.iter().map(|&w| w.to_owned()).collect();
         let outfit = (self.outfits.get(&look.outfit))
             .or_else(|| self.outfits.get(&start))
             .copied()
             .expect("the starting outfit is registered");
+        let fingers = (self.hands.as_ref()).map_or_else(Vec::new, |h| h.pose(bones, hold));
         Character {
             outfit,
-            bones: (self.segment_of.iter())
-                .map(|&s| bones.get(s).copied().unwrap_or(Frame64::IDENTITY))
+            bones: (self.bone_of.iter())
+                .map(|source| match *source {
+                    Source::Segment(s) => bones.get(s),
+                    Source::Finger(f) => fingers.get(f),
+                })
+                .map(|b| b.copied().unwrap_or(Frame64::IDENTITY))
                 .collect(),
             colours: self.colours(look),
             material: Material::dielectric([1.0; 3], 0.8),

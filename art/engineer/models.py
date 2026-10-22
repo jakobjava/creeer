@@ -297,6 +297,7 @@ def build():
         bpy.data.objects.remove(obj)
     D.detail(scene, pieces)
     S.complete_weights(pieces, next(o for o in pieces["body"] if o.name == "skin"))
+    S.measure_fingers(next(o for o in pieces["body"] if o.name == "skin"), O.SOLE)
     covers = I.Covers(next(o for o in pieces["body"] if o.name == "skin"))
     rig = S.armature(scene)
     parts = []
