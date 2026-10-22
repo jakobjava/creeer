@@ -73,8 +73,6 @@ struct State {
     lowering: f64,
     /// A tool's swing, through it (`Animator::swing`).
     swing: Option<f64>,
-    /// How each hand is held (right, left; G1.4b).
-    hold: [hands::Hold; 2],
     /// What it did last frame, and its poses smoothed across changes.
     mode: Mode,
     smoother: Smoother,
@@ -133,23 +131,6 @@ impl Animator {
         }
     }
 
-    /// How character `key`'s hands are held (right, left): relaxed, or closed on what they
-    /// hold (G1.4c's tools).
-    // Set by G1.4c's tools.
-    #[allow(dead_code)]
-    pub fn hold(&mut self, key: u32, hold: [hands::Hold; 2]) {
-        if let Some(state) = self.states.get_mut(&key) {
-            state.hold = hold;
-        }
-    }
-
-    /// How character `key`'s hands are held (relaxed if it is not known).
-    pub fn holds(&self, key: u32) -> [hands::Hold; 2] {
-        self.states
-            .get(&key)
-            .map_or([hands::Hold::Relaxed; 2], |s| s.hold)
-    }
-
     /// Forgets the characters not in `keep`.
     pub fn retain(&mut self, keep: &[u32]) {
         self.states.retain(|k, _| keep.contains(k));
@@ -198,7 +179,6 @@ impl State {
             drop: 0.0,
             lowering: 0.0,
             swing: None,
-            hold: [hands::Hold::Relaxed; 2],
             mode: Mode::Standing,
             smoother: Smoother::default(),
         }

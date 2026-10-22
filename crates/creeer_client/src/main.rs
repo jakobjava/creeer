@@ -43,6 +43,7 @@ mod fly_camera;
 mod golden;
 mod gpu_passes;
 mod headless;
+mod held;
 mod hulls;
 mod icon_image;
 mod icons;

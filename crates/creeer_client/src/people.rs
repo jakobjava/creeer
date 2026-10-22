@@ -12,7 +12,7 @@ use creeer_art::wearable::{Wearable, visible};
 use creeer_math::Frame64;
 use creeer_net::entity::Look;
 use creeer_render::skin::{OutfitId, SkinnedId, SkinnedMeshData};
-use creeer_render::{Character, Material, Renderer};
+use creeer_render::{Character, Material, Renderer, Scene};
 use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT, finger_bones};
 use std::collections::HashMap;
 
@@ -27,6 +27,8 @@ pub struct DrawnPerson {
     pub key: u32,
     pub look: Look,
     pub body: Body,
+    /// The tool in its right hand (G1.4c: an index into the tools' table), if any.
+    pub wields: Option<u8>,
 }
 
 /// Where a bone of the model is drawn from: a segment of the ragdoll, or a finger bone
@@ -47,6 +49,8 @@ pub struct People {
     bone_of: Vec<Source>,
     /// The fingers at rest, if the model has them.
     hands: Option<Hands>,
+    /// The tools a hand may hold (G1.4c).
+    held: crate::held::Held,
     outfits: HashMap<Vec<String>, OutfitId>,
     /// Their animation (G1.3g).
     animator: Animator,
@@ -92,6 +96,7 @@ impl People {
             .filter(|v| v.iter().filter(|s| matches!(s, Source::Segment(_))).count() == 15)
             .ok_or("the engineer's bones are not the ragdoll's segments and the fingers")?;
         let hands = Hands::new(&model.bones);
+        let held = crate::held::Held::register(&mut renderer.meshes);
         let levels = entry.levels.ok_or("the engineer's levels have no errors")?;
         let id = renderer.add_skinned(&SkinnedMeshData::new(&model, levels));
         let mut people = Self {
@@ -101,6 +106,7 @@ impl People {
             id,
             bone_of,
             hands,
+            held,
             outfits: HashMap::new(),
             animator: Animator::default(),
         };
@@ -121,23 +127,33 @@ impl People {
         }
     }
 
-    /// The people as the renderer draws them this frame, `dt` seconds after the last, animated
-    /// on `ground` (those no longer drawn are forgotten).
-    pub fn characters(
+    /// The people into `scene` as the renderer draws them this frame, `dt` seconds after the
+    /// last, animated on `ground`, with the tools they hold (those no longer drawn are
+    /// forgotten).
+    pub fn draw(
         &mut self,
         people: &[DrawnPerson],
         dt: f64,
         ground: &dyn Ground,
-    ) -> Vec<Character> {
+        scene: &mut Scene,
+    ) {
         let keys: Vec<u32> = people.iter().map(|p| p.key).collect();
         self.animator.retain(&keys);
-        people
-            .iter()
-            .map(|p| {
-                let bones = self.animator.bones(p.key, &p.body, dt, ground);
-                self.holding(&p.look, &bones, self.animator.holds(p.key))
-            })
-            .collect()
+        for p in people {
+            // A tool carried in the right hand: the fingers closed on its handle at its balance.
+            let tool =
+                (p.wields).and_then(|t| self.held.tool(t).map(|tool| (t, tool.carry_radius)));
+            let bones = self.animator.bones(p.key, &p.body, dt, ground);
+            let right = tool.map_or(Hold::Relaxed, |(_, radius)| Hold::Grip(radius));
+            scene
+                .characters
+                .push(self.holding(&p.look, &bones, [right, Hold::Relaxed]));
+            if let (Some((t, _)), Some(hands)) = (tool, &self.hands)
+                && let Some((mesh, instance)) = self.held.instance(t, hands, bones[5])
+            {
+                scene.add(mesh, instance);
+            }
+        }
     }
 
     /// Someone looking `look` with `bones` (the ragdoll's order) as the renderer draws them. An

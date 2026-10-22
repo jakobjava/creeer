@@ -1,0 +1,21 @@
+// The hand tools (G1.4c, ADR-0027 decision 3): catalogue tools, held in the right hand. Each:
+// its model (data/models/models.ron, made by art/<model>.py), what it is for, its mass and its
+// head's (kg), its length (m), where it is gripped to swing it (m up from the handle's end) and
+// the handle's radius there (m: what the hand closes on), and where it is carried and the
+// radius there: at its balance, so it hangs level without the wrist holding it (an axe "by your
+// side with the head forward ... the handle firmly just behind the head", the Forest Service's
+// Ax Manual: where an axe balances). The models are built to these: art/tools.py's `report`
+// holds each model's mass from its volumes to within 15 %, and its balance to within 1 cm.
+[
+    // A pick mattock, 5 lb on a 36 in hickory handle: Garant's and Kent's listings 3.4 kg in
+    // all; the head 2.27 kg (Collins, Channellock, Ames).
+    (name: "pickaxe", model: "pickaxe", kind: Pick, mass: 3.4, head: 2.27, length: 0.915, grip: 0.07, radius: 0.018, carry: 0.771, carry_radius: 0.0195),
+    // A round point shovel with a long handle: Asaka's Long-R, 1485 mm, 2.2 kg, its blade
+    // 220 × 300 mm; its head (blade and socket) from the model's volumes, 0.93 + 0.45 kg.
+    (name: "shovel", model: "shovel", kind: Shovel, mass: 2.2, head: 1.38, length: 1.485, grip: 0.10, radius: 0.019, carry: 0.964, carry_radius: 0.0185),
+    // A felling axe: Gränsfors Bruk's American felling axe, 81 cm, 2.1 kg in all (Highland
+    // Woodworking); its head 1.6 kg here, the listings disagreeing (1.8–2.4).
+    (name: "axe", model: "axe", kind: Axe, mass: 2.1, head: 1.6, length: 0.80, grip: 0.06, radius: 0.016, carry: 0.685, carry_radius: 0.014),
+    // A 24 in bow saw: Bahco's 10-24-51, a 607 mm blade, 743 g; its blade from the model's volume.
+    (name: "bow_saw", model: "bow_saw", kind: Saw, mass: 0.743, head: 0.116, length: 0.62, grip: 0.055, radius: 0.017, carry: 0.092, carry_radius: 0.0175),
+]

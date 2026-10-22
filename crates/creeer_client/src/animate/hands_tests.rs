@@ -127,3 +127,35 @@ fn open_the_fingers_lie_straight_and_together() {
         }
     }
 }
+
+#[test]
+fn a_held_tool_lies_along_the_handle_the_fingers_close_on() {
+    let hands = Hands::new(&engineer()).expect("fingers");
+    let radius = 0.016;
+    let grip = hands.grip(0, radius);
+    let hand = &hands.hands[0];
+    // Its origin on the handle's axis, its handle (+y) across the palm out past the index.
+    assert!((grip.position - hand.handle(radius)).length() < 1e-12);
+    assert!((grip.rotation * DVec3::Y).dot(hand.across) > 1.0 - 1e-9);
+    // Its working end (+z) towards the fingertips, square to the handle.
+    let ahead = grip.rotation * DVec3::Z;
+    assert!(ahead.dot(hand.down) > 0.5 && ahead.dot(hand.across).abs() < 1e-9);
+    // The gripping fingers wrap it: each finger's first and last bones bear on it, and its tip
+    // lies round the handle's far side from the palm.
+    for k in 1..5 {
+        let digit = &hand.digits[k];
+        let p = digit.points(hand.wrapped(k, radius), digit.tip());
+        for j in [0, 2] {
+            let d = distance_to_line(p[j], p[j + 1], grip.position, hand.across);
+            assert!(
+                d < radius + FINGER + 1e-3,
+                "{k}.{j}: {d} m from the handle's axis"
+            );
+        }
+        let round = (p[3] - grip.position).dot(hand.palm);
+        assert!(
+            round > 0.0,
+            "finger {k}'s tip {round} m short of the handle's far side"
+        );
+    }
+}

@@ -36,9 +36,11 @@ fn the_base_pack_validates_with_only_nasas_two_known_steps() {
     // The palette (G1.3a; the eyes' and the worn coverall's tokens since, G1.3f), with no
     // style warnings beyond its approved exceptions.
     assert_eq!(count("palette tokens"), Some(49));
-    // The models (G1.3b): the crate and the engineer (G1.3f), its skeleton the ragdoll's and
-    // its wearables its pieces (no errors above).
-    assert_eq!(count("models"), Some(2));
+    // The models (G1.3b): the crate, the engineer (G1.3f), its skeleton the ragdoll's and its
+    // wearables its pieces (no errors above), and the four tools (G1.4c), each in the tools'
+    // table.
+    assert_eq!(count("models"), Some(6));
+    assert_eq!(count("tools"), Some(4));
 }
 
 #[test]

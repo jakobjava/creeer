@@ -183,7 +183,12 @@ impl PlanetSession {
                 }
                 Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
                 // A character (G1.3e): standing, its body's frame; fallen, its segments'.
-                Kind::Character { look, fallen, .. } => {
+                Kind::Character {
+                    look,
+                    fallen,
+                    wields,
+                    ..
+                } => {
                     let body = if *fallen {
                         fallen_bones(*id, (p, q), c).map(Body::Fallen)
                     } else {
@@ -195,6 +200,7 @@ impl PlanetSession {
                             key: id.0,
                             look,
                             body,
+                            wields: *wields,
                         });
                     }
                 }

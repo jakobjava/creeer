@@ -1,0 +1,21 @@
+Rejected (G1.4c): after the coupled closing, the middle joint closing on and the last opening,
+the tip kept on the handle, until the middle bone met it. Every bone met the handle (middle
+gaps of 6-15 mm down to 0-2.8 mm), but the last joint opened to 0-11 degrees: a straight
+fingertip. Inserted in Hand::wrapped, after the closing loop:
+
+        // The tip met the handle before the middle bone: as a fingertip slides round a handle,
+        // the middle joint goes on closing and the last opens, the tip kept on the handle, until
+        // the middle bone bears on it too (in a power grip every phalanx does: Kong and Lowe
+        // 2005).
+        let (bend, open) = (MOST[1] / f64::from(CLOSING), MOST[2] / f64::from(CLOSING));
+        while bends[1] + bend <= MOST[1] {
+            let mut next = bends;
+            next[1] += bend;
+            while meets(&next, 2) && next[2] > open {
+                next[2] -= open;
+            }
+            if meets(&next, 1) || meets(&next, 2) {
+                break;
+            }
+            bends = next;
+        }

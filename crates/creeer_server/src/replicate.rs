@@ -31,11 +31,13 @@ pub fn kind(body: &Body, drawn: &Drawn, joined: bool) -> Kind {
             player,
             look,
             fallen,
+            wields,
         } => {
             return Kind::Character {
                 player: player.clone(),
                 look: look.clone(),
                 fallen: *fallen,
+                wields: *wields,
             };
         }
         Drawn::Segment { person, index } => {

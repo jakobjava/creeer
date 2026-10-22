@@ -25,6 +25,9 @@ pub struct AvatarInput {
     pub thrust: DVec3,
 }
 
+/// No tool, as a wielded tool's index is sent.
+pub const NONE: u8 = u8::MAX;
+
 /// What a client asks the world for (reliable).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
@@ -43,6 +46,9 @@ pub enum Command {
     /// The player's chosen skin tone and hair colour (G1.3e: indices into the palette's
     /// lists; the server keeps their colour and outfit).
     Look { skin: u8, hair: u8 },
+    /// The tool the player holds in the right hand (G1.4c: an index into the tools' table,
+    /// `creeer_sim::tools`; none, empty-handed).
+    Wield { tool: Option<u8> },
 }
 
 /// From a client to the server.
@@ -211,6 +217,10 @@ impl Encode for ClientMessage {
                         w.u8(*skin);
                         w.u8(*hair);
                     }
+                    Command::Wield { tool } => {
+                        w.u8(7);
+                        w.u8(tool.unwrap_or(NONE));
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -243,6 +253,9 @@ impl Decode for ClientMessage {
                 6 => Command::Look {
                     skin: r.u8()?,
                     hair: r.u8()?,
+                },
+                7 => Command::Wield {
+                    tool: Some(r.u8()?).filter(|&t| t != NONE),
                 },
                 _ => return Err(r.error("unknown command")),
             }),

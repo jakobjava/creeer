@@ -64,6 +64,8 @@ pub struct PlanetView {
     pub session: PlanetSession,
     /// Whether the player walks their avatar (else the camera flies free).
     pub walking: bool,
+    /// The tool the player asked to hold (G1.4c), by its index in the tools' table.
+    pub wielding: Option<u8>,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -143,6 +145,7 @@ impl PlanetView {
         Self {
             session,
             walking: false,
+            wielding: None,
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),

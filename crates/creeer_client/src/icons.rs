@@ -24,6 +24,11 @@ const ELEVATION: f64 = 30.0;
 /// The key light (degrees): from the viewer's upper left, between the view and the left.
 const LIGHT_AZIMUTH: f64 = AZIMUTH - 50.0;
 const LIGHT_ELEVATION: f64 = 50.0;
+/// Tools (G1.4c) are seen broadside, a little from above and in front, and laid across the
+/// icon's diagonal (rad, about the view's axis), as inventories show tools.
+const TOOL_AZIMUTH: f64 = 75.0;
+const TOOL_ELEVATION: f64 = 15.0;
+const TOOL_TILT: f64 = std::f64::consts::FRAC_PI_4;
 /// The camera this many bounding radii away: nearly orthographic, sizes across the model
 /// within ±2.5 % (a true orthographic view is in docs/future-improvements.md).
 const DISTANCE: f64 = 40.0;
@@ -81,8 +86,30 @@ impl Icons {
                 det::cos(a) * det::cos(e),
             )
         };
-        let mut camera = Camera::new(centre + towards(AZIMUTH, ELEVATION) * DISTANCE * radius);
-        (camera.yaw, camera.pitch) = (AZIMUTH.to_radians(), -ELEVATION.to_radians());
+        let tool = entry.class == Class::Tool;
+        let (azimuth, elevation) = if tool {
+            // Broadside: across its thinnest way (the shovel's blade faces forward, the others
+            // are thinnest across).
+            let size = high - low;
+            let azimuth = if size.z < size.x {
+                90.0 - TOOL_AZIMUTH
+            } else {
+                TOOL_AZIMUTH
+            };
+            (azimuth, TOOL_ELEVATION)
+        } else {
+            (AZIMUTH, ELEVATION)
+        };
+        let view = towards(azimuth, elevation);
+        // A tool laid across the diagonal: turned about the view's axis through its middle.
+        let turn = if tool {
+            creeer_math::glam::DQuat::from_axis_angle(view, TOOL_TILT)
+        } else {
+            creeer_math::glam::DQuat::IDENTITY
+        };
+        let placed = Frame64::new(centre - turn * centre, turn);
+        let mut camera = Camera::new(centre + view * DISTANCE * radius);
+        (camera.yaw, camera.pitch) = (azimuth.to_radians(), -elevation.to_radians());
         #[allow(clippy::cast_possible_truncation)] // an angle
         let fov = (2.0 * det::asin(MARGIN / DISTANCE)) as f32;
         camera.fov_y = fov;
@@ -99,7 +126,7 @@ impl Icons {
         scene.add(
             mesh,
             Instance {
-                frame: Frame64::from_position(DVec3::ZERO),
+                frame: placed,
                 scale: Vec3::ONE,
                 material: Material::dielectric([1.0; 3], 0.8),
                 heat: None,
@@ -190,7 +217,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     let name = value_of("--icon").ok_or("--icon needs a model's name")?;
     let mut icons = None;
-    for size in SIZES {
+    // A size of its own to look at a model closely (`--size <px>`); the game's otherwise.
+    let sizes = match value_of("--size") {
+        Some(n) => vec![n.parse().map_err(|_| "--size needs pixels")?],
+        None => SIZES.to_vec(),
+    };
+    for size in sizes {
         let path = match value_of("--out") {
             Some(dir) => {
                 let icons = match &mut icons {
@@ -224,13 +256,35 @@ mod tests {
             }
         };
         assert!(!icons.is_empty(), "the packs have items");
+        let tools = crate::models::names(Class::Tool);
         for (name, icon) in &icons {
             assert_eq!((icon.width, icon.height), (SIZES[0], SIZES[0]));
-            // The model fills the icon well, on a transparent background.
-            let solid = icon.rgba.chunks(4).filter(|p| p[3] > 127).count();
+            let solid: Vec<(u32, u32)> = (0..icon.height)
+                .flat_map(|y| (0..icon.width).map(move |x| (x, y)))
+                .filter(|&(x, y)| icon.pixel(x, y)[3] > 127)
+                .collect();
             #[allow(clippy::cast_precision_loss)] // pixel counts
-            let share = solid as f64 / f64::from(SIZES[0] * SIZES[0]);
-            assert!((0.25..0.8).contains(&share), "{name} covers {share}");
+            let share = solid.len() as f64 / f64::from(SIZES[0] * SIZES[0]);
+            if tools.contains(name) {
+                // A tool laid across the icon, framed by its bounding sphere: it spans more than
+                // half of it one way and nearly half the other (measured 0.58–0.77 and 0.50–0.64;
+                // the saw's triangle is broader than a handle).
+                let span = |f: fn(&(u32, u32)) -> u32| {
+                    let (lo, hi) = (solid.iter().map(f).min(), solid.iter().map(f).max());
+                    f64::from(hi.unwrap_or(0) - lo.unwrap_or(0)) / f64::from(SIZES[0])
+                };
+                let (across, down) = (span(|p| p.0), span(|p| p.1));
+                let (long, short) = (across.max(down), across.min(down));
+                assert!(
+                    long > 0.55 && short > 0.45,
+                    "{name} spans {across} by {down}"
+                );
+                assert!(share > 0.03, "{name} covers {share}");
+            } else {
+                // The model fills the icon well.
+                assert!((0.25..0.8).contains(&share), "{name} covers {share}");
+            }
+            // On a transparent background.
             assert_eq!(icon.pixel(0, 0)[3], 0, "{name}'s corner");
         }
         // Recognisable as silhouettes (`art-style.md` §7): any two overlap by IoU < 0.8.

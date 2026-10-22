@@ -24,6 +24,8 @@ pub enum Drawn {
         player: String,
         look: Look,
         fallen: bool,
+        /// The tool in its right hand (G1.4c), if any.
+        wields: Option<u8>,
     },
     /// Segment `index` of the fallen character whose avatar is `person`.
     Segment { person: EntityId, index: u8 },
@@ -88,6 +90,7 @@ impl ServerWorld {
             return Drawn::Person {
                 // Given when the avatar was (`avatar_of`).
                 look: (self.looks.get(&player).cloned()).unwrap_or_else(|| self.new_look(&player)),
+                wields: self.wields.get(&player).copied(),
                 player,
                 fallen,
             };
@@ -101,5 +104,33 @@ impl ServerWorld {
             }
         }
         Drawn::Thing
+    }
+}
+
+impl ServerWorld {
+    /// `player` took tool `tool` in hand (an index into the tools' table), or put it away:
+    /// whoever has their character is told again.
+    ///
+    /// # Errors
+    /// If there is no such tool.
+    pub fn set_wield(&mut self, player: &str, tool: Option<u8>) -> Result<(), String> {
+        match tool {
+            Some(t) if usize::from(t) >= self.tools.len() => {
+                return Err(format!("no tool {t} ({} known)", self.tools.len()));
+            }
+            Some(t) => {
+                self.wields.insert(player.to_owned(), t);
+            }
+            None => {
+                self.wields.remove(player);
+            }
+        }
+        let avatar = (self.players.iter())
+            .position(|p| p.as_deref() == Some(player))
+            .map(|i| self.ids[i]);
+        if let Some(id) = avatar {
+            self.changed.push(id);
+        }
+        Ok(())
     }
 }

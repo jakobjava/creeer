@@ -29,6 +29,12 @@ impl ServerWorld {
                     .ok_or("only a player has a look")?;
                 self.set_look(&player, *skin, *hair);
             }
+            Command::Wield { tool } => {
+                let player = (by.and_then(|id| self.index(id)))
+                    .and_then(|i| self.players[i].clone())
+                    .ok_or("only a player holds a tool")?;
+                self.set_wield(&player, *tool)?;
+            }
             Command::Crate(at) => {
                 within(*at)?;
                 let mut body = Body::rigid(

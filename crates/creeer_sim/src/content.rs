@@ -127,6 +127,16 @@ fn art(data: &Data, rocks: &RockTable, report: &mut Report) {
         report.warnings.push(format!("art style: {finding}"));
     }
     models(data, &palette, report);
+    // The hand tools (G1.4c): catalogue tools, each with its model.
+    match (crate::tools::Tool::all(data), Entry::all(data)) {
+        (Ok(tools), Ok(entries)) => {
+            report.counts.push(("tools", tools.len()));
+            report
+                .errors
+                .extend(crate::tools::problems(&tools, &entries));
+        }
+        (Err(e), _) | (_, Err(e)) => report.errors.push(e),
+    }
 }
 
 /// Every model in the manifests (G1.3b): it must load, its materials palette tokens; what

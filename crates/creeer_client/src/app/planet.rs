@@ -36,15 +36,30 @@ impl Running {
         Ok(())
     }
 
-    /// A key for the planet sandbox: V walks or flies. Returns whether it was one.
+    /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
+    /// tools' table's, until G1.6's inventory), the same again or 0 put it away. Returns
+    /// whether it was one.
     pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
-        match (&mut self.planet, code) {
-            (Some(planet), winit::keyboard::KeyCode::KeyV) => {
+        use winit::keyboard::KeyCode;
+        let Some(planet) = &mut self.planet else {
+            return false;
+        };
+        let tool = match code {
+            KeyCode::KeyV => {
                 planet.walking = !planet.walking;
-                true
+                return true;
             }
-            _ => false,
-        }
+            KeyCode::Digit1 => Some(0),
+            KeyCode::Digit2 => Some(1),
+            KeyCode::Digit3 => Some(2),
+            KeyCode::Digit4 => Some(3),
+            KeyCode::Digit0 => None,
+            _ => return false,
+        };
+        let tool = if tool == planet.wielding { None } else { tool };
+        planet.wielding = tool;
+        planet.send(creeer_net::message::Command::Wield { tool });
+        true
     }
 
     /// Back to the tech demo.
@@ -99,8 +114,7 @@ impl Running {
             let ground = crate::people_ground::PlanetGround {
                 terrain: &planet.terrain,
             };
-            let drawn = people.characters(&snapshot.people, dt, &ground);
-            self.scene.characters.extend(drawn);
+            people.draw(&snapshot.people, dt, &ground, &mut self.scene);
         }
         self.scene_build_times.push(build_start.elapsed());
 

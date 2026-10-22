@@ -31,3 +31,32 @@ fn each_player_gets_a_colour_of_their_own_in_the_starting_outfit() {
     // Only a player has one.
     assert!(w.apply(&Command::Look { skin: 1, hair: 1 }, None).is_err());
 }
+
+#[test]
+fn a_player_takes_a_tool_in_hand_and_is_seen_with_it() {
+    let mut w = world();
+    let ada = w.avatar_of("ada");
+    let held = |w: &crate::world::ServerWorld| {
+        let Drawn::Person { wields, .. } = w.drawn(w.index(ada).unwrap()) else {
+            panic!("ada is drawn as a person");
+        };
+        wields
+    };
+    assert_eq!(held(&w), None);
+    // The axe (the third tool): kept, and whoever has her told again.
+    w.take_changed();
+    w.apply(&Command::Wield { tool: Some(2) }, Some(ada))
+        .expect("a tool taken in hand");
+    assert_eq!(held(&w), Some(2));
+    assert!(w.take_changed().contains(&ada));
+    // Put away.
+    w.apply(&Command::Wield { tool: None }, Some(ada))
+        .expect("put away");
+    assert_eq!(held(&w), None);
+    // No such tool; not a player.
+    assert!(
+        w.apply(&Command::Wield { tool: Some(4) }, Some(ada))
+            .is_err()
+    );
+    assert!(w.apply(&Command::Wield { tool: Some(0) }, None).is_err());
+}

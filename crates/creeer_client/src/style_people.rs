@@ -144,6 +144,48 @@ pub fn walk_sheet(
     side_by_side(&images)
 }
 
+/// The engineer standing with each tool carried in his right hand in turn (G1.4c), seen from his
+/// right side, as one sheet.
+pub fn tools_sheet(
+    renderer: &mut Renderer,
+    people: &mut People,
+    (sky, lighting): (&Sky, &Lighting),
+    board: &Scene,
+) -> Image {
+    let centre = DVec3::new(4.5, character::heights().0, 0.0);
+    let at = centre + DVec3::new(-3.0, 0.1, 0.01);
+    let d = centre - at;
+    let mut camera = Camera::new(at);
+    camera.yaw = creeer_math::det::atan2(-d.x, -d.z);
+    camera.pitch = creeer_math::det::asin(d.y / d.length());
+    camera.fov_y = 40f32.to_radians();
+    let mut images = Vec::new();
+    for tool in 0..4u8 {
+        let mut scene = board.clone();
+        scene.characters.clear();
+        let person = crate::people::DrawnPerson {
+            key: 1,
+            look: look(&bones::STARTING_OUTFIT),
+            body: Body::Standing(centre, DQuat::IDENTITY),
+            wields: Some(tool),
+        };
+        people.draw(&[person], 1.0 / 60.0, &Flat, &mut scene);
+        images.push(renderer.capture(Frame {
+            camera: &camera,
+            scene: &scene,
+            terrain: &[],
+            terrain_frames: &[],
+            lighting,
+            lines: &DebugLines::default(),
+            sky: Some(sky),
+            heatmap: None,
+            overlay: None,
+            clear_color: creeer_render::wgpu::Color::BLACK,
+        }));
+    }
+    side_by_side(&images)
+}
+
 /// The right hand close up (G1.4b): gloved and bare, relaxed and closed on a 35 mm handle, as
 /// one sheet.
 pub fn hands_sheet(

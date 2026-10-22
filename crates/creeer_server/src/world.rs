@@ -82,6 +82,9 @@ pub struct ServerWorld {
     ages: ageing::Ages,
     /// How each player's character looks, by name (G1.3e, `looks.rs`).
     looks: std::collections::BTreeMap<String, creeer_net::entity::Look>,
+    /// The hand tools (G1.4c, the packs' `tools.ron`), and the one each player holds, by name.
+    tools: Vec<creeer_sim::tools::Tool>,
+    wields: std::collections::BTreeMap<String, u8>,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m, at a temperate latitude
@@ -152,6 +155,7 @@ impl ServerWorld {
         let species = SpeciesTable::from_data(&data).expect("the packs' species load");
         let surroundings = Surroundings::of(terrain.planet(), &species)
             .expect("the planet's air is of known gases");
+        let tools = creeer_sim::tools::Tool::all(&data).unwrap_or_default();
         Self {
             data,
             terrain,
@@ -173,6 +177,8 @@ impl ServerWorld {
             changed: Vec::new(),
             ages: ageing::Ages::default(),
             looks: std::collections::BTreeMap::new(),
+            tools,
+            wields: std::collections::BTreeMap::new(),
         }
     }
 

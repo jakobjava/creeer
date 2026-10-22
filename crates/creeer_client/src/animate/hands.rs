@@ -169,6 +169,19 @@ impl Hands {
         out
     }
 
+    /// Where a tool whose handle is `radius` (m) round lies held in hand `side` (0 the right),
+    /// in the model's frame at rest: its origin on the handle's axis amid the fingers, its +y
+    /// along the handle out past the index finger's side, its +z (its working end) towards the
+    /// fingertips.
+    pub fn grip(&self, side: usize, radius: f64) -> Frame64 {
+        let hand = &self.hands[side];
+        let y = hand.across;
+        let z = (hand.down - y * hand.down.dot(y)).normalize();
+        let x = y.cross(z);
+        let turn = DQuat::from_mat3(&creeer_math::glam::DMat3::from_cols(x, y, z));
+        Frame64::new(hand.handle(radius), turn)
+    }
+
     /// Hand `side`'s bends gripping a handle of `radius` (m), worked out once a radius (the
     /// closing takes a few hundred steps a finger).
     fn gripping(&self, side: usize, radius: f64) -> Bends {

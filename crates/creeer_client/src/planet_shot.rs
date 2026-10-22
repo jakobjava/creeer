@@ -186,8 +186,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let ground = crate::people_ground::PlanetGround {
         terrain: &view.terrain,
     };
-    let drawn = people.characters(&snapshot.people, 0.0, &ground);
-    scene.characters.extend(drawn);
+    people.draw(&snapshot.people, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,

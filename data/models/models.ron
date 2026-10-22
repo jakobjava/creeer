@@ -13,4 +13,14 @@
         // Its levels' errors against the close-up one, both ways (G1.3e; a test measures them
         // again): the mid level loses the eyelets, buttons and buckles.
         levels: Some((0.0, 0.0127, 0.0366))),
+    // The tools (G1.4c, `art/tools.py`): catalogue tools' sizes; each stands with its handle
+    // along +y, its origin where the right hand grips it, its working end facing +z.
+    // A felling axe, 81 cm (Gränsfors Bruk's American felling axe; art/axe.py).
+    (name: "axe", file: "models/axe.glb", class: Tool, bounds: ((-0.018, -0.06, -0.036), (0.018, 0.742, 0.14))),
+    // A pick mattock, 5 lb on a 36 in handle (art/pickaxe.py).
+    (name: "pickaxe", file: "models/pickaxe.glb", class: Tool, bounds: ((-0.034, -0.07, -0.236), (0.034, 0.845, 0.25))),
+    // A round point shovel with a long handle, 1485 mm (art/shovel.py).
+    (name: "shovel", file: "models/shovel.glb", class: Tool, bounds: ((-0.11, -0.10, -0.021), (0.11, 1.385, 0.095))),
+    // A 24 in bow saw, 607 mm blade (art/bow_saw.py).
+    (name: "bow_saw", file: "models/bow_saw.glb", class: Tool, bounds: ((-0.016, -0.109, -0.02), (0.016, 0.181, 0.618))),
 ]

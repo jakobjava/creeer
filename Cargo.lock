@@ -785,6 +785,7 @@ dependencies = [
  "creeer_terrain",
  "creeer_thermal",
  "rayon",
+ "serde",
 ]
 
 [[package]]

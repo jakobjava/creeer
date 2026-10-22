@@ -49,6 +49,8 @@ fn client_messages_read_back() {
         Command::Frame(DVec3::new(0.5, 0.25, 0.125)),
         Command::Powerhouse(DVec3::new(4.0, -2.5, 1e5)),
         Command::Look { skin: 9, hair: 0 },
+        Command::Wield { tool: Some(3) },
+        Command::Wield { tool: None },
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -96,6 +98,18 @@ fn server_messages_read_back() {
                 outfit: vec!["base_layer".into(), "boots".into()],
             },
             fallen: true,
+            wields: None,
+        },
+        Kind::Character {
+            player: "bob".into(),
+            look: Look {
+                colour: 0,
+                skin: 0,
+                hair: 0,
+                outfit: vec![],
+            },
+            fallen: false,
+            wields: Some(2),
         },
         Kind::Segment {
             person: EntityId(9),
