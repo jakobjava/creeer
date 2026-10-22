@@ -100,7 +100,7 @@ It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and a
 
 ### G1.3 The look: art direction and the asset pipeline (ADR-0026)
 
-**In progress** (2026-10-21; the plan approved by the user). The look comes first, so that everything after it is made in the style. Its survey of prior work is in ADR-0026, its rules in `docs/art-style.md`, and how Blender is used in `docs/blender-mcp.md`.
+**Done** (2026-10-22; begun 2026-10-21, the plan approved by the user; the look reviewed and accepted in G1.3i). The look comes first, so that everything after it is made in the style. Its survey of prior work is in ADR-0026, its rules in `docs/art-style.md`, and how Blender is used in `docs/blender-mcp.md`.
 
 The user's direction at its start (2026-10-21, recorded in `art-style.md`'s changelog):
 - **Not futuristic:** the vibe of Factorio.
