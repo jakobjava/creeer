@@ -284,6 +284,14 @@ impl World {
         }
     }
 
+    /// Lets bodies `a` and `b` collide again, if they were let pass (G1.4f: a load let go).
+    pub fn let_collide(&mut self, a: usize, b: usize) {
+        let pair = (a.min(b), a.max(b));
+        if let Ok(at) = self.passing.binary_search(&pair) {
+            self.passing.remove(at);
+        }
+    }
+
     /// Whether bodies `a` and `b` were let pass through each other.
     pub fn passes(&self, a: usize, b: usize) -> bool {
         self.passing.binary_search(&(a.min(b), a.max(b))).is_ok()

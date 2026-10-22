@@ -145,3 +145,34 @@ impl Connection {
             .then_some(seconds)
     }
 }
+
+impl Connection {
+    /// The load the player's own avatar carries, drawn in its hands: where it is from the
+    /// avatar as both are drawn a little in the past (`interpolated`), from the avatar as
+    /// predicted (`predicted`), so it moves with the hands (G1.4f: drawn in the past behind a
+    /// predicted avatar, it floated behind them).
+    pub(super) fn in_own_hands(
+        &self,
+        poses: &mut std::collections::BTreeMap<EntityId, creeer_net::interp::Pose>,
+        interpolated: Option<creeer_net::interp::Pose>,
+        predicted: creeer_net::interp::Pose,
+    ) {
+        let own = self.welcome.as_ref().map(|w| w.avatar);
+        let carries = match own.and_then(|a| self.kinds.get(&a)) {
+            Some(Kind::Character { carries, .. }) => *carries,
+            _ => None,
+        };
+        let (Some(load), Some(from)) = (carries, interpolated) else {
+            return;
+        };
+        if let Some(pose) = poses.get_mut(&load) {
+            let back = from.orientation.conjugate();
+            let (at, turn) = (
+                back * (pose.position - from.position),
+                back * pose.orientation,
+            );
+            pose.position = predicted.position + predicted.orientation * at;
+            pose.orientation = (predicted.orientation * turn).normalize();
+        }
+    }
+}

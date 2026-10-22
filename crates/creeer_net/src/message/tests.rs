@@ -123,7 +123,7 @@ fn server_messages_read_back() {
             },
             fallen: true,
             wields: None,
-            carrying: true,
+            carries: Some(EntityId(9)),
         },
         Kind::Character {
             player: "bob".into(),
@@ -135,7 +135,7 @@ fn server_messages_read_back() {
             },
             fallen: false,
             wields: Some(2),
-            carrying: false,
+            carries: None,
         },
         Kind::Segment {
             person: EntityId(9),

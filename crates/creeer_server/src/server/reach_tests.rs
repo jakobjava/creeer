@@ -189,6 +189,17 @@ fn walking_with_a_load_over_a_slow_link_the_avatar_is_rarely_corrected() {
     }
     let after = game.clients[0].0.corrections();
     assert_eq!(game.server.world.carried(ada), Some(id), "still carried");
+    // Drawn in her hands: from her drawn avatar as far as it is from her on the server (drawn
+    // in the past behind the predicted avatar, it trailed by her speed times the lag).
+    let poses = game.clients[0].0.poses();
+    let drawn = (poses[&id].position - poses[&ada].position).length();
+    let w = &game.server.world;
+    let at = |e| w.world.bodies[w.index(e).unwrap()].structure.position[0];
+    let held = (at(id) - at(ada)).length();
+    assert!(
+        (drawn - held).abs() < 0.05,
+        "drawn {drawn} m from her, held {held} m"
+    );
     let (count, over) = (
         after.count - before.count,
         after.over_a_centimetre - before.over_a_centimetre,

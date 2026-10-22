@@ -62,28 +62,28 @@ fn bodies_are_drawn_as_what_they_are() {
         hair: 5,
         outfit: vec!["boots".into()],
     };
-    let ada = |fallen, wields, carrying| Drawn::Person {
+    let ada = |fallen, wields, carries| Drawn::Person {
         player: "ada".into(),
         look: look.clone(),
         fallen,
         wields,
-        carrying,
+        carries,
     };
     let cases = [
-        (false, None, false),
-        (true, None, false),
-        (false, Some(2), false),
-        (false, None, true),
+        (false, None, None),
+        (true, None, None),
+        (false, Some(2), None),
+        (false, None, Some(EntityId(9))),
     ];
-    for (fallen, wields, carrying) in cases {
+    for (fallen, wields, carries) in cases {
         assert_eq!(
-            kind(&ball, &ada(fallen, wields, carrying), false),
+            kind(&ball, &ada(fallen, wields, carries), false),
             Kind::Character {
                 player: "ada".into(),
                 look: look.clone(),
                 fallen,
                 wields,
-                carrying,
+                carries,
             }
         );
     }

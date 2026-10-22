@@ -217,3 +217,17 @@ fn a_ball_lifted_at_a_steady_speed_is_held_with_its_weight() {
     let v = world.bodies[b].structure.velocity[0];
     assert!((v - DVec3::Y * 0.6).length() < 1e-3, "rising at {v}");
 }
+
+#[test]
+fn bodies_let_pass_may_be_let_collide_again() {
+    let mut world = World::new(DT);
+    let a = ball(&mut world, DVec3::ZERO, 1.0);
+    let b = ball(&mut world, DVec3::X, 1.0);
+    world.let_pass(b, a);
+    assert!(world.passes(a, b));
+    world.let_collide(a, b);
+    assert!(!world.passes(a, b));
+    // Twice is as once.
+    world.let_collide(a, b);
+    assert!(!world.passes(b, a));
+}

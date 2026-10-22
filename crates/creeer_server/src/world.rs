@@ -361,6 +361,7 @@ impl ServerWorld {
 }
 
 mod carry;
+mod hands;
 #[cfg(test)]
 mod lod_tests;
 pub mod looks;

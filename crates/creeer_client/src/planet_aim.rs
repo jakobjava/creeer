@@ -89,7 +89,10 @@ impl PlanetView {
         let avatar = c.welcome.as_ref().map(|w| w.avatar);
         matches!(
             avatar.and_then(|a| c.kinds.get(&a)),
-            Some(Kind::Character { carrying: true, .. })
+            Some(Kind::Character {
+                carries: Some(_),
+                ..
+            })
         )
     }
 

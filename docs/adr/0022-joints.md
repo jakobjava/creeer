@@ -76,7 +76,7 @@ One more, found carrying in the play scene *work*:
 
 - **Velocities the guard scales down** (`remove_kinetic`) left a joint whose points are moved out of step with them: its load stopped while its point went on, and the next step tore it along (1,000–1,700 N on a 15 kg box). Where a group's points are moved, the joints' velocities are projected again after the guard takes energy.
 
-Joints whose points are not moved are unchanged (the stress scenes' hashes hold).
+Joints whose points are not moved are unchanged (the stress and play scenes' hashes hold). (Carrying itself then moved to compliant hands, forces of the arms rather than a joint, ADR-0027: these stay, tested, for a joint whose point is moved, as a machine's.) Bodies let pass may also be let collide again (`World::let_collide`: a load let go).
 
 ## Validation
 

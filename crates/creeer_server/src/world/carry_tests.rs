@@ -183,12 +183,12 @@ fn only_a_body_in_reach_is_grabbed_and_one_at_a_time() {
         .unwrap();
     w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap();
     let Drawn::Person {
-        wields, carrying, ..
+        wields, carries, ..
     } = w.drawn(w.index(ada).unwrap())
     else {
         panic!("a person");
     };
-    assert_eq!((wields, carrying), (None, true));
+    assert_eq!((wields, carries), (None, Some(id)));
     let why = w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap_err();
     assert!(why.contains("hands full"), "{why}");
     assert!(w.apply(&Command::Throw(DVec3::ZERO), Some(ada)).is_err());
@@ -199,11 +199,12 @@ fn a_load_saved_in_hand_is_let_go_when_loaded() {
     let (mut w, ada, id, _) = ada_and_box(10.0);
     w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap();
     wait(&mut w, ada, 30, DVec3::ZERO);
-    let joints = w.world.joints().len();
-    assert!(joints >= 1);
+    let (a, b) = (w.index(ada).unwrap(), w.index(id).unwrap());
+    assert!(w.world.passes(a, b), "held, it passes the body");
     let back = ServerWorld::from_save(w.data.clone(), w.to_save(), super::tests::terrain());
-    assert_eq!(back.world.joints().len(), joints - 1);
     assert_eq!(back.carried(ada), None);
+    let (a, b) = (back.index(ada).unwrap(), back.index(id).unwrap());
+    assert!(!back.world.passes(a, b), "let go, it meets the body again");
 }
 
 /// Walking off with loads up to the most the hands lift: none tips her over (her balance

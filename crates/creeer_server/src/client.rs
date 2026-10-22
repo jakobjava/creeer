@@ -343,7 +343,8 @@ impl Connection {
             }
         }
         if let (Some(w), Some(pose)) = (&self.welcome, p.pose()) {
-            poses.insert(w.avatar, pose);
+            let drawn = poses.insert(w.avatar, pose);
+            self.in_own_hands(&mut poses, drawn, pose);
         }
         poses
     }

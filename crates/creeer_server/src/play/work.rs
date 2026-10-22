@@ -187,3 +187,60 @@ fn carrying(play: &Play, k: usize, (me, there, id): (DVec3, DVec3, EntityId), mi
     }
     act
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::play::scenes::{scene, terrain};
+
+    /// The whole scene: every strike asked falls, and every load taken up is carried until it
+    /// is thrown (the arms give, so the body's bob and jerks shake no load free).
+    #[test]
+    fn at_work_every_blow_falls_and_no_load_is_dropped() {
+        let s = scene("work").expect("the scene");
+        let mut play = Play::new((s.build)(terrain()), s.name, s.players, &terrain());
+        let (mut strikes, mut blows, mut grabs, mut throws, mut drops) = (0, 0, 0, 0, 0);
+        let mut held_before = [false; 8];
+        let mut threw = [0u32; 8];
+        for t in 0..s.ticks.0 {
+            let acts = (s.script)(t, &play);
+            for (k, a) in acts.iter().enumerate() {
+                for c in &a.commands {
+                    match c {
+                        Command::Throw(_) => threw[k] = t,
+                        Command::Strike { .. } => strikes += 1,
+                        _ => {}
+                    }
+                }
+            }
+            play.tick(&acts);
+            blows += play.server.world.take_blows().len();
+            for (k, before) in held_before.iter_mut().enumerate().skip(STRIKERS) {
+                let a = play.client(k).welcome.as_ref().map(|w| w.avatar);
+                let held = a.and_then(|a| play.server.world.carried(a)).is_some();
+                if held && !*before {
+                    grabs += 1;
+                }
+                if *before && !held {
+                    if t - threw[k] < 20 {
+                        throws += 1;
+                    } else {
+                        drops += 1;
+                    }
+                }
+                *before = held;
+            }
+        }
+        println!(
+            "{strikes} strikes, {blows} blows; {grabs} taken up, {throws} thrown, {drops} dropped"
+        );
+        assert!(
+            strikes > 30 && blows == strikes,
+            "{blows} of {strikes} blows fell"
+        );
+        assert!(
+            throws >= 8 && drops == 0,
+            "{drops} dropped, {throws} thrown"
+        );
+    }
+}

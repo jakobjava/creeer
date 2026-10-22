@@ -177,8 +177,10 @@ impl Session {
         came.sort_unstable();
         for id in came {
             let Some(i) = world.index(id) else { continue };
-            let joined =
-                (world.world.joints().iter()).any(|j| j.a.0 == i || j.b.is_some_and(|b| b.0 == i));
+            // (A joint's side, or a load in someone's hands: not predicted on its own.)
+            let joined = world.in_hands(id)
+                || (world.world.joints().iter())
+                    .any(|j| j.a.0 == i || j.b.is_some_and(|b| b.0 == i));
             let drawn = world.drawn(i);
             let kind = shapes.kind(id, &world.world.bodies[i], (&drawn, joined), world.tick);
             self.outbox.push_back(Queued {
