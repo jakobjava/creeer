@@ -65,9 +65,22 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut view = PlanetView::singleplayer()?;
     let terrain = Arc::clone(&view.terrain);
     play(&mut view, 0.0)?;
-    // A land spot with relief: the first point between 300 and 1500 m above the datum.
+    // A land spot with relief: the first point between 300 and 1500 m above the datum where the
+    // sun climbs as high as asked (the sphere's first points lie by the pole); for `surface`, the
+    // spawn itself (bodies are simulated only near a player), where it reaches 4°.
+    let asked = if view_name == "surface" {
+        -1.0
+    } else {
+        det::sin(sun_elevation.to_radians())
+    };
+    let highest = |d: DVec3| {
+        (0..200)
+            .map(|i| view.sun_direction_at(f64::from(i) / 200.0).dot(d))
+            .fold(f64::MIN, f64::max)
+    };
     let up = fibonacci_sphere(5000)
-        .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
+        .filter(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
+        .find(|&d| highest(d) >= asked)
         .ok_or("no land spot found")?;
     view.day_fraction = day_for_sun(&view, up, sun_elevation);
     view.day_speed = 0.0;
@@ -229,6 +242,11 @@ fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
         if rising && error < best.0 {
             best = (error, f);
         }
+    }
+    // Far from the equator or in winter, the sun may never stand that high: say so.
+    let reached = det::asin(view.sun_direction_at(best.1).dot(up)).to_degrees();
+    if (reached - elevation).abs() > 1.0 {
+        eprintln!("the sun reaches {reached:.1}° here at most, not {elevation}°");
     }
     best.1
 }
