@@ -57,6 +57,8 @@ impl ServerWorld {
         this.items.pockets = (save.items.pockets.into_iter())
             .map(|(id, pockets)| (EntityId(id), pockets))
             .collect();
+        this.items.taken_set = save.items.taken.iter().copied().collect();
+        this.items.taken = save.items.taken;
         this.next_machine = save.machines.iter().map(|m| m.id + 1).max().unwrap_or(1);
         this.machines = (save.machines.iter())
             .map(|m| super::machines::Placed::restored(m, Powerhouse::new()))
@@ -111,6 +113,7 @@ impl ServerWorld {
                 pockets: (self.items.pockets.iter())
                     .map(|(id, p)| (id.0, p.clone()))
                     .collect(),
+                taken: self.items.taken.clone(),
             },
         }
     }

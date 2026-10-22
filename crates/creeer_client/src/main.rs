@@ -57,6 +57,7 @@ mod lab_plots;
 mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
+mod loose_view;
 mod models;
 mod people;
 mod people_ground;
@@ -73,6 +74,7 @@ mod physics_view;
 #[cfg(test)]
 mod physics_view_tests;
 mod planet_aim;
+mod planet_camera;
 mod planet_net;
 mod planet_shot;
 mod planet_ui;

@@ -25,6 +25,7 @@ impl ServerWorld {
                 | Command::PutIn(_)
                 | Command::TakeFrom { .. }
                 | Command::Open(_)
+                | Command::Pick { .. }
         );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
@@ -65,6 +66,9 @@ impl ServerWorld {
                 self.take_from(by.ok_or("only a player")?, container, *item)?;
             }
             Command::Open(target) => self.open(by.ok_or("only a player")?, target)?,
+            Command::Pick { loose, pocket } => {
+                self.pick(by.ok_or("only a player")?, *loose, *pocket)?
+            }
             Command::Kit { item, at } => {
                 within(*at)?;
                 self.drop_kit(*item, *at)?;

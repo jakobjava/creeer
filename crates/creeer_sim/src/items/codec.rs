@@ -33,6 +33,10 @@ impl Encode for Item {
                         w.f64(radius);
                         w.f64(length);
                     }
+                    Form::Lump { size } => {
+                        w.u8(3);
+                        w.put(&size);
+                    }
                 }
                 w.f64(p.wall);
                 w.f64(p.wear);
@@ -70,6 +74,7 @@ impl Decode for Item {
                         radius: r.finite()?,
                         length: r.finite()?,
                     },
+                    3 => Form::Lump { size: r.get()? },
                     _ => return Err(r.error("unknown form")),
                 };
                 let piece = Piece {

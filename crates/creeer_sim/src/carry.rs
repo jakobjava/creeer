@@ -25,6 +25,15 @@ const THROW: f64 = 128.0;
 const FOREARM_AND_HAND: f64 = 0.0252;
 /// A man's mass (kg): the engineer without his suit and pack.
 const BODY: f64 = 80.0;
+/// Both arms' mass (kg): upper arm, forearm and hand, 4.94 % of a man's each (de Leva 1996).
+/// The hands' strength moves them too, so even a pebble is lifted no faster than an arm moves.
+pub const ARMS: f64 = 2.0 * 0.0494 * BODY;
+
+/// The acceleration the hands lift a load of `mass` (kg) with: half what their strength leaves
+/// over its weight gives it and the arms (m/s²; not positive: too heavy to lift).
+pub fn spare(mass: f64) -> f64 {
+    0.5 * (STRENGTH - mass * G) / (mass + ARMS)
+}
 
 /// Where a load is held, from the body's centre at `centre`, upright along `up`, facing
 /// `facing` (horizontal): at the elbows' height, a forearm's length ahead of them.

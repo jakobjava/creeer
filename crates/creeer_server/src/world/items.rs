@@ -4,17 +4,13 @@
 //! exactly one place, a body, a pocket or a container, so mass and matter are conserved. What
 //! the pockets hold is carried on the body (`character::set_load`).
 
+use super::item_bodies::body_of;
 use super::*;
-use creeer_math::det;
 use creeer_net::message::{Inventory, ItemView, StoreView, Target};
-use creeer_physics::world::hull::Hull;
 use creeer_sim::carry;
 use creeer_sim::items::kit::{self, Densities, KitItem, describe};
-use creeer_sim::items::{Form, Item, Store};
+use creeer_sim::items::{Item, Store};
 use std::collections::{BTreeMap, BTreeSet};
-
-/// The angle a heap of loose matter stands at (rad): 35°, dry sand and gravel's angle of repose.
-const REPOSE: f64 = 0.61;
 
 /// The items of a world.
 #[derive(Debug, Default)]
@@ -27,17 +23,25 @@ pub struct Items {
     pub(super) open: BTreeMap<EntityId, EntityId>,
     /// The avatars whose inventory changed since their players were told.
     pub(super) changed: BTreeSet<EntityId>,
-    densities: Option<Densities>,
+    pub(super) densities: Option<Densities>,
     kit: Vec<KitItem>,
     /// The starting outfit's pockets, empty.
-    outfit: Vec<Store>,
+    pub(super) outfit: Vec<Store>,
+    /// What lies loose on the ground (G1.6c, `loose.rs`), the rocks it is of, and what of it
+    /// was picked up (in order), as a set too.
+    pub(super) loose: Option<creeer_sim::scatter::Scatter>,
+    pub(super) rocks: creeer_terrain::geology::rocks::RockTable,
+    pub(super) taken: Vec<u64>,
+    pub(super) taken_set: BTreeSet<u64>,
 }
 
 impl Items {
     /// From the packs (an item a pack lacks is simply not there to make).
-    pub(super) fn from_data(data: &Data) -> Self {
+    pub(super) fn from_data(data: &Data, terrain: &Terrain) -> Self {
         let outfit: Vec<String> = character::bones::STARTING_OUTFIT.map(String::from).into();
         Self {
+            loose: creeer_sim::scatter::Scatter::from_data(data, terrain).ok(),
+            rocks: creeer_terrain::geology::rocks::RockTable::from_data(data).unwrap_or_default(),
             densities: Densities::from_data(data).ok(),
             kit: kit::kit(data).unwrap_or_default(),
             outfit: kit::pockets(data, &outfit).unwrap_or_default(),
@@ -53,62 +57,18 @@ impl Items {
     }
 }
 
-/// A body for `item` with its centre at `at`, at rest: a piece as its shape, a bulk as a heap
-/// (a cone at its angle of repose).
-pub(super) fn body_of(item: &Item, at: DVec3) -> Body {
-    let (shape, friction) = match item {
-        Item::Piece(p, _) => (
-            match p.form {
-                Form::Block { size } => Shape::Box { half: size * 0.5 },
-                Form::Ball { radius } => Shape::Sphere { radius },
-                Form::Rod { radius, length } => prism(radius, length),
-            },
-            0.6,
-        ),
-        Item::Bulk(b) => (heap(b.volume()), 0.7),
+fn view(store: &Store, densities: Option<&Densities>) -> StoreView {
+    let colour = |i: &Item| match i {
+        Item::Piece(p, _) => densities?.colour(&p.material),
+        Item::Bulk(_) => None,
     };
-    let mut body = Body::rigid(shape, item.mass(), at, DT);
-    body.structure.orientation[0] = upright(at);
-    body.friction = friction;
-    body.solver.reset_history(&body.structure);
-    body
-}
-
-/// A rod as a sixteen-sided prism along x.
-fn prism(radius: f64, length: f64) -> Shape {
-    let points: Vec<DVec3> = (0..32)
-        .map(|k| {
-            let a = f64::from(k % 16) * std::f64::consts::TAU / 16.0;
-            let (s, c) = det::sin_cos(a);
-            let x = if k < 16 { -0.5 } else { 0.5 } * length;
-            DVec3::new(x, radius * c, radius * s)
-        })
-        .collect();
-    Shape::Hull(Arc::new(Hull::new(&points).expect("a prism is a hull").0))
-}
-
-/// A heap of `volume` (m³): a cone at the angle of repose, as a hull.
-fn heap(volume: f64) -> Shape {
-    // V = π·r²·h/3 with h = r·tan(repose).
-    let tan = det::tan(REPOSE);
-    let r = det::cbrt(3.0 * volume / (std::f64::consts::PI * tan));
-    let mut points: Vec<DVec3> = (0..16)
-        .map(|k| {
-            let (s, c) = det::sin_cos(f64::from(k) * std::f64::consts::TAU / 16.0);
-            DVec3::new(r * c, 0.0, r * s)
-        })
-        .collect();
-    points.push(DVec3::new(0.0, r * tan, 0.0));
-    Shape::Hull(Arc::new(Hull::new(&points).expect("a cone is a hull").0))
-}
-
-fn view(store: &Store) -> StoreView {
     StoreView {
         name: store.name.clone(),
         volume: store.volume(),
         items: (store.items.iter())
             .map(|i| ItemView {
                 text: describe(i),
+                colour: colour(i),
                 mass: i.mass(),
                 room: i.room(),
             })
@@ -128,14 +88,12 @@ impl ServerWorld {
 
     /// What avatar `id`'s player sees of what they carry.
     pub fn inventory(&self, id: EntityId) -> Inventory {
-        let pockets = self.items.pockets.get(&id);
-        let pockets = pockets.map_or_else(
-            || self.items.outfit.iter().map(view).collect(),
-            |p| p.iter().map(view).collect(),
-        );
+        let d = self.items.densities.as_ref();
+        let pockets = (self.items.pockets.get(&id)).unwrap_or(&self.items.outfit);
+        let pockets = pockets.iter().map(|p| view(p, d)).collect();
         let open = (self.items.open.get(&id))
             .and_then(|c| Some((*c, self.items.bodies.get(c)?.store()?)))
-            .map(|(c, store)| (c, view(&store)));
+            .map(|(c, store)| (c, view(&store, d)));
         Inventory { pockets, open }
     }
 
@@ -309,7 +267,7 @@ impl ServerWorld {
         Ok(())
     }
 
-    fn hands_free(&self, by: EntityId) -> Result<(), String> {
+    pub(super) fn hands_free(&self, by: EntityId) -> Result<(), String> {
         if self.carrying.contains_key(&by) {
             return Err("hands full".into());
         }

@@ -46,4 +46,7 @@
     (name: "gold", formula: "Au", density: "19300 kg/m^3"),
     // Coal macerals (mostly vitrinite) as an average organic composition.
     (name: "coal matter", formula: "CH0.8O0.08N0.015S0.005", density: "1300 kg/m^3"),
+    // Rhyolitic glass (obsidian): rhyolite's oxides (SiO₂ 73, Al₂O₃ 13, K₂O 5, Na₂O 4 wt %) as
+    // one formula, its charges balanced; 2.35–2.6 g/cm³ measured.
+    (name: "rhyolitic glass", formula: "K0.11Na0.13Al0.26Si1.22O2.95", density: "2400 kg/m^3"),
 ]

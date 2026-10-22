@@ -41,6 +41,7 @@ fn bodies_are_drawn_as_what_they_are() {
         restitution: crate_.restitution,
         surface: [210.0e9, 0.3, 0.002],
         predicted: true,
+        colour: None,
     };
     assert_eq!(
         kind(&crate_, &Drawn::Thing, false),

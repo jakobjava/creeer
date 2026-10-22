@@ -235,3 +235,7 @@ The probe now draws at 60 and at 144 a second, a jump from standing, and gates e
 - Standing still, the drawn body faces the way it last walked, which may not be the load's way until it walks.
 - The client's prediction of its avatar knows nothing of the load (its weight on the body): corrected rarely, as measured.
 - The throw is Cross's one-handed overarm law for 57 g to 3.4 kg, used for heavier loads thrown with both hands.
+
+## Amended in G1.6c (2026-10-22): the hands move the arms too
+
+Picking up a 14 g stone (ADR-0029), the hands planned its lift to elbow height in two ticks (the strength over so small a mass) and tore it from their hold. The lift's acceleration is now half of what the hands' strength leaves over the load's weight, shared by the load and both arms (`carry::spare`; the arms 4.94 % of a man's mass each, de Leva 1996): a pebble rises in about 0.8 s, a 15 kg box a little slower than before. A load whose lift time is zero (already where the hands hold it) no longer divides 0 by 0 (`hands.rs`, found in G1.6a).

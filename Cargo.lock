@@ -786,6 +786,7 @@ dependencies = [
  "creeer_thermal",
  "proptest",
  "rayon",
+ "ron",
  "serde",
 ]
 

@@ -122,7 +122,7 @@ impl ServerWorld {
         let surroundings = Surroundings::of(terrain.planet(), &species)
             .expect("the planet's air is of known gases");
         let tools = creeer_sim::tools::Tool::all(&data).unwrap_or_default();
-        let items = items::Items::from_data(&data);
+        let items = items::Items::from_data(&data, &terrain);
         Self {
             data,
             terrain,
@@ -331,9 +331,13 @@ impl ServerWorld {
 }
 
 mod carry;
+mod item_bodies;
 mod items;
 #[cfg(test)]
 mod items_tests;
+mod loose;
+#[cfg(test)]
+mod loose_tests;
 mod spawn;
 mod survival;
 #[cfg(test)]

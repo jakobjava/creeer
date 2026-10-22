@@ -75,6 +75,9 @@ pub enum Command {
     TakeFrom { container: Target, item: u16 },
     /// Look into the container the player reaches for (its contents come with the inventory).
     Open(Target),
+    /// Pick up loose thing `loose` from the ground (G1.6c: a stone or a branch the scatter put
+    /// there, by its id): into the hands, or into the first pocket it fits.
+    Pick { loose: u64, pocket: bool },
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -244,6 +247,11 @@ impl Encode for ClientMessage {
                         w.u8(18);
                         w.put(target);
                     }
+                    Command::Pick { loose, pocket } => {
+                        w.u8(19);
+                        w.u64(*loose);
+                        w.put(pocket);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -303,6 +311,10 @@ impl Decode for ClientMessage {
                     item: index(r)?,
                 },
                 18 => Command::Open(r.get()?),
+                19 => Command::Pick {
+                    loose: r.u64()?,
+                    pocket: r.get()?,
+                },
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {

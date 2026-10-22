@@ -36,8 +36,16 @@ impl PlanetView {
 
     /// Puts away what the hands hold, or the item the crosshair is on.
     pub fn stow(&mut self, camera: &Camera) {
+        let loose = target(self, camera)
+            .filter(|t| t.in_reach)
+            .and_then(|t| t.loose);
         if self.carrying() {
             self.send(Command::Stow(None));
+        } else if let Some(loose) = loose {
+            self.send(Command::Pick {
+                loose,
+                pocket: true,
+            });
         } else if let Some(t) = self.reached(camera) {
             self.send(Command::Stow(Some(t)));
         }
@@ -90,6 +98,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
                                 item: u16::try_from(k).unwrap_or(u16::MAX),
                             });
                         }
+                        swatch(ui, item.colour);
                         ui.label(&item.text);
                     });
                 }
@@ -111,6 +120,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
                                 item: u16::try_from(k).unwrap_or(u16::MAX),
                             });
                         }
+                        swatch(ui, item.colour);
                         ui.label(&item.text);
                     });
                 }
@@ -136,5 +146,12 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
     view.inventory = shown;
     if let Some(command) = asked {
         view.send(command);
+    }
+}
+
+/// A square of an item's colour: what it looks like (a stone is known by its colour).
+fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
+    if let Some([r, g, b]) = colour {
+        ui.colored_label(egui::Color32::from_rgb(r, g, b), "■");
     }
 }

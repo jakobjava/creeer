@@ -80,6 +80,8 @@ pub enum Look {
     Canvas,
     /// Sea water.
     Water,
+    /// A material by its colour (sRGB): an item, or a stone (G1.6c).
+    Colour([u8; 3]),
 }
 
 /// What the renderer needs from one tick.

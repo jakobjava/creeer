@@ -1,5 +1,6 @@
 //! The `ITEM` section (version 10, G1.6a): the bodies that are items (`crate::items`), by their
-//! entity ids, and what each avatar's pockets hold. Without it (an earlier version), nothing is
+//! entity ids, what each avatar's pockets hold, and the loose things picked up from the ground
+//! (G1.6c, `crate::scatter`), in order. Without it (an earlier version), nothing is
 //! an item and every pocket is empty.
 
 use super::SaveError;
@@ -13,12 +14,14 @@ pub struct SavedItems {
     pub bodies: Vec<(u32, Item)>,
     /// Avatars' pockets: their entity ids (in order) and pockets.
     pub pockets: Vec<(u32, Vec<Store>)>,
+    /// Loose things picked up, by id, in the order taken.
+    pub taken: Vec<u64>,
 }
 
 impl SavedItems {
     /// Whether there is nothing to keep.
     pub fn is_empty(&self) -> bool {
-        self.bodies.is_empty() && self.pockets.is_empty()
+        self.bodies.is_empty() && self.pockets.is_empty() && self.taken.is_empty()
     }
 }
 
@@ -35,6 +38,10 @@ pub(super) fn items_bytes(items: &SavedItems) -> Vec<u8> {
         w.u32(*id);
         w.put(pockets);
     }
+    w.varint(items.taken.len() as u64);
+    for id in &items.taken {
+        w.u64(*id);
+    }
     w.finish()
 }
 
@@ -47,6 +54,9 @@ pub(super) fn items_from(bytes: &[u8]) -> Result<SavedItems, SaveError> {
     let pockets = (0..r.count(5)?)
         .map(|_| Ok((r.u32()?, r.get()?)))
         .collect::<Result<Vec<_>, DecodeError>>()?;
+    let taken = (0..r.count(8)?)
+        .map(|_| r.u64())
+        .collect::<Result<Vec<_>, _>>()?;
     r.end()?;
     let ordered = |ids: &mut dyn Iterator<Item = u32>| {
         let ids: Vec<u32> = ids.collect();
@@ -57,7 +67,11 @@ pub(super) fn items_from(bytes: &[u8]) -> Result<SavedItems, SaveError> {
             "items not in order of their entities".into(),
         ));
     }
-    Ok(SavedItems { bodies, pockets })
+    Ok(SavedItems {
+        bodies,
+        pockets,
+        taken,
+    })
 }
 
 #[cfg(test)]

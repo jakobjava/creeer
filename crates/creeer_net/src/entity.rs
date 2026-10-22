@@ -78,6 +78,8 @@ pub struct Matter {
     pub surface: [f64; 3],
     /// Whether a client may predict it: a lone rigid body, no joint's side.
     pub predicted: bool,
+    /// Its material's colour (sRGB), if it is an item (G1.6c): what it is made of shows.
+    pub colour: Option<[u8; 3]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -146,6 +148,13 @@ impl Encode for Kind {
                     w.f64(v);
                 }
                 w.u8(u8::from(matter.predicted));
+                match matter.colour {
+                    Some([r, g, b]) => {
+                        w.u8(1);
+                        w.raw(&[r, g, b]);
+                    }
+                    None => w.u8(0),
+                }
             }
             Self::Character {
                 player,
@@ -260,6 +269,12 @@ fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
     let (mass, friction, restitution) = (r.finite()?, r.finite()?, r.finite()?);
     let surface = [r.finite()?, r.finite()?, r.finite()?];
     let predicted = flag(r)?;
+    let colour = if flag(r)? {
+        let c = r.raw(3)?;
+        Some([c[0], c[1], c[2]])
+    } else {
+        None
+    };
     if mass <= 0.0 || friction < 0.0 || !(0.0..=1.0).contains(&restitution) {
         return Err(r.error("a body's matter out of range"));
     }
@@ -269,5 +284,6 @@ fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
         restitution,
         surface,
         predicted,
+        colour,
     })
 }

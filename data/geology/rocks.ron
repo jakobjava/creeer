@@ -68,4 +68,12 @@
     // samples).
     (name: "ilmenite basalt", color: "#2f2f35", porosity: 0.05, ore: true, minerals: [
         ("plagioclase", 0.35), ("augite", 0.35), ("ilmenite", 0.18), ("olivine", 0.12)]),
+    // Tool stone (G1.6c): found loose, as nodules in its host (`loose.ron`), never as ground.
+    // Chert (flint where it grows in chalk): microcrystalline quartz, a little calcite and iron
+    // staining left from the limestone it formed in; grey-brown.
+    (name: "chert", color: "#5f5a55", porosity: 0.01, minerals: [
+        ("quartz", 0.97), ("calcite", 0.02), ("goethite", 0.01)]),
+    // Obsidian: rhyolitic volcanic glass with a little magnetite dust, which makes it black.
+    (name: "obsidian", color: "#1e1c22", porosity: 0.0, minerals: [
+        ("rhyolitic glass", 0.99), ("magnetite", 0.01)]),
 ]

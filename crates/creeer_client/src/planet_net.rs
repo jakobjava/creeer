@@ -5,7 +5,7 @@
 
 use crate::animate::Body;
 use crate::people::DrawnPerson;
-use crate::physics_sandbox::PhysicsSnapshot;
+use crate::physics_sandbox::{Look, PhysicsSnapshot};
 use creeer_math::Frame64;
 use creeer_math::glam::DQuat;
 use creeer_math::glam::DVec3;
@@ -173,8 +173,10 @@ impl PlanetSession {
             let Some(pose) = poses.get(id) else { continue };
             let (p, q) = (pose.position, pose.orientation);
             match kind {
-                Kind::Body(Shape::Box(half), _) => {
+                Kind::Body(Shape::Box(half), matter) => {
                     out.boxes.push((p, q, *half));
+                    out.box_look
+                        .push(matter.colour.map_or(Look::Crate, Look::Colour));
                     // Its age as of the moment drawn (G1.3c).
                     let age = c.ages.get(id).map_or((0.0, 0.0), |a| {
                         let exposure = a.exposure_at(c.drawn_at(), TICK_RATE);
@@ -212,10 +214,20 @@ impl PlanetSession {
                 }
                 // Drawn with its person.
                 Kind::Segment { .. } => {}
-                // The sandbox makes no rocks: a hull is drawn as the ball around it.
-                Kind::Body(Shape::Hull(corners), _) => {
-                    let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
-                    out.spheres.push((p, radius));
+                // An item's hull (a stone, a stick: G1.6c) as the box about it in its colour; the
+                // sandbox's other hulls as the ball around them.
+                Kind::Body(Shape::Hull(corners), matter) => {
+                    if let Some(colour) = matter.colour {
+                        let (lo, hi) = (corners.iter())
+                            .fold((DVec3::MAX, DVec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
+                        out.boxes
+                            .push((p + q * ((lo + hi) * 0.5), q, (hi - lo) * 0.5));
+                        out.box_look.push(Look::Colour(colour));
+                        out.box_age.push((0.0, 0.0));
+                    } else {
+                        let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
+                        out.spheres.push((p, radius));
+                    }
                 }
                 Kind::Structure(frame) => {
                     let broken = c.broken.get(id);

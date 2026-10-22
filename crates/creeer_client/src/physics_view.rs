@@ -182,6 +182,14 @@ pub fn draw(
             Look::Radiator => WHITE_PAINT,
             Look::Canvas => CANVAS,
             Look::Water => WATER,
+            Look::Colour([r, g, b]) => Material::dielectric(
+                [
+                    f32::from(r) / 255.0,
+                    f32::from(g) / 255.0,
+                    f32::from(b) / 255.0,
+                ],
+                0.85,
+            ),
         }
         .aged(exposure, wear);
         match meshes.models.crate_box {

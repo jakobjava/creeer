@@ -31,6 +31,8 @@ pub enum Drawn {
     },
     /// Segment `index` of the fallen character whose avatar is `person`.
     Segment { person: EntityId, index: u8 },
+    /// An item (G1.6c), in its material's colour.
+    Item { colour: [u8; 3] },
 }
 
 /// A name's hash (FNV-1a): the same on every machine.
@@ -106,7 +108,8 @@ impl ServerWorld {
                 };
             }
         }
-        Drawn::Thing
+        self.item_colour(id)
+            .map_or(Drawn::Thing, |colour| Drawn::Item { colour })
     }
 }
 

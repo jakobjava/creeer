@@ -48,6 +48,7 @@ impl Connection {
             ServerMessage::Machines(list) => self.machines = list,
             ServerMessage::Profile(report) => self.profile = Some(report),
             ServerMessage::Inventory(inventory) => self.inventory = inventory,
+            ServerMessage::Taken(ids) => self.taken.extend(ids),
             ServerMessage::Own {
                 gas,
                 health,

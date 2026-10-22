@@ -83,10 +83,10 @@ impl ServerWorld {
         if self.players[load].is_some() || self.carrying.values().any(|c| c.load == id) {
             return Err("not to be carried".into());
         }
-        // Lifted with at most half the strength its weight leaves the hands.
+        // Lifted with at most half the strength its weight leaves the hands, which move the arms
+        // too.
         let mass = self.mass_of(load);
-        let gravity = carry::STRENGTH / carry::MOST_LIFTED;
-        let spare = 0.5 * (carry::STRENGTH / mass - gravity);
+        let spare = carry::spare(mass);
         if spare <= 0.0 {
             return Err(format!("{mass:.0} kg: too heavy to lift"));
         }

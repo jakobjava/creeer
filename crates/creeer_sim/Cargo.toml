@@ -22,6 +22,7 @@ creeer_rates.workspace = true
 creeer_terrain.workspace = true
 creeer_thermal.workspace = true
 rayon.workspace = true
+ron.workspace = true
 serde.workspace = true
 
 [lints]

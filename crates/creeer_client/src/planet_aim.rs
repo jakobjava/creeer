@@ -25,6 +25,8 @@ pub struct Target {
     /// How far from the hands (m), and whether within reach.
     pub from_hands: f64,
     pub in_reach: bool,
+    /// The loose thing it is on, if any (G1.6c: a stone or a branch, by its id).
+    pub loose: Option<u64>,
 }
 
 /// What the crosshair of `camera` is on, while the engineer walks: a thing within reach, or just
@@ -37,6 +39,26 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
     let hands = reach::hands(centre, up);
     let length = (camera.position - hands).length() + reach::REACH + NAMED;
     let meant = connection.aim(camera.position, camera.forward(), length)?;
+    // A stone or branch on the ground, if the ray meets one first (G1.6c).
+    let loose = (view.loose.as_ref())
+        .and_then(|l| l.aim(&connection.taken, camera.position, camera.forward(), length))
+        .filter(|(_, t)| *t < meant.distance);
+    if let Some((l, t)) = loose {
+        let point = camera.position + camera.forward() * t;
+        let from_hands = (point - hands).length();
+        return (from_hands <= reach::REACH + NAMED).then(|| Target {
+            aimed: Aimed {
+                body: None,
+                point,
+                distance: t,
+                seen: meant.seen,
+            },
+            what: crate::loose_view::name(&l),
+            from_hands,
+            in_reach: from_hands <= reach::REACH,
+            loose: Some(l.id),
+        });
+    }
     // From his eye: what is in the way, if anything.
     let eye = reach::eye(centre, up);
     let to = meant.point - eye;
@@ -50,6 +72,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
         what: name(aimed, &connection.kinds),
         from_hands,
         in_reach: from_hands <= reach::REACH,
+        loose: None,
     })
 }
 
@@ -104,10 +127,20 @@ impl PlanetView {
             self.send(Command::Drop);
             return;
         }
-        let Some(target) = target(self, camera).filter(|t| t.in_reach && t.aimed.body.is_some())
-        else {
+        let Some(target) = target(self, camera).filter(|t| t.in_reach) else {
             return;
         };
+        if let Some(loose) = target.loose {
+            self.wielding = None;
+            self.send(Command::Pick {
+                loose,
+                pocket: false,
+            });
+            return;
+        }
+        if target.aimed.body.is_none() {
+            return;
+        }
         self.wielding = None;
         let a = target.aimed;
         self.send(Command::Grab(Target {
@@ -136,6 +169,7 @@ mod tests {
             what: "box".into(),
             from_hands: 1.94,
             in_reach: true,
+            loose: None,
         };
         assert_eq!(label(&t), "box · 1.9 m");
         t.in_reach = false;

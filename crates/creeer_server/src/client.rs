@@ -83,8 +83,10 @@ pub struct Connection {
     /// server has it: not predicted), as the server last told them.
     pub health: f64,
     pub fallen: bool,
-    /// What the player carries, as the server last told it (G1.6a).
+    /// What the player carries, as the server last told it (G1.6a), and the loose things
+    /// picked up from the ground (G1.6c: not drawn).
     pub inventory: creeer_net::message::Inventory,
+    pub taken: BTreeSet<u64>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -131,6 +133,7 @@ impl Connection {
             health: 1.0,
             fallen: false,
             inventory: creeer_net::message::Inventory::default(),
+            taken: BTreeSet::new(),
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),
@@ -325,33 +328,6 @@ impl Connection {
         }
     }
 
-    /// Every entity's pose to draw it at now (the player's own avatar where it is predicted).
-    pub fn poses(&self) -> BTreeMap<EntityId, Pose> {
-        let mut poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
-        poses.retain(|id, _| self.kinds.contains_key(id));
-        if self.fallen {
-            return poses;
-        }
-        let Some(p) = &self.predicted else {
-            return poses;
-        };
-        // Bodies just out of the prediction slide to where they are interpolated; those in it
-        // are drawn as predicted (ADR-0025).
-        for (id, pose) in &mut poses {
-            pose.position += p.released(*id);
-        }
-        for (id, pose) in p.nearby() {
-            if poses.contains_key(&id) {
-                poses.insert(id, pose);
-            }
-        }
-        if let (Some(w), Some(pose)) = (&self.welcome, p.pose()) {
-            let drawn = poses.insert(w.avatar, pose);
-            self.in_own_hands(&mut poses, drawn, pose);
-        }
-        poses
-    }
-
     /// How far the prediction of the player's avatar was corrected.
     pub fn corrections(&self) -> crate::predicted::Corrections {
         self.predicted
@@ -395,4 +371,5 @@ impl Connection {
 mod aim;
 pub use aim::Aimed;
 mod apply;
+mod draw;
 mod receive;

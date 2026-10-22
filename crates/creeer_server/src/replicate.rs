@@ -51,11 +51,15 @@ pub fn kind(body: &Body, drawn: &Drawn, joined: bool) -> Kind {
                 };
             }
         }
-        Drawn::Thing => {}
+        Drawn::Thing | Drawn::Item { .. } => {}
     }
+    let colour = match drawn {
+        Drawn::Item { colour } => Some(*colour),
+        _ => None,
+    };
     match body.shapes.as_slice() {
         [(0, shape)] if body.structure.element_count() == 0 => {
-            Kind::Body(net_shape(shape), matter(body, joined))
+            Kind::Body(net_shape(shape), matter(body, joined, colour))
         }
         _ => Kind::Structure(frame(&body.structure, &offsets(&body.structure))),
     }
@@ -73,7 +77,7 @@ fn net_shape(shape: &Shape) -> NetShape {
 /// What a rigid body is made of, for a client's prediction (ADR-0025): a lone rigid body may
 /// be predicted; a joint's side (a ragdoll's) or a held one (a character's) is the server's
 /// alone.
-fn matter(body: &Body, joined: bool) -> Matter {
+fn matter(body: &Body, joined: bool, colour: Option<[u8; 3]>) -> Matter {
     let s = body.surface;
     Matter {
         mass: body.structure.total_mass(),
@@ -81,6 +85,7 @@ fn matter(body: &Body, joined: bool) -> Matter {
         restitution: body.restitution,
         surface: [s.youngs_modulus, s.poisson_ratio, s.rounding],
         predicted: !joined && !body.held,
+        colour,
     }
 }
 

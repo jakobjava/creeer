@@ -62,6 +62,7 @@ struct WearableDef {
 pub struct Densities {
     materials: MaterialTable,
     rocks: RockTable,
+    palette: creeer_art::palette::Palette,
 }
 
 impl Densities {
@@ -73,6 +74,7 @@ impl Densities {
         Ok(Self {
             materials: MaterialTable::from_data(data)?,
             rocks: RockTable::from_data(data).map_err(|e| e.to_string())?,
+            palette: creeer_art::palette::Palette::from_data(data)?,
         })
     }
 
@@ -82,6 +84,23 @@ impl Densities {
             let rock = self.rocks.rock(material)?;
             Some(self.rocks.rocks[usize::from(rock)].density)
         })
+    }
+
+    /// The colour of `material` (sRGB), as it is drawn: a rock's own, or the palette's token
+    /// for an engineering material's kind (`art-style.md` §3).
+    pub fn colour(&self, material: &str) -> Option<[u8; 3]> {
+        use creeer_materials::engineering::Kind;
+        if let Some(rock) = self.rocks.rock(material) {
+            return Some(self.rocks.rocks[usize::from(rock)].color);
+        }
+        let token = match self.materials.get(material)?.kind {
+            Kind::Metal => "steel",
+            Kind::Wood => "timber",
+            Kind::Concrete | Kind::Rock => "concrete",
+            Kind::Glass => "glass",
+            Kind::Ice => "ice",
+        };
+        Some(self.palette.token(token)?.shade.fixed()?.0)
     }
 
     /// `kit` made, as a new empty piece.
@@ -144,9 +163,9 @@ pub fn pockets(data: &Data, outfit: &[String]) -> Result<Vec<Store>, String> {
     Ok(out)
 }
 
-/// What a player sees of `item`: what it is made of, its size, and its mass. A bulk shows its
-/// mass and volume and its grains, not what it is made of (ADR-0028: that is for the player
-/// to find out, G3 on).
+/// What a player sees of `item`: what it is made of, its size, and its mass. A found stone and
+/// a bulk show their size, mass and grains, not what they are (ADR-0028: telling the rocks
+/// apart is the player's to learn, by their colour, weight and how they break).
 pub fn describe(item: &Item) -> String {
     match item {
         Item::Piece(p, inside) => {
@@ -158,6 +177,12 @@ pub fn describe(item: &Item) -> String {
                     size.z * 100.0
                 ),
                 Form::Ball { radius } => format!("{:.0} cm across", radius * 200.0),
+                Form::Lump { size } => format!(
+                    "a stone of {:.0} × {:.0} × {:.0} cm",
+                    size.x * 100.0,
+                    size.y * 100.0,
+                    size.z * 100.0
+                ),
                 Form::Rod { radius, length } => {
                     format!(
                         "{:.0} cm long, {:.0} mm thick",
@@ -171,6 +196,9 @@ pub fn describe(item: &Item) -> String {
             } else {
                 String::new()
             };
+            if matches!(p.form, Form::Lump { .. }) {
+                return format!("{size}, {:.2} kg", item.mass());
+            }
             format!("{}, {size}, {:.2} kg{holds}", p.material, item.mass())
         }
         Item::Bulk(b) => format!(

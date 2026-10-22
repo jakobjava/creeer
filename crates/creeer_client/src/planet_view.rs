@@ -6,7 +6,7 @@
 //! Everything is in the planet's rotating frame (centre at the origin, axis +Y). The sun turns
 //! about the axis once per sidereal day (a stand-in until the orbits of F4).
 
-use crate::physics_sandbox::PhysicsSnapshot;
+use crate::physics_sandbox::{Look, PhysicsSnapshot};
 use crate::planet_net::PlanetSession;
 use creeer_math::det;
 use creeer_math::glam::{DQuat, DVec3};
@@ -69,8 +69,9 @@ pub struct PlanetView {
     pub walking: bool,
     /// The tool the player asked to hold (G1.4c), by its index in the tools' table.
     pub wielding: Option<u8>,
-    /// Whether the inventory window is shown (G1.6a).
+    /// Whether the inventory window is shown (G1.6a), and what lies loose about (G1.6c).
     pub inventory: bool,
+    pub loose: Option<crate::loose_view::LooseView>,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -153,6 +154,7 @@ impl PlanetView {
             walking: false,
             wielding: None,
             inventory: false,
+            loose: crate::loose_view::LooseView::new(&terrain),
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),
@@ -171,7 +173,17 @@ impl PlanetView {
 
     /// What there is to draw now.
     pub fn snapshot(&self) -> PhysicsSnapshot {
-        self.session.snapshot()
+        let mut out = self.session.snapshot();
+        // What lies loose, as boxes in its colours (G1.6c).
+        if let Some(loose) = &self.loose {
+            let rocks = &self.terrain.planet().geology.rocks;
+            for (c, q, half, colour) in loose.boxes(&self.session.connection.taken, rocks) {
+                out.boxes.push((c, q, half));
+                out.box_look.push(Look::Colour(colour));
+                out.box_age.push((0.0, 0.0));
+            }
+        }
+        out
     }
 
     /// Chunks in memory, and still to come (queued or being built).
@@ -183,6 +195,10 @@ impl PlanetView {
     /// chunks the simulation's edits touched, and chooses the chunks to draw.
     pub fn update_terrain(&mut self, renderer: &mut Renderer, camera: DVec3) {
         let generation = self.session.connection.edits_generation;
+        if let Some(loose) = &mut self.loose {
+            let edits = (generation, self.session.connection.edits.log().len());
+            loose.update(&self.terrain, camera, edits);
+        }
         if generation != self.seen_edits.0 {
             // All edits were replaced: rebuild everything that is cached.
             self.streamer
@@ -373,20 +389,4 @@ impl PlanetView {
         place(ground + up * height, heading * c - up * s)
     }
 }
-
-/// A camera at `position` looking along `forward`, level with the local horizon.
-pub fn place(position: DVec3, forward: DVec3) -> Camera {
-    place_up(position, forward, position.normalize())
-}
-
-/// A camera at `position` looking along `forward`, level with the horizon of `up` (for
-/// frames not centred on a planet).
-pub fn place_up(position: DVec3, forward: DVec3, up: DVec3) -> Camera {
-    let mut camera = Camera::new(position);
-    camera.level_to(up);
-    // Yaw and pitch of `forward` in the horizon frame.
-    let local = camera.frame.inverse() * forward.normalize();
-    camera.yaw = det::atan2(-local.x, -local.z);
-    camera.pitch = det::asin(local.y.clamp(-0.995, 0.995));
-    camera
-}
+pub use crate::planet_camera::{place, place_up};

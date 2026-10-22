@@ -21,6 +21,8 @@ pub enum Form {
     Ball { radius: f64 },
     /// A rod (a cylinder) along its length.
     Rod { radius: f64, length: f64 },
+    /// A lump (an ellipsoid) of these axes' lengths: a stone's shape (G1.6c).
+    Lump { size: DVec3 },
 }
 
 impl Form {
@@ -30,13 +32,14 @@ impl Form {
             Self::Block { size } => size.x * size.y * size.z,
             Self::Ball { radius } => 4.0 / 3.0 * PI * radius * radius * radius,
             Self::Rod { radius, length } => PI * radius * radius * length,
+            Self::Lump { size } => PI / 6.0 * size.x * size.y * size.z,
         }
     }
 
     /// The edges of the box it fits in, longest first (m).
     pub fn extents(&self) -> [f64; 3] {
         let mut e = match *self {
-            Self::Block { size } => [size.x, size.y, size.z],
+            Self::Block { size } | Self::Lump { size } => [size.x, size.y, size.z],
             Self::Ball { radius } => [2.0 * radius; 3],
             Self::Rod { radius, length } => [length, 2.0 * radius, 2.0 * radius],
         };

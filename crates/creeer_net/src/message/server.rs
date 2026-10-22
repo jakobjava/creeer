@@ -78,6 +78,9 @@ pub enum ServerMessage {
     /// What the player carries (G1.6a, `creeer_sim::items`): their pockets, and the container
     /// they last looked into while it is in reach. Sent when it changes.
     Inventory(Inventory),
+    /// Loose things picked up from the ground (G1.6c, `creeer_sim::scatter`), by id: no longer
+    /// drawn. A client joining is told all, then each as it is taken.
+    Taken(Vec<u64>),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -220,6 +223,13 @@ impl Encode for ServerMessage {
                 w.u8(12);
                 w.put(inventory);
             }
+            Self::Taken(ids) => {
+                w.u8(13);
+                w.varint(ids.len() as u64);
+                for id in ids {
+                    w.u64(*id);
+                }
+            }
         }
     }
 }
@@ -301,6 +311,11 @@ impl Decode for ServerMessage {
             ),
             11 => Self::Swing(r.get()?, r.u32()?),
             12 => Self::Inventory(r.get()?),
+            13 => Self::Taken(
+                (0..r.count(8)?)
+                    .map(|_| r.u64())
+                    .collect::<Result<_, _>>()?,
+            ),
             _ => return Err(r.error("unknown server message")),
         })
     }

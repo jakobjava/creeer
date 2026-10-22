@@ -58,6 +58,8 @@ pub struct Session {
     /// What it will be, once the queue lets the spawn out.
     pending: HashSet<EntityId>,
     edits_told: usize,
+    /// How many of the loose things picked up it has been told (G1.6c).
+    taken_told: usize,
     commands: f64,
 }
 
@@ -75,6 +77,7 @@ impl Session {
             spawned: HashSet::new(),
             pending: HashSet::new(),
             edits_told: 0,
+            taken_told: 0,
             commands: COMMAND_BURST,
         }
     }
@@ -113,6 +116,7 @@ impl Session {
             self.queue(&ServerMessage::Despawn(id));
         }
         self.edits_told = 0;
+        self.taken_told = 0;
         self.inputs = InputQueue::default();
     }
     /// Entity `id` became something else (a character fallen, or up again): if the client
@@ -211,6 +215,12 @@ impl Session {
                 first,
                 log: part.to_bytes(),
             });
+        }
+        // What was picked up from the ground (everyone's, as the terrain is).
+        let taken = world.taken_since(self.taken_told);
+        if !taken.is_empty() {
+            self.taken_told += taken.len();
+            self.queue(&ServerMessage::Taken(taken.to_vec()));
         }
     }
 

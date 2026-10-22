@@ -1,0 +1,39 @@
+// What lies loose on the ground (G1.6c, ADR-0029): stones and fallen branches, scattered by
+// creeer_sim::scatter in cells of the cube-sphere, the same on every machine from the planet's
+// seed. They are scenery, at no cost per tick, until a player picks one up.
+//
+// Stones: for each ground rock (its name in rocks.ron), how many lie on a square metre and the
+// largest's longest edge (m). Their sizes follow fragmentation's power law, N(> d) ∝ d⁻²
+// (Turcotte 1986), from `smallest` up; their shapes are a pebble's, about 1 : 0.7 : 0.5 (Zingg).
+// `from_below`: the stones are of the rock beneath (soil's are its bedrock's). `nodules`: a share
+// of the stones is another rock grown in this one (chert in limestone; obsidian beside
+// andesite's flows).
+//
+// Branches: on each ground listed, how many lie on a square metre, of what wood (an engineering
+// material's id), and their lengths and radii (m).
+//
+// To add a ground: a line under `stones` with its rock's name. To add tool stone: a rock in
+// rocks.ron, then a nodule share on its host. Densities are estimates of open ground (a
+// stream bed or a scree slope holds far more), to be refined with survey data.
+(
+    // A cell's side (m) and the smallest stone kept (m; smaller is gravel, dug, not picked).
+    cell: 8.0,
+    smallest: 0.02,
+    stones: [
+        (ground: "soil", per_m2: 0.15, largest: 0.15, from_below: true),
+        (ground: "gravel", per_m2: 2.0, largest: 0.10),
+        (ground: "granite", per_m2: 0.8, largest: 0.5),
+        (ground: "andesite", per_m2: 0.8, largest: 0.4, nodules: [("obsidian", 0.08)]),
+        (ground: "basalt", per_m2: 0.8, largest: 0.4),
+        (ground: "gabbro", per_m2: 0.6, largest: 0.5),
+        (ground: "sandstone", per_m2: 0.6, largest: 0.4),
+        (ground: "shale", per_m2: 1.0, largest: 0.2),
+        (ground: "limestone", per_m2: 0.8, largest: 0.4, nodules: [("chert", 0.12)]),
+        (ground: "schist", per_m2: 0.8, largest: 0.3),
+        (ground: "gneiss", per_m2: 0.8, largest: 0.4),
+        (ground: "marble", per_m2: 0.6, largest: 0.4),
+    ],
+    branches: [
+        (ground: "soil", per_m2: 0.06, wood: "spruce_c24", length: (0.3, 1.6), radius: (0.006, 0.035)),
+    ],
+)

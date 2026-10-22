@@ -37,6 +37,7 @@ fn items_scene() -> Save {
     save.items = SavedItems {
         bodies: vec![(first, Item::Piece(crate_, held))],
         pockets: vec![(second, vec![pocket])],
+        taken: vec![(1 << 40) | 7, 3],
     };
     save
 }

@@ -124,6 +124,7 @@ fn server_messages_read_back() {
         restitution: 0.25,
         surface: [210.0e9, 0.3, 0.002],
         predicted: true,
+        colour: None,
     };
     let still = Matter {
         predicted: false,
@@ -178,6 +179,7 @@ fn server_messages_read_back() {
     });
     let item = |text: &str| crate::message::ItemView {
         text: text.into(),
+        colour: Some([95, 90, 85]),
         mass: 0.04,
         room: 2.7e-5,
     };
