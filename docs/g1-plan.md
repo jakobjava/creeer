@@ -273,11 +273,17 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - the trunk the simulated body, turned to its motion (the body, a box, never turns); arms swing against the legs; treading water where it is over 0.4 m deep, arms out in the air; a tool's swing hook for G1.4 (`Animator::swing`); fallen, the ragdoll's segments exactly, and standing up blends from them over 0.8 s;
   - validated: standing still is the model at rest; walking and running up and down slopes to the friction angle (walking only near it, where the legs' push just holds the body), every planted sole on the ground to rounding and no touching corner moving; cadence 114 steps a minute and 0.74 m steps at 1.4 m/s, 171 a minute running at 3.5 m/s, and as many steps taken as the gait says; the hips bob 63 mm walking at 1.4 m/s;
   - cost: 0.009 ms a walking character a frame and 0.4 µs a ground query on the planet (about six a frame);
-  - drawn on the style board (fallen) and as a walk-cycle sheet (`--style-board <file> --walk <sheet>`); their golden images come with G1.3h's check. Icons and the style board
+  - drawn on the style board (fallen) and as a walk-cycle sheet (`--style-board <file> --walk <sheet>`); their golden images come with G1.3h's check.
+
+#### G1.3h Icons and the style board
 
 - **Icons** (`art-style.md` §9): `--icon <model>` renders orthographic three-quarter views at 64 and 128 px on a transparent background, cached by the pack's content hash. Silhouettes of any two items must overlap by IoU < 0.8; the test runs for the items there are (the crate and the jetpack now; tools come in G1.4).
 - **The style board** (`--style-board`): every model on the five grounds, at noon and in the evening. The HUD and the inventory join it in G1.9.
 - **Golden images.** They are compared on the development machine with a perceptual tolerance, because rendering differs between GPUs (`cargo xtask style-board --check`). An intended change is approved by the user with the image.
+- **Done** (2026-10-22; ADR-0026 decision 10, Validation, Measured and rejected):
+  - icons (`icons.rs`, `icon_image.rs`): nearly orthographic (40 radii away, as the camera has no orthographic projection), rendered four times larger and reduced, transparent by triangulation matting on two backgrounds at a fixed exposure (`Renderer::fix_exposure`), over a soft drop shadow; cached in `target/icons/<pack hash>/`. The jetpack left the starting outfit (a later wearable, not modelled yet), so the crate is the only item yet: the silhouette test runs over every item and tool and gets its pairs with G1.4;
+  - the style board (`--style-board <dir> --all`): crates at three ages, a steel member and a painted sphere (the smooth primitives, G1.3c's goldens), the engineer in his base layer, his outfit and fallen, on the five grounds at noon and in the evening, from 20 m on soil, the walk sheet and the icons;
+  - golden images (`tests/golden/style-board`, half size, `golden.rs`): CIEDE2000 per pixel, a mean of at most 1.15 and at most 0.1 % of pixels past the least noticeable 2.3. WARP against the RTX goldens differs by a mean of 0.04–0.08; a sun 4° lower and a just-noticeable recolour of the sphere are caught. `cargo xtask style-board [--save]`, and `cargo xtask ci` runs the check on the development machine.
 
 #### G1.3i The review
 

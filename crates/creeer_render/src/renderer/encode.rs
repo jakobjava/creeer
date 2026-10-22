@@ -252,6 +252,7 @@ impl Renderer {
 
         // Measure the image and adapt the exposure (compute), then tonemap with it.
         self.exposure.encode(
+            &self.queue,
             &mut encoder,
             &self.globals_bind_group,
             self.size,

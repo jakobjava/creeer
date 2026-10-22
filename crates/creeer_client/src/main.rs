@@ -15,6 +15,7 @@
 //! and reports frame-time percentiles (CPU scene build + GPU, no vsync).
 //! `creeer_client --style-board <file.png>` and `creeer_client --shimmer [--frames <n>]` judge
 //! the look (G1.3): the crate at its ages, and how much of the image flickers in slow motion.
+//! `creeer_client --icon <model> [--out <dir>]` renders an item's icons (G1.3h).
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
@@ -39,9 +40,12 @@ mod control_rigs;
 mod demo;
 mod drive_bench;
 mod fly_camera;
+mod golden;
 mod gpu_passes;
 mod headless;
 mod hulls;
+mod icon_image;
+mod icons;
 mod lab;
 mod lab_ellingham;
 mod lab_plots;
@@ -165,6 +169,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--style-board") {
         return style_board::run(&args);
+    }
+    if args.iter().any(|a| a == "--icon") {
+        return icons::run(&args);
     }
     if args.iter().any(|a| a == "--shimmer") {
         return shimmer::run(&args);

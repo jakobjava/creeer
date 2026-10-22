@@ -289,7 +289,7 @@ In Factorio's spirit, not a copy of it.
    - player colours told apart (§3.6);
    - the approved exceptions still needed (§4);
    - the forbidden effects absent from the renderer's settings (§5).
-5. **The style board.** A headless scene (`--style-board`) renders every asset on the five grounds, at noon and in the evening, plus the HUD and an inventory window. Its golden images are checked on every change to an asset, a shader or the palette. A difference is either a fix or an intended change, approved with the image.
+5. **The style board.** A headless scene (`--style-board`) renders every asset on the five grounds, at noon and in the evening, plus the HUD and an inventory window. Its golden images are checked on every change to an asset, a shader or the palette (`cargo xtask style-board`, run by `cargo xtask ci` on the development machine; G1.3h). A difference is either a fix or an intended change, approved with the image.
 6. **Review at every milestone's end.** The user looks at the style board as part of the demo. New subjects (machines in G2–G3, vehicles in G6) get a §8 entry here before their first model.
 7. **Changes need the user's approval**, recorded below with the date and the reason.
 
