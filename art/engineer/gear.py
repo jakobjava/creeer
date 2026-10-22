@@ -38,10 +38,12 @@ def hand(tag, side):
     return R.Limb((f"elbow.{tag}", f"wrist.{tag}", wrist + 2 * (centre - wrist)), side)
 
 
-def strap(p, piece, host, limb, t, only, width=0.02, buckle=True, bins=32):
+def strap(p, piece, host, limb, t, only, width=0.02, buckle=True, bins=32, on=None):
     """A leather strap round `host` where it crosses `limb` at `t` (m along) (round its part on
-    the segments `only`) through `bins` points, with a steel buckle on its outer side."""
+    the segments `only`) through `bins` points, with a steel buckle on its outer side; weighted
+    as `host` is on the segments `on` (`only` by default)."""
     held = R.weights(host.data, only)
+    on = on or only
     points, normals, axis, radius = T.loop_round(host, limb, t, held, gap=0.0015, bins=bins, width=width)
     T.cinch_round(host, limb, t, held, radius, width)
     bm = bmesh.new()
@@ -51,13 +53,13 @@ def strap(p, piece, host, limb, t, only, width=0.02, buckle=True, bins=32):
         along = (points[(k + 1) % len(points)] - points[k - 1]).normalized()
         metal = bmesh.new()
         T.buckle(metal, points[k] + normals[k] * 0.0025, normals[k], along, width * 1.1, width * 1.3, tube_radius=0.0018)
-        T.place(p, piece, "buckle", metal, "steel", host, only)["hardware"] = "close"
+        T.place(p, piece, "buckle", metal, "steel", host, on)["hardware"] = "close"
         # The strap's end through the buckle, hanging free past it.
         n = normals[k]
         # Drooping in a smooth curve (three points bent it 25° at one edge, 1.1 mm off its curve).
         end = [points[k] + n * (0.004 + 0.001 * s) + along * (0.034 * s) - UP * (0.006 * s * s) for s in np.linspace(0.0, 1.0, 6)]
         T.band(bm, end, [n] * len(end), [axis] * len(end), width * 0.9, 0.0025, closed=False)
-    obj = T.place(p, piece, "strap", bm, "leather", host, only)
+    obj = T.place(p, piece, "strap", bm, "leather", host, on)
     obj["hardware"] = "whole"
     T.sharpen(obj.data, 50)
 
@@ -184,10 +186,11 @@ def pads(p):
             joint = limb.lengths[0]
             only = tuple(f"{s}.{tag}" for s in (("thigh", "shank") if piece == "knee_pads" else ("upper_arm", "forearm")))
             # One strap behind each knee, round the calf's top under the knee's pit (at the joint,
-            # it crumpled into the fold of the knee bent to its limit); the elbows' patches are
-            # sewn on.
+            # it crumpled into the fold of the knee bent to its limit), held by the shank alone (as
+            # the cloth beneath, a third the thigh's, the knee bent fully put that cloth 9.5 mm
+            # through it); the elbows' patches are sewn on.
             for dt in ((0.05,) if piece == "knee_pads" else ()):
-                strap(p, piece, host, limb, joint + dt, only)
+                strap(p, piece, host, limb, joint + dt, only, on=(f"shank.{tag}",))
 
 
 def goggles(p):

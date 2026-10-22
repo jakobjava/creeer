@@ -2,7 +2,8 @@
 // (models/engineer.glb, art/engineer.py), and what it hides when worn: regions of the body and of
 // the wearables beneath, never drawn under it. The starting outfit wears them all, the base
 // layer under the coverall; "naked", the body wears the base layer alone (art-style.md §8).
-// The regions are creeer_art::model_skin::REGIONS.
+// The regions are creeer_art::model_skin::REGIONS. Whatever a worn wearable encloses is hidden
+// too, without a list: the model's parts `in.<wearable>` (art/engineer/inside.py).
 [
     // The vest and shorts: the shorts cover the pelvis; the vest's neck and short sleeves leave
     // the torso's and upper arms' tops bare, the shorts the thighs' feet.

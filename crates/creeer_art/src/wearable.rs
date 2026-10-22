@@ -1,10 +1,11 @@
 //! Wearables (G1.3f, ADR-0026 decision 7): each a piece of the engineer's model (its parts named
 //! `<piece>:<region>@<level>`, [`crate::model_skin`]), and what it hides when worn: regions of
-//! the body and of the wearables beneath, never drawn under it (`data/wearables.ron`). What a
-//! worn outfit draws is held to the character's budget at each level (`art-style.md` §7).
+//! the body and of the wearables beneath, never drawn under it (`data/wearables.ron`), and
+//! whatever lies inside it (the parts [`inside`] it). What a worn outfit draws is held to the
+//! character's budget at each level (`art-style.md` §7).
 
 use crate::model::{Class, Model};
-use crate::model_skin::{LEVELS, REGIONS};
+use crate::model_skin::{LEVELS, REGIONS, inside};
 use creeer_data::Data;
 use creeer_data::merge::ron_list;
 use serde::Deserialize;
@@ -35,7 +36,8 @@ impl Wearable {
 }
 
 /// The triangles drawn at each level when the body wears `worn` (names among `wearables`):
-/// every part of the body and of the worn pieces but the regions they hide.
+/// every part of the body and of the worn pieces but the regions they hide and what lies inside
+/// them.
 pub fn drawn(model: &Model, wearables: &[Wearable], worn: &[&str]) -> [usize; LEVELS as usize] {
     let hidden: BTreeSet<(&str, &str)> = (wearables.iter())
         .filter(|w| worn.contains(&w.name.as_str()))
@@ -48,7 +50,8 @@ pub fn drawn(model: &Model, wearables: &[Wearable], worn: &[&str]) -> [usize; LE
     let mut out = [0; LEVELS as usize];
     for part in &model.parts {
         let shown = part.piece == "body" || worn.contains(&part.piece.as_str());
-        if shown && !hidden.contains(&(part.piece.as_str(), part.region.as_str())) {
+        let within = inside(&part.region).is_some_and(|w| worn.contains(&w));
+        if shown && !within && !hidden.contains(&(part.piece.as_str(), part.region.as_str())) {
             out[usize::from(part.level)] += part.triangles();
         }
     }
@@ -56,10 +59,19 @@ pub fn drawn(model: &Model, wearables: &[Wearable], worn: &[&str]) -> [usize; LE
 }
 
 /// What is wrong with `wearables` as pieces of `model`: a name no piece of it has, a hidden
-/// piece that is neither the body nor a wearable, a region not one of [`REGIONS`].
+/// piece that is neither the body nor a wearable, a region not one of [`REGIONS`], a part inside
+/// no wearable.
 pub fn problems(model: &Model, wearables: &[Wearable]) -> Vec<String> {
     let pieces: BTreeSet<&str> = model.parts.iter().map(|p| p.piece.as_str()).collect();
     let mut out = Vec::new();
+    let within: BTreeSet<(&str, &str)> = (model.parts.iter())
+        .filter_map(|p| inside(&p.region).map(|w| (p.piece.as_str(), w)))
+        .collect();
+    for (piece, w) in within {
+        if !wearables.iter().any(|o| o.name == w) {
+            out.push(format!("{piece}'s part in.{w} lies inside no wearable"));
+        }
+    }
     for w in wearables {
         if !pieces.contains(w.name.as_str()) {
             out.push(format!("wearable {} is no piece of the model", w.name));

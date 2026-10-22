@@ -23,6 +23,7 @@ import bmesh
 import bpy
 from mathutils.bvhtree import BVHTree
 import detail as D
+import inside as I
 import outfit as O
 import regions as Rg
 import skinning as S
@@ -234,12 +235,13 @@ def copy(scene, obj):
     return out
 
 
-def level(scene, joined, hardware, piece, k, rig):
+def level(scene, joined, hardware, piece, k, rig, covers):
     """Piece `joined` at level `k`: decimated, its edges thickened, its small hardware (a
     `hardware` object per level, or None) added whole, baked from the ground up, triangulated,
-    divided into its regions. Decimated with the cloth, a button or an eyelet went first (its
-    error is small for being small) and came out a blob; whole, it is drawn close up, and the
-    larger pieces of it mid way too (`trims.place`)."""
+    divided into its regions (what the wearables over it enclose a region of its own,
+    `inside.Covers`). Decimated with the cloth, a button or an eyelet went first (its error is
+    small for being small) and came out a blob; whole, it is drawn close up, and the larger
+    pieces of it mid way too (`trims.place`)."""
     obj = copy(scene, joined)
     extra = copy(scene, hardware[k]) if hardware and hardware[k] is not None else None
     budget = BUDGET[piece] * LEVELS[k]
@@ -274,7 +276,8 @@ def level(scene, joined, hardware, piece, k, rig):
     with bpy.context.temp_override(object=obj, active_object=obj):
         bpy.ops.object.modifier_apply(modifier="triangles")
     clean(obj)
-    parts = Rg.split(scene, obj, piece, k, Rg.face_regions(obj, piece, O.openings()), rig)
+    regions = covers.relabel(obj, piece, k, Rg.face_regions(obj, piece, O.openings()))
+    parts = Rg.split(scene, obj, piece, k, regions, rig)
     bpy.data.objects.remove(obj)
     return parts
 
@@ -294,9 +297,11 @@ def build():
         bpy.data.objects.remove(obj)
     D.detail(scene, pieces)
     S.complete_weights(pieces, next(o for o in pieces["body"] if o.name == "skin"))
+    covers = I.Covers(next(o for o in pieces["body"] if o.name == "skin"))
     rig = S.armature(scene)
     parts = []
-    for piece, objs in pieces.items():
+    for piece in I.order(pieces):
+        objs = pieces[piece]
         # Hardware: whole at the close-up level; then a "mid" piece whole mid way too and gone
         # far off, a "whole" one (a strap) decimated with the cloth, a "close" one gone.
         Sf.number_parts(objs)
@@ -307,7 +312,9 @@ def build():
         joined = (join(scene, piece, cloth), join(scene, piece, cloth + whole) if whole else None)
         hardware = (join(scene, piece, small) if small else None, join(scene, piece, mid) if mid else None, None)
         for k in range(len(LEVELS)):
-            parts += level(scene, joined[1] if k and joined[1] else joined[0], hardware, piece, k, rig)
+            made = level(scene, joined[1] if k and joined[1] else joined[0], hardware, piece, k, rig, covers)
+            covers.add(piece, k, made)
+            parts += made
         for obj in (*joined, *hardware):
             if obj is not None:
                 bpy.data.objects.remove(obj)

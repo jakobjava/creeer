@@ -1,9 +1,9 @@
 //! Skinned models (G1.3f, ADR-0026 decisions 6 and 7): the engineer and what he wears. A skinned
 //! file has one skin, its joints the ragdoll's segments by name, each bone's head at its joint
 //! with its parent in the ragdoll's standing frame. Its meshes are named
-//! `<piece>:<region>@<level>`: a piece (the body, a wearable), one of [`REGIONS`], and a level of
-//! detail (0 close-up, 1 mid, 2 far), so an outfit can leave out the regions it hides and draw
-//! each level by its screen error. The file stands at rest: each joint's place in the scene
+//! `<piece>:<region>@<level>`: a piece (the body, a wearable), one of [`REGIONS`] or what lies
+//! inside a wearable ([`inside`]), and a level of detail (0 close-up, 1 mid, 2 far), so an outfit
+//! can leave out the regions it hides and draw each level by its screen error. The file stands at rest: each joint's place in the scene
 //! undoes its inverse bind matrix, so the vertices as written are the model standing (glTF
 //! ignores a skinned mesh's own node's place).
 
@@ -32,6 +32,14 @@ pub const REGIONS: [&str; 18] = [
     "foot.L",
     "foot.R",
 ];
+
+/// The wearable a region `in.<wearable>` lies inside (G1.3f, ADR-0026 decision 7): the part of a
+/// piece that wearable encloses, hidden while it is worn (`art/engineer/inside.py`). Skinning
+/// cannot part the layers a joint closed fully presses together; hidden, the one beneath is not
+/// drawn there to show through.
+pub fn inside(region: &str) -> Option<&str> {
+    region.strip_prefix("in.").filter(|w| !w.is_empty())
+}
 
 /// The levels of detail: close-up, mid and far (`art-style.md` §7).
 pub const LEVELS: u8 = 3;
@@ -64,7 +72,8 @@ impl Part {
 /// `<piece>:<region>@<level>` read as its three.
 ///
 /// # Errors
-/// If it is not of that form, its region is not one of [`REGIONS`] or its level is past the last.
+/// If it is not of that form, its region is neither one of [`REGIONS`] nor [`inside`] a
+/// wearable, or its level is past the last.
 pub fn parse_part(name: &str) -> Result<(String, String, u8), String> {
     let bad = || format!("a part named {name:?}, not <piece>:<region>@<level>");
     let (piece, rest) = name.split_once(':').ok_or_else(bad)?;
@@ -73,7 +82,7 @@ pub fn parse_part(name: &str) -> Result<(String, String, u8), String> {
     if piece.is_empty() {
         return Err(bad());
     }
-    if !REGIONS.contains(&region) {
+    if !REGIONS.contains(&region) && inside(region).is_none() {
         return Err(format!("{name}: no region {region:?}"));
     }
     if level >= LEVELS {

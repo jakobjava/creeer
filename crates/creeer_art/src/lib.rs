@@ -32,6 +32,8 @@ mod model_skin_tests;
 mod model_tests;
 #[cfg(test)]
 mod palette_tests;
+#[cfg(test)]
+mod wearable_tests;
 
 pub use checks::{Finding, check};
 pub use colour::{Lab, Srgb, ciede2000};

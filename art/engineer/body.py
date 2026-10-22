@@ -254,6 +254,8 @@ SEGMENTS = ["pelvis", "torso", "head"] + [
 ]
 # The fitted body's waist and the base of its neck (m): the pelvis's and the torso's ends.
 WAIST, NECK_BASE = 1.083, 1.53
+# How far above the hip joints (m) the thighs' weight gives way to the pelvis's.
+HIP_FADE = 0.05
 
 
 def weigh_segments(body):
@@ -284,6 +286,17 @@ def weigh_segments(body):
             moved = shank[v.index] * t * t * (3.0 - 2.0 * t)
             shank[v.index] -= moved
             foot[v.index] += moved
+    # The waist the pelvis's: above each hip joint the thigh gives way to the pelvis over
+    # `HIP_FADE` (bone heat left the thigh a third of the weight at the belt, 13 cm above the
+    # joint, where the hip bone holds a belt: the hip flexed turned it 10 mm into the jacket).
+    for side, tag in ((1, "L"), (-1, "R")):
+        hip = joint("hip", side).z
+        thigh, pelvis = weights[f"thigh.{tag}"], weights["pelvis"]
+        for v in body.data.vertices:
+            t = min(max((v.co.z - hip) / HIP_FADE, 0.0), 1.0)
+            moved = thigh[v.index] * t * t * (3.0 - 2.0 * t)
+            thigh[v.index] -= moved
+            pelvis[v.index] += moved
     for name in SEGMENTS:
         attr = body.data.attributes.new(f"s.{name}", "FLOAT", "POINT")
         attr.data.foreach_set("value", weights[name])

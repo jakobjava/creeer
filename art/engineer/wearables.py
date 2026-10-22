@@ -21,11 +21,14 @@ def hides():
     return out
 
 
-def hidden(worn, table=None):
-    """{piece: regions} that the wearables `worn` hide, together."""
+def hidden(worn, table=None, pieces=()):
+    """{piece: regions} that the wearables `worn` hide, together: the regions they list, and in
+    each of `pieces` what lies inside each of them (its region `in.<wearable>`, `inside.py`)."""
     out = {}
-    for w, pieces in (table or hides()).items():
+    for w, listed in (table or hides()).items():
         if w in worn:
-            for piece, regions in pieces.items():
+            for piece, regions in listed.items():
                 out.setdefault(piece, set()).update(regions)
+    for piece in pieces:
+        out.setdefault(piece, set()).update(f"in.{w}" for w in worn)
     return out

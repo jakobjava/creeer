@@ -145,7 +145,11 @@ def bends():
 
     out = []
     for side in (1, -1):
-        ankle = B.joint("foot", side) + Vector((0.0, 0.0, O.SOLE))
+        # Round the posed boot's ankle, at the height `stiff` bends it: about the fitted body's
+        # (the feet apart before the legs are drawn in), the planes reached a few of its faces,
+        # and 230 still spanned the bend.
+        ankle = B.posed(B.joint("foot", side), side, "leg")
+        ankle.z = B.joint("foot", side).z + O.SOLE
         out += [(ankle + Vector((0.0, 0.0, dz)), Vector((0.0, 0.0, 1.0)), 0.09) for dz in (-BEND[0], BEND[1])]
     return out
 
@@ -188,6 +192,17 @@ def complete_weights(pieces, skin):
             weigh_rigidly(obj, f"foot.{side}")
     transfer([o for piece in ("base_layer", "gloves") for o in pieces[piece] if "s.pelvis" in o.data.attributes], skin, by_limb=False)
     transfer([o for o in pieces["coverall"] if "s.pelvis" in o.data.attributes], skin)
+    # The coverall's sleeves end at the wrists, held by the forearms: as the skin beneath, a cuff
+    # took the wrist's hand weight and turned with the hand, and the hand bent fully put the
+    # glove's cuff 11.5 mm through it.
+    for obj in pieces["coverall"]:
+        if "s.pelvis" in obj.data.attributes:
+            weights = segment_weights(obj)
+            for tag in "LR":
+                hand, forearm = weights[f"hand.{tag}"], weights[f"forearm.{tag}"]
+                weights[f"forearm.{tag}"] = [f + h for f, h in zip(forearm, hand)]
+                weights[f"hand.{tag}"] = [0.0] * len(hand)
+            give_weights(obj, weights)
     coverall = next(o for o in pieces["coverall"] if o.name == "coverall")
     transfer([o for o in pieces["jacket"] if "s.pelvis" in o.data.attributes], coverall)
     # The knee pads rigid on the kneecaps, which turn half as far as the shins: as the coverall

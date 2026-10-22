@@ -85,7 +85,7 @@ def build(level=LEVEL):
     stage(scene)
     path = str(ROOT / "target" / "art" / "engineer.blend")
     table = W.hides()
-    hidden = W.hidden(table, table)
+    hidden = W.hidden(table, table, ["body", *table])
     with bpy.data.libraries.load(path, link=False) as (source, target):
         target.objects = [n for n in source.objects if n.endswith(f"@{level}") and shown(n, hidden)]
     for obj in target.objects:

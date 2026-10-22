@@ -40,7 +40,9 @@ triangles, leave the toes 2 cm outside them, not drawn, the boots whole over the
 Skinned with dual quaternions, as the game skins (ADR-0026 decision 6; Blender's "preserve
 volume"): linear blending collapses the armpit and the inner elbow at the limits. Only points
 drawn count: a layer hidden whole under another (the base layer under the coverall) shows
-nowhere, whatever it pokes through.
+nowhere, whatever it pokes through. What lies inside a worn wearable (a piece's part
+`in.<wearable>`, `inside.py`) is hidden as the regions it lists are, each point judged on its
+segment's limb. A point's normal is the whole piece's: at a part's edge its own leaned off it.
 
 Joint limits as `bones.json` gives them (the ragdoll's): a hinge at each end of its range (the
 child turned by minus the angle about the axis: the elbow then bends forward, the knee back), a
@@ -65,7 +67,8 @@ from mathutils.bvhtree import BVHTree
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import reach  # noqa: E402  (after the path is set)
+import fit_report as F  # noqa: E402  (after the path is set)
+import reach  # noqa: E402
 import wearables as W  # noqa: E402
 
 ROOT = HERE.parent.parent
@@ -91,7 +94,13 @@ POKE, REACH, SEEN, BENEATH, OVERLAID = 0.002, 0.012, 2.0, 0.1, 0.03
 CHAINS = {"head": "head", "face": "head", "hair": "head", "neck": "trunk", "torso": "trunk", "pelvis": "trunk"}
 
 
+def part(region):
+    """The part a point's `region` names (an `in.<wearable>` part's, without its segment)."""
+    return region.split("/")[0]
+
+
 def chain(region):
+    region = region.split("/")[-1]
     return CHAINS.get(region) or region.replace("upper_arm", "arm").replace("forearm", "arm").replace("hand", "arm").replace("thigh", "leg").replace("shank", "leg").replace("foot", "leg")
 
 
@@ -166,14 +175,21 @@ def surfaces(objects):
             mesh.transform(obj.matrix_world)
             base = len(verts)
             region = obj.name.split(":")[1].split("@")[0]
-            for v in mesh.vertices:
+            # A part inside a wearable (`inside.py`) keeps each point's segment, for its limb.
+            names = {g.index: g.name for g in obj.vertex_groups}
+            for v, w in zip(mesh.vertices, obj.data.vertices):
                 verts.append(v.co.copy())
                 points.append(v.co.copy())
                 normals.append(v.normal.copy())
-                regions.append(region)
+                regions.append(f"{region}/{names[max(w.groups, key=lambda g: g.weight).group]}" if region.startswith("in.") else region)
             polys += [tuple(base + i for i in p.vertices) for p in mesh.polygons]
-            faces += [region] * len(mesh.polygons)
+            faces += [regions[base + p.vertices[0]] for p in mesh.polygons]
             obj.evaluated_get(graph).to_mesh_clear()
+        # Normals as the whole piece's: at a part's edge its own leaned off them.
+        total = {}
+        for p, n in zip(points, normals):
+            total[p.to_tuple(5)] = total.get(p.to_tuple(5), Vector()) + n
+        normals = [total[p.to_tuple(5)].normalized() for p in points]
         out[piece] = (points, normals, regions, BVHTree.FromPolygons(verts, polys), faces, polys)
     return out
 
@@ -188,7 +204,7 @@ def drawn(surfs, worn, hidden):
         verts += points
         gone = hidden.get(piece, ())
         for face, region in zip(own, faces):
-            if face not in gone:
+            if part(face) not in gone:
                 polys.append(tuple(base + i for i in region))
                 regions.append(face)
     return BVHTree.FromPolygons(verts, polys), regions
@@ -242,7 +258,7 @@ def misses(surfs, worn, hidden, under, slack):
             points, normals, regions = surfs[inner][:3]
             on = ON.get(outer)
             for p, n, r, below in zip(points, normals, regions, under[(outer, inner)]):
-                if r in hidden.get(inner, ()) or (on and not chain(r).startswith(on)):
+                if part(r) in hidden.get(inner, ()) or (on and not chain(r).startswith(on)):
                     continue
                 hit, normal, face, depth = tree.ray_cast(p + n * 1e-4, -n, REACH)
                 if hit is not None and normal.dot(n) > 0.0 and depth > max(POKE, slack[outer], slack[inner]) and near(chain(r), chain(faces[face])):
@@ -256,7 +272,7 @@ def misses(surfs, worn, hidden, under, slack):
         points, normals, own = surfs[piece][:3]
         overs = [o for o in worn if piece in OVER.get(o, ())]
         for p, n, r in zip(points, normals, own):
-            if r not in regions:
+            if part(r) not in regions:
                 continue
             out = n if piece == "body" else body.find_nearest(p)[1]
             if seen(tree, p, out) and not any(through(surfs[o], p, max(REACH, 3 * slack[o], 3 * slack[piece])) for o in overs):
@@ -282,60 +298,10 @@ def through(surf, p, reach=REACH):
     return q is not None and (p - q).dot(normal) > 0.0
 
 
-def boxes(objects):
-    """Each piece's share of points outside its segments' boxes (grown by 3 cm for the body, 5
-    cm for the rest), by segment, at rest."""
-    box = {}
-    for seg in BONES["segments"]:
-        c, h = g2b(seg["centre"]), seg["half"]
-        box[seg["name"]] = (c, Vector((h[0], h[2], h[1])))
-    out = {}
-    for piece, objs in objects.items():
-        grow = 0.03 if piece == "body" else 0.05
-        counts = {}
-        for obj in objs:
-            names = {g.index: g.name for g in obj.vertex_groups}
-            for v in obj.data.vertices:
-                if not v.groups:
-                    continue
-                seg = names[max(v.groups, key=lambda g: g.weight).group]
-                outside = True
-                for g in v.groups:
-                    if g.weight >= 0.2:
-                        c, h = box[names[g.group]]
-                        d = v.co - c
-                        outside = outside and any(abs(d[k]) > h[k] + grow for k in range(3))
-                n, bad = counts.get(seg, (0, 0))
-                counts[seg] = (n + 1, bad + outside)
-        out[piece] = {seg: bad / n for seg, (n, bad) in counts.items() if bad}
-    return out
 
 
-def through_by(pokes, verb="through"):
-    """The points poking through (or in contact), by the layers: how many, how deep at worst,
-    between which corners."""
-    groups = {}
-    for depth, outer, inner, p in pokes:
-        groups.setdefault((inner, outer), []).append((depth, p))
-    out = ""
-    for (inner, outer), ps in sorted(groups.items(), key=lambda g: -max(g[1])[0]):
-        lo = tuple(min(p[k] for _, p in ps) for k in range(3))
-        hi = tuple(max(p[k] for _, p in ps) for k in range(3))
-        out += f"; {inner} {verb} {outer} {len(ps)} (worst {1000 * max(ps)[0]:.1f} mm) in {lo}..{hi}"
-    return out
 
 
-def gaps(holes):
-    """The uncovered points by piece and region: how many, and between which corners."""
-    groups = {}
-    for piece, region, p in holes:
-        groups.setdefault((piece, region), []).append(p)
-    out = ""
-    for (piece, region), ps in sorted(groups.items(), key=lambda g: -len(g[1])):
-        lo = tuple(min(p[k] for p in ps) for k in range(3))
-        hi = tuple(max(p[k] for p in ps) for k in range(3))
-        out += f"; {piece} {region} {len(ps)} in {lo}..{hi}"
-    return out
 
 
 def outfits(pieces):
@@ -368,7 +334,7 @@ def main():
     slack = errors(objects, level)
     if level:
         print("art: fit: errors against the close-up level (mm): " + ", ".join(f"{p} {1000 * e:.1f}" for p, e in sorted(slack.items())))
-    for piece, shares in boxes(objects).items():
+    for piece, shares in F.boxes(objects).items():
         for seg, share in sorted(shares.items()):
             print(f"art: fit: {piece} outside {seg}'s box: {100 * share:.1f} %")
     for name, joint, axis, angle in poses():
@@ -377,13 +343,13 @@ def main():
             name += f" (to {share * abs(angle):.2f}: the arm meets the trunk)"
         surfs = surfaces(objects)
         for outfit, worn in outfits(objects):
-            hidden = W.hidden(worn, covering)
+            hidden = W.hidden(worn, covering, objects)
             pokes, holes, contacts = misses(surfs, worn, hidden, under, slack)
             if contacts:
-                print(f"art: fit: {name}: {outfit}: {len(contacts)} in contact{through_by(contacts, 'against')}")
+                print(f"art: fit: {name}: {outfit}: {len(contacts)} in contact{F.through_by(contacts, 'against')}")
             if pokes or holes:
                 failed = True
-                print(f"art: fit: {name}: {outfit}: {len(pokes)} poking through{through_by(pokes)}; {len(holes)} uncovered{gaps(holes)}")
+                print(f"art: fit: {name}: {outfit}: {len(pokes)} poking through{F.through_by(pokes)}; {len(holes)} uncovered{F.gaps(holes)}")
         print(f"art: fit: {name} checked")
     sys.exit(1 if failed else 0)
 
