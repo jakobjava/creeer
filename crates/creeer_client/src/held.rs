@@ -52,3 +52,23 @@ impl Held {
         ))
     }
 }
+
+impl Held {
+    /// Where in its swing (`animate::upper::swing`) a character holding tool `index` is, `seconds`
+    /// after the swing began: raising until its downswing (−1 to 0), striking (0 to 1, the head's
+    /// angle as the square of the time: its spin builds evenly), freeing the tool after the blow
+    /// (1 to 2); none past its cycle.
+    pub fn swing_progress(&self, index: u8, seconds: f64) -> Option<f64> {
+        use creeer_sim::strike::{CYCLE, TO_BLOW, swing};
+        let s = swing(self.tool(index)?);
+        Some(match seconds {
+            t if !(0.0..CYCLE).contains(&t) => return None,
+            t if t < s.raise => t / s.raise - 1.0,
+            t if t < TO_BLOW => {
+                let x = (t - s.raise) / s.strike;
+                x * x
+            }
+            t => 1.0 + (t - TO_BLOW) / (CYCLE - TO_BLOW),
+        })
+    }
+}

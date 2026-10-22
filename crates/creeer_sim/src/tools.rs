@@ -41,6 +41,10 @@ pub struct Tool {
     /// Where it is carried (m up from the handle's end: at its balance), and the radius there.
     pub carry: f64,
     pub carry_radius: f64,
+    /// Swung about the handle's end (G1.4e): its radius of gyration there (m), and how far out
+    /// from there it strikes (m).
+    pub gyration: f64,
+    pub strike: f64,
 }
 
 impl Tool {
@@ -82,6 +86,13 @@ pub fn problems(tools: &[Tool], models: &[Entry]) -> Vec<String> {
             out.push(format!(
                 "tool {at}: carried {} m up its {} m",
                 t.carry, t.length
+            ));
+        }
+        // (About the handle's end its inertia is at least its mass at its balance's.)
+        if !(t.gyration > t.carry && t.strike > t.carry && t.strike < 1.2 * t.length) {
+            out.push(format!(
+                "tool {at}: gyration {} m and strike {} m, balanced {} m up its {} m",
+                t.gyration, t.strike, t.carry, t.length
             ));
         }
         for r in [t.radius, t.carry_radius] {
@@ -127,7 +138,9 @@ mod tests {
             radius: 0.05,
             carry: 0.4,
             carry_radius: 0.005,
+            gyration: 0.2,
+            strike: 0.3,
         };
-        assert_eq!(problems(&[bad], &[]).len(), 6);
+        assert_eq!(problems(&[bad], &[]).len(), 7);
     }
 }

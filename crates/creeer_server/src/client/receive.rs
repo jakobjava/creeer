@@ -31,9 +31,16 @@ impl Connection {
                 self.kinds.remove(&id);
                 self.broken.remove(&id);
                 self.ages.remove(&id);
+                self.swings.remove(&id);
             }
             ServerMessage::Age(id, age) => {
                 self.ages.insert(id, age);
+            }
+            // (The player's own swing is its own, from when it asked.)
+            ServerMessage::Swing(id, at) => {
+                if self.welcome.as_ref().is_none_or(|w| w.avatar != id) {
+                    self.swings.insert(id, at);
+                }
             }
             ServerMessage::Edits { first, log } => self.edited(first, &log),
             ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),

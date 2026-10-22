@@ -65,6 +65,9 @@ pub enum ServerMessage {
     /// An entity's age (G1.3c, `creeer_sim::ageing`): sent after its spawn, and when its
     /// rate or wear changes.
     Age(EntityId, Age),
+    /// A character began a swing of the tool in its hand at network tick `at` (G1.4e): its
+    /// blow falls `creeer_sim::strike::TO_BLOW` later.
+    Swing(EntityId, u32),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -196,6 +199,11 @@ impl Encode for ServerMessage {
                 w.u32(age.at);
                 w.f64(age.wear);
             }
+            Self::Swing(id, at) => {
+                w.u8(11);
+                w.put(id);
+                w.u32(*at);
+            }
         }
     }
 }
@@ -274,6 +282,7 @@ impl Decode for ServerMessage {
                     wear: r.finite()?,
                 },
             ),
+            11 => Self::Swing(r.get()?, r.u32()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

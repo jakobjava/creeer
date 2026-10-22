@@ -104,3 +104,37 @@ impl Connection {
         best
     }
 }
+
+impl Connection {
+    /// Strikes `aimed` with the tool in hand (G1.4e): swings the player's own avatar at once,
+    /// from its own tick, and asks the server to begin the swing then (the server's word of it
+    /// is for the others).
+    pub fn strike(&mut self, aimed: Aimed) {
+        let own = self.predicted.as_ref().and_then(|p| p.tick());
+        let started = own.map_or(self.drawn_at, f64::from);
+        let target = creeer_net::message::Target {
+            body: aimed.body,
+            at: aimed.point,
+            seen: aimed.seen,
+        };
+        self.command(creeer_net::message::Command::Strike { target, started });
+        if let (Some(w), Some(tick)) = (&self.welcome, own) {
+            self.swings.insert(w.avatar, tick);
+        }
+    }
+
+    /// How long ago character `id` began the swing it is in (s), as it is drawn: the player's
+    /// own avatar at its own tick, any other a little in the past; none past its cycle.
+    pub fn swinging(&self, id: EntityId) -> Option<f64> {
+        let started = f64::from(*self.swings.get(&id)?);
+        let own = self.welcome.as_ref().is_some_and(|w| w.avatar == id);
+        let now = match self.predicted.as_ref().and_then(|p| p.tick()) {
+            Some(tick) if own => f64::from(tick),
+            _ => self.drawn_at,
+        };
+        let seconds = (now - started) / f64::from(creeer_net::channel::TICK_RATE);
+        (0.0..creeer_sim::strike::CYCLE)
+            .contains(&seconds)
+            .then_some(seconds)
+    }
+}

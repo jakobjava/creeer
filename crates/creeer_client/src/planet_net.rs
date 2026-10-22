@@ -203,6 +203,7 @@ impl PlanetSession {
                             look,
                             body,
                             wields: *wields,
+                            swing: c.swinging(*id),
                         });
                     }
                 }

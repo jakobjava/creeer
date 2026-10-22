@@ -13,19 +13,29 @@ pub const REACH: f64 = 2.5;
 /// at most (Source's lag compensation keeps one second).
 pub const HISTORY: u32 = 60;
 
-/// How far above the body's centre the hands hang, and the eyes see from (m), standing.
-fn heights() -> (f64, f64) {
+/// How far above the body's centre the hands hang, the eyes see from and the shoulders turn
+/// (m), standing.
+fn heights() -> (f64, f64, f64) {
     let centres = bones::centres();
     // The model stands on its feet at the origin, +y up; the body's centre is above them.
     let centre = character::heights().0;
     let hands = 0.5 * (centres[5].y + centres[11].y) - centre;
-    (hands, centres[2].y - centre)
+    // The joints at the upper arms' heads.
+    let joints = bones::joints();
+    let shoulder = |arm: usize| joints.iter().find(|j| j.0 == arm).map_or(0.0, |j| j.2.y);
+    let shoulders = 0.5 * (shoulder(3) + shoulder(9)) - centre;
+    (hands, centres[2].y - centre, shoulders)
 }
 
 /// Where a character's hands are measured from: its body's centre at `centre`, upright along
 /// `up`.
 pub fn hands(centre: DVec3, up: DVec3) -> DVec3 {
     centre + up.normalize() * heights().0
+}
+
+/// Where a character's arms turn from: their shoulders' centre (the swing's pivot).
+pub fn shoulders(centre: DVec3, up: DVec3) -> DVec3 {
+    centre + up.normalize() * heights().2
 }
 
 /// Where a character sees from (its head's centre).
@@ -52,6 +62,12 @@ mod tests {
         let (hands, eye) = (hands(centre, up).y, eye(centre, up).y);
         assert!((0.65..0.9).contains(&hands), "the hands {hands} m up");
         assert!((1.5..1.75).contains(&eye), "the eyes {eye} m up");
+        // Their shoulders, about 1.45 m.
+        let shoulders = shoulders(centre, up).y;
+        assert!(
+            (1.35..1.55).contains(&shoulders),
+            "the shoulders {shoulders} m up"
+        );
     }
 
     #[test]

@@ -51,6 +51,22 @@ fn client_messages_read_back() {
         Command::Look { skin: 9, hair: 0 },
         Command::Wield { tool: Some(3) },
         Command::Wield { tool: None },
+        Command::Strike {
+            target: Target {
+                body: Some(EntityId(42)),
+                at: DVec3::new(1.0, -2.0, 3e5),
+                seen: 1234.375,
+            },
+            started: 1240.0,
+        },
+        Command::Strike {
+            target: Target {
+                body: None,
+                at: DVec3::new(0.5, 0.0, -7.0),
+                seen: 9.0,
+            },
+            started: 12.5,
+        },
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -133,6 +149,7 @@ fn server_messages_read_back() {
         wear: 0.25,
     };
     back(&ServerMessage::Age(EntityId(42), age));
+    back(&ServerMessage::Swing(EntityId(7), 123_456));
     // Six hours of 60 Hz ticks later, a year more.
     assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
     assert!(

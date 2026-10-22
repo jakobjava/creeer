@@ -11,7 +11,10 @@ impl ServerWorld {
     pub fn apply(&mut self, command: &Command, by: Option<EntityId>) -> Result<(), String> {
         let _scope = profile::scope("command");
         // The sandbox's commands, within 500 m: a creative or test server's alone (G1.4d).
-        let sandbox = !matches!(command, Command::Look { .. } | Command::Wield { .. });
+        let sandbox = !matches!(
+            command,
+            Command::Look { .. } | Command::Wield { .. } | Command::Strike { .. }
+        );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
         }
@@ -33,6 +36,9 @@ impl ServerWorld {
                     .and_then(|i| self.players[i].clone())
                     .ok_or("only a player has a look")?;
                 self.set_look(&player, *skin, *hair);
+            }
+            Command::Strike { target, started } => {
+                self.strike(by.ok_or("only a player strikes")?, target, *started)?;
             }
             Command::Wield { tool } => {
                 let player = (by.and_then(|id| self.index(id)))

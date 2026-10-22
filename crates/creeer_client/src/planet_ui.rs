@@ -150,6 +150,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
             ui.label("Right mouse: look · WASD/Space/Ctrl: fly (speed follows altitude)");
             ui.label("V: walk the avatar (WASD, Space jumps, Shift runs, Ctrl: jetpack)");
             ui.label("Mouse wheel: speed · Left click: use tool at the crosshair");
+            ui.label("Walking: 1–4 take a tool in hand (0 puts it away); left click strikes");
         });
     request
 }

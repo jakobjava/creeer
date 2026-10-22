@@ -121,10 +121,9 @@ impl Animator {
         bones
     }
 
-    /// Character `key`'s tool swing, `progress` through it (0 raised, 1 struck; none: no
-    /// swing): the hook G1.4's tools time to the server's strikes. The right arm follows it.
-    // Called by G1.4's tools; until then by its test alone.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Character `key`'s tool swing, `progress` through it (−1 its pose, 0 raised, 1 struck, 2
+    /// its pose again; none: no swing; `upper::swing`), timed to the server's strikes (G1.4e).
+    /// The right arm follows it.
     pub fn swing(&mut self, key: u32, progress: Option<f64>) {
         if let Some(state) = self.states.get_mut(&key) {
             state.swing = progress;

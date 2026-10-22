@@ -107,3 +107,43 @@ fn a_walking_player_aimed_at_over_a_slow_link_is_reached_as_he_was_seen() {
         .unwrap_err();
     assert!(why.contains("not on the body"), "{why}");
 }
+
+#[test]
+fn a_strike_over_a_slow_link_is_seen_by_the_others_and_its_blow_falls() {
+    let (mut game, centre, up, east) = joined();
+    let ground = game.server.world.ground_under(centre + east * 1.3);
+    (game.server.world)
+        .apply(&Command::Crate(ground + up * 0.55), None)
+        .unwrap();
+    let id = *game.server.world.ids().last().unwrap();
+    game.clients[0].0.command(Command::Wield { tool: Some(2) });
+    game.run(60, still);
+    // She aims at the crate's top and strikes.
+    let client = &mut game.clients[0].0;
+    let drawn = client.poses()[&id].position;
+    let aimed = (client.aim(drawn + up * 3.0, -up, 5.0)).expect("the crate in her view");
+    client.strike(aimed);
+    let ada = client.welcome.as_ref().unwrap().avatar;
+    assert!(client.swinging(ada).is_some(), "her own swing at once");
+    let mine = game.clients[0].0.swings[&ada];
+    // A second on (the blow), and her word of it on its way: struck.
+    let mut blows = Vec::new();
+    let mut ticks = 0;
+    while blows.is_empty() && ticks < 150 {
+        game.run(1, still);
+        ticks += 1;
+        blows = game.server.world.take_blows();
+    }
+    assert_eq!(blows.len(), 1, "the blow fell");
+    assert_eq!(blows[0].on, Some(id));
+    // Bob was told when her swing began, as of his snapshots' ticks.
+    // Begun at her own tick if her word came in time, or when it came: never before.
+    let told = game.clients[1]
+        .0
+        .swings
+        .get(&ada)
+        .copied()
+        .expect("Bob saw her swing");
+    assert!(told >= mine, "begun at {told}, her own {mine}");
+    println!("struck {ticks} ticks after she asked; begun at {told}, her own tick {mine}");
+}

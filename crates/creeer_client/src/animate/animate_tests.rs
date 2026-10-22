@@ -279,9 +279,32 @@ fn a_swing_raises_and_strikes_with_the_right_arm() {
         let b = animator.bones(4, &body, dt, &flat);
         b[5].transform_point(bones::centres()[5])
     };
+    let still = hand(&mut animator, None);
     let raised = hand(&mut animator, Some(0.0));
     let struck = hand(&mut animator, Some(1.0));
-    let still = hand(&mut animator, None);
     assert!(raised.y > centre.y + 0.6, "raised overhead: {raised}");
     assert!(struck.z > still.z + 0.2, "struck down in front: {struck}");
+    // From its pose and back to it, without a jump: at the ends, as it is.
+    for progress in [-1.0, 2.0] {
+        let end = hand(&mut animator, Some(progress));
+        assert!(
+            (end - still).length() < 1e-9,
+            "{progress}: {end} against {still}"
+        );
+    }
+    // Raising, a little at a time: no step of a twentieth more than smoothstep's steepest, 1.5
+    // times the mean step along the hand's way.
+    let mut last = still;
+    let steps: Vec<f64> = (1..=20)
+        .map(|k| {
+            let next = hand(&mut animator, Some(-1.0 + f64::from(k) / 20.0));
+            let step = (next - last).length();
+            last = next;
+            step
+        })
+        .collect();
+    let mean = steps.iter().sum::<f64>() / 20.0;
+    for step in steps {
+        assert!(step < 1.55 * mean, "a jump of {step} m, the mean {mean} m");
+    }
 }

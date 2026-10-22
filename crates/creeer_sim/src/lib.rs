@@ -49,6 +49,7 @@ pub mod save;
 pub mod sea;
 #[cfg(test)]
 mod station_tests;
+pub mod strike;
 pub mod surroundings;
 #[cfg(test)]
 mod surroundings_tests;

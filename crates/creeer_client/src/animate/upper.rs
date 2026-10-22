@@ -185,12 +185,28 @@ pub fn airborne(turns: &mut [DQuat; 14]) {
     }
 }
 
-/// The right arm swinging a tool, `progress` through it: raised overhead at 0, struck down in
-/// front at 1 (the shoulder from 150° forward to 30°, the elbow straightening).
+/// The right arm swinging a tool, `progress` through it (G1.4e): from its pose as it is raised
+/// overhead (−1 to 0), struck down in front (0 to 1: the shoulder from 150° forward to 30°, the
+/// elbow straightening), and back to its pose (1 to 2).
 pub fn swing(turns: &mut [DQuat; 14], progress: f64) {
-    let x = progress.clamp(0.0, 1.0);
-    turns[SHOULDER[0]] = DQuat::from_rotation_x(-(2.6 - 2.1 * x));
-    turns[ELBOW[0]] = DQuat::from_rotation_x(-(1.2 - 1.0 * x));
+    let at = |x: f64| {
+        let x = x.clamp(0.0, 1.0);
+        [
+            DQuat::from_rotation_x(-(2.6 - 2.1 * x)),
+            DQuat::from_rotation_x(-(1.2 - 1.0 * x)),
+        ]
+    };
+    let (target, share) = match progress {
+        p if p < 0.0 => (at(0.0), 1.0 + p),
+        p if p <= 1.0 => (at(p), 1.0),
+        p => (at(1.0), 2.0 - p),
+    };
+    // Into the swing and out of it smoothly.
+    let s = share.clamp(0.0, 1.0);
+    let s = s * s * (3.0 - 2.0 * s);
+    for (joint, turn) in [SHOULDER[0], ELBOW[0]].into_iter().zip(target) {
+        turns[joint] = turns[joint].slerp(turn, s);
+    }
 }
 
 #[cfg(test)]

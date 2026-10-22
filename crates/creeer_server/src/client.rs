@@ -69,6 +69,8 @@ pub struct Connection {
     pub kinds: BTreeMap<EntityId, Kind>,
     /// Each entity's age, as the server last told it (G1.3c).
     pub ages: BTreeMap<EntityId, creeer_net::message::Age>,
+    /// When each character last began a swing (G1.4e: the network tick).
+    pub swings: BTreeMap<EntityId, u32>,
     /// The members of structures that are broken.
     pub broken: BTreeMap<EntityId, BTreeSet<u32>>,
     /// The world's machines as the server last told them (F7.4).
@@ -120,6 +122,7 @@ impl Connection {
             kinds: BTreeMap::new(),
             broken: BTreeMap::new(),
             ages: BTreeMap::new(),
+            swings: BTreeMap::new(),
             machines: Vec::new(),
             profile: None,
             gas: creeer_sim::character::TANK,

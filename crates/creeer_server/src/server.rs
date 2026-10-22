@@ -265,7 +265,7 @@ impl Server {
                             continue;
                         };
                         let result = if session.may_command() {
-                            self.world.apply(&command, Some(avatar))
+                            self.command(&command, avatar)
                         } else {
                             Err("too many commands".into())
                         };
@@ -342,6 +342,7 @@ impl Server {
     }
 
     fn send(&mut self) {
+        self.tell_swings();
         let changed = self.world.take_changed();
         let aged = self.world.take_aged();
         let world = &self.world;

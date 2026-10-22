@@ -168,6 +168,7 @@ pub fn tools_sheet(
             look: look(&bones::STARTING_OUTFIT),
             body: Body::Standing(centre, DQuat::IDENTITY),
             wields: Some(tool),
+            swing: None,
         };
         people.draw(&[person], 1.0 / 60.0, &Flat, &mut scene);
         images.push(renderer.capture(Frame {

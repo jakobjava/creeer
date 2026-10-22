@@ -125,8 +125,15 @@ DENSITY = {"steel": 7850.0, "steel_painted": 7850.0, "timber": 800.0}
 def report(name, parts):
     """Prints each part's mass (kg) by its material, from its closed mesh's volume: what its
     entry in `data/tools.ron` gives, to compare."""
+    import pathlib
+    import re
+
+    table = (pathlib.Path(__file__).resolve().parent.parent / "data" / "tools.ron").read_text(encoding="utf-8")
+    # The handle's end, this far below the origin (its grip).
+    below = float(re.search(rf'model: "{name}",[^)]*?grip: ([0-9.]+)', table).group(1))
     total, moment = 0.0, Vector((0.0, 0.0, 0.0))
-    wood = [o for o in parts if o.data.materials[0].name == "timber"]
+    swing, strike = 0.0, 0.0
+    wood =[o for o in parts if o.data.materials[0].name == "timber"]
     for obj in parts:
         token = obj.data.materials[0].name
         inside = 0.0
@@ -139,15 +146,19 @@ def report(name, parts):
             mass = area(obj) * obj["wall"] * DENSITY[token]
         total += mass
         moment += mass * centroid(obj)
+        measure = area(obj) if "wall" in obj else volume(obj)
+        swing += mass / measure * second_moment(obj, below)
+        if token != "timber":
+            for vert in obj.data.vertices:
+                p = obj.matrix_world @ vert.co
+                strike = max(strike, (p.y * p.y + (p.z + below) ** 2) ** 0.5)
         print(f"art: {name}: {obj.name} ({token}) {mass:.3f} kg")
     print(f"art: {name}: {total:.3f} kg in all")
     # Its balance: where it hangs level from, up the handle from the grip (m).
     print(f"art: {name}: balanced {moment.z / total:.3f} m up from the grip")
+    # Swung about its handle's end: its moment of inertia there, and how far out it strikes.
+    print(f"art: {name}: swung {swing:.3f} kg m², striking {strike:.3f} m out")
     # Held to the catalogue's mass in data/tools.ron (the game's), within 15 %.
-    import pathlib
-    import re
-
-    table = (pathlib.Path(__file__).resolve().parent.parent / "data" / "tools.ron").read_text(encoding="utf-8")
     found = re.search(rf'model: "{name}",[^)]*?mass: ([0-9.]+)', table)
     if found is None:
         raise ValueError(f"{name}: no entry in data/tools.ron")
@@ -159,6 +170,11 @@ def report(name, parts):
     balance = moment.z / total + float(entry.group(1))
     if abs(balance - float(entry.group(2))) > 0.01:
         raise ValueError(f"{name}: balanced {balance:.3f} m up, carried at {entry.group(2)} m")
+    # Its gyration about the handle's end and its striking reach, to within 1 cm.
+    swung = re.search(rf'model: "{name}",[^)]*?gyration: ([0-9.]+), strike: ([0-9.]+)', table)
+    gyration = (swing / total) ** 0.5
+    if abs(gyration - float(swung.group(1))) > 0.01 or abs(strike - float(swung.group(2))) > 0.01:
+        raise ValueError(f"{name}: gyration {gyration:.3f} m and strike {strike:.3f} m, the table's {swung.group(1)} and {swung.group(2)}")
 
 
 def overlap(a, b):
@@ -205,3 +221,26 @@ def centroid(obj):
                 at += w * (a + b + c) / 4.0
             total += w
     return at / total
+
+
+def second_moment(obj, below):
+    """The integral of y² + (z + below)² over the closed mesh's volume (m⁵), or over its surface
+    for a tube (`wall`, m⁴): its moment about the swing's axis, across the handle (x) through
+    the handle's end, `below` m under the origin, for a unit density."""
+    mesh, total = obj.data, 0.0
+    shift = Vector((0.0, 0.0, below))
+    for poly in mesh.polygons:
+        v = [obj.matrix_world @ mesh.vertices[i].co + shift for i in poly.vertices]
+        for k in range(1, len(v) - 1):
+            a, b, c = v[0], v[k], v[k + 1]
+            if "wall" in obj:
+                g = (a + b + c) / 3.0
+                total += (b - a).cross(c - a).length / 2.0 * (g.y * g.y + g.z * g.z)
+            else:
+                # Over the tetrahedron the face makes with the origin (signed): the volume
+                # over 10 times the squares and products of its corners' coordinates.
+                six = a.dot(b.cross(c))
+                for q in ((a.y, b.y, c.y), (a.z, b.z, c.z)):
+                    s = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[0] * q[1] + q[0] * q[2] + q[1] * q[2]
+                    total += six / 60.0 * s
+    return total

@@ -6,6 +6,7 @@
 //! the client has acknowledged) and the client's inputs (each repeating the last few, so a
 //! lost packet loses none).
 
+use crate::entity::EntityId;
 use crate::quant::Quantised;
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 use creeer_math::glam::DVec3;
@@ -49,6 +50,47 @@ pub enum Command {
     /// The tool the player holds in the right hand (G1.4c: an index into the tools' table,
     /// `creeer_sim::tools`; none, empty-handed).
     Wield { tool: Option<u8> },
+    /// Strike what the player aims at with the tool in hand (G1.4e), the swing begun at the
+    /// player's own tick `started` (fractional, as snapshots are numbered: its avatar's, ahead).
+    Strike { target: Target, started: f64 },
+}
+
+/// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
+/// world's frame, and the server tick it was drawn at (fractional: as snapshots are numbered).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Target {
+    pub body: Option<EntityId>,
+    pub at: DVec3,
+    pub seen: f64,
+}
+
+impl Encode for Target {
+    fn encode(&self, w: &mut Writer) {
+        match self.body {
+            Some(id) => {
+                w.u8(1);
+                w.put(&id);
+            }
+            None => w.u8(0),
+        }
+        w.put(&self.at);
+        w.f64(self.seen);
+    }
+}
+
+impl Decode for Target {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let body = match r.u8()? {
+            0 => None,
+            1 => Some(r.get()?),
+            _ => return Err(r.error("not a flag")),
+        };
+        Ok(Self {
+            body,
+            at: r.get()?,
+            seen: r.f64()?,
+        })
+    }
 }
 
 /// From a client to the server.
@@ -221,6 +263,11 @@ impl Encode for ClientMessage {
                         w.u8(7);
                         w.u8(tool.unwrap_or(NONE));
                     }
+                    Command::Strike { target, started } => {
+                        w.u8(8);
+                        w.put(target);
+                        w.f64(*started);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -256,6 +303,10 @@ impl Decode for ClientMessage {
                 },
                 7 => Command::Wield {
                     tool: Some(r.u8()?).filter(|&t| t != NONE),
+                },
+                8 => Command::Strike {
+                    target: r.get()?,
+                    started: r.f64()?,
                 },
                 _ => return Err(r.error("unknown command")),
             }),

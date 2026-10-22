@@ -88,6 +88,11 @@ pub struct ServerWorld {
     wields: std::collections::BTreeMap<String, u8>,
     /// Where the bodies near players were, for what they reach for (G1.4d, `reach.rs`).
     history: history::History,
+    /// The swings on their way, those started since the sessions were told, and the blows that
+    /// fell this tick (G1.4e, `strikes.rs`).
+    swings: Vec<strikes::Swinging>,
+    started: Vec<(EntityId, u64)>,
+    blows: Vec<strikes::Blow>,
     /// A creative (or test) server: its players may drop crates, frames and machines and dig
     /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
     pub creative: bool,
@@ -186,6 +191,9 @@ impl ServerWorld {
             tools,
             wields: std::collections::BTreeMap::new(),
             history: history::History::default(),
+            swings: Vec::new(),
+            started: Vec::new(),
+            blows: Vec::new(),
             creative: false,
         }
     }
@@ -342,6 +350,7 @@ impl ServerWorld {
         let scope = profile::scope("history");
         self.remember();
         drop(scope);
+        self.blows_fall();
         let _scope = profile::scope("ageing");
         self.age_after_step();
     }
@@ -366,6 +375,7 @@ pub mod people;
 mod persist;
 pub mod reach;
 mod regions;
+pub mod strikes;
 pub use regions::Tag;
 mod ageing;
 #[cfg(test)]
@@ -379,5 +389,7 @@ mod looks_tests;
 mod people_tests;
 #[cfg(test)]
 mod reach_tests;
+#[cfg(test)]
+mod strike_tests;
 #[cfg(test)]
 pub(crate) mod tests;

@@ -29,6 +29,8 @@ pub struct DrawnPerson {
     pub body: Body,
     /// The tool in its right hand (G1.4c: an index into the tools' table), if any.
     pub wields: Option<u8>,
+    /// How long ago it began the swing it is in (G1.4e; s), if any.
+    pub swing: Option<f64>,
 }
 
 /// Where a bone of the model is drawn from: a segment of the ragdoll, or a finger bone
@@ -143,6 +145,8 @@ impl People {
             // A tool carried in the right hand: the fingers closed on its handle at its balance.
             let tool =
                 (p.wields).and_then(|t| self.held.tool(t).map(|tool| (t, tool.carry_radius)));
+            let swing = (p.wields.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
+            self.animator.swing(p.key, swing);
             let bones = self.animator.bones(p.key, &p.body, dt, ground);
             let right = tool.map_or(Hold::Relaxed, |(_, radius)| Hold::Grip(radius));
             scene
