@@ -298,6 +298,16 @@ The style board and a walk in the planet sandbox, shown to the user: the enginee
 
 ### G1.4 Tools, reach and carrying
 
+**Proposed** (2026-10-22, ADR-0027; for the user's approval). Its survey of prior work is in ADR-0027. The sub-steps, each ending with `cargo xtask ci` green and a commit pushed to `g1`:
+
+- **G1.4a The body's motion** (the user's notes): the glitches recorded and found (a scripted walk, run, start and stop with every bone's motion checked for jumps, and the cases the user saw replayed); the trunk leaning with speed and acceleration; stopping in a step that brings the feet together, then standing; the arms swinging from shoulder and elbow with measured amplitudes, the elbow bent with speed. Checked against the measurements and in a walk sheet and the planet sandbox.
+- **G1.4b The hands**: finger bones in the engineer's skin (three per finger and the thumb), weighted in the art pipeline and checked by the fit check; posed as a relaxed hand, gripping and open, by the client; the skinning budget kept (0.05 ms for eight engineers).
+- **G1.4c Tools in the hand**: the pickaxe, shovel, axe and bow saw modelled in Blender in the style (`art-style.md` §8), their icons (G1.3h) and silhouettes distinct; held in the right hand on a bone of the skin; a sandbox kit picked by number keys until G1.6's inventory.
+- **G1.4d Reach**: the crosshair's ray and what it hits, within 2.5 m of the hands, checked by the server against what the client saw; the 500 m commands only on creative and test servers.
+- **G1.4e Strikes**: a swing drawn as it is simulated, its energy from the tool and the arm (ADR-0027, Prior work), delivered as an impulse on what it hits and handed to digging (G1.5) and cutting (G1.7).
+- **G1.4f Carrying and throwing**: the grab as a joint at the hands with a force limit from human strength; the load slowing and toppling the character; throws by the measured speed-mass law, the reaction on the thrower.
+- **G1.4g Play scene and review**: a play scene of players working (reach, strikes, carrying) gated as the others are; shown to the user.
+
 - **Tools as items.** Hands, a pickaxe, a shovel, an axe and a bow saw. Each is a discrete item (G1.6) with a mass, a head material and a striking energy per swing (a pickaxe about 60 J, an axe about 80 J, from swing speed and head mass). Powered tools come with power in G3–G4.
 - **Reach.** Actions work on what the crosshair ray hits, within 2.5 m of the character's hands (the server checks the reach). The F5 sandbox's 500 m commands are kept for creative and test servers only.
 - **Carrying and throwing.** A grab is a ball joint (G1.1) between the hands and the body's grasped point, with a force limit from human strength (about 50 kg carried easily, 150 kg lifted briefly, heavier only dragged as friction allows). The grasped body's weight acts on the character, which slows and can topple it. Throwing is an impulse from the arm's stroke, with its reaction on the thrower.
