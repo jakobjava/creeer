@@ -86,6 +86,16 @@ impl Densities {
         })
     }
 
+    /// How a rock breaks, if `material` is one that does.
+    pub fn breaks(&self, material: &str) -> Option<creeer_terrain::geology::rocks::Breaks> {
+        self.rocks.rocks[usize::from(self.rocks.rock(material)?)].breaks
+    }
+
+    /// The tensile strength of engineering material `material` at 20 °C (Pa).
+    pub fn strength(&self, material: &str) -> Option<f64> {
+        Some(self.materials.get(material)?.ultimate_strength.at(20.0))
+    }
+
     /// The colour of `material` (sRGB), as it is drawn: a rock's own, or the palette's token
     /// for an engineering material's kind (`art-style.md` §3).
     pub fn colour(&self, material: &str) -> Option<[u8; 3]> {
@@ -200,6 +210,12 @@ pub fn describe(item: &Item) -> String {
                 return format!("{size}, {:.2} kg", item.mass());
             }
             format!("{}, {size}, {:.2} kg{holds}", p.material, item.mass())
+        }
+        Item::Made(a) => {
+            let parts: Vec<String> = (a.parts.iter())
+                .map(|p| describe(&Item::Piece(p.piece.clone(), Vec::new())))
+                .collect();
+            format!("made: {}; {:.2} kg", parts.join(" + "), a.mass())
         }
         Item::Bulk(b) => format!(
             "loose, {:.2} kg, {:.2} l, grains {:.1} mm",

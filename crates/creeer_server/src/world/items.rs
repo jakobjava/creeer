@@ -58,10 +58,8 @@ impl Items {
 }
 
 fn view(store: &Store, densities: Option<&Densities>) -> StoreView {
-    let colour = |i: &Item| match i {
-        Item::Piece(p, _) => densities?.colour(&p.material),
-        Item::Bulk(_) => None,
-    };
+    // A made thing in its head's colour.
+    let colour = |i: &Item| densities?.colour(&i.head()?.material);
     StoreView {
         name: store.name.clone(),
         volume: store.volume(),
@@ -138,7 +136,7 @@ impl ServerWorld {
     }
 
     /// Takes item body `id` out of the world, handing back its item.
-    fn remove_item(&mut self, id: EntityId) -> Option<Item> {
+    pub(super) fn remove_item(&mut self, id: EntityId) -> Option<Item> {
         let i = self.index(id)?;
         let item = self.items.bodies.remove(&id)?;
         let at = self.world.bodies[i].structure.position[0];
@@ -301,7 +299,7 @@ impl ServerWorld {
     }
 
     /// `item` into avatar `by`'s hands: a body where the hands hold a load, held.
-    fn put_in_hands(&mut self, by: EntityId, item: Item) -> Result<(), String> {
+    pub(super) fn put_in_hands(&mut self, by: EntityId, item: Item) -> Result<(), String> {
         self.index(by).ok_or("no such avatar")?;
         let at = self.hands_point(by);
         let id = self.add_item(item, at, false);
@@ -318,7 +316,7 @@ impl ServerWorld {
 
 impl ServerWorld {
     /// Where avatar `by`'s hands hold a load (its centre where it has none).
-    fn hands_point(&self, by: EntityId) -> DVec3 {
+    pub(super) fn hands_point(&self, by: EntityId) -> DVec3 {
         let Some(i) = self.index(by) else {
             return DVec3::ZERO;
         };

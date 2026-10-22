@@ -22,6 +22,7 @@ pub(super) fn body_of(item: &Item, at: DVec3) -> Body {
             0.6,
         ),
         Item::Bulk(b) => (heap(b.volume()), 0.7),
+        Item::Made(a) => (made(a), 0.6),
     };
     let mut body = Body::rigid(shape, item.mass(), at, DT);
     body.structure.orientation[0] = upright(at);
@@ -75,4 +76,25 @@ fn heap(volume: f64) -> Shape {
         .collect();
     points.push(DVec3::new(0.0, r * tan, 0.0));
     Shape::Hull(Arc::new(Hull::new(&points).expect("a cone is a hull").0))
+}
+
+/// A made thing as the hull about its parts' boxes (a tool's haft and head as one body).
+fn made(a: &creeer_sim::items::Assembly) -> Shape {
+    let mut points = Vec::new();
+    for p in &a.parts {
+        let half = match p.piece.form {
+            Form::Block { size } | Form::Lump { size } => size * 0.5,
+            Form::Ball { radius } => DVec3::splat(radius),
+            Form::Rod { radius, length } => DVec3::new(length * 0.5, radius, radius),
+        };
+        for k in 0..8 {
+            let corner = DVec3::new(
+                if k & 1 == 0 { -half.x } else { half.x },
+                if k & 2 == 0 { -half.y } else { half.y },
+                if k & 4 == 0 { -half.z } else { half.z },
+            );
+            points.push(p.at + p.turn * corner);
+        }
+    }
+    Shape::Hull(Arc::new(Hull::new(&points).expect("parts make a hull").0))
 }

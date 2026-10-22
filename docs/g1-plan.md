@@ -419,6 +419,16 @@ Re-planned 2026-10-22 with the user (principles 9–11): no landing pod and no s
 - **G1.4's four steel tools** stay as the creative kit, and they become the generic model's test. Built from steel and hickory pieces, the model must give their masses, balances and swing energies as `data/tools.ron` has them (within its 15 % and 1 cm). From G3 the same system takes forged and cast heads.
 - **Validation:** a hafted stone axe's mass, balance and swing energy against a measured replica; the steel tools reproduced; a binding failing at its strips' strength; determinism.
 - **Budget:** a making action ≤ 0.2 ms on the server; a tool's mesh built ≤ 1 ms on the client.
+- **Done** (2026-10-22, ADR-0030):
+  - edges as an attribute of any piece;
+  - a blow breaks a brittle piece by fracture energy: chert knaps to a sharp flake, granite crumbles, mass kept exactly (each rock's grain size and fracture energy in `rocks.ron`);
+  - bark peels from fresh branches as bast strips, which roll up in pockets;
+  - heads bind to hafts as one generic assembly whose swing follows from its parts: a steel axe made of its parts swings as the measured one, within 5 %;
+  - a blow past a binding's hold takes the tool apart;
+  - controls: the left click strikes with what the hands hold, T throws, R strips, B binds;
+  - found: a made tool's inertia axes are not principal, and the hands' turn spun it up (Gershgorin's bound now);
+  - not built: grinding, a tool drawn by its parts (it is its bounding box).
+- **Next:** the user plays G1.6.
 
 ### G1.7 Trees: one generic tree
 

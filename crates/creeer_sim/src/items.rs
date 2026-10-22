@@ -65,6 +65,17 @@ pub struct Piece {
     pub wall: f64,
     /// Its wear from use (0 new, 1 worn out).
     pub wear: f64,
+    /// Its cutting edge, if it has one (G1.6d: knapped, later ground or forged).
+    pub edge: Option<Edge>,
+}
+
+/// A cutting edge: its included angle (rad), its length (m) and its tip's radius (m: how sharp,
+/// never sharper than half the material's grain).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Edge {
+    pub angle: f64,
+    pub length: f64,
+    pub radius: f64,
 }
 
 impl Piece {
@@ -76,6 +87,7 @@ impl Piece {
             form,
             wall: 0.0,
             wear: 0.0,
+            edge: None,
         }
     }
 
@@ -87,6 +99,22 @@ impl Piece {
         let inner = size - DVec3::splat(2.0 * self.wall);
         (self.wall > 0.0 && inner.min_element() > 0.0)
             .then(|| Form::Block { size: inner }.extents())
+    }
+
+    /// A strip (a block at most 3 mm thin, a tenth as thick as wide) rolled up: its width and
+    /// the coil's diameter both ways, longest first (bark and cloth roll; boards do not).
+    pub fn coiled(&self) -> Option<[f64; 3]> {
+        let Form::Block { .. } = self.form else {
+            return None;
+        };
+        let [long, wide, thin] = self.form.extents();
+        if thin > 0.003 || thin * 10.0 > wide {
+            return None;
+        }
+        let coil = (4.0 * long * thin / PI).sqrt().max(thin);
+        let mut e = [wide, coil, coil];
+        e.sort_by(|a, b| b.total_cmp(a));
+        Some(e)
     }
 
     /// Its own mass, without anything in it (kg).
@@ -148,11 +176,12 @@ impl Bulk {
     }
 }
 
-/// An item: a piece (and what it holds, if hollow) or a bulk.
+/// An item: a piece (and what it holds, if hollow), a bulk, or something made of pieces (G1.6d).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
     Piece(Piece, Vec<Item>),
     Bulk(Bulk),
+    Made(Box<Assembly>),
 }
 
 impl Item {
@@ -161,21 +190,26 @@ impl Item {
         match self {
             Self::Piece(p, inside) => p.mass() + inside.iter().map(Self::mass).sum::<f64>(),
             Self::Bulk(b) => b.mass,
+            Self::Made(a) => a.mass(),
         }
     }
 
     /// The room it takes in a store (m³): a piece its box's, a bulk its own.
     pub fn room(&self) -> f64 {
         match self {
-            Self::Piece(p, _) => p.form.extents().iter().product(),
+            Self::Piece(p, _) => (p.coiled().unwrap_or_else(|| p.form.extents()))
+                .iter()
+                .product(),
             Self::Bulk(b) => b.volume(),
+            Self::Made(a) => a.extents().iter().product(),
         }
     }
 
-    /// Its edges, longest first (a bulk takes the store's shape: none).
+    /// Its edges, longest first (a bulk takes the store's shape: none; a strip rolls up).
     pub fn extents(&self) -> Option<[f64; 3]> {
         match self {
-            Self::Piece(p, _) => Some(p.form.extents()),
+            Self::Piece(p, _) => Some(p.coiled().unwrap_or_else(|| p.form.extents())),
+            Self::Made(a) => Some(a.extents()),
             Self::Bulk(_) => None,
         }
     }
@@ -188,7 +222,7 @@ impl Item {
                 size,
                 items: inside.clone(),
             }),
-            Self::Bulk(_) => None,
+            Self::Bulk(_) | Self::Made(_) => None,
         }
     }
 
@@ -202,6 +236,11 @@ impl Item {
             Self::Bulk(b) => {
                 for (name, f) in &b.composition {
                     add(out, name, f * b.mass);
+                }
+            }
+            Self::Made(a) => {
+                for p in a.parts.iter().map(|p| &p.piece).chain(&a.bindings) {
+                    add(out, &p.material, p.mass());
                 }
             }
         }
@@ -294,7 +333,9 @@ impl Store {
     }
 }
 
+mod assembly;
 mod codec;
+pub use assembly::{Assembly, Part, Swinging};
 pub mod kit;
 #[cfg(test)]
 mod tests;

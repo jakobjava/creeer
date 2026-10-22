@@ -98,6 +98,12 @@ fn client_messages_read_back() {
             item: 0,
         },
         Command::Open(target),
+        Command::Strip,
+        Command::Bind(target),
+        Command::Pick {
+            loose: 1 << 50,
+            pocket: true,
+        },
     ] {
         back(&ClientMessage::Command(command));
     }

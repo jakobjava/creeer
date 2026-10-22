@@ -325,15 +325,10 @@ impl PlanetView {
         None
     }
 
-    /// Applies the active tool where the camera looks; walking with a tool in hand, strikes what
-    /// the crosshair is on if it is within reach (G1.4e).
+    /// Applies the active tool where the camera looks; walking with a tool or anything in the
+    /// hands (G1.6d: a stone, a made axe), strikes what the crosshair is on within reach (G1.4e).
     pub fn use_tool(&mut self, camera: &Camera) {
-        if self.walking && self.carrying() {
-            // Thrown the way the camera looks (G1.4f).
-            self.send(Command::Throw(camera.forward()));
-            return;
-        }
-        if self.walking && self.wielding.is_some() {
+        if self.walking && (self.wielding.is_some() || self.carrying()) {
             if let Some(target) = crate::planet_aim::target(self, camera).filter(|t| t.in_reach) {
                 self.session.connection.strike(target.aimed);
             }

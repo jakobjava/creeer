@@ -33,6 +33,7 @@ impl Server {
                 item: *item,
             },
             Command::Open(t) => Command::Open(seen(t)),
+            Command::Bind(t) => Command::Bind(seen(t)),
             other => other.clone(),
         };
         self.world.apply(&command, Some(avatar))

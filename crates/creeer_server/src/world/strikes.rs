@@ -22,7 +22,8 @@ enum Aim {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Swinging {
     by: EntityId,
-    tool: u8,
+    /// The catalogue's tool (creative), or none: what the hands hold (G1.6d).
+    tool: Option<u8>,
     started: u64,
     aim: Aim,
 }
@@ -32,7 +33,7 @@ pub(super) struct Swinging {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Blow {
     pub by: EntityId,
-    pub tool: u8,
+    pub tool: Option<u8>,
     pub on: Option<EntityId>,
     pub at: DVec3,
     pub impulse: DVec3,
@@ -58,7 +59,12 @@ impl ServerWorld {
     ) -> Result<(), String> {
         let i = self.index(by).ok_or("no such avatar")?;
         let player = self.players[i].clone().ok_or("only a player strikes")?;
-        let tool = *self.wields.get(&player).ok_or("no tool in hand")?;
+        // The catalogue's tool in hand, or what the hands hold (G1.6d): a stone, a made axe.
+        let tool = self.wields.get(&player).copied();
+        let held = self.carried(by).and_then(|c| self.items.bodies.get(&c));
+        if tool.is_none() && held.and_then(creeer_sim::items::Item::swinging).is_none() {
+            return Err("nothing in hand to strike with".into());
+        }
         if self.people.get(&by).is_some_and(people::Person::fallen) {
             return Err("down".into());
         }
@@ -122,8 +128,13 @@ impl ServerWorld {
         if self.people.get(&s.by).is_some_and(people::Person::fallen) {
             return None;
         }
-        let tool = self.tools.get(usize::from(s.tool))?;
-        let swing = strike::swing(tool);
+        let swing = match s.tool {
+            Some(t) => strike::swing(self.tools.get(usize::from(t))?),
+            None => {
+                let held = self.items.bodies.get(&self.carried(s.by)?)?.swinging()?;
+                strike::swing_of(held.mass, held.gyration, held.carry, held.strike)
+            }
+        };
         let (on, at) = match s.aim {
             Aim::Ground(at) => (None, at),
             Aim::Body(id, node, local) => {
@@ -164,6 +175,9 @@ impl ServerWorld {
         let mass = self.world.effective_mass(index, node, at, way);
         let j = strike::impulse(swing.speed, swing.mass, mass, body.restitution);
         self.world.apply_impulse(index, node, way * j, at);
+        // What the blow breaks (G1.6d, `making.rs`): its collision's energy into the struck.
+        let reduced = swing.mass * mass / (swing.mass + mass);
+        self.broken_by(s.by, id, 0.5 * reduced * swing.speed * swing.speed, j);
         Some(Blow {
             by: s.by,
             tool: s.tool,

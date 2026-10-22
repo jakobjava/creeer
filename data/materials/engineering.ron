@@ -297,4 +297,30 @@
         melting: Some(("1215 °C", "1260 °C", "400 kJ/kg")),
         sources: "Robertson (1988), USGS Open-File Report 88-441; Goodman, Rock Mechanics",
     ),
+    (
+        id: "spruce_bast",
+        name: "Spruce inner bark (bast), fresh, along its fibres",
+        kind: Wood,
+        // Inner bark peeled from a fresh branch (G1.6d): bindings and lashings. Bast fibre strips
+        // of conifers and lime, fresh: about 15–40 MPa along the fibres (estimates from
+        // bark-fibre and cordage tests; to be refined), far stiffer dry. Wet, it is dense.
+        density: "600 kg/m^3",
+        youngs_modulus: "1.5 GPa",
+        shear_modulus: "0.1 GPa",
+        yield_strength: "20 MPa",
+        ultimate_strength: "20 MPa",
+        compressive_strength: None,
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.03,
+        conductivity: "0.2 W/(m·K)",
+        specific_heat: "2000 J/(kg·K)",
+        expansion: "4e-6 K^-1",
+        resistivity: "1e9 Ω·m",
+        emissivity: 0.9,
+        absorptivity: 0.7,
+        decomposes: Some("300 °C"),
+        sources: "Bark and bast-fibre strength: estimates (G1.6d), to be replaced by tests",
+    ),
 ]

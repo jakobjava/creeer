@@ -4,17 +4,14 @@
 //! client so none draws it again).
 
 use super::*;
-use creeer_sim::items::Item;
 use creeer_sim::reach;
 use creeer_sim::scatter::Loose;
 
 impl ServerWorld {
     /// The colour item body `id` is drawn in: its material's.
     pub fn item_colour(&self, id: EntityId) -> Option<[u8; 3]> {
-        match self.items.bodies.get(&id)? {
-            Item::Piece(p, _) => self.items.densities.as_ref()?.colour(&p.material),
-            Item::Bulk(_) => None,
-        }
+        let head = self.items.bodies.get(&id)?.head()?;
+        self.items.densities.as_ref()?.colour(&head.material)
     }
 
     /// What was picked up, in order: every client has the first `told` already.

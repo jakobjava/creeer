@@ -46,17 +46,24 @@ pub struct Swing {
 
 /// `tool` swung at full effort.
 pub fn swing(tool: &Tool) -> Swing {
-    let inertia = tool.mass * tool.gyration * tool.gyration;
+    swing_of(tool.mass, tool.gyration, tool.carry, tool.strike)
+}
+
+/// Anything swung at full effort about its grip (G1.6d: a made tool, a stone in the fist): of
+/// `mass` (kg), radius of gyration `gyration` about the grip, its centre of mass `carry` out and
+/// striking `reach` out (m).
+pub fn swing_of(mass: f64, gyration: f64, carry: f64, reach: f64) -> Swing {
+    let inertia = mass * gyration * gyration;
     let spin = ROD_SPIN * det::pow(ROD_INERTIA / inertia, LAW);
     // About its centre of mass, and the striking point's lever there.
-    let centre = inertia - tool.mass * tool.carry * tool.carry;
-    let lever = tool.strike - tool.carry;
+    let centre = inertia - mass * carry * carry;
+    let lever = reach - carry;
     let strike = 2.0 * DOWNSWING / spin;
     Swing {
         spin,
-        speed: spin * tool.strike,
+        speed: spin * reach,
         energy: 0.5 * inertia * spin * spin,
-        mass: 1.0 / (1.0 / tool.mass + lever * lever / centre),
+        mass: 1.0 / (1.0 / mass + lever * lever / centre),
         raise: (TO_BLOW - strike).max(0.0),
         strike,
     }

@@ -51,6 +51,13 @@ impl PlanetView {
         }
     }
 
+    /// Binds the head the crosshair is on to the haft in the hands (G1.6d).
+    pub fn bind(&mut self, camera: &Camera) {
+        if let Some(t) = self.reached(camera) {
+            self.send(Command::Bind(t));
+        }
+    }
+
     /// Puts what the hands hold into the container the crosshair is on, or looks into it.
     pub fn put_in_or_open(&mut self, camera: &Camera) {
         let Some(t) = self.reached(camera) else {

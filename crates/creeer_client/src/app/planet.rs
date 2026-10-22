@@ -41,7 +41,9 @@ impl Running {
     /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
     /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
     /// the crosshair is on in both hands, or puts down what they hold (G1.4f); E, F and I put
-    /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`). Returns whether it
+    /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`); the left click strikes
+    /// with what the hands hold, T throws it, R strips bark from it, B binds the head the
+    /// crosshair is on to it (G1.6d). Returns whether it
     /// was one.
     pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::keyboard::KeyCode;
@@ -67,6 +69,18 @@ impl Running {
             }
             KeyCode::KeyI => {
                 planet.inventory = !planet.inventory;
+                return true;
+            }
+            KeyCode::KeyT => {
+                planet.send(creeer_net::message::Command::Throw(self.camera.forward()));
+                return true;
+            }
+            KeyCode::KeyR => {
+                planet.send(creeer_net::message::Command::Strip);
+                return true;
+            }
+            KeyCode::KeyB => {
+                planet.bind(&self.camera);
                 return true;
             }
             KeyCode::Digit1 => Some(0),

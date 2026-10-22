@@ -148,11 +148,19 @@ impl ServerWorld {
             force *= carry::STRENGTH / force.length();
         }
         // Its turn kept to the way the body faces, as firmly as the grip.
-        // (Its least moment of inertia: about the axis it turns fastest on.)
+        // (Its least moment of inertia: about the axis it turns fastest on. Its least diagonal
+        // entry only where its axes are principal: a made tool's are not, its head off its
+        // haft, and the turn held too stiffly spun it up (G1.6d). Gershgorin's bound is never
+        // above the least principal moment.)
         let inertia = (self.world.bodies[b].shapes.iter())
             .map(|(_, shape)| {
                 let i = shape.inertia(mass);
-                i.x_axis.x.min(i.y_axis.y).min(i.z_axis.z)
+                let row = |k: usize| {
+                    let r = i.row(k);
+                    r[k] - (r.abs().element_sum() - r[k].abs())
+                };
+                let trace = i.x_axis.x + i.y_axis.y + i.z_axis.z;
+                row(0).min(row(1)).min(row(2)).max(1e-3 * trace)
             })
             .fold(f64::INFINITY, f64::min);
         let (kr, cr) = spring(grip() / GIVE_TURN, inertia);

@@ -34,6 +34,18 @@ pub struct Rock {
     pub density: f64,
     /// Whether it is an ore (the art style lets its colour be more saturated).
     pub ore: bool,
+    /// How it breaks (G1.6d), if it is a solid rock: none for loose ground.
+    pub breaks: Option<Breaks>,
+}
+
+/// How a rock breaks: what knapping and quarrying spend, and what edge it leaves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Breaks {
+    /// Its grains' size (m): no edge is sharper than half a grain, and grains coarser than a
+    /// flake is thin crumble rather than flake.
+    pub grain: f64,
+    /// Its fracture energy (J/m²): what a new crack's surface costs, G_c = K_Ic²/E.
+    pub fracture_energy: f64,
 }
 
 /// All minerals and rocks.
@@ -62,6 +74,10 @@ struct RockDef {
     #[serde(default)]
     ore: bool,
     minerals: Vec<(String, f64)>,
+    #[serde(default)]
+    grain: Option<String>,
+    #[serde(default)]
+    fracture_energy: Option<String>,
 }
 
 impl RockTable {
@@ -143,7 +159,17 @@ impl RockTable {
                 .iter()
                 .map(|&(m, f)| f * table.minerals[m].density)
                 .sum();
+            let breaks = match (&r.grain, &r.fracture_energy) {
+                (Some(g), Some(e)) => Some(Breaks {
+                    grain: parse_as(g, Dimension::LENGTH).map_err(|e| context(e.to_string()))?,
+                    fracture_energy: parse_as(e, Dimension::ENERGY.div(Dimension::AREA))
+                        .map_err(|e| context(e.to_string()))?,
+                }),
+                (None, None) => None,
+                _ => return Err(context("a grain and a fracture energy, or neither".into())),
+            };
             table.rocks.push(Rock {
+                breaks,
                 color: parse_color(&r.color).ok_or_else(|| context("bad colour".into()))?,
                 porosity: r.porosity,
                 density: (1.0 - r.porosity) * solid,

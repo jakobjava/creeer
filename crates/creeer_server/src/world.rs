@@ -338,6 +338,9 @@ mod items_tests;
 mod loose;
 #[cfg(test)]
 mod loose_tests;
+mod making;
+#[cfg(test)]
+mod making_tests;
 mod spawn;
 mod survival;
 #[cfg(test)]

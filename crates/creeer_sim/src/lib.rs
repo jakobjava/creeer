@@ -41,6 +41,7 @@ mod joule_tests;
 pub mod lod;
 #[cfg(test)]
 mod lod_tests;
+pub mod making;
 pub mod mount;
 pub mod planet;
 #[cfg(test)]

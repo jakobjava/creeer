@@ -78,6 +78,10 @@ pub enum Command {
     /// Pick up loose thing `loose` from the ground (G1.6c: a stone or a branch the scatter put
     /// there, by its id): into the hands, or into the first pocket it fits.
     Pick { loose: u64, pocket: bool },
+    /// Strip bark from the branch in the hands (G1.6d): the strip into a pocket.
+    Strip,
+    /// Bind the head the player reaches for to the haft in the hands, with a strip from a pocket.
+    Bind(Target),
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -252,6 +256,11 @@ impl Encode for ClientMessage {
                         w.u64(*loose);
                         w.put(pocket);
                     }
+                    Command::Strip => w.u8(20),
+                    Command::Bind(target) => {
+                        w.u8(21);
+                        w.put(target);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -315,6 +324,8 @@ impl Decode for ClientMessage {
                     loose: r.u64()?,
                     pocket: r.get()?,
                 },
+                20 => Command::Strip,
+                21 => Command::Bind(r.get()?),
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {

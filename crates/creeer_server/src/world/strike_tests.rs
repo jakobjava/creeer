@@ -74,7 +74,7 @@ fn an_axe_blow_falls_a_second_on_and_moves_the_crate_as_a_collision_does() {
     let blows: Vec<Blow> = w.take_blows();
     assert_eq!(blows.len(), 1, "one blow");
     let blow = blows[0];
-    assert_eq!((blow.by, blow.tool, blow.on), (ada, 2, Some(id)));
+    assert_eq!((blow.by, blow.tool, blow.on), (ada, Some(2), Some(id)));
     // The impulse: the axe (17 m/s, 1.45 kg at its edge) on the 200 kg crate.
     let swing = strike::swing(&w.tools[2]);
     let way = blow.impulse.normalize();
@@ -144,7 +144,7 @@ fn one_swing_a_cycle_and_only_with_a_tool_in_hand_standing() {
             Some(ada),
         )
         .unwrap_err();
-    assert!(why.contains("no tool"), "{why}");
+    assert!(why.contains("nothing in hand"), "{why}");
     // Not a player's.
     assert!(
         w.apply(
