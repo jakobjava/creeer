@@ -38,6 +38,7 @@ mod control_rigs;
 mod demo;
 mod drive_bench;
 mod fly_camera;
+mod gpu_passes;
 mod headless;
 mod hulls;
 mod lab;
@@ -137,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok::<_, &str>((path.as_str(), count))
             })
             .transpose()?;
-        return bench(frames, view, factory, players);
+        return bench(frames, view, factory, players, headless::ao_quality(&args)?);
     }
     if args.iter().any(|a| a == "--physics-bench") {
         return physics_bench::bench(&args).map_err(Into::into);

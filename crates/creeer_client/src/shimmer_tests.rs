@@ -70,4 +70,7 @@ fn the_look_does_not_shimmer() {
     assert!(found.surfaces.share <= GATE, "{found:?}");
     // The surfaces are judged over most of the image, not a sliver of it.
     assert!(found.surface_share > 0.5, "{found:?}");
+    // Ambient occlusion's own map (G1.3d): 0.37 % at 1280 × 720 when measured, its 8-bit
+    // rounding alone reaching the 2-level line; held under 1 %.
+    assert!(found.occlusion.share < 0.01, "{found:?}");
 }

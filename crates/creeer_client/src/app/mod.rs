@@ -368,6 +368,7 @@ impl Running {
             self.water.window(ui.ctx());
             self.controls.window(ui.ctx());
             self.powerhouse.window(ui.ctx());
+            self.profiler.set_gpu(self.renderer.gpu_times());
             self.profiler.window(ui.ctx(), None);
             if let Some(heatmap) = self.settings.overlay.heatmap() {
                 let (title, unit) = self.settings.overlay.label();

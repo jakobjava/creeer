@@ -189,6 +189,12 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - no flicker under a slow camera move (the frame-to-frame difference measured);
   - the visibility-bitmask variant measured if thin members or branches over-darken.
 - **Budget:** ≤ 1 ms at 1080p on min-spec (a GTX 1660-class GPU), projected from the development machine's timestamps.
+- **Done** (2026-10-22; ADR-0026 decision 5, Validation, Cost):
+  - GPU timestamps on every pass, in the F9 profiler's "GPU passes" and in `--bench`;
+  - GTAO from a depth prepass at 4× MSAA, the scene pass testing for equal depth: option (a), 0.07–0.18 ms a frame faster than (b), which was built and measured (`docs/adr/0026/`);
+  - XeGTAO's three passes in WGSL, with a 4×4 interleaved pattern and GTAO's own 4×4 bilateral filter in place of XeGTAO's TAA-reliant noise; presets off, low (half resolution), medium and high, in the sandbox's window; with occlusion off no prepass is drawn;
+  - validated: the sphere's closed form within 0.011 and the crease by quadrature within 0.026 (reference preset); the shipped preset 0.033 from a ray-traced reference of the crate; no flicker in the image (0.079 %, as before); no over-darkened thin occluders, so no visibility bitmask;
+  - cost: the occlusion's passes 0.22 ms at high (about 0.9 ms projected), medium 0.6 ms projected; a frame grows by 0.33–0.53 ms at high with the prepass (1.3–2.1 ms projected), so min-spec runs medium.
 
 #### G1.3e Skinning on the ragdoll's bones, and wearables
 

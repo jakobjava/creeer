@@ -23,7 +23,7 @@ pub use capture::Image;
 pub use debug_lines::{Color, DebugLines, LineVertex};
 pub use heatmap::{Heatmap, Palette};
 pub use mesh::{MeshArena, MeshData, MeshId, MeshVertex};
-pub use renderer::{Frame, OverlayFrame, RenderError, RenderStats, Renderer};
+pub use renderer::{Frame, GpuTime, OverlayFrame, RenderError, RenderStats, Renderer};
 pub use scene::{Instance, Lighting, Material, Scene, srgb_to_linear};
 pub use shadow::ShadowQuality;
 pub use terrain::{TerrainFrame, TerrainMeshData, TerrainVertex};

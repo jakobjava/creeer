@@ -26,7 +26,11 @@
 | GTAO: Jimenez et al., "Practical Real-Time Strategies for Accurate Indirect Occlusion" (SIGGRAPH 2016 course) | Horizon-based, cosine-weighted visibility that matches ray-traced ambient occlusion, with a multi-bounce fit for bright albedos | Taken |
 | XeGTAO (Intel, 2021, [MIT](https://github.com/GameTechDev/XeGTAO); archived) | GTAO in three compute passes (depth MIPs, main, denoise). "High" (18 samples a pixel) costs 0.56 ms at 1080p on an RTX 2060. Tuned by searching heuristics for the lowest error against ray-traced references. Optional bent normals (+25 %) | Taken as the reference implementation; its tuning against ray-traced references taken as our validation |
 | Bevy's SSAO (MIT/Apache) | XeGTAO ported to WGSL on wgpu, after a depth and normal prepass; paired with TAA for noise | Shows that the method maps onto our API; a reference for the port |
-| Visibility bitmask: Therrien et al., "Screen Space Indirect Lighting with Visibility Bitmask" ([2023](https://arxiv.org/abs/2301.11376)) | Replaces GTAO's two horizon angles by a bitmask, so light passes behind thin occluders instead of over-occluding | The variant to measure if thin geometry (members, branches) is over-darkened |
+| Visibility bitmask: Therrien et al., "Screen Space Indirect Lighting with Visibility Bitmask" ([2023](https://arxiv.org/abs/2301.11376)) | Replaces GTAO's two horizon angles by a bitmask, so light passes behind thin occluders instead of over-occluding | The variant to measure if thin geometry (members, branches) is over-darkened. Not needed: the factory's rods and pipes show no dark halos (G1.3d) |
+| Screen-space occlusion in forward renderers (practitioners' threads: [gamedev.net](https://gamedev.net/forums/topic/717004-msaa-resolve-of-normals/), [Khronos](https://community.khronos.org/t/tips-on-implementing-ssao-using-msaa/112588); Unity's URP and Toon RP docs) | Occlusion belongs on ambient light only, so it must be known while shading: a depth (or depth and normal) prepass, which a forward renderer often draws anyway against overdraw; the alternative is to keep ambient light apart and occlude it afterwards | Both measured (decision 5): the prepass is faster here and exact per pixel |
+| Keller and Heidrich, "Interleaved Sampling" (EGWR 2001); GTAO's own denoise (Jimenez et al. 2016, §5: a 4×4 noise pattern, a 4×4 spatial filter, then temporal) | Neighbouring pixels take different, complementary samples from a small tile; a filter over the tile gathers them all | Taken: XeGTAO's 64×64 Hilbert noise and its 3×3 denoise lean on temporal anti-aliasing, which the game does not have |
+| Filament's ambient occlusion ([documentation](https://google.github.io/filament/Filament.html)) | A material's own occlusion and the screen's combined by the lesser of the two, not their product, so a crease is not darkened twice | Taken: the models' baked occlusion and GTAO by the lesser |
+| GPU timestamp queries (WebGPU `timestamp-query`; wgpu's [example](https://wgpu.rs/doc/wgpu_examples/timestamp_queries/index.html)) | Each pass writes a timestamp at its start and end into a query set, resolved into a buffer and read back later; an optional feature | Taken for every pass, read back frames later so nothing waits (G1.3d) |
 | Kavan et al., "Skinning with Dual Quaternions" ([I3D 2007](https://users.cs.utah.edu/~ladislav/kavan07skinning/kavan07skinning.html)); TOG 2008 | Blends rigid transforms without linear blend skinning's volume loss at bends and twists, at about 7 more vertex-shader instructions; no scale or shear | Taken: the bones are rigid segments, with no scale |
 | Unreal's Physics Asset ([docs](https://dev.epicgames.com/documentation/unreal-engine/physics-asset-editor-in-unreal-engine)); Unity's ragdolls | A skinned mesh's bones each carry one physics body; the ragdoll moves the bones, and the skin follows | Taken: the ragdoll's fifteen segments are the skeleton's bones |
 | Unreal's GPU skin cache | Skins each mesh once a frame in a compute pass; every later pass (shadows, depth, colour) draws the result | Taken: one compute pass skins the characters, and every pass draws them as plain meshes |
@@ -98,9 +102,13 @@
    - **A world pace** makes it visible: one year of weathering per game day by default.
    - **Impacts beyond about 10 J chip edges** (ISO 6272).
    - **The server keeps each object's age** as its exposure, its current rate and its wear, changed only on events. It is saved and replicated, so it costs nothing per tick, and clients draw it.
-5. **Ambient occlusion: GTAO** after XeGTAO, applied to ambient light only (the sun has its shadows), with the multi-bounce fit.
-   - How it fits the MSAA forward pass is decided by measuring both options: (a) a depth and normal prepass, as Bevy does, or (b) ambient light written to its own target in the main pass and occluded when composited.
-   - Quality presets, with half resolution on low.
+5. **Ambient occlusion: GTAO** after XeGTAO, applied to ambient light only (the sun has its shadows), with the multi-bounce fit. Built in G1.3d (2026-10-22; `renderer/ao_pass.rs`, `ao_textures.rs`, `shaders/ao_*.wgsl`, `gtao.wgsl`).
+   - **A depth prepass, chosen by measuring both options** (Measured and rejected): the meshes and the terrain are drawn depth-only into the multisampled depth first; GTAO runs on it; the scene pass then tests for equal depth (`@invariant` positions), so each pixel is shaded once, and the meshes' and terrain's shaders read the occlusion at their pixel. Option (b), ambient light in a target of its own occluded afterwards, cost 0.07–0.18 ms more a frame. With occlusion off, no prepass is drawn.
+   - **Three compute passes, XeGTAO's, ported to WGSL:** the depth's sample 0 as view-space depth in five MIPs (the fifth its own dispatch: WebGPU allows four storage textures a stage); the main pass, normals from the 32-bit depth; then the filter.
+   - **Noise and filter for a game without temporal anti-aliasing:** the slices turn by 16 points of the R2 sequence laid over each 4×4 tile in Bayer order, and a 4×4 bilateral mean (against each pixel's own plane) takes in all sixteen, as GTAO's paper filters its 4×4 pattern. XeGTAO's 64×64 Hilbert noise and 3×3 denoise left grain without TAA.
+   - **Applied:** the multi-bounce fit per colour channel, no darker than half (`art-style.md` §5), and a model's baked occlusion where that is darker (the lesser of the two, as Filament combines them).
+   - **Settings:** XeGTAO's tuned constants (radius multiplier 1.457, falloff 0.615, distribution power 2, MIP offset 3.3, final power 2.2); a radius of 1 m. Presets: low (one slice of two steps, half resolution), medium (two of two), high (three of three, the default), and off; the sandbox's window switches them. A reference preset (16 × 16, full-resolution depth only) exists for validation.
+   - **GPU timestamps** (`renderer/timing.rs`): every pass is timed where the adapter allows it, read back a few frames later, shown in the F9 profiler and printed by `--bench`.
 6. **The engineer is skinned on the ragdoll's bones.** Fifteen bones, one per segment, so the drawn body is the simulated one bone for bone, smooth across its joints.
    - Dual quaternion skinning, in one compute pass per frame.
    - A ragdoll's segments say whose they are and which segment they are (protocol 7), so the client can draw the person.
@@ -253,6 +261,24 @@ At the limits a person reaches, the layers came through each other in the crooks
 | The coverall's cuffs as the skin beneath | The hand bent fully put the glove's cuff 11.5 mm through the sleeve | The forearms' |
 | The elbows' patches 4 mm off the jacket | A facet 1.08 mm off its curve; and at 3 mm the jacket no longer came through, once the check took normals from the whole piece | 3 mm, as before |
 
+### Ambient occlusion (G1.3d, 2026-10-22)
+
+How GTAO meets the multisampled forward pass, measured both ways as planned, plus a third; frame time p50 with the high preset (1080p, RTX 4070 Super, three interleaved rounds):
+
+| Option | Factory | Close-up | Why not |
+|---|---|---|---|
+| **(a) Depth prepass at 4× MSAA, the scene pass testing for equal depth** | 2.71–2.78 ms | 2.03–2.04 ms | Taken |
+| (b) Ambient light written to a second multisampled target in the scene pass, occluded when composited (`0026/ao-ambient-target.diff`) | 2.83–2.85 ms | 2.19–2.21 ms | 0.07–0.18 ms slower: the second 4× target costs more than the prepass, and the composite cannot see albedo except through the target's alpha |
+| (a′) Depth prepass at one sample, the scene pass unchanged (`0026/ao-single-sample-prepass.diff`) | 2.78 ms | 2.13 ms | Slower than (a): the scene pass still shades every overdrawn pixel |
+
+| Tried | Measured | Why rejected |
+|---|---|---|
+| XeGTAO's noise (a Hilbert index over 64 × 64 pixels) with its 3×3 denoise, two passes | Grain everywhere in the occlusion, clumped round contact shadows | XeGTAO's noise is built to be averaged over frames by TAA; two 3×3 passes cannot gather it |
+| A 4×4 Bayer pattern with the 3×3 denoise, two passes, then three | A visible 4-pixel cross-hatch; three passes softer but still blotchy | A 5×5 tent does not cover the 4×4 tile evenly |
+| A 2×2 pattern with two 3×3 passes | Banding and blotches | Four turns of three slices give too few directions |
+| An infinite wall as the crease's closed form (half the sky) | GTAO 0.59–0.64 at the crease against 0.52–0.54 | Not GTAO's error: its falloff fades far horizons, so it never sees an unbounded wall. The crease is tested on a block within the radius instead (Validation) |
+| The visibility bitmask (Therrien et al. 2023) | Not built: no dark halos behind the factory's rods and pipes | Nothing over-darkened to mend |
+
 ### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
 
 The first run of the style's checks found the sixteen player colours of `art-style.md` §3.6 confused under simulated colour-vision deficiencies (Machado et al. 2009, `creeer_art::vision`). For deuteranopes, blue and violet are ΔE₀₀ 1.3 apart, violet and indigo 1.3, and orange and ochre 1.7. For protanopes, violet and indigo are 2.9 apart. In normal vision the closest pair is blue and indigo, at 8.5.
@@ -307,9 +333,26 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
     - **Found on the way:** the check had read `data/wearables.ron` as hiding nothing, so no hole had been looked for. With it read, the throat was missing inside the collar's front, and the base layer hid what its sleeves and legs leave bare. Later (2026-10-22): the boots' bend was cut round the wrong ankles (Measured and rejected), and the check took each part's own normals, which lean off the piece's at a part's edge (now the whole piece's).
   - **Within its segments** (at rest): the body's thighs 5.0–5.4 % outside their boxes grown by 3 cm and its upper arms 2.8–3.4 %, the shoulders' and hips' muscles, as the blockout's. The outfit's misses (5 cm) are what stands off the limbs: the knee pads 13–16 % of their points, the elbow patches 41–42 %, the coverall's legs 9–10 % at the shanks, the belt and its pouch 11 % at the pelvis (Limits).
 
+- **Ambient occlusion (G1.3d, 2026-10-22;** `tests/gpu_ao.rs`, `tests/gpu_ao_traced.rs`, wherever there is a GPU).
+  - **The port against closed forms,** with the reference preset (16 slices of 16 steps, full-resolution depth, power 1, no filter), its value read back and compared at the floor's pixels found by casting each pixel's ray on the CPU:
+    - a sphere of 0.5 m resting on a plane, against its form factor R³/(d² + R²)^{3/2}: within 0.011 at every ring from 0.6 to 1.5 m (0.803 against 0.804 at 0.6–0.8 m). The high preset at power 1 reads 0.91 there: GTAO's few steps miss part of the horizon, which XeGTAO's final power fits (0.91^2.2 = 0.81);
+    - the floor at the foot of a block 0.6 × 0.3 m (the crease), against its visibility by quadrature over the hemisphere: within 0.026 from 1 cm to 25 cm (0.545 against 0.538 at 1–3 cm). The block lies within the radius: an unbounded wall would be faded by GTAO's falloff (Measured and rejected).
+  - **Against a ray-traced reference of the style board's crate,** traced on the CPU as XeGTAO's references are (rays of the 1 m radius, 256 a pixel, the share that leave it unmet), every third pixel of the crate and the ground about it (4,924 pixels). Mean absolute error, and the mean signed (positive: too open):
+
+    | Preset | All | On the crate |
+    |---|---|---|
+    | high (shipped) | 0.033 (+0.021) | 0.054 |
+    | medium | 0.042 (+0.038) | 0.074 |
+    | low | 0.055 (+0.055) | 0.087 |
+    | high at power 1 | 0.052 (+0.051) | 0.106 |
+    | reference at power 1 | 0.036 (+0.033) | 0.079 |
+
+    XeGTAO's final power earns its place: without it the high preset's error rises by half. The test holds the high preset under 0.05.
+  - **No flicker** (`creeer_client --shimmer`, 1280 × 720, 32 frames): the shaded surfaces flicker on 0.079 % of their pixels, as before occlusion (gate 0.2 %). The occlusion map alone, in 8-bit levels of occlusion, on 0.37 % (p99 1.06 levels, near its own rounding); the test holds it under 1 %.
+  - **Thin occluders:** no dark halos behind the factory's rods and pipes in the occlusion map, so the visibility bitmask was not built.
+
 **Still to come:**
 - colour-vision simulation against Machado et al.'s published examples (set aside with the colour-blind mode);
-- GTAO against analytic occlusion (a sphere on a plane, a 90° crease) and a ray-traced reference;
 - dual-quaternion skinning exactly rigid for single-bone vertices.
 
 ## Cost
@@ -354,9 +397,27 @@ The cost follows the triangles, shadows included; one player close to the camera
 
 **The engineer as modelled (G1.3f).** The close-up level was raised to 50,000 for the detail (the user, 2026-10-21; at 40,000 a close player measured 0.02 ms). Worn whole, the model draws 48,790, 14,276 and 2,941 triangles at its three levels; the base body in its base layer 31,500, 10,877 and 2,477 (2026-10-22: what lies inside the worn wearables hidden, 1,700 triangles close up, and the boots' bend cut all round, 650).
 
+**Ambient occlusion (G1.3d), measured** with GPU timestamps and frame times (`creeer_client --bench 300 --view <v> --ao <preset>`; 1080p, RTX 4070 Super; two interleaved rounds against the build before it, `91caa3d`). Frame time p50:
+
+| View | Before | Off | Low | Medium | High |
+|---|---|---|---|---|---|
+| factory | 2.13–2.22 ms | 2.26–2.34 ms | 2.46 ms | 2.66 ms | 2.68–2.73 ms |
+| closeup | 1.72 ms | 1.73–1.74 ms | 1.85 ms | 2.01–2.02 ms | 2.06–2.07 ms |
+| overview | 1.76–1.77 ms | 1.83–1.91 ms | 2.04–2.05 ms | 2.20 ms | 2.24 ms |
+| horizon | 1.46 ms | 1.49 ms | 1.61 ms | 1.77–1.79 ms | 1.79–1.80 ms |
+| physics | 1.59 ms | 1.63–1.64 ms | 1.75–1.76 ms | 1.86–1.87 ms | 1.88–1.89 ms |
+
+Off draws no prepass; what remains of its few hundredths is the timestamps and the occlusion's constants. GPU time of the occlusion itself (the factory, high): depth MIPs 0.029 ms, the main pass 0.147, the filter about 0.04; medium's main pass 0.096, low's 0.020. The prepass takes 0.04–0.14 ms and saves the scene pass 0.02–0.06 ms by shading each pixel once.
+
+**Projected to min-spec** (a GTX 1660 class GPU): ×4, a margin over PassMark's G3D and memory bandwidth, both about 2.6× between the two cards (nominal FP32 is 7×, inflated by Ada's dual issue). The occlusion's compute: high about 0.9 ms, medium 0.6 ms, low 0.3 ms, each within the 1 ms budget; with the prepass and its barriers, a frame grows by 0.33–0.53 ms here at high (1.3–2.1 ms projected), 0.3–0.45 ms at medium. Min-spec is meant to run medium. XeGTAO's own high costs 0.56 ms on an RTX 2060.
+
 ## Limits
 
 To be written as the work finds them; each also in `docs/future-improvements.md`.
+
+- **Ambient occlusion without temporal anti-aliasing.** Each pixel's 18 samples (high) are gathered from its 4×4 tile by the filter, so occlusion under thin, close occluders shows a faint 4-pixel texture, and within about 4 pixels of a crease the filter's window (two pixels one way, one the other) reads up to 0.04 too open. TAA would let XeGTAO's own noise average over frames (`docs/future-improvements.md`).
+- **Normals from depth.** GTAO takes each pixel's normal from the depth, so it sees a cylinder's true facets where the shading sees smooth normals: faint vertical bands in its occlusion on curved parts. A normal written by the prepass would mend it, at a colour target's cost.
+- **Screen space.** What the camera does not see does not occlude: an overhang's underside, the far side of a part. GTAO assumes each surface continues behind itself as a heightfield, so it over-occludes behind thin objects (not seen in the sandbox) and its occlusion fades out at the radius (1 m).
 
 - **Rounds are drawn, not simulated.** A box's collision shape keeps its sharp edges, so its drawn corners lie up to (√3 − 1) times the bevel radius (at most 1.8 cm) inside the box that collides.
 - **One rule for every part's rounds:** 8 % of the smallest side, at most 2.5 cm. A part cannot ask for sharper or softer edges until the instance carries its own radius.

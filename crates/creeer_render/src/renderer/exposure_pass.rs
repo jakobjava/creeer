@@ -134,10 +134,11 @@ impl ExposurePass {
         encoder: &mut wgpu::CommandEncoder,
         globals: &wgpu::BindGroup,
         (width, height): (u32, u32),
+        timer: Option<&super::timing::GpuTimer>,
     ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("exposure"),
-            timestamp_writes: None,
+            timestamp_writes: timer.and_then(|t| t.compute("exposure")),
         });
         pass.set_bind_group(0, globals, &[]);
         pass.set_bind_group(1, &self.bind_group, &[]);

@@ -3,6 +3,8 @@
 use super::*;
 use crate::physics_sandbox::{PhysicsSandbox, PhysicsScene};
 use crate::physics_view;
+use creeer_render::Image;
+use creeer_render::renderer::{AoQuality, AoSettings};
 
 /// Command-line options of the headless screenshot mode.
 #[derive(Debug)]
@@ -18,6 +20,10 @@ pub(crate) struct ScreenshotOptions {
     overlay: Overlay,
     /// A physics scene to add, and how many seconds to simulate it first.
     physics: Option<(PhysicsScene, f64)>,
+    /// Ambient occlusion's quality (`--ao off|low|medium|high`), and where to save its map
+    /// (`--ao-map <file.png>`, G1.3d).
+    ao: AoQuality,
+    ao_map: Option<PathBuf>,
 }
 
 impl ScreenshotOptions {
@@ -35,6 +41,8 @@ impl ScreenshotOptions {
         };
         Ok(Some(Self {
             path: PathBuf::from(path),
+            ao: ao_quality(args)?,
+            ao_map: value_of("--ao-map").map(PathBuf::from),
             view: value_of("--view")
                 .cloned()
                 .unwrap_or_else(|| "overview".into()),
@@ -96,14 +104,38 @@ impl ScreenshotOptions {
     }
 }
 
+/// Ambient occlusion's quality from `--ao off|low|medium|high` (high when not given).
+pub(crate) fn ao_quality(args: &[String]) -> Result<AoQuality, String> {
+    let value = args
+        .iter()
+        .position(|a| a == "--ao")
+        .and_then(|i| args.get(i + 1));
+    Ok(match value.map(String::as_str) {
+        None | Some("high") => AoQuality::High,
+        Some("medium") => AoQuality::Medium,
+        Some("low") => AoQuality::Low,
+        Some("off") => AoQuality::Off,
+        Some(other) => {
+            return Err(format!(
+                "--ao expects off, low, medium or high, got `{other}`"
+            ));
+        }
+    })
+}
+
 /// Renders `frames` animated frames headless at 1080p and prints frame-time percentiles.
 pub(crate) fn bench(
     frames: usize,
     view: &str,
     factory: bool,
     players: Option<(&str, usize)>,
+    ao: AoQuality,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
+    renderer.set_ao(AoSettings {
+        quality: ao,
+        ..renderer.ao_settings()
+    });
     let meshes = DemoMeshes::register_for(&mut renderer);
     let players = match players {
         Some((path, count)) => {
@@ -125,6 +157,7 @@ pub(crate) fn bench(
     let (mut scene, mut lines) = (Scene::default(), DebugLines::default());
     let mut total = TimingStats::new(frames.max(1));
     let mut build = TimingStats::new(frames.max(1));
+    let mut passes = crate::gpu_passes::GpuPasses::default();
     let dt = 1.0 / f64::from(TICK_RATE_HZ);
     for frame in 0..frames + 30 {
         let start = Instant::now();
@@ -164,6 +197,7 @@ pub(crate) fn bench(
         if frame >= 30 {
             total.push(start.elapsed());
             build.push(built);
+            passes.push(renderer.gpu_times());
         }
     }
     let stats = renderer.stats();
@@ -190,6 +224,7 @@ pub(crate) fn bench(
         p(&build, 50.0),
         p(&build, 99.0)
     );
+    println!("{}", passes.report());
     Ok(())
 }
 
@@ -197,6 +232,10 @@ pub(crate) fn bench(
 pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = pollster::block_on(Renderer::new_headless(options.size))?;
     renderer.set_shadow_quality(options.shadows);
+    renderer.set_ao(AoSettings {
+        quality: options.ao,
+        ..renderer.ao_settings()
+    });
     let meshes = DemoMeshes::register_for(&mut renderer);
     let origin = if options.far { FAR_ORIGIN } else { DVec3::ZERO };
     let camera = demo::camera_preset(&options.view, origin)
@@ -271,6 +310,23 @@ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std:
         clear_color: BACKGROUND,
     });
     image.save_png(&options.path)?;
+    if let Some(path) = &options.ao_map {
+        let (width, height, values) = renderer.read_ao();
+        let rgba = values
+            .iter()
+            .flat_map(|v| {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=1
+                let g = (v * 255.0).round() as u8;
+                [g, g, g, 255]
+            })
+            .collect();
+        Image {
+            width,
+            height,
+            rgba,
+        }
+        .save_png(path)?;
+    }
     let stats = renderer.stats();
     let info = renderer.adapter_info();
     println!(

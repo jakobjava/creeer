@@ -155,6 +155,9 @@ pub struct Check {
     pub edges: Shimmer,
     pub surfaces: Shimmer,
     pub surface_share: f32,
+    /// The ambient occlusion map's own flicker (G1.3d), at the surfaces' pixels, in 8-bit
+    /// levels of occlusion.
+    pub occlusion: Shimmer,
 }
 
 /// The scene: the crate new, a year and four years weathered close by and in rows far off,
@@ -220,13 +223,14 @@ fn scene(meshes: &DemoMeshes, crate_model: MeshId, heat: Option<f32>) -> Scene {
 }
 
 /// Renders `frames` frames of `scene` (with `heatmap` if given), the camera turning a
-/// twentieth of a pixel each, after one to settle on; returns their luminance.
+/// twentieth of a pixel each, after one to settle on; returns their luminance, and their
+/// ambient occlusion (8-bit levels).
 fn render(
     renderer: &mut Renderer,
     scene: &Scene,
     heatmap: Option<&Heatmap>,
     frames: usize,
-) -> Vec<Vec<f32>> {
+) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
     let mut camera = Camera::new(DVec3::new(0.0, 1.6, 0.5));
     camera.pitch = -0.12;
     #[allow(clippy::cast_precision_loss)] // window sizes
@@ -239,7 +243,7 @@ fn render(
             let turn = f64::from(STEP_PIXELS / focal) * k as f64;
             camera.yaw = turn;
             let lighting = sky.lighting(camera.position, sun, &Lighting::default());
-            luminance(&renderer.capture(Frame {
+            let image = luminance(&renderer.capture(Frame {
                 camera: &camera,
                 scene,
                 terrain: &[],
@@ -250,10 +254,12 @@ fn render(
                 heatmap,
                 overlay: None,
                 clear_color: creeer_render::wgpu::Color::BLACK,
-            }))
+            }));
+            let occlusion = renderer.read_ao().2.iter().map(|v| v * 255.0).collect();
+            (image, occlusion)
         })
         .skip(1)
-        .collect()
+        .unzip()
 }
 
 /// What the check found, the shaded frames (luminance) and the pixels near edges.
@@ -267,7 +273,7 @@ pub fn check(size: (u32, u32), frames: usize) -> Result<Found, Box<dyn std::erro
         .models
         .crate_box
         .ok_or("the packs have no crate model")?;
-    let shaded = render(
+    let (shaded, occlusion) = render(
         &mut renderer,
         &scene(&meshes, crate_model, None),
         None,
@@ -278,7 +284,7 @@ pub fn check(size: (u32, u32), frames: usize) -> Result<Found, Box<dyn std::erro
         max: 1.0,
         palette: creeer_render::Palette::Sequential,
     };
-    let flat = render(
+    let (flat, _) = render(
         &mut renderer,
         &scene(&meshes, crate_model, Some(0.5)),
         Some(&one_colour),
@@ -292,6 +298,7 @@ pub fn check(size: (u32, u32), frames: usize) -> Result<Found, Box<dyn std::erro
         edges: measure(&flat, None),
         surfaces: measure(&shaded, Some(&keep)),
         surface_share,
+        occlusion: measure(&occlusion, Some(&keep)),
     };
     Ok((found, shaded, near))
 }
@@ -339,6 +346,13 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         100.0 * e.share,
         e.p99,
         e.p999
+    );
+    let o = found.occlusion;
+    println!(
+        "ambient occlusion alone: {:.3} % of the surfaces flicker, p99 {:.2}, p99.9 {:.2} levels",
+        100.0 * o.share,
+        o.p99,
+        o.p999
     );
     if s.share > GATE {
         return Err("the surfaces shimmer more than the gate allows".into());

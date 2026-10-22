@@ -68,10 +68,13 @@ impl MeshBuffers<'_> {
 /// Instanced mesh rendering. One instance buffer holds the instances visible to the camera,
 /// followed by the shadow casters of each cascade.
 pub(super) struct MeshPass {
-    /// Procedural meshes, in their instance's material.
-    plain: wgpu::RenderPipeline,
-    /// Models, with the full surface (ADR-0026).
-    model: wgpu::RenderPipeline,
+    /// Procedural meshes, in their instance's material: drawn alone, and after the depth
+    /// prepass (ambient occlusion on).
+    plain: [wgpu::RenderPipeline; 2],
+    /// Models, with the full surface (ADR-0026): alone, and after the prepass.
+    model: [wgpu::RenderPipeline; 2],
+    /// Depth only, for the prepass: procedural meshes, models.
+    prepass: [wgpu::RenderPipeline; 2],
     /// The tokens model vertices name and the noise (bind group 2).
     palette: GpuPalette,
     vertices: Option<wgpu::Buffer>,
@@ -95,8 +98,11 @@ impl MeshPass {
         queue: &wgpu::Queue,
         globals_layout: &wgpu::BindGroupLayout,
         shadow_sample_layout: &wgpu::BindGroupLayout,
+        ao_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let source = concat!(
+            include_str!("../shaders/ao_sample.wgsl"),
+            "\n",
             include_str!("../shaders/heatmap.wgsl"),
             "\n",
             include_str!("../shaders/lighting.wgsl"),
@@ -113,10 +119,11 @@ impl MeshPass {
                 Some(globals_layout),
                 Some(shadow_sample_layout),
                 Some(&palette.layout),
+                Some(ao_layout),
             ],
             immediate_size: 0,
         });
-        let pipeline = |label, vertex, fragment| {
+        let pipeline = |label, vertex, fragment, depth_stencil| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&layout),
@@ -130,7 +137,7 @@ impl MeshPass {
                     cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },
-                depth_stencil: scene_depth_state(),
+                depth_stencil,
                 multisample: scene_multisample(),
                 fragment: Some(wgpu::FragmentState {
                     module: &module,
@@ -144,8 +151,28 @@ impl MeshPass {
         };
         let instance_capacity = 1024;
         Self {
-            plain: pipeline("mesh", "vs_plain", "fs_plain"),
-            model: pipeline("model", "vs_main", "fs_main"),
+            plain: [scene_depth_state(), after_prepass_depth_state()]
+                .map(|depth| pipeline("mesh", "vs_plain", "fs_plain", depth)),
+            model: [scene_depth_state(), after_prepass_depth_state()]
+                .map(|depth| pipeline("model", "vs_main", "fs_main", depth)),
+            prepass: [
+                prepass_pipeline(
+                    device,
+                    "mesh prepass",
+                    globals_layout,
+                    &module,
+                    "vs_plain",
+                    &instanced_vertex_layouts(),
+                ),
+                prepass_pipeline(
+                    device,
+                    "model prepass",
+                    globals_layout,
+                    &module,
+                    "vs_main",
+                    &instanced_vertex_layouts(),
+                ),
+            ],
             palette,
             vertices: None,
             indices: None,
@@ -268,19 +295,35 @@ impl MeshPass {
         pass: &mut wgpu::RenderPass<'_>,
         meshes: &MeshArena,
         shadow_sampling: &wgpu::BindGroup,
+        ao: &wgpu::BindGroup,
+        prepassed: bool,
     ) {
         let Some(buffers) = self.buffers() else {
             return;
         };
         pass.set_bind_group(1, shadow_sampling, &[]);
         pass.set_bind_group(2, &self.palette.bind_group, &[]);
+        pass.set_bind_group(3, ao, &[]);
         if !self.draws.is_empty() {
-            pass.set_pipeline(&self.plain);
+            pass.set_pipeline(&self.plain[usize::from(prepassed)]);
             buffers.draw(pass, meshes, &self.draws);
         }
         if !self.model_draws.is_empty() {
-            pass.set_pipeline(&self.model);
+            pass.set_pipeline(&self.model[usize::from(prepassed)]);
             buffers.draw(pass, meshes, &self.model_draws);
+        }
+    }
+
+    /// Draws the camera's meshes into the depth prepass (globals bound by the caller).
+    pub(super) fn draw_prepass(&self, pass: &mut wgpu::RenderPass<'_>, meshes: &MeshArena) {
+        let Some(buffers) = self.buffers() else {
+            return;
+        };
+        for (pipeline, draws) in self.prepass.iter().zip([&self.draws, &self.model_draws]) {
+            if !draws.is_empty() {
+                pass.set_pipeline(pipeline);
+                buffers.draw(pass, meshes, draws);
+            }
         }
     }
 

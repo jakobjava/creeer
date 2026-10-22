@@ -244,6 +244,7 @@ impl ShadowPass {
     }
 
     /// Records one depth pass per cascade.
+    #[allow(clippy::too_many_arguments)]
     pub fn encode(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -252,10 +253,13 @@ impl ShadowPass {
         meshes: &MeshArena,
         draws: &[Vec<Draw>; CASCADES],
         terrain: &super::terrain_pass::TerrainPass,
+        timer: Option<&super::timing::GpuTimer>,
     ) {
+        const NAMES: [&str; CASCADES] = ["shadow 0", "shadow 1", "shadow 2", "shadow 3"];
         for (cascade, view) in self.layer_views.iter().enumerate() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow cascade"),
+                timestamp_writes: timer.and_then(|t| t.render(NAMES[cascade])),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view,

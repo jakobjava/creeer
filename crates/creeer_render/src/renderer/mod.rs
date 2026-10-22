@@ -20,10 +20,14 @@ use mesh_pass::MeshPass;
 use sea_pass::SeaPass;
 use shadow_pass::ShadowPass;
 use sky_pass::SkyPass;
-use targets::{Targets, scene_depth_state, scene_multisample, shader};
+use targets::{
+    Targets, after_prepass_depth_state, prepass_pipeline, scene_depth_state, scene_multisample,
+    shader,
+};
 use terrain_pass::TerrainPass;
 use tonemap_pass::TonemapPass;
 
+mod ao_pass;
 mod encode;
 mod exposure_pass;
 mod levels;
@@ -38,11 +42,14 @@ mod shadow_pass;
 mod sky_pass;
 mod targets;
 mod terrain_pass;
+mod timing;
 mod tonemap_pass;
+pub use ao_pass::{AoQuality, AoSettings};
 use bytemuck::{Pod, Zeroable};
 use creeer_math::glam::Mat4;
 use std::borrow::Cow;
 use std::fmt;
+pub use timing::GpuTime;
 
 /// Reversed-Z needs a float depth buffer for its precision near 0.
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -158,6 +165,10 @@ pub struct Renderer {
     sky_table: Option<(Atmosphere, [f64; 3], [[f32; 4]; SKY_TABLE])>,
     /// Meshes available to [`Scene`]s drawn by this renderer.
     pub meshes: MeshArena,
+    /// GPU timestamps per pass (none where the adapter lacks them).
+    timer: Option<timing::GpuTimer>,
+    /// Ambient occlusion (G1.3d).
+    ao: ao_pass::AoPass,
 }
 
 impl fmt::Debug for Renderer {
@@ -186,6 +197,21 @@ impl Renderer {
         self.stats
     }
 
+    /// Each pass's GPU time in the latest frame the GPU has finished (a few frames behind a
+    /// window's; the frame itself after [`Renderer::render_offscreen`] and
+    /// [`Renderer::capture`]). Empty where the adapter has no timestamp queries.
+    pub fn gpu_times(&self) -> &[GpuTime] {
+        self.timer.as_ref().map_or(&[], timing::GpuTimer::latest)
+    }
+
+    /// Submits a frame's commands; its timestamps are read back once the GPU is done.
+    fn submit(&mut self, commands: Vec<wgpu::CommandBuffer>) {
+        self.queue.submit(commands);
+        if let Some(timer) = &mut self.timer {
+            timer.submitted();
+        }
+    }
+
     /// Call when the window is resized. Zero sizes (minimised windows) are ignored.
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
@@ -198,6 +224,7 @@ impl Renderer {
             surface.configure(&self.device, config);
         }
         self.targets = Targets::new(&self.device, self.size);
+        self.ao.resize(&self.device, &self.targets.depth, self.size);
         self.tonemap.rebind(&self.device, &self.targets);
         self.exposure.rebind(&self.device, &self.targets);
     }
@@ -207,6 +234,18 @@ impl Renderer {
     pub fn set_palette(&mut self, palette: &creeer_art::Palette) {
         self.mesh_pass
             .set_palette(&self.device, &self.queue, palette);
+    }
+
+    /// Ambient occlusion's settings.
+    pub fn ao_settings(&self) -> AoSettings {
+        self.ao.settings()
+    }
+
+    /// Changes ambient occlusion's settings.
+    pub fn set_ao(&mut self, settings: AoSettings) {
+        if settings != self.ao.settings() {
+            self.ao.set(&self.device, &self.targets.depth, settings);
+        }
     }
 
     /// Changes the sun shadow resolution (see [`ShadowQuality`] for the memory cost).
@@ -250,7 +289,7 @@ impl Renderer {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             let commands = self.encode(&frame, &view, None, false);
-            self.queue.submit(commands);
+            self.submit(commands);
             self.queue.present(surface_texture);
         }
         self.free_ui_textures(&mut frame);
@@ -282,10 +321,13 @@ impl Renderer {
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
         let commands = self.encode(&frame, &view, None, false);
-        self.queue.submit(commands);
+        self.submit(commands);
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
             .expect("GPU poll failed");
+        if let Some(timer) = &mut self.timer {
+            timer.collect();
+        }
         self.free_ui_textures(&mut frame);
     }
 

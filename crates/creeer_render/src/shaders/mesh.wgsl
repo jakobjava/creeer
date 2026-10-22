@@ -30,7 +30,8 @@ struct InstanceIn {
 };
 
 struct PlainOut {
-    @builtin(position) clip: vec4<f32>,
+    // Invariant: the prepass computes the same depth (`after_prepass_depth_state`).
+    @builtin(position) @invariant clip: vec4<f32>,
     @location(0) world: vec3<f32>,
     // Centroid: a triangle thinner than a pixel (a bevel) is shaded within itself, not at
     // the pixel's centre with its normal extrapolated beyond the faces'.
@@ -45,7 +46,7 @@ struct PlainOut {
 };
 
 struct ModelOut {
-    @builtin(position) clip: vec4<f32>,
+    @builtin(position) @invariant clip: vec4<f32>,
     @location(0) world: vec3<f32>,
     @location(1) @interpolate(perspective, centroid) normal: vec3<f32>,
     @location(2) local: vec3<f32>,
@@ -134,7 +135,8 @@ fn fs_plain(in: PlainOut) -> @location(0) vec4<f32> {
     }
     let at = Place(in.local, vec3<f32>(0.0, 1.0, 0.0), vec2<f32>(0.0), footprint, vec2<f32>(0.0));
     let surface = plain_surface(in.color, in.material.y, in.material.x, at);
-    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, 1.0), 1.0);
+    let occlusion = ambient_occlusion(in.clip.xy, surface.colour, 1.0);
+    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, occlusion), 1.0);
 }
 
 @fragment
@@ -150,14 +152,16 @@ fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
         in.token, in.color, in.masks.x, in.masks.y, in.masks.z, in.masks.w,
         in.ageing.x, in.ageing.y, at,
     );
-    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, in.masks.x), 1.0);
+    let occlusion = ambient_occlusion(in.clip.xy, surface.colour, in.masks.x);
+    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, occlusion), 1.0);
 }
 
 /// `surface` at `world` lit by the sun (with its shadows) and the sky; `spread` (from
-/// `normal_spread`) widens its highlights, `occlusion` shades the ambient light only. With the
-/// engineering overlay on, `heat` replaces the material.
+/// `normal_spread`) widens its highlights, `occlusion` (baked and on screen:
+/// `ambient_occlusion`) shades the ambient light only. With the engineering overlay on, `heat`
+/// replaces the material.
 fn lit(
-    world: vec3<f32>, normal: vec3<f32>, spread: f32, surface: Surface, heat: f32, occlusion: f32,
+    world: vec3<f32>, normal: vec3<f32>, spread: f32, surface: Surface, heat: f32, occlusion: vec3<f32>,
 ) -> vec3<f32> {
     let n = normalize(normal);
     let v = normalize(-world);

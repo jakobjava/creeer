@@ -1,6 +1,7 @@
 //! The tech demo's Sandbox window.
 
 use super::*;
+use creeer_render::renderer::AoQuality;
 
 impl Running {
     /// A key pressed: the profiler's (F9), the solar system's or the planet's. Returns
@@ -55,6 +56,20 @@ impl Running {
                     if self.settings.shadows != before {
                         self.renderer.set_shadow_quality(self.settings.shadows);
                     }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Ambient occlusion:");
+                    let mut ao = self.renderer.ao_settings();
+                    for (quality, name) in [
+                        (AoQuality::Off, "off"),
+                        (AoQuality::Low, "low"),
+                        (AoQuality::Medium, "medium"),
+                        (AoQuality::High, "high"),
+                    ] {
+                        ui.radio_value(&mut ao.quality, quality, name);
+                    }
+                    // Only a change makes new textures.
+                    self.renderer.set_ao(ao);
                 });
                 ui.add(
                     egui::Slider::new(&mut self.settings.sun_elevation, -12.0..=90.0)
