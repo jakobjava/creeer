@@ -302,6 +302,12 @@ The style board and a walk in the planet sandbox, shown to the user: the enginee
 - **Reach.** Actions work on what the crosshair ray hits, within 2.5 m of the character's hands (the server checks the reach). The F5 sandbox's 500 m commands are kept for creative and test servers only.
 - **Carrying and throwing.** A grab is a ball joint (G1.1) between the hands and the body's grasped point, with a force limit from human strength (about 50 kg carried easily, 150 kg lifted briefly, heavier only dragged as friction allows). The grasped body's weight acts on the character, which slows and can topple it. Throwing is an impulse from the arm's stroke, with its reaction on the thrower.
 - **Strikes.** A swing hits what the ray finds. The strike's energy goes into what it hits: dug rock (G1.5), cut wood (G1.7), or an impulse on a body.
+- **The animation, from the user's first play (2026-10-22, after G1.3):** "the animation is very rough and it sometimes glitches, when running the player does not lean forward, also when stopping walking it does some more steps without moving, the arms look robotic, the fingers do not move and are always apart from each other: we can improve these things in 1.4". Each is researched first (measured gait and hand data, as G1.3g's gait was) and checked in the game:
+  - **Glitches:** caught in a recording and found, before anything is smoothed over;
+  - **Leaning into a run:** the trunk tilted forward with speed and acceleration, as measured in running;
+  - **Stopping:** the stride ends in a step or two that bring the feet together, and no stepping in place once the body has stopped;
+  - **The arms:** a natural swing (shoulder and elbow phased against the legs, the elbow bent more when running), not a rigid pendulum;
+  - **The hands:** fingers at rest curled and together (a relaxed hand), closing on what is held (G1.4's tools). The hands need finger bones in the skin: today the fifteen bones are the ragdoll's, so the hand is one rigid piece.
 - **Validation:** a carried 50 kg crate slows walking as its weight on the legs predicts; a 300 kg crate cannot be lifted; throwing conserves momentum; reach is enforced against a cheating client (commands from too far are refused).
 
 ### G1.5 Mining with real composition
