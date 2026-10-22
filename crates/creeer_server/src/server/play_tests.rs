@@ -179,15 +179,15 @@ fn a_frame_bent_in_a_crash_is_drawn_bent() {
             .collect::<Vec<_>>()
     };
     let before = shape(&game);
-    // 300 kg of steel dropped on it from a metre (more breaks members, and the loose joints
-    // roll away down the hill).
+    // 300 kg of steel dropped on it from a metre and a half (from a metre, at the spawn moved
+    // in G1.3i, it bent 6 mm, too little to test; much more breaks members).
     let up = at.normalize();
     let mut block = Body::rigid(
         Shape::Box {
             half: DVec3::new(0.6, 0.3, 0.6),
         },
         300.0,
-        at + up * 3.0,
+        at + up * 3.5,
         crate::world::DT,
     );
     block.structure.orientation[0] = creeer_math::glam::DQuat::from_rotation_arc(DVec3::Y, up);

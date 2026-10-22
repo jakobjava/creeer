@@ -32,6 +32,9 @@ pub struct Play {
     players: Vec<(Connection, Relay)>,
     now: Duration,
     recording: Recording,
+    /// The scene turned about the spawn by this angle (rad), an ensemble's member: the same
+    /// script on slightly different ground (0: the scene itself, its hash the golden one).
+    pub heading: f64,
 }
 
 impl std::fmt::Debug for Play {
@@ -95,6 +98,7 @@ impl Play {
                 players: players.iter().map(|&p| p.to_owned()).collect(),
                 ticks: Vec::new(),
             },
+            heading: 0.0,
         };
         let still = vec![Act::default(); players.len()];
         for _ in 0..JOINING {

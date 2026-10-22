@@ -53,3 +53,19 @@ The client's time setting back and replaying, per snapshot (about 30 a second), 
 - Other players' characters and ragdolls are not predicted: walking into another player is corrected a round trip late.
 - A body at the bubble's edge, or pushed by something outside it, is predicted as if nothing outside touched it, until the server says otherwise.
 - The replay's cost grows with the round trip and with the bodies pushed: about 2 ms a snapshot averaged over the slow link, a few on a misprediction.
+- Walking into crates on level ground mispredicts more than on a slope (the character's box meets them face to face), and replays cost more for it: 4.5–7.4 ms a reconciliation averaged over the slow link at the spawn (G1.3i, amended below).
+
+## Amended in G1.3i (2026-10-22): gated over an ensemble
+
+Moving the spawn to level ground (ADR-0023, amended) failed the lossless gate: 3 of 163 corrections over 1 cm. Walking into the crates is chaotic: moving the row by a centimetre gave anywhere from 3 to 26, so one placement was one sample, and the old gate had passed on it by luck. The prior work is the climate modellers': Baker et al., "A new ensemble-based consistency test for the Community Earth System Model" ([GMD 2015](https://gmd.copernicus.org/articles/8/2829/2015/)), judge a chaotic model by an ensemble of runs, not one. The gates are now over eight placements of the row (0.56–0.63 m apart, 3.00–3.14 m ahead): the median and the worst share of corrections over 1 cm, and the largest correction, a tenth above what was measured.
+
+| Eight placements, corrections over 1 cm (largest) | Lossless, of 163 | Slow and lossy, of 145–149 |
+|---|---|---|
+| Before G1.3i, the spawn by the pole | 0–1, median 0.5 (1.6 cm) | 3–10, median 6.5 (5.1 cm) |
+| The plumb line and the avatar's sleep, by the pole | 0–2, median 0 (1.8 cm) | 0–6, median 3.5 (5.8 cm) |
+| **The spawn moved to level ground (gated)** | **0–4, median 2 (2.9 cm)** | **5–25, median 16 (12.8 cm)** |
+| The same, the crates turned 0.4 rad about the vertical | 0–1, median 0 (2.0 cm) | 1–11, median 6.5 (12.5 cm) |
+
+Gates: lossless median ≤ 1.4 %, worst ≤ 2.7 %, largest < 3.2 cm; slow and lossy median ≤ 12 %, worst ≤ 19 %, largest < 14 cm. The changes of this amendment predict better where they were measured before; the level ground predicts worse. Its cause, measured: on level ground the character's box (it never turns) meets the upright crates face to face, a contact whose force a quantum of tilt redistributes; on the old slope the crates leaned, and turned crates predict as well as there. Measured and rejected: snapshots 4 to 64 times finer (still 3–4 of 8 placements over the old gate: the divergence grows from any difference), crates rebuilt at the server's exact rest pose (no change), the body as a 16-sided bevelled prism (worse: 0–9 lossless, 20–38 slow). A character whose contacts with what it pushes are well conditioned waits for G1.8's contacts (`docs/future-improvements.md`).
+
+The client's replay cost over the slow link rose with the mispredictions: 4.5–7.4 ms a reconciliation averaged over the walk at the new spawn, against 2–4 ms by the pole (Limits).

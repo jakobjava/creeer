@@ -78,13 +78,25 @@ pub fn run(scene: &Scene, ticks: u32) -> Report {
 }
 
 /// Plays `scene` for `ticks` ticks, telling `each` every tick's cost as it comes.
-pub fn run_with(scene: &Scene, ticks: u32, mut each: impl FnMut(u32, Tick)) -> Report {
+pub fn run_with(scene: &Scene, ticks: u32, each: impl FnMut(u32, Tick)) -> Report {
+    run_turned(scene, ticks, 0.0, each)
+}
+
+/// Plays `scene` turned about the spawn by `heading` (rad: an ensemble's member, `Play::heading`)
+/// for `ticks` ticks, telling `each` every tick's cost as it comes.
+pub fn run_turned(
+    scene: &Scene,
+    ticks: u32,
+    heading: f64,
+    mut each: impl FnMut(u32, Tick),
+) -> Report {
     let mut play = Play::new(
         (scene.build)(terrain()),
         scene.name,
         scene.players,
         &terrain(),
     );
+    play.heading = heading;
     let start: Vec<_> = (0..play.players()).map(|k| play.bytes(k)).collect();
     let costs = (0..ticks)
         .map(|t| {
@@ -97,11 +109,12 @@ pub fn run_with(scene: &Scene, ticks: u32, mut each: impl FnMut(u32, Tick)) -> R
     finish(play, costs, &start)
 }
 
-/// The world's east and north at the spawn point.
+/// The world's east and north at the spawn point, turned by the play's heading.
 fn compass(play: &Play) -> (DVec3, DVec3, DVec3) {
     let spawn = play.server.world.spawn();
     let (east, north) = tangent_frame(spawn.normalize());
-    (spawn, east, north)
+    let (s, c) = det::sin_cos(play.heading);
+    (spawn, east * c + north * s, north * c - east * s)
 }
 
 /// *crowd*: each player walks a circle of 4–11 m about the spawn (its own radius, speed and

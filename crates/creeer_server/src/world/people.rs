@@ -155,7 +155,7 @@ impl ServerWorld {
         }
         if !p.fallen() {
             let i = parts[0];
-            let up = self.world.bodies[i].structure.position[0].normalize();
+            let up = character::plumb(&self.world, self.world.bodies[i].structure.position[0]);
             let motion = (p.before[0], pushed_on(pushes, i));
             p.struck |= ragdoll::knocked(&self.world, i, up, motion);
             // Struck, it falls once the strike is over: its body takes the whole strike (falling
@@ -216,7 +216,7 @@ impl ServerWorld {
         let Some(&pelvis) = parts.first() else { return };
         let lying = self.world.bodies[pelvis].structure.position[0];
         let feet = at.unwrap_or_else(|| self.ground_under(lying));
-        let up = feet.normalize();
+        let up = character::plumb(&self.world, feet);
         let body = ragdoll::standing(&self.world, &parts, feet + up * 0.05, up);
         self.world.bodies[pelvis] = body;
         let map = self.world.retain_bodies(|i, _| !parts[1..].contains(&i));

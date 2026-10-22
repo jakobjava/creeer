@@ -89,12 +89,32 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// proportions (G1.3f), 6,651 at tick 82, a crate landing on a fallen player; the old ragdoll
 /// reached 6,347 at full length, and the scene's times fell (p99 15.1 → 10.6 ms, worst 35 →
 /// 28 ms at full length). The user accepted it (2026-10-21). G1.8 brings it back down.
-const WORK: [(&str, u64); 1] = [("crowd", 7_300)];
+///
+/// Since G1.3i the work is gated over an ensemble (as Baker et al. 2015 test a chaotic model):
+/// each scene played turned about the spawn to [`HEADINGS`] headings, its median member and its
+/// worst (a change of up by 0.0004 rad had moved the one sample across its ceiling). At the
+/// spawn moved to level ground at a temperate latitude (2026-10-22): 127-248 (median 166), and
+/// 4,994 where a crate lands on a fallen player at tick 299. The median a tenth above; the worst
+/// keeps the ceiling above.
+const WORK: [(&str, u64, u64); 1] = [("crowd", 183, 7_300)];
+
+/// The headings each scene is played at for its ensemble (`Play::heading`).
+const HEADINGS: u32 = 8;
 
 #[test]
 #[ignore = "measures the work ceilings"]
 fn measure_the_work_ceilings() {
     for s in &SCENES {
+        for k in 0..HEADINGS {
+            let heading = f64::from(k) * std::f64::consts::TAU / f64::from(HEADINGS);
+            let report = super::scenes::run_turned(s, s.ticks.1, heading, |_, _| {});
+            let (tick, most) = report.most_work();
+            println!(
+                "{} turned {heading:.2}: {most} at tick {tick}; worst {:.2} ms",
+                s.name,
+                report.percentile_ms(100.0)
+            );
+        }
         let report = run(s, s.ticks.1);
         let (tick, most) = report.most_work();
         let (down, up) = report.kbits();
@@ -109,14 +129,28 @@ fn measure_the_work_ceilings() {
 #[test]
 fn every_scene_keeps_within_its_work_and_its_bandwidth() {
     for s in &SCENES {
-        let report = run(s, s.ticks.1);
-        let (tick, most) = report.most_work();
-        let ceiling = WORK.iter().find(|w| w.0 == s.name).map(|w| w.1);
+        let (_, median, ceiling) = *WORK.iter().find(|w| w.0 == s.name).expect("a gate");
+        let mut works = Vec::new();
+        for k in 0..HEADINGS {
+            let heading = f64::from(k) * std::f64::consts::TAU / f64::from(HEADINGS);
+            let report = super::scenes::run_turned(s, s.ticks.1, heading, |_, _| {});
+            let (tick, most) = report.most_work();
+            assert!(
+                most <= ceiling,
+                "{} turned {heading:.2}: tick {tick} took {most} Newton iterations",
+                s.name
+            );
+            works.push(most);
+        }
+        works.sort_unstable();
+        let n = works.len();
+        let middle = (works[n / 2 - 1] + works[n / 2]) / 2;
         assert!(
-            ceiling.is_some_and(|c| most <= c),
-            "{}: tick {tick} took {most} Newton iterations (ceiling {ceiling:?})",
+            middle <= median,
+            "{}: its median member {middle} ({works:?})",
             s.name
         );
+        let report = run(s, s.ticks.1);
         // plan.md §5: 256 kbit/s to a client, on the wire.
         let (down, up) = report.kbits();
         assert!(

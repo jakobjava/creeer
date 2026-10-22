@@ -101,7 +101,8 @@ impl Predicted {
             jump: input.jump,
             thrust: input.thrust,
         };
-        character::steer(world, 0, act, (at.normalize(), water), &mut reactions);
+        let up = character::plumb(world, at);
+        character::steer(world, 0, act, (up, water), &mut reactions);
         if let Some(a) = around.as_mut() {
             a.push(world);
         }
@@ -206,6 +207,12 @@ impl Predicted {
         body.solver
             .set_mass(&mut body.structure, 0, character::DRY + self.gas);
         body.solver.reset_history(&body.structure);
+        // Asleep on the server, asleep here too, as the bodies near it are (`nearby.rs`): a
+        // character standing still sleeps, and woken it would be stepped where the server's
+        // stands as it fell asleep (G1.3i: standing still no longer creeps, so it does sleep).
+        if state.asleep {
+            body.sleep_now();
+        }
         // The bodies near it, as the server had them at this input (ADR-0025).
         let last_input = snapshot.last_input;
         self.templates.retain(kinds);

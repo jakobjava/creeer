@@ -65,23 +65,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut view = PlanetView::singleplayer()?;
     let terrain = Arc::clone(&view.terrain);
     play(&mut view, 0.0)?;
-    // A land spot with relief: the first point between 300 and 1500 m above the datum where the
-    // sun climbs as high as asked (the sphere's first points lie by the pole); for `surface`, the
-    // spawn itself (bodies are simulated only near a player), where it reaches 4°.
-    let asked = if view_name == "surface" {
-        -1.0
-    } else {
-        det::sin(sun_elevation.to_radians())
-    };
-    let highest = |d: DVec3| {
-        (0..200)
-            .map(|i| view.sun_direction_at(f64::from(i) / 200.0).dot(d))
-            .fold(f64::MIN, f64::max)
-    };
-    let up = fibonacci_sphere(5000)
-        .filter(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
-        .find(|&d| highest(d) >= asked)
-        .ok_or("no land spot found")?;
+    // Where players appear (land with relief at a temperate latitude, G1.3i): bodies are
+    // simulated only near a player, and the noon sun stands 45-60° high there.
+    let up = creeer_server::world::spawn_point(&terrain).normalize();
     view.day_fraction = day_for_sun(&view, up, sun_elevation);
     view.day_speed = 0.0;
     let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);

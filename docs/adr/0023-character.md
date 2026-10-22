@@ -108,6 +108,15 @@ The ragdoll had been laid out for a 1.86 m person carrying a jetpack, its arms 9
 - **The play scene *crowd*** at full length: p50 1.08 → 0.94 ms, p99 15.1 → 10.6 ms, worst 35 → 28 ms. Its most work in a tick at CI's length rose from 4,730 to 6,651 Newton iterations (tick 82, a crate landing on a fallen player; the old ragdoll reached 6,347 at full length): the user raised its ceiling to 7,300 (`play/tests.rs`). The stress scene *server* at full length: p99 24.5 → 15.2 ms, worst 67 → 31 ms.
 - **Goldens renewed** (*crowd* both lengths, *server* at 1,200 ticks), after the old ragdoll with the new code reproduced every old hash: the change is the ragdoll's alone.
 
+### Amended in G1.3i (2026-10-22): standing along the plumb line
+
+The character stood along the radius from the planet's centre. The world turns with the planet (6-hour day), so gravity includes its centrifugal pull: at latitude 42° that leans the plumb line off the radius, and the legs, pushing along the radius, left 0.021 m/s² of it sideways. The walk, a damper on velocity, balanced it at a creep: a character standing still slid downhill at 5.3 mm/s and never slept (so never parked: `world/lod_tests.rs` found it once the spawn moved off the pole, where the pull is 0.4 N and the creep under the sleep threshold).
+
+- **Up is the plumb line** (`character::plumb`): against gravity with the centrifugal pull, from the world's own field; level ground is level by it, as the terrain's datum is that field's equipotential. The server, the client's prediction, the knocked-down test and standing up all take it.
+- **The predicted avatar sleeps when the server's does** (`predicted.rs`): standing still now lets it sleep, and the client had woken its copy at every snapshot (the bodies near it already slept as the server's do, ADR-0025).
+- **The spawn** moved to the first land of the spread between 300 and 1,500 m at a temperate latitude (30–45°) whose ground rises at most 1.5° every way out to 5, 15 and 40 m: latitude 45°, the noon sun 45° high. By the pole it never rose above 4°.
+- **Goldens renewed** (*crowd* both lengths, *server* both lengths): the spawn moved. *crowd* at CI's length on level ground: its worst tick 1.5 ms (36 ms by the pole), its most work 248 Newton iterations (9,051 by the pole with the plumb line, over its ceiling). Its gate is now an ensemble (`play/tests.rs`, ADR-0025 amended).
+
 ### Not yet (G1.2's next slice)
 
 Prediction of bodies near the player. Climbing needs something to climb: ladders and handholds come with G2's building.

@@ -159,6 +159,22 @@ pub fn refill(body: &mut Body) {
     body.solver.set_mass(&mut body.structure, 0, MASS);
 }
 
+/// Up at `at` as a plumb line hangs: against gravity with the planet's centrifugal pull (the
+/// world's frame turns with it), not along the radius. Level ground is level by this up (the
+/// terrain's datum is the same field's equipotential); by the radius, a person standing at
+/// latitude 42° was pushed 0.021 m/s² sideways and crept 5 mm/s (G1.3i). Without a planet,
+/// the radius.
+pub fn plumb(world: &World, at: DVec3) -> DVec3 {
+    world.planet.as_ref().map_or_else(
+        || at.normalize(),
+        |g| {
+            (-g.acceleration(at))
+                .try_normalize()
+                .unwrap_or(at.normalize())
+        },
+    )
+}
+
 /// How a character stands after [`steer`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Footing {
