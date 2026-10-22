@@ -1,14 +1,20 @@
 //! A model held to the style and to its manifest entry (`docs/art-style.md` §7, §11.3).
 //!
-//! - its triangles within its class's budget;
+//! - its triangles within its class's budget; a skinned model's each piece at each level (the
+//!   body as a character, the others as wearables);
+//! - a skinned model's weights: none negative, each vertex's summing to one;
 //! - its bounding box as the manifest says, within a centimetre (size, scale and origin);
 //! - unit normals and no degenerate triangles;
 //! - smooth curves: across every smoothly shaded edge, the facets stray from the curve they
-//!   stand for by at most 1 % of its radius or 1 mm, whichever is more.
+//!   stand for by at most 1 % of its radius or 1 mm, whichever is more (at the close-up level:
+//!   the others are drawn only where their facets are under half a pixel).
+
+use crate::model::Class;
 
 use crate::model::{Entry, Model};
 use creeer_math::det;
 use creeer_math::glam::Vec3;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 /// How far the bounding box may differ from the manifest's (m).
@@ -23,14 +29,19 @@ pub const SMALLEST_AREA: f64 = 1e-10;
 /// What is wrong with `model` as `entry` describes it; empty when nothing is.
 pub fn check(model: &Model, entry: &Entry) -> Vec<String> {
     let mut problems = Vec::new();
-    let budget = entry.class.budget();
-    if model.triangles() > budget {
-        problems.push(format!(
-            "{} triangles, over a {:?}'s {budget}",
-            model.triangles(),
-            entry.class
-        ));
+    if model.parts.is_empty() {
+        let budget = entry.class.budget();
+        if model.triangles() > budget {
+            problems.push(format!(
+                "{} triangles, over a {:?}'s {budget}",
+                model.triangles(),
+                entry.class
+            ));
+        }
+    } else {
+        problems.extend(levels(model));
     }
+    problems.extend(weights(model));
     let (lo, hi) = model.bounds();
     let (want_lo, want_hi) = entry.bounds;
     for axis in 0..3 {
@@ -62,7 +73,7 @@ pub fn check(model: &Model, entry: &Entry) -> Vec<String> {
     if degenerate > 0 {
         problems.push(format!("{degenerate} degenerate triangles"));
     }
-    if let Some((stray, limit, at)) = worst_facet(model) {
+    if let Some((stray, limit, at)) = worst_facet(&close_up(model)) {
         problems.push(format!(
             "a smoothly shaded edge at {at:?} strays {:.1} mm from its curve, more than {:.1} mm: \
              it needs more segments (art-style.md §7)",
@@ -71,6 +82,63 @@ pub fn check(model: &Model, entry: &Entry) -> Vec<String> {
         ));
     }
     problems
+}
+
+/// Each piece's triangles at each level within its budget: the body's a character's, the
+/// rest a wearable's.
+fn levels(model: &Model) -> Vec<String> {
+    let mut drawn: BTreeMap<(&str, u8), usize> = BTreeMap::new();
+    for part in &model.parts {
+        *drawn.entry((part.piece.as_str(), part.level)).or_default() += part.triangles();
+    }
+    let mut out = Vec::new();
+    for ((piece, level), triangles) in drawn {
+        let class = if piece == "body" {
+            Class::Character
+        } else {
+            Class::Wearable
+        };
+        let budget = class.level_budget(level);
+        if triangles > budget {
+            out.push(format!(
+                "{piece} at level {level}: {triangles} triangles, over a {class:?}'s {budget}"
+            ));
+        }
+    }
+    out
+}
+
+/// A skinned model's weights: none negative, each vertex's summing to one.
+fn weights(model: &Model) -> Vec<String> {
+    if model.bones.is_empty() {
+        return Vec::new();
+    }
+    let bad = (model.vertices.iter())
+        .filter(|v| {
+            v.weights.iter().any(|&w| w < 0.0) || (v.weights.iter().sum::<f32>() - 1.0).abs() > 1e-3
+        })
+        .count();
+    if bad == 0 {
+        Vec::new()
+    } else {
+        vec![format!("{bad} vertices whose weights do not sum to one")]
+    }
+}
+
+/// The model at its close-up level only (all of it, without levels).
+fn close_up(model: &Model) -> Model {
+    if model.parts.is_empty() {
+        return model.clone();
+    }
+    let mut out = Model {
+        vertices: model.vertices.clone(),
+        ..Model::default()
+    };
+    for part in model.parts.iter().filter(|p| p.level == 0) {
+        out.indices
+            .extend_from_slice(&model.indices[part.first..part.first + part.count]);
+    }
+    out
 }
 
 fn corner(model: &Model, i: u32) -> Vec3 {

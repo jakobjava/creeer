@@ -1,8 +1,11 @@
 //! Models (G1.3b, ADR-0026): binary glTF files that the scripts in `art/` make
 //! (`docs/blender-mcp.md`), read into one mesh whose vertices name palette tokens. The
 //! manifest (`data/models/models.ron`) says what each model is, and [`crate::model_check`]
-//! holds it to the style (`docs/art-style.md` §7, §11.3).
+//! holds it to the style (`docs/art-style.md` §7, §11.3). A skinned model (the engineer,
+//! G1.3f) also has its bones, each vertex's weights on them, and its parts
+//! ([`crate::model_skin`]).
 
+use crate::model_skin::{self, Bone, Part};
 use crate::palette::Palette;
 use creeer_data::Data;
 use creeer_data::merge::ron_list;
@@ -30,6 +33,10 @@ pub struct Vertex {
     pub height: f32,
     /// Grain coordinates (m): along its part's grain, and across it.
     pub grain: [f32; 2],
+    /// A skinned model's: the bones (indices into [`Model::bones`]) that move it, and how much
+    /// each (summing to one); all nought for a model without a skin.
+    pub bones: [u8; 4],
+    pub weights: [f32; 4],
 }
 
 /// The range heights above a model's base are stored over (m; `art/bake.py`).
@@ -41,6 +48,10 @@ pub struct Model {
     pub vertices: Vec<Vertex>,
     /// Triangles, counter-clockwise from the front.
     pub indices: Vec<u32>,
+    /// A skinned model's bones, in its skin's order (empty without one).
+    pub bones: Vec<Bone>,
+    /// A skinned model's parts: each piece's region at each level, a run of the indices.
+    pub parts: Vec<Part>,
 }
 
 /// What kind of thing a model is: its triangle budget (`art-style.md` §7).
@@ -61,11 +72,20 @@ pub enum Class {
 }
 
 impl Class {
-    /// Its most triangles at LOD 0.
+    /// Its most triangles at LOD 0 (the close-up level).
     pub fn budget(self) -> usize {
+        self.level_budget(0)
+    }
+
+    /// Its most triangles at level of detail `level` (0 close-up, 1 mid, 2 far): the
+    /// character's measured before modelling (ADR-0026, Cost), a wearable's 4,000 at the mid
+    /// level and the others in the character's proportion; a model without levels has only 0.
+    pub fn level_budget(self, level: u8) -> usize {
+        const CHARACTER: [usize; 3] = [50_000, 15_000, 3_000];
+        let k = usize::from(level.min(2));
         match self {
-            Self::Character => 15_000,
-            Self::Wearable => 4_000,
+            Self::Character => CHARACTER[k],
+            Self::Wearable => 4_000 * CHARACTER[k] / CHARACTER[1],
             Self::Tool => 2_000,
             Self::Item => 1_000,
             Self::Pod => 20_000,
@@ -105,33 +125,58 @@ impl Model {
     /// The model in the binary glTF `bytes`, its materials resolved against `palette`.
     ///
     /// # Errors
-    /// If it does not parse; if it has images or textures, a skin (G1.3e), a primitive that is
-    /// not triangles, or one without positions, normals, indices or a material; or if a
-    /// material is not a palette token.
+    /// If it does not parse; if it has images or textures, more than one skin, a primitive that
+    /// is not triangles, or one without positions, normals, indices or a material; if a
+    /// material is not a palette token; or, skinned, if a mesh is not named as a part, or a
+    /// vertex lacks its bones or names one the skin lacks.
     pub fn read(bytes: &[u8], palette: &Palette) -> Result<Self, String> {
         let gltf = gltf::Gltf::from_slice(bytes).map_err(|e| format!("not a glTF: {e}"))?;
         if gltf.images().len() > 0 || gltf.textures().len() > 0 {
             return Err("it has images: the style uses none (art-style.md §6)".into());
         }
-        if gltf.skins().len() > 0 {
-            return Err("it has a skin: skinned models come with G1.3e".into());
-        }
         let scene = gltf
             .default_scene()
             .or_else(|| gltf.scenes().next())
             .ok_or("it has no scene")?;
+        let worlds = model_skin::worlds(&scene);
         let blob = gltf.blob.as_deref();
-        let mut model = Self::default();
-        let mut stack: Vec<(gltf::Node, Mat4)> =
-            scene.nodes().map(|n| (n, Mat4::IDENTITY)).collect();
-        while let Some((node, parent)) = stack.pop() {
-            let at = parent * Mat4::from_cols_array_2d(&node.transform().matrix());
-            if let Some(mesh) = node.mesh() {
-                for primitive in mesh.primitives() {
-                    model.add(&primitive, at, blob, palette)?;
+        let mut model = Self {
+            bones: model_skin::bones(&gltf, &worlds, blob)?,
+            ..Self::default()
+        };
+        let skinned = !model.bones.is_empty();
+        // In node order, so a file reads the same every time.
+        let mut nodes: Vec<gltf::Node> = gltf
+            .nodes()
+            .filter(|n| worlds.contains_key(&n.index()))
+            .collect();
+        nodes.sort_by_key(gltf::Node::index);
+        for node in nodes {
+            let Some(mesh) = node.mesh() else { continue };
+            let (at, part) = if skinned {
+                let name = node.name().ok_or("a skinned mesh without a name")?;
+                if node.skin().is_none() {
+                    return Err(format!("{name}: a mesh not on the skin"));
                 }
+                // Moved by its bones alone, which stand at rest.
+                (Mat4::IDENTITY, Some(model_skin::parse_part(name)?))
+            } else {
+                (worlds[&node.index()], None)
+            };
+            let first = model.indices.len();
+            for primitive in mesh.primitives() {
+                model.add(&primitive, at, blob, palette, skinned)?;
             }
-            stack.extend(node.children().map(|c| (c, at)));
+            if let Some((piece, region, level)) = part {
+                let count = model.indices.len() - first;
+                model.parts.push(Part {
+                    piece,
+                    region,
+                    level,
+                    first,
+                    count,
+                });
+            }
         }
         if model.indices.is_empty() {
             return Err("it has no triangles".into());
@@ -146,6 +191,7 @@ impl Model {
         at: Mat4,
         blob: Option<&[u8]>,
         palette: &Palette,
+        skinned: bool,
     ) -> Result<(), String> {
         if primitive.mode() != Mode::Triangles {
             return Err(format!(
@@ -183,11 +229,38 @@ impl Model {
             Some(uv) => uv.into_f32().map(|[u, v]| [u, 1.0 - v]).collect(),
             None => vec![[0.0, 0.0]; positions.len()],
         };
+        let (bones, weights) = if skinned {
+            let bones: Vec<[u16; 4]> = reader
+                .read_joints(0)
+                .ok_or_else(|| format!("{name}: skinned, but no joints"))?
+                .into_u16()
+                .collect();
+            let weights: Vec<[f32; 4]> = reader
+                .read_weights(0)
+                .ok_or_else(|| format!("{name}: skinned, but no weights"))?
+                .into_f32()
+                .collect();
+            (bones, weights)
+        } else {
+            (
+                vec![[0; 4]; positions.len()],
+                vec![[0.0; 4]; positions.len()],
+            )
+        };
+        if reader.read_joints(1).is_some() {
+            return Err(format!("{name}: more than four bones a vertex"));
+        }
         if normals.len() != positions.len()
             || masks.len() != positions.len()
             || grain.len() != positions.len()
+            || bones.len() != positions.len()
+            || weights.len() != positions.len()
         {
             return Err(format!("{name}: attributes of different lengths"));
+        }
+        let most = self.bones.len();
+        if skinned && bones.iter().flatten().any(|&b| usize::from(b) >= most) {
+            return Err(format!("{name}: a vertex on a bone the skin lacks"));
         }
         let indices: Vec<u32> = reader
             .read_indices()
@@ -196,7 +269,13 @@ impl Model {
             .collect();
         let normal_matrix = Mat3::from_mat4(at).inverse().transpose();
         let base = u32::try_from(self.vertices.len()).map_err(|_| "too many vertices")?;
-        for (((p, n), m), g) in positions.iter().zip(&normals).zip(&masks).zip(&grain) {
+        for (k, (((p, n), m), g)) in positions
+            .iter()
+            .zip(&normals)
+            .zip(&masks)
+            .zip(&grain)
+            .enumerate()
+        {
             self.vertices.push(Vertex {
                 position: at.transform_point3(Vec3::from(*p)).to_array(),
                 normal: (normal_matrix * Vec3::from(*n))
@@ -208,6 +287,10 @@ impl Model {
                 tone: m[2],
                 height: m[3],
                 grain: *g,
+                // At most 255 bones (`model_skin::bones`), checked above against the skin's.
+                #[allow(clippy::cast_possible_truncation)]
+                bones: bones[k].map(|b| b as u8),
+                weights: weights[k],
             });
         }
         for &i in &indices {
@@ -236,10 +319,11 @@ impl Model {
     }
 
     /// Its triangles in a form that ignores how the file happens to order and share vertices:
-    /// each corner quantised (positions and normals to 10 µm and 10⁻⁴, masks to 10⁻³, its token
-    /// exact), each triangle turned to begin at its least corner (keeping its winding), the
-    /// triangles sorted. Two models with the same canonical form are the same model.
-    pub fn canonical(&self) -> Vec<[[i64; 13]; 3]> {
+    /// each corner quantised (positions and normals to 10 µm and 10⁻⁴, masks and weights to
+    /// 10⁻³, its token and bones exact), each triangle turned to begin at its least corner
+    /// (keeping its winding), the triangles sorted. Two models with the same canonical form are
+    /// the same model.
+    pub fn canonical(&self) -> Vec<[[i64; 21]; 3]> {
         let corner = |i: u32| {
             let v = &self.vertices[i as usize];
             let q = |x: f32, step: f64| {
@@ -261,9 +345,17 @@ impl Model {
                 q(v.height, 1e-4),
                 q(v.grain[0], 1e-5),
                 q(v.grain[1], 1e-5),
+                i64::from(v.bones[0]),
+                i64::from(v.bones[1]),
+                i64::from(v.bones[2]),
+                i64::from(v.bones[3]),
+                q(v.weights[0], 1e-3),
+                q(v.weights[1], 1e-3),
+                q(v.weights[2], 1e-3),
+                q(v.weights[3], 1e-3),
             ]
         };
-        let mut out: Vec<[[i64; 13]; 3]> = self
+        let mut out: Vec<[[i64; 21]; 3]> = self
             .indices
             .as_chunks::<3>()
             .0

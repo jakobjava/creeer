@@ -26,13 +26,16 @@
     (name: "plastic", group: Material, colour: Hex("#d8d2c4"), roughness: 0.55),
 
     // §3.3 The character
-    (name: "coverall", group: Character, colour: Hex("#8c99a6"), roughness: 0.85, pattern: Fabric),
+    (name: "coverall", group: Character, colour: Hex("#4a5a73"), roughness: 0.85, pattern: Fabric, wears_to: Some("coverall_worn")),
+    (name: "coverall_worn", group: Character, colour: Hex("#6b7a8e"), roughness: 0.9, pattern: Fabric),
     (name: "leather", group: Character, colour: Hex("#4b2c22"), roughness: 0.70, pattern: Leather),
     (name: "lens", group: Character, colour: Hex("#2a3b33"), roughness: 0.05, pattern: Glass),
     (name: "player_accent", group: Character, colour: PerPlayer, roughness: 0.75, pattern: Fabric),
     (name: "skin", group: Character, colour: PerPlayer, roughness: 0.55),
-    (name: "hair", group: Character, colour: PerPlayer, roughness: 0.70),
+    (name: "hair", group: Character, colour: PerPlayer, roughness: 0.70, pattern: Hair),
     (name: "base_layer", group: Character, colour: Hex("#797e86"), roughness: 0.85, pattern: Fabric),
+    (name: "eye_white", group: Character, colour: Hex("#e4ddd2"), roughness: 0.20),
+    (name: "iris", group: Character, colour: Hex("#3b2a1f"), roughness: 0.10),
 
     // §3.4 Vegetation
     (name: "bark_spruce", group: Vegetation, colour: Hex("#5a4632"), roughness: 0.90, pattern: Wood),

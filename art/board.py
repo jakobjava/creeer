@@ -113,10 +113,11 @@ def main():
     print(f"art: board -> {out}")
 
 
-try:
-    main()
-except Exception:  # Blender would otherwise keep running with exit code 0
-    import traceback
+if __name__ == "__main__":  # run by Blender; imported, it lends its ground and sun (review_model.py)
+    try:
+        main()
+    except Exception:  # Blender would otherwise keep running with exit code 0
+        import traceback
 
-    traceback.print_exc()
-    sys.exit(1)
+        traceback.print_exc()
+        sys.exit(1)

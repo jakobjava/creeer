@@ -123,8 +123,9 @@ def boxes(co, seg):
 
 def measure(scene=None):
     scene = scene or bpy.context.scene
-    skin = scene.objects["base skin"]
-    co = np.array([v.co[:] for v in skin.data.vertices])
+    skin = scene.objects["base body skin"]
+    # Its mesh stands on the boots' soles; measured here from its bare feet, as the fit is.
+    co = np.array([v.co[:] for v in skin.data.vertices]) - [0.0, 0.0, SOLE]
     seg = segments(co, B.weights(skin.data))
     table = boxes(co, seg)
     g = np.stack([co[:, 0], co[:, 2] + SOLE, -co[:, 1]], axis=1)

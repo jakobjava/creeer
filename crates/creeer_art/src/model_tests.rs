@@ -153,6 +153,42 @@ fn the_base_packs_models_read_and_keep_the_style() {
 }
 
 #[test]
+fn the_engineers_wearables_are_its_pieces_and_worn_fit_each_level() {
+    use crate::wearable::{Wearable, drawn, over_budget, problems};
+    let data = Data::base();
+    let model = Model::read(
+        data.binary("models/engineer.glb").expect("the engineer"),
+        &palette(),
+    )
+    .expect("reads");
+    let wearables = Wearable::all(&data).expect("the wearables");
+    assert!(
+        problems(&model, &wearables).is_empty(),
+        "{:#?}",
+        problems(&model, &wearables)
+    );
+    assert!(
+        over_budget(&model, &wearables).is_empty(),
+        "{:#?}",
+        over_budget(&model, &wearables)
+    );
+    // Worn, the layers hide what they cover: fewer triangles than the same pieces all drawn.
+    let all: Vec<&str> = wearables.iter().map(|w| w.name.as_str()).collect();
+    let (worn, bare) = (drawn(&model, &wearables, &all), drawn(&model, &[], &all));
+    for level in 0..3 {
+        assert!(
+            worn[level] < bare[level],
+            "level {level}: {} of {}",
+            worn[level],
+            bare[level]
+        );
+    }
+    // The base body in its base layer alone draws its head, hands and feet too.
+    let naked = drawn(&model, &wearables, &["base_layer"]);
+    assert!(naked[0] > 0 && naked[0] < bare[0]);
+}
+
+#[test]
 fn the_crates_bake_is_there_and_sensible() {
     let data = Data::base();
     let model = Model::read(
@@ -191,9 +227,10 @@ fn broken_models_are_refused_for_their_reason() {
         glb(&[square("steel")], r#","images":[{"uri":"photo.png"}]"#),
         "images",
     );
+    // A skin is read (G1.3f), its joints named as the ragdoll's segments.
     refused(
         glb(&[square("steel")], r#","skins":[{"joints":[0]}]"#),
-        "skin",
+        "a joint without a name",
     );
     refused(b"not a model".to_vec(), "not a glTF");
     assert!(read(glb(&[square("steel")], "")).is_ok());

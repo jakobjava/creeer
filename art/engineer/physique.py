@@ -306,10 +306,11 @@ def _legs(b):
             co[near, :2] = centre + (co[near, :2] - centre) * f
 
 
-def measure(skin):
-    """The posed skin's measures against the targets, as `art:` lines."""
+def measure(skin, lift=0.0):
+    """The posed skin's measures against the targets, as `art:` lines (its mesh `lift` m above
+    the ground the targets' heights are from)."""
     b = Body(skin)
-    co, lines = b.co, []
+    co, lines = b.co - [0.0, 0.0, lift], []
     on_trunk = b.arms < 0.5
     for z, breadth, depth in GIRTHS:
         near = on_trunk & (np.abs(co[:, 2] - z) < 0.006)

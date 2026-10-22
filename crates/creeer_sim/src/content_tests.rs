@@ -33,10 +33,12 @@ fn the_base_pack_validates_with_only_nasas_two_known_steps() {
     assert_eq!(count("materials"), Some(9));
     assert_eq!(count("planets"), Some(4));
     assert_eq!(count("systems"), Some(1));
-    // The palette (G1.3a), with no style warnings beyond its approved exceptions.
-    assert_eq!(count("palette tokens"), Some(46));
-    // The models (G1.3b): the crate.
-    assert_eq!(count("models"), Some(1));
+    // The palette (G1.3a; the eyes' and the worn coverall's tokens since, G1.3f), with no
+    // style warnings beyond its approved exceptions.
+    assert_eq!(count("palette tokens"), Some(49));
+    // The models (G1.3b): the crate and the engineer (G1.3f), its skeleton the ragdoll's and
+    // its wearables its pieces (no errors above).
+    assert_eq!(count("models"), Some(2));
 }
 
 #[test]

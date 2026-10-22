@@ -102,9 +102,79 @@ pub fn json() -> String {
     out
 }
 
+/// What is wrong with a skinned model's skeleton (G1.3f, ADR-0026): its bones must be the
+/// ragdoll's fifteen segments by name, each bone's head at its joint with its parent (the
+/// pelvis's at its centre) within a millimetre, so the drawn body is the simulated one.
+pub fn skeleton_problems(bones: &[creeer_art::model_skin::Bone]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (k, name) in SEGMENT_NAMES.iter().enumerate() {
+        let want = LINKS
+            .iter()
+            .find(|l| l.0 == k)
+            .map_or(SEGMENTS[0].0, |l| l.2);
+        match bones.iter().find(|b| b.name == *name) {
+            None => out.push(format!("no bone {name}")),
+            Some(bone) => {
+                let off = (DVec3::from(bone.head.map(f64::from)) - want).length();
+                if off > 1e-3 {
+                    out.push(format!(
+                        "bone {name}'s head is {:.1} mm from its joint",
+                        off * 1e3
+                    ));
+                }
+            }
+        }
+    }
+    for bone in bones {
+        if !SEGMENT_NAMES.contains(&bone.name.as_str()) {
+            out.push(format!("bone {} is no segment of the ragdoll", bone.name));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_skeleton_is_held_to_the_ragdolls_segments_and_joints() {
+        let at = |k: usize| {
+            LINKS
+                .iter()
+                .find(|l| l.0 == k)
+                .map_or(SEGMENTS[0].0, |l| l.2)
+        };
+        let mut bones: Vec<creeer_art::model_skin::Bone> = (SEGMENT_NAMES.iter().enumerate())
+            .map(|(k, name)| {
+                #[allow(clippy::cast_possible_truncation)] // metres, to a micrometre
+                let head = at(k).to_array().map(|x| x as f32);
+                creeer_art::model_skin::Bone {
+                    name: (*name).to_owned(),
+                    head,
+                }
+            })
+            .collect();
+        assert!(
+            skeleton_problems(&bones).is_empty(),
+            "{:?}",
+            skeleton_problems(&bones)
+        );
+        bones[4].head[1] += 0.01;
+        bones.pop();
+        bones.push(creeer_art::model_skin::Bone {
+            name: "tail".into(),
+            head: [0.0; 3],
+        });
+        let problems = skeleton_problems(&bones);
+        assert_eq!(problems.len(), 3, "{problems:?}");
+        assert!(
+            problems[0].contains("forearm.R's head is 10.0 mm"),
+            "{problems:?}"
+        );
+        assert!(problems[1].contains("no bone foot.L"), "{problems:?}");
+        assert!(problems[2].contains("tail is no segment"), "{problems:?}");
+    }
 
     #[test]
     fn the_art_scripts_read_the_bones_the_physics_has() {

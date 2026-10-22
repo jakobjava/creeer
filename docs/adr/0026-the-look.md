@@ -1,6 +1,6 @@
 # ADR-0026: The look: models, materials, ambient occlusion and the engineer (G1.3)
 
-**Status:** in progress (2026-10-21). The user approved the plan (`docs/g1-plan.md`, G1.3) and chose the jetpack on a harness (later the same day taken out of the starting outfit: it is made as the player progresses), the skinned body, and a hood and goggles with the face open. The user then added the base body and wearables (decision 7), a Factorio-like weathered look (decision 3) and ageing (decision 4). The engineer's blockout was approved after three rounds (2026-10-21): no hood, the head bare with goggles pushed up; Blender Studio's base mesh fitted to ANSUR II's men of normal weight; thin clothes. The user kept the Monk scale's ten skin tones (tones 1–3 and 9–10 as approved exceptions) and the nine measured hair colours.
+**Status:** in progress (2026-10-21). The user approved the plan (`docs/g1-plan.md`, G1.3) and chose the jetpack on a harness (later the same day taken out of the starting outfit: it is made as the player progresses), the skinned body, and a hood and goggles with the face open. The user then added the base body and wearables (decision 7), a Factorio-like weathered look (decision 3) and ageing (decision 4). The engineer's blockout was approved after three rounds (2026-10-21): no hood, the head bare with goggles pushed up; Blender Studio's base mesh fitted to ANSUR II's men of normal weight; thin clothes. The user kept the Monk scale's ten skin tones (tones 1–3 and 9–10 as approved exceptions) and the nine measured hair colours. The detailed engineer was then made over the user's notes, round by round (2026-10-21): the coverall in canvas, the jacket two-tone, real boots, hanging cloth, hair and brows, no beard, the close-up budget raised to 50,000, the colours approved; then fitted and checked in poses (2026-10-22).
 **Context:** G1.3 makes `docs/art-style.md` real, so that everything after it (tools, items, trees, the pod) is made in the style from its first version. The user, at its start: the engineer after Factorio's FFF-40 engineer as "a very rough guide (do not copy and leave the hard hat, tools, rucksack, etc. out)"; "i do not want a futuristic art style but something similar to the vibe of factorio"; "i do not want a blocky or voxy like game (no minecraft geometry, i want smooth surfaces ==> realism)".
 **Builds on:** ADR-0003 (the renderer: forward, 4× MSAA, HDR, cascaded shadows, PBR-lite, Khronos PBR Neutral), ADR-0018 (data packs and the validator), ADR-0022 and ADR-0023 (joints, the character and its ragdoll).
 **Evidence:** to come with each sub-milestone (G1.3a–i).
@@ -62,6 +62,18 @@
 | Cesium 3D Tiles ([CesiumJS](https://cesium.com/learn/ion-sdk/ref-doc/Cesium3DTileset.html)) | Each tile's geometric error projected to the screen; refined above a maximum (16 pixels by default) | The same measure; its tolerance suits streamed terrain, not silhouettes |
 | Geometric specular anti-aliasing: Kaplanyan et al., "Filtering Distributions of Normals for Shading Antialiasing" (HPG 2016); Tokuyoshi and Kaplanyan, "Improved Geometric Specular Antialiasing" (I3D 2019); as Unity's HDRP ([`CommonMaterial.hlsl`](https://github.com/Unity-Technologies/Graphics/blob/master/Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl)) and Filament implement it | The normal's change across a pixel, from screen derivatives, widens the specular lobe: α² grows by twice the variance, capped. HDRP: the variance "should be at most 0.5² = 0.25", a Gaussian pixel of σ = ½ pixel | Taken, at that variance, for every mesh; both pipelines |
 | Centroid interpolation (Direct3D, Vulkan and WGSL's `@interpolate(…, centroid)`) | With multisampling, a pixel only partly covered by a triangle is shaded at its centre, often outside the triangle, where attributes are extrapolated; centroid sampling evaluates them within the covered samples | Taken for normals: a bevel thinner than a pixel was shaded with normals extrapolated past its faces' |
+| The donkey jacket (British workwear since 1888; the OED's 1929 "leather shoulders and back") | A dark canvas work coat whose shoulders and back are a panel of their own (leather, later PVC, orange on council workers') | Taken: the jacket's yoke a navy panel over the shoulders and down the back, its body in the player's colour |
+| Canvas work trousers (Carhartt's duck canvas, double knees) | Heavy cotton duck, a second layer sewn over the knees where work wears through | Taken (the user's choice over quilting): the coverall in navy canvas, double layers over the knees and the seat |
+| Quilted insulated workwear (US patent 4,460,645; Dickies' diamond-quilted jacket) | Padding held by stitched lines about 7.5 cm apart, in diamonds | Tried on the coverall and rejected by the user (Measured and rejected) |
+| Work boots as boot makers describe them | A toe box under a toe cap, a heel counter, eyestays with punched eyelets and speed hooks, a padded collar, the upper on a welt over a lugged rubber sole | Taken: the boots built as made (`art/engineer/boots.py`, `last.py`) |
+| American Optical's welding goggles (1930s) | Leather cups with steel rims round green lenses and steel side shields, a bridge between the cups, a strap round the head | Taken: the goggles pushed up on the forehead, their strap a flat band (`goggles.py`, `gear.py`) |
+| Real-time clothing in practice (polycount; character artists' breakdowns) | Large and medium folds in the geometry; fine creases and the weave in the surface | Taken: hang, folds, stacks, seams and sewn-on panels in the geometry (`relief.py`); the weave, wear and grime in the shader |
+| The draped figure's seven folds (Bridgman) | Pipe, zigzag, spiral, half-lock, diaper, drop and inert folds, each from how the cloth is held | Taken: pipe folds where the belt gathers the jacket, zigzag stacks above the cuffs and the boots, creases in the crooks |
+| Garland and Heckbert, "Surface Simplification Using Quadric Error Metrics" (SIGGRAPH 1997), as Blender's Decimate | Edges collapsed in the order of the squared distance they move the surface by | Taken: each piece decimated whole to each level's triangles, so its regions meet without cracks; refined afterwards where its facets strayed |
+| Copying skin weights from a body (Blender's Data Transfer modifier; Maya's Copy Skin Weights) | A garment's points take the weights of the body nearest them, and move as the skin beneath them | Taken, layer by layer: each garment weighted as what lies beneath it |
+| Lewis, Cordner and Fong, "Pose Space Deformation" (SIGGRAPH 2000) | Corrective shapes, blended in by the pose, mend what skinning gets wrong at a bent joint | Not taken yet: the joints closed fully (Limits) |
+| The American Academy of Orthopaedic Surgeons' normal joint ranges (*Joint Motion*, 1965) | The shoulder flexes 180° and extends 60°; the hip flexes 120°, extends 30°, opens 45° and closes 30°; the ankle bends up 20° and down 50°; the elbow 150°, the knee 135° | Used to tell the ragdoll's limits a person reaches from those no one does (Limits) |
+| glTF 2.0's `doubleSided` materials | Back faces drawn, lit with their normals turned to the eye, for thin surfaces such as cloth | Taken for G1.3e: the engineer's garments are single shells |
 
 ## Decision (proposed)
 
@@ -99,6 +111,11 @@
    - **Garments are offsets of the body,** so they fit him and pose with him: cut along planes, pushed out, smoothed off his relief and pushed back out of what they are worn over (`garments.py`).
    - **The ragdoll follows the person,** not the reverse: its segments are moved to his proportions (G1.3f).
    - **Levels of detail** (the user, 2026-10-21): the detailed engineer in levels chosen by screen error, as decision 11's primitives: close-up about 30,000–40,000 triangles, mid 10,000–15,000, far 2,000–4,000 for play distance and the shadows. Detail can only be geometry here (no image textures, no normal maps), and players multiply the cost (the main pass and up to four cascades each), so the close-up budget is measured before it is modelled to: one player close up and a crowd in the factory scene, with stand-in meshes of each level's triangle count.
+   - **The detailed model** (G1.3f): built by `art/engineer.py` from the scripts in `art/engineer/` into one file, `data/models/engineer.glb`, every piece divided into regions at three levels and skinned on the fifteen bones (`docs/blender-mcp.md`). The outfit as `art-style.md` §8 says, approved round by round.
+     - **Levels.** Each piece decimated whole by quadric error to its share of the budget (the close-up level all of it, mid 34 %, far 6.5 %), its rims thickened, its real edges (over 30°) shaded hard, and the close-up level refined until every smooth edge keeps §7's millimetre. Small hardware stays whole: buckles, eyelets and the zip's pull close up only; the larger (the belt's buckle, the boots' collars) mid way too; straps and soles decimated with the cloth beyond the close-up level. The close-up budget was raised to 50,000 for the detail (the user, 2026-10-21).
+     - **Regions** (decision 7). Each face goes to the segment it weighs most on. The body's hidden regions end inside the garments' openings, 2 cm into the neckline, 3.5 cm into the sleeves and 3 cm into the trouser legs, where its faces are cut, so a look into an opening finds skin (`regions.py`, `outfit.openings`). What each wearable hides is `data/wearables.ron`, checked against the model (`creeer_art::wearable`).
+     - **Weights.** Each garment is weighted as what lies beneath it, so dual quaternions move it as the skin under it whatever the distance between them: the base layer and gloves as the nearest skin; the coverall as the nearest skin on its own limb (a hanging sleeve's inside by the arm, not the torso beside it); the jacket as the coverall; the belt and its pouch as the jacket. The boots are stiff (the foot's below the ankle bone, the shin's above, bending over 4 cm), the knee pads rigid on the kneecaps (half the thigh's turn, half the shin's), the heel the foot's.
+     - **Drawn two-sided** (G1.3e): the garments are single shells, thick only at their edges.
 9. **Procedural animation on the client**: a few authored poses blended by gait phase and speed, feet placed by two-bone inverse kinematics on the ground the legs' rays find, and the torso exactly the simulated body. Fallen, the bones are the ragdoll's segments exactly. Nothing extra is sent over the network.
 10. **Icons and the style board** (`art-style.md` §9, §11), rendered by our renderer.
 11. **Smooth geometry everywhere** (`art-style.md` pillar 9, §7): the sandbox's flat-shaded primitives are replaced, and curved meshes get their levels of detail by screen-space error.
@@ -157,6 +174,58 @@ Each round was judged by the user on renders (the review page) and measured agai
 | Boots as offsets of the feet | Big leather feet, toes and all | Each foot's convex hull, subdivided |
 | Solidify with even thickness | Spikes a metre long where bisected slivers meet | Its thickness clamped |
 
+### The engineer in detail (G1.3f, 2026-10-21)
+
+Each round was judged by the user on renders of the exported model as the game draws it (`art/engineer/render_review.py`). The code of rejected versions is beside this ADR (`docs/adr/0026/`).
+
+| Tried | Measured | Why rejected, and what replaced it |
+|---|---|---|
+| The blockout's outfit, smooth and in one colour each | "Very boring: no detail, flat, monochrome", and "a very strange surface" (the user): the levels overlapped, and torn shading | Pockets, patches, seams, folds, zip, buckles, straps, laces and soles in the geometry; the crate's surface layers, with the wear and stains of clothing, in the shader |
+| Diamond quilting on the coverall, after insulated workwear (`diamond-quilting.py`) | "I hate the diamond shapes" (the user) | Navy canvas with double layers over the knees and the seat (the user's choice) |
+| A pale grey-blue coverall (`#8c99a6`) | "Darker and grimier", "a lot less monochrome" (the user) | Navy `#4a5a73` wearing to `#6b7a8e`; stains; each cut piece its own tone (approved) |
+| An olive field jacket (`#3b3f2c`) with a buttoned front and flap pockets | "Not like a military uniform" (the user) | A two-tone work jacket after the donkey jacket: the player's colour on its body, navy on its yoke, lower sleeves, cuffs, hem and collar; a zip; plain banded pockets |
+| The blockout's boots, each foot's convex hull | "Triangles on flip flops" (the user): low at the toes, a wedge on a flat sole | Each grown round its foot as a last is made (`last.py`) |
+| Boots of ellipsoids merged | A clown's shoe: the toe a ball apart from the instep, the big toe through its side | The foot closed into a solid with a toe box and a shaft, grown 11 mm |
+| Boots grown as a ball round each of the skin's points (`boots-of-points.py`) | Every toe showed as a lump | The same |
+| The soles and the belt as curves converted in pieces | Decimation kept every edge between a curve's caps and sides as open: torn shading | Each merged into one mesh first |
+| Panels raised by extrusion, the original faces kept, their steps smooth | Zigzag shading from slivers' normals, smudges along the steps | Normals from before the cut, points within 2 mm of a plane snapped to it, the original faces deleted, the steps shaded hard; a flush panel with a groove where its planes lie oblique (the yoke) |
+| The yoke bounded by the arms' weights | A weight's edge follows the faces, and frayed its sides | Bounded by planes alone |
+| Cloth following the body in | "Perfectly morphed around the body, no hanging things"; "hang more in between the legs [...] (same is true for the bum)"; the shoulders' "back facing collar bones" (the user) | The sleeves and legs hung nearly straight from their widest point, the seat and crotch spanned, the jacket spanned from the shoulders |
+| The legs hung from the hip | A fin of cloth along the crotch | Hung from below the crotch, the crotch spanned across |
+| Hair as ridged relief | "Horrible hair" (the user) | A smooth shell combed from the crown, its strands in the surface (the Hair pattern, along its grain) |
+| A light beard (`light-beard.py`), then a fuller one | "The beard looks bad, remove it" (the user) | Clean-shaven |
+| The close-up level decimated alone | About 1,000 smooth edges past §7's millimetre: faces several centimetres wide bent 20–30° across folds | Refined until every smooth edge keeps it, the new points put back on the full surface |
+| Refinement judging each hard edge as hard | A hard edge whose corners have no other keeps one normal there and shades smooth: left straying | Edges judged as shading treats them |
+| Buckles and the zip's pull in coarse steps | Their tubes' facets strayed past §7 | The belt's buckle in finer steps; domes at the full resolution |
+| The close-up budget at 40,000 | The detail did not fit | 50,000 (the user's choice; one player close up costs 0.02 ms at 40,000) |
+
+### The engineer's fit (G1.3f, 2026-10-22)
+
+Measured with `art/engineer/check_fit.py` on the close-up level, in 37 poses for ten outfits. Patches of the rejected versions are beside this ADR.
+
+| Tried | Measured | Why rejected, and what replaced it |
+|---|---|---|
+| The garments weighted as the skin they were offset from | Their weights stayed behind where the cloth was spanned, smoothed and hung: a raised arm drew the neckline 12 mm into the neck | Each garment weighted as what lies beneath it |
+| Every garment from the skin, the jacket too | Where the jacket and coverall hang apart they found the skin in different places: the coverall 12 mm through the jacket at the hips' limits | The jacket as the coverall: 4.7 mm at most |
+| From the skin where a ray in along the normal meets it (`weights-by-ray.patch`) | The hips worse (11.9 mm); 34 of the coverall's points seen at a shoulder's limit | The nearest skin |
+| The jacket from the coverall's nearest face (`jacket-weights-by-face.patch`) | The elbow's crook unchanged (10.7–11.0 mm); new pokes at the shoulders (7.3) and the hips (11.4) | Its four nearest points |
+| The base layer by the skin on its own limb | 2 mm off the skin, where the skin beneath is another limb's (the groin, the armpit): 9.3 mm short of the body at the hips' limits, 7.0 at the shoulders' | The nearest skin, whatever its limb: 5.8 and 4.2, both beyond a person's range |
+| The belt as the skin's pelvis and torso | It stayed while the jacket's hips turned with the thighs, 12 mm through it | As the jacket, its trunk and hips |
+| The cloth under the belt as the trunk alone (`belt-held-weights.patch`) | The layers beneath still turned with the thighs and parted from it at the belt line: 11.8 mm | As before |
+| The heel as bone heat left it (59 % the foot's) | It turned with the shin and came 1.7 cm out of the boot's heel | The foot's below the ankle bone, over 3 cm |
+| The boots as the skin beneath them | The shaft took the instep's weight 2.5 cm above the ankle; its long faces tilted with the foot, 10 mm into the coverall tucked inside | Stiff leather, bending over 4 cm at the ankle, and cut along the bend's edges at every level. Cut and not weighted again, the new loop took its edges' weights in proportion (0.6 the foot's at the bend's top): 12 mm |
+| Knee pads as the coverall | They folded with the knee to its limit and came apart over it (11.6 mm) | Rigid on the kneecaps: half the thigh's turn, half the shin's |
+| Knee pads pushed out of the coverall point by point | Each tip crumpled over the knee patch's step: facets 2 mm off their curve | Smoothed into a plate and moved out whole |
+| The knee strap at the joint line | It crumpled into the fold of the knee closed fully | Round the calf's top, under the knee's pit |
+| Straps kept above the cloth's outline | Averaged, the outline's peaks sank (a knee patch's step 3.9 mm through the strap); clamped to it, the strap kinked (facets 1.1 mm off); widened over 45°, it stood off the leg like a hoop | Smoothed round, the cloth gathered under it as a buckled strap gathers it |
+| The coverall's sleeves 1.5 cm above the wrists (`sleeves-above-wrist.patch`) | The gloved hand bent fully still met the cuff (11 mm), and the forearm was seen at rest past the cuff's wider mouth | At the wrists |
+| The hidden regions to fixed lines: the body's neck to 1.585 m; the base layer hiding the torso, arms and thighs | The throat missing inside the collar's front; the vest's short sleeves and the shorts leave the shoulders, arms and thighs bare | Each region ends inside its garment's opening; the base layer hides the pelvis alone |
+| The belt ringed round the jacket before its detail | The jacket's folds and the coverall's ease came 7 mm through it; the pouch, 5 mm off the belt, had the jacket puffing through its back; the keeper's back 4 mm into the jacket | The cloth gathered under the belt; the pouch clear of the cloth behind it; the keeper round the belt alone |
+| The coverall's legs tucked to the boots' rims | 5.6 mm through the padded collars | Inside the collars, easing out over them |
+| The goggles over the hair as it grew | Locks 3.9 mm through the rims; then a round strap 1 cm off the hair read as a hat's brim | The hair pressed flat under the cups and under a flat strap |
+| Holes as a layer over within 4 cm on the same limb; then as the first face met from inside; then both | Loose cloth hangs 8 cm off the shank; a sleeve lowered from the A-pose passes into the garment's torso or rests against the hip; a ray from one armpit crossed to the other's sleeve | A line of sight out, past everything drawn |
+| Arms at the shoulder's cone in every direction | Swung across and through the chest, where the ragdoll's arms cannot go (they collide with the trunk) | Stopped where their boxes meet the trunk's |
+
 ### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
 
 The first run of the style's checks found the sixteen player colours of `art-style.md` §3.6 confused under simulated colour-vision deficiencies (Machado et al. 2009, `creeer_art::vision`). For deuteranopes, blue and violet are ΔE₀₀ 1.3 apart, violet and indigo 1.3, and orange and ochre 1.7. For protanopes, violet and indigo are 2.9 apart. In normal vision the closest pair is blue and indigo, at 8.5.
@@ -203,12 +272,18 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - Ages survive a save exactly (version 9, its fixture), and a client is told every crate's age and its wear when it changes (protocol 7).
   - Ageing changes no motion. The stress scene `server` and the play scene `crowd` hash the whole save, so their goldens changed with version 9's ages section (and CI's stress job failed from 090d95d until they were renewed). Their physics alone, the save's world, hashes the same before ageing (e5a02a1) and after, at both lengths: `server` 2453dd84… (120 ticks) and 8c52bd7b… (1,200), `crowd` 2beb8e52… (300) and 0bf54b69… (1,800).
 
+- **The engineer (G1.3f).** `model_check` passes the model: each level within its budget, each piece's and the character's worn whole; at most four bones a vertex, its weights summing to one; its bones at the ragdoll's joints; its close-up facets within §7's millimetre; every wearable a piece of it. `xtask art --check` rebuilds it identically.
+  - **The fit** (`art/engineer/check_fit.py`): 37 poses (at rest, and each of the ragdoll's joint limits alone, an arm stopped where its box meets the trunk's), for the base body, the full outfit and each wearable alone over the base body, skinned with dual quaternions.
+    - **At rest:** nothing pokes through by more than 2 mm and no hidden point is seen, at the close-up level. At the mid level, one hidden point in each of three outfits; at the far level, the seam between the boots and their soles lets 7–10 hidden points of the feet be seen. Each coarser level is held to its own error against the close-up one (mid 0.9–7.5 mm, far 2.4–35 mm by piece), under half a pixel wherever it is drawn.
+    - **At the limits a person reaches**, the joints closed fully leave what skinning cannot part: the elbow's crook (the coverall 10.9 mm through the jacket), the knee's (the cloth under the strap 9.5 mm through it), the hand bent fully against the cuff (11.5 mm, contact), the hip flexed 80° (the jacket's hips 10 mm through the belt), the foot pointed (the coverall 3 mm through the boot), the shoulder opened 92° (the body 2.8 mm through the base layer). One to six hidden points are seen at most limits.
+    - **Beyond a person's range** (the ragdoll's cones are the same every way): with the hip opened or closed 80° the shorts are 11.9 mm short of the body; the shoulder extended 92°, 4.2 mm; the ankle bent up 34°, six hidden points of the foot seen.
+    - **Found on the way:** the check had read `data/wearables.ron` as hiding nothing, so no hole had been looked for. With it read, the throat was missing inside the collar's front, and the base layer hid what its sleeves and legs leave bare.
+  - **Within its segments** (at rest): the body's thighs 6.2–6.5 % outside their boxes grown by 3 cm and its upper arms 2.5–3.1 %, the shoulders' and hips' muscles, as the blockout's. The outfit's misses (5 cm) are what stands off the limbs: the knee pads 11–13 % of their points, the elbow patches 38–40 %, the coverall's legs 10–11 % at the shanks, the belt's pouch 25 % at the right thigh (Limits).
+
 **Still to come:**
 - colour-vision simulation against Machado et al.'s published examples (set aside with the colour-blind mode);
 - GTAO against analytic occlusion (a sphere on a plane, a 90° crease) and a ray-traced reference;
-- dual-quaternion skinning exactly rigid for single-bone vertices;
-- the engineer's skin within its ragdoll segments' boxes;
-- wearables: nothing beneath pokes through an outer layer by more than 2 mm in the rest pose and in poses at the ragdoll's joint limits, and every hidden region lies inside what hides it.
+- dual-quaternion skinning exactly rigid for single-bone vertices.
 
 ## Cost
 
@@ -250,6 +325,8 @@ p99 likewise: the close-up 2.00 ms against 1.91, the rest at or below before.
 
 The cost follows the triangles, shadows included; one player close to the camera costs 0.02 ms at 40,000 and 0.04 ms at 80,000. Close-up detail is cheap, as one or two players are ever that close; a crowd is what the far levels are for. **The levels: close-up 40,000, mid 15,000, far 3,000.** Eight players, one close up and seven at the mid level, add about 0.13 ms (0.26 ms projected to min-spec); 80,000 close up would still fit, if the close-up level's facets show at the nearest camera.
 
+**The engineer as modelled (G1.3f).** The close-up level was raised to 50,000 for the detail (the user, 2026-10-21; at 40,000 a close player measured 0.02 ms). Worn whole, the model draws 49,848, 14,458 and 2,908 triangles at its three levels; the base body in its base layer 35,470, 12,208 and 2,571.
+
 ## Limits
 
 To be written as the work finds them; each also in `docs/future-improvements.md`.
@@ -258,4 +335,11 @@ To be written as the work finds them; each also in `docs/future-improvements.md`
 - **One rule for every part's rounds:** 8 % of the smallest side, at most 2.5 cm. A part cannot ask for sharper or softer edges until the instance carries its own radius.
 - **Closer than about 0.2 m,** the finest box (8 segments) may show its facets by more than half a pixel.
 - **The engineer's blockout is not a model.** The whole skin stays under the clothes, garments are open shells, the pads flat octagons, the hair a cap, the gloves follow the fingers. Its fit misses two targets: the thighs are 4.5 % under their girth (fitted band by band, the blend into the hips takes some back), and the tape over the neck's base still reads 0.55 m against 0.422, as its plane still crosses the shoulders' tops at the 5 cm cap.
+- **The engineer's joints closed fully.** Skinning cannot part what a closing joint presses together: at the elbow's and the knee's limits the layers in the crook come through each other (10.9 and 9.5 mm), the hand bent fully meets the cuff (11.5 mm), and with the hip flexed 80° the jacket's hips turn through the belt (10 mm). Mostly in a crook, out of sight. Corrective shapes or edge loops across each joint would part them (`docs/future-improvements.md`).
+- **The ragdoll's cones go beyond a person's range** (the shoulder 92° and the hip 80° every way, the ankle 34° up): there the clothes fit worse (the base layer up to 11.9 mm off the body), and the body itself takes poses no one takes.
+- **The segment boxes against the outfit.** The boxes keep each limb's cross-section and mass, so the knee pads stand up to 9.5 cm beyond the shank's box at the front: a ragdoll fallen on its knees sinks them up to about 4.5 cm into the ground. Likewise the elbow patches, the coverall's legs and the belt's pouch (Validation).
+- **The garments are single shells**, thick only at their edges: G1.3e draws the engineer two-sided, or a look into a collar or a sleeve sees through its far side.
+- **The far level's soles** are decimated apart from the boots, and the seam between them opens up to the level's error: under half a pixel where it is drawn.
+- **The fit is checked one joint at a time.** Two joints at their limits together (a shoulder raised while the spine bends) are not posed.
+- **The hair is a shell** with the strands in its surface: its outline is smooth, with no strands against the sky.
 - **The sandbox's convex hulls** (rocks, a wedge, a prism) are flat-shaded with sharp edges. They are drawn at their own size, so the scaling trick does not apply: rounding them needs each hull's inner hull, its faces moved in by the radius.

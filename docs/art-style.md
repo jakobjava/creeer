@@ -71,21 +71,24 @@ The surface columns (§6): **Pattern** is what the renderer draws within the col
 
 ### 3.3 The character
 
-| Token | Colour | Roughness | Metalness | Pattern | Notes |
-|---|---|---|---|---|---|
-| `coverall` | `#8c99a6` | 0.85 | 0 | Fabric | Quilted cool grey-blue work coverall: arms, legs, collar |
-| `leather` | `#4b2c22` | 0.70 | 0 | Leather | Dark oxblood-brown: boots, gloves, belt, straps, knee and elbow pads |
-| `lens` | `#2a3b33` | 0.05 | 0 | Glass | Smoky green glass of the goggles |
-| `player_accent` | per player | 0.75 | 0 | Fabric | The work jacket (§3.6) |
-| `skin` | per player | 0.55 | 0 | Plain | One of the ten skin tones below, the player's choice |
-| `hair` | per player | 0.70 | 0 | Plain | One of the nine hair colours below, the player's choice |
-| `base_layer` | `#797e86` | 0.85 | 0 | Fabric | The base body's plain vest and shorts: mid grey, apart from every skin tone (the user's choice) |
+| Token | Colour | Roughness | Metalness | Pattern | Wears to | Notes |
+|---|---|---|---|---|---|---|
+| `coverall` | `#4a5a73` | 0.85 | 0 | Fabric | `coverall_worn` | Navy heavy canvas, the boiler suit's colour: the coverall, and the jacket's yoke, lower sleeves, cuffs, hem and collar |
+| `coverall_worn` | `#6b7a8e` | 0.90 | 0 | Fabric |  | Faded navy where the canvas wears through: knees, seat, elbows, cuffs and hems, the patches' edges |
+| `leather` | `#4b2c22` | 0.70 | 0 | Leather |  | Dark oxblood-brown: boots, gloves, belt and pouch, straps, knee pads, elbow patches |
+| `lens` | `#2a3b33` | 0.05 | 0 | Glass |  | Smoky green glass of the goggles |
+| `player_accent` | per player | 0.75 | 0 | Fabric |  | The work jacket's body and upper sleeves (§3.6): the player's colour laid on at half strength over grey `#5c5a57`, as Factorio tints its engineer (FFF-218), so it reads muted and worn, never hi-vis |
+| `skin` | per player | 0.55 | 0 | Plain |  | One of the ten skin tones below, the player's choice |
+| `hair` | per player | 0.70 | 0 | Hair |  | One of the nine hair colours below, the player's choice: the hair and the eyebrows |
+| `base_layer` | `#797e86` | 0.85 | 0 | Fabric |  | The base body's plain vest and shorts: mid grey, apart from every skin tone (the user's choice) |
+| `eye_white` | `#e4ddd2` | 0.20 | 0 | Plain |  | The eyes' whites: a little warm, never pure white (§4) |
+| `iris` | `#3b2a1f` | 0.10 | 0 | Plain |  | The irises: dark brown, the most common eye colour |
 
 **Skin tones.** The Monk Skin Tone Scale (Ellis Monk with Google, 2022; skintone.google, CC BY 4.0), ten tones spanning human skin, lightest first: `#f6ede4` 1, `#f3e7db` 2, `#f7ead0` 3, `#eadaba` 4, `#d7bd96` 5, `#a07e56` 6, `#825c43` 7, `#604134` 8, `#3a312a` 9, `#292420` 10. Tones 1–3 are lighter than §4's L* 92, and 9–10 nearly grey (chroma 6.5 and 3.8): display swatches rather than measured skin. The user kept them (approved exceptions, §4).
 
 **Hair colours.** Measured, not painted (real hair measures darker than painted game hair: its shine comes from the light). Dark brown to red and blond from Mengel-From et al. (2009), who measured 107 Scots with a spectrophotometer; black and light brown from a cosmetics journal's samples; grey from a natural grey sample: `#2c2928` black, `#3c332d` dark brown, `#4f3f35` brown, `#5f4836` light brown, `#765f49` dark blond, `#90785c` blond, `#5e4031` auburn, `#7b563f` red, `#968a72` grey.
 
-Buckles, rivets and the goggles' rims are `steel`; the jetpack's bottles are `steel_painted` on a `steel` frame with `leather` straps (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 16.9 for `coverall` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them.
+Buckles, eyelets and hooks, the zip and the goggles' rims are `steel`; the soles are `rubber`; the jetpack's bottles are `steel_painted` on a `steel` frame with `leather` straps (§3.2). Against the five grounds (§4), the smallest ΔE₀₀ are 12.7 for `coverall` (basalt: the darkest navy that keeps 12), 17.8 for `coverall_worn` (gravel), 13.5 for `leather` (soil) and 13.0 for `lens` (basalt), computed 2026-10-21 with CIEDE2000 (checked against Sharma, Wu & Dalal's test pairs). G1.3a's automated checks confirm them. `leather` wears to nothing yet: no scuffed brown keeps 12 from both soil and gravel (`docs/future-improvements.md`).
 
 ### 3.4 Vegetation
 
@@ -175,6 +178,7 @@ Factorio's things look worked and old: grain in everything, dirt where it gather
    - *Stone*: speckle at two scales;
    - *Fabric*: a fine weave;
    - *Leather*: pebbling;
+   - *Hair*: fine strands along the way it lies, about 1.7 mm apart, each wandering, darker and lighter ones in long streaks;
    - *Glass* and *Plain*: none.
 3. **Mottling and grain.** Over everything: mottling ±15 % at about 30 cm, and fine grain ±10 % at a few millimetres. Detail finer than a pixel fades out (filtered noise), so nothing shimmers at a distance.
 4. **Age.** Each token weathers at its material's real rate (§6b): wood greys all over, and more in patches; steel rusts and copper greens in patches, first where dirt holds water. Each part's age differs a little from its object's (±0.3, by its tone).
@@ -212,7 +216,7 @@ The server keeps each object's age (its exposure so far, the rate it ages at now
 
 | Asset | Triangles |
 |---|---|
-| The character as drawn (the base body and everything worn, without hidden regions), in levels of detail chosen by screen error | close-up 40,000; mid 15,000; far, at play distance and in shadows, 3,000 (measured: ADR-0026, Cost) |
+| The character as drawn (the base body and everything worn, without hidden regions), in levels of detail chosen by screen error | close-up 50,000; mid 15,000; far, at play distance and in shadows, 3,000 (measured: ADR-0026, Cost) |
 | A wearable | ≤ 4,000 at the mid level; at the others in proportion |
 | A tool | ≤ 2,000 |
 | An item, bag or crate | ≤ 1,000 |
@@ -227,10 +231,17 @@ The server keeps each object's age (its exposure so far, the rate it ages at now
 - **The engineer.** A worker in rugged, padded workwear (pillar 10), not an astronaut. The user's rough guide is Factorio's engineer as first shown in FFF-40 (2014): its layered, padded workwear, chunky gloves and boots, and the player's colour on the jacket. It is not copied, and its hard hat, tools and rucksack are left out.
   - **A base body that wears things** (the user, 2026-10-21: many wearables in future, "a 'naked' version that can wear more and more cool stuff as you progress"). The engineer is a base body plus whatever it wears. Every piece of clothing and gear is a separate wearable model on the same bones. What a player wears shows their progress, as Factorio's armour does.
   - **The base body.** A real man of normal weight, with an open face, short hair and a skin tone the player chooses: Blender Studio's realistic base mesh (CC0), fitted to ANSUR II's men at 1.80 m (heights to all men's means, the build to the men of normal weight; ADR-0026). It wears a plain base layer (a vest and shorts), so "naked" is the body without any gear.
-  - **The starting outfit** is made of wearables: a quilted `coverall`, a work jacket in the player's colour (`player_accent`) with a belt, `leather` knee and elbow pads, thick gloves, laced boots, and goggles (`lens`) pushed up on the forehead. The jacket closes at the neck with a stand collar. No hood: the head is bare, with short hair. No jetpack: the player makes one as they progress (the user, 2026-10-21).
+  - **The starting outfit** is made of wearables, industrial workwear rather than a uniform (no olive drab, no buttoned flaps: the user):
+    - a navy canvas `coverall`, double-layered over the knees and the seat, with seams down the legs and a cargo pocket on each thigh, its legs bloused into the boots;
+    - a two-tone work jacket over it: the player's colour (`player_accent`) on its body and upper sleeves, the coverall's navy on its yoke, lower sleeves, cuffs, hem and stand collar; a zip down the front, two chest pockets banded at the top;
+    - a `leather` belt with a steel buckle and a pouch, `leather` knee pads strapped behind the knee and elbow patches sewn on, thick gloves with wrist straps;
+    - laced leather work boots (a round toe box, steel eyelets and hooks, a padded collar) on lugged `rubber` soles;
+    - goggles (`lens`, steel rims) pushed up on the forehead.
+
+    No hood: the head is bare, with short hair and eyebrows; clean-shaven. No jetpack: the player makes one as they progress (the user, 2026-10-21). Worn, the outfit is dirty and chipped as a work suit worn for years is (§6).
   - **Later wearables** come with what the player can make: for example the jetpack (two small nitrogen bottles on a harness frame, on the back), a respirator for dust and gases, insulated or fire-resistant suits, armour, and a pressure suit for vacuum (EVA, G8), in the style of real ones. Each has real properties (mass, insulation, protection, pockets) in the simulation, from G1.6 (items) and G9 (needs) on.
   - **The face** is the base mesh's, a real face at a level of detail soft enough to read at play distance, with no fine detail that would look uncanny up close.
-  - **Proportions.** Those of a real man of normal weight (§2), neither broad nor muscular, in workwear that sits close: the coverall about 1.4 cm off the skin, the jacket 2.2 cm. Cloth hangs from the chest and the seat rather than following the body in. Gloves and boots are chunky. They read as a person in workwear from 50 m and as a silhouette at 64 px.
+  - **Proportions.** Those of a real man of normal weight (§2), neither broad nor muscular, in workwear that sits close: the coverall about 1.4 cm off the skin, the jacket 2.2 cm. Cloth hangs rather than following the body in: from the chest, the shoulders and the seat; the sleeves and trouser legs nearly straight from their widest point; across between the legs (the user: "perfectly morphed around the body"). Gloves and boots are chunky. They read as a person in workwear from 50 m and as a silhouette at 64 px.
   - **The bones** are the ragdoll's fifteen segments, one bone per segment, so the drawn body is the simulated one (`docs/g1-plan.md`; ADR-0026). The body and every wearable are skinned on them, smooth across the joints, never a set of separate blocks.
   - **Things held** are separate models attached to a bone: from G1.4, the tool in hand.
 - **Tools.** Wooden handles (`timber`, darkened with use), forged steel heads (`steel` with wear), simple and sturdy. Their outlines differ: pick, axe, shovel and saw are unmistakable.
@@ -310,3 +321,11 @@ In Factorio's spirit, not a copy of it.
   - **The base layer is mid grey** (the user's pick), `#797e86`: nudged ΔE₀₀ 1.6 from the first proposal `#7c8187` to keep ΔE₀₀ 12 from gravel.
   - **Levels of detail for the engineer** (§7's budgets; the user: "i think we should have different LODs for the player"): detail can only be geometry here (no image textures, no normal maps), so quilting, laces, buckles and gloved fingers are triangles. More near the camera, few at play distance (about 70 px tall) and in shadows; the close-up budget is measured before modelling to it.
   - **Skin tones and hair colours** (§3.3; the user: "skin tone and hair is good"): the Monk scale's ten tones, its lightest three as approved exceptions (§4), and nine measured hair colours (`data/art/people.ron`).
+- 2026-10-21, G1.3f: **the engineer in detail**, after the user's notes on each round (§3.3, §6, §7, §8; ADR-0026):
+  - **Detail and surfaces** ("very boring: no detail, flat, monochrome"; "texturise the player like we did with the crates"): the outfit gained its pockets, patches, seams, folds, zip, buckles, straps, laces and soles, and the crate's surface layers with the wear and stains of clothing.
+  - **No diamond quilting** ("I hate the diamond shapes"): the coverall is heavy canvas with double-layer knees and seat (the user's choice).
+  - **Real boots** ("the shoes look like triangles on flip flops"): grown round the foot with a toe box, a shaft and a heel, on soles that hug them.
+  - **Darker and grimier, not a uniform** ("not yet fit the Factorio vibe": the user chose "darker and grimier"; "not like a military uniform"; "darker and more textured (a lot less monochrome)"): `coverall` darkened from `#8c99a6` to navy `#4a5a73` with `coverall_worn` `#6b7a8e`; the jacket two-tone, the player's colour at half strength over `#5c5a57`; an olive jacket (`#3b3f2c`) with a buttoned front was tried and dropped. Approved by the user as listed.
+  - **Hanging cloth** ("perfectly morphed around the body, no hanging things"; "hang more in between the legs [...] (same is true for the bum)"; the shoulders' "back facing collar bones").
+  - **Hair** ("proper hair and facial hair (eye brows and maybe a light beard)"; "make it look like real hair on the head"): the Hair pattern (§6), the haircut and eyebrows. A light beard was made and taken out ("the beard looks bad, remove it").
+  - **§7's close-up budget raised to 50,000** from 40,000 for the detail (the user's choice; one close-up player measured at 0.02 ms at 40,000).

@@ -26,6 +26,7 @@ const PATTERN_METAL: u32 = 3u;
 const PATTERN_STONE: u32 = 4u;
 const PATTERN_FABRIC: u32 = 5u;
 const PATTERN_LEATHER: u32 = 6u;
+const PATTERN_HAIR: u32 = 8u;
 // Heights are stored over this range (m; art/bake.py), the ground's splash reaches this high.
 const HEIGHT_RANGE: f32 = 2.0;
 const SPLASH: f32 = 0.35;
@@ -36,6 +37,9 @@ const GRIME: vec3<f32> = vec3<f32>(0.022, 0.018, 0.013);
 // Wood: grain lines per metre across the grain, and how far (in lines) each wanders.
 const GRAIN_LINES: f32 = 45.0;
 const GRAIN_WANDER: f32 = 6.0;
+// Hair: strands per metre across the way it lies, and how far (in strands) each wanders.
+const HAIR_LINES: f32 = 600.0;
+const HAIR_WANDER: f32 = 2.5;
 
 // The noise volume (renderer/noise.rs): random values on a tiling lattice of NOISE_SIZE³.
 @group(2) @binding(1) var noise_volume: texture_3d<f32>;
@@ -127,6 +131,16 @@ fn pattern_of(kind: u32, at: Place) -> f32 {
         }
         case PATTERN_LEATHER: {
             return 0.9 + 0.2 * local_fbm(at, 180.0, 2u);
+        }
+        case PATTERN_HAIR: {
+            // Strands: the crests of a fine sine across the grain, each wandering along it;
+            // darker and lighter hairs in long streaks. Finer than a pixel, they fade to their
+            // mean.
+            let wander = grain_fbm(at, vec2<f32>(3.0, 60.0), 9.1, 3u) * HAIR_WANDER;
+            let strand = 0.5 + 0.5 * sin((at.grain.y * HAIR_LINES + wander) * 6.2831853);
+            let shade = grain_fbm(at, vec2<f32>(6.0, 90.0), 4.4, 3u);
+            let seen = 1.0 - smoothstep(0.25, 0.5, at.grain_footprint.y * HAIR_LINES);
+            return 0.72 + 0.4 * mix(0.5, strand, seen) * (0.5 + shade);
         }
         default: {
             return 1.0;

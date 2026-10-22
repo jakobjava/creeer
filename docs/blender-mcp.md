@@ -44,13 +44,19 @@ The engineer's body starts from Blender Studio's Human Base Meshes v1.4.1 (CC0; 
 - **Only mesh data is taken.** Scripts append the objects they need (`bpy.data.libraries.load(…, link=False)`), never open the file itself, and check that what they took has no animation or drivers. Its text blocks (a README, and a stale licence text naming another rig) are never loaded, and with auto-run off nothing in it runs.
 - **The blockout** (`art/engineer/blockout.py`, with `body.py`, `physique.py` and `garments.py`) runs in a live session and exports nothing: `exec(open("art/engineer/blockout.py").read())` builds the scene "engineer blockout" in about 11 s and prints its measures against the surveys as `art:` lines.
 
+## The engineer: building and checking
+
+- **Built** by `cargo xtask art --blend engineer` (about 50 s): `art/engineer.py` runs `art/engineer/models.py`, which builds the pieces (`outfit.py`), details them (`detail.py`, `boots.py`, `gear.py`, `goggles.py`, `hair.py`), weights them (`skinning.py`), divides them into regions (`regions.py`) and writes every piece at three levels into `data/models/engineer.glb`, and the same into `target/art/engineer.blend` for the checks below. The `art:` lines print each level's triangles.
+- **Seen as the game draws it.** `exec(open("art/engineer/review_model.py").read())` in a live session builds the scene "engineer level 0" from `target/art/engineer.blend`: the full outfit, what it hides (`data/wearables.ron`) left out, in the preview's surfaces, aged three years, on the style board's soil under its sun. `blender --background --factory-startup --python art/engineer/render_review.py -- <out dir> [<level>]` renders it headless from seven sides (front, back, side, above, the chest, the legs, the head) as PNGs, for the user's review.
+- **The fit checked.** `blender --background --factory-startup --python art/engineer/check_fit.py -- [<level>]` poses the exported model by its skin at rest and at each of the ragdoll's joint limits (an arm stopped where its box meets the trunk's, as the ragdoll stops it: `reach.py`), for the base body, the full outfit and each wearable alone. It prints each pose's points poking through a layer over them, hidden points seen, and parts in contact (apart, not failed), and each piece's share outside its segments' boxes; it exits 1 on any miss. About 30 s a level. ADR-0026's Validation gives its results and Limits what it allows.
+
 ## Conventions
 
 - **Units and axes.** Metres. Blender's +Z up becomes +Y up on export (the glTF exporter's default), which is the engine's +Y up.
 - **Origin** at the model's natural rest point: a tool's grip, a crate's base centre, the engineer's feet.
 - **Materials.** One Blender material per palette token, named exactly after the token (`coverall`, `leather`, `steel`). Their colours in Blender are only for previewing: the game takes each token's colour from `data/art/palette.ron`. Image textures are never used (`docs/art-style.md` §6).
-- **Vertex colours** (`COLOR_0`): red is the baked ambient occlusion, green the convexity that edge wear follows, and blue is reserved.
-- **The engineer's bones** are the ragdoll's fifteen segments, named after them (`pelvis`, `torso`, `head`, `upper_arm.l`, …) and placed at the joints of `creeer_sim::character::ragdoll`. The script reads that table from a file that `creeer_tools` writes from the Rust code, and the validator checks the exported bones against it, so the two cannot drift apart.
+- **Vertex colours** (`COLOR_0`): red is the baked ambient occlusion, green the edge wear (the convexity it follows, and on the engineer where workwear wears through), blue each part's tone, alpha the height above the model's base (`art/bake.py`).
+- **The engineer's bones** are the ragdoll's fifteen segments, named after them (`pelvis`, `torso`, `head`, `upper_arm.L`, …) and placed at the joints of `creeer_sim::character::ragdoll`. The script reads that table from a file that `creeer_tools` writes from the Rust code, and the validator checks the exported bones against it, so the two cannot drift apart.
 - **Shapes.** Bevels, face-weighted normals, the 15° facet limit, triangle budgets and silhouettes: `docs/art-style.md` §7.
 
 ## What it is not used for

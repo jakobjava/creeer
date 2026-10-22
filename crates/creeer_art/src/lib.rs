@@ -8,6 +8,7 @@
 //!   told apart; [`exception`]: the user's approved exceptions to them;
 //! - [`model`]: models (binary glTF from the scripts in `art/`) read into meshes that name
 //!   tokens; [`model_check`]: each held to its manifest entry and the style;
+//! - [`wearable`]: the engineer's wearables, what each hides worn, and what a worn outfit draws;
 //! - [`vision`]: colour-vision deficiencies simulated (Machado et al. 2009), kept for the
 //!   colour-blind mode that waits until the game is published (`docs/future-improvements.md`).
 
@@ -16,13 +17,17 @@ pub mod colour;
 pub mod exception;
 pub mod model;
 pub mod model_check;
+pub mod model_skin;
 pub mod palette;
 pub mod vision;
+pub mod wearable;
 
 #[cfg(test)]
 mod colour_tests;
 #[cfg(test)]
 mod doc_tests;
+#[cfg(test)]
+mod model_skin_tests;
 #[cfg(test)]
 mod model_tests;
 #[cfg(test)]

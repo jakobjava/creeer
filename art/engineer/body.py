@@ -198,19 +198,12 @@ def load(scene):
     return body, objs[1:]
 
 
-def weigh(body):
-    """Bone heat weights of a one-bone-per-limb skeleton at his joints, kept on `body` as one
-    attribute per limb (`w_arm.L`, …) summed over the limb's bones."""
-    data = bpy.data.armatures.new("fit skeleton")
-    rig = bpy.data.objects.new("fit skeleton", data)
+def heat(body, bones):
+    """Bone heat weights (Baran and Popović 2007, Blender's automatic weights) of `bones`
+    (name -> (head, tail)) on `body`: name -> each vertex's weight, normalised over the bones."""
+    data = bpy.data.armatures.new("heat skeleton")
+    rig = bpy.data.objects.new("heat skeleton", data)
     body.users_scene[0].collection.objects.link(rig)
-    bones = {"trunk": (Vector((0, 0, HIP.z)), Vector((0, 0, STERNUM))), "head": (Vector((0, 0, STERNUM)), Vector((0, 0, TOP)))}
-    for side, tag in ((1, "L"), (-1, "R")):
-        m = lambda v: mirrored(v, side)  # noqa: E731
-        chain = {"arm": (SHOULDER, ELBOW, WRIST, FINGERTIP), "leg": (HIP, KNEE, FOOT, TOE)}
-        for limb, points in chain.items():
-            for name, a, b in zip(CHAINS[limb], points, points[1:]):
-                bones[f"{name}.{tag}"] = (m(a), m(b))
     # Edit mode and parenting work on the active scene's view layer.
     layer = bpy.context.view_layer
     layer.objects.active = rig
@@ -222,19 +215,78 @@ def weigh(body):
     for obj in layer.objects:
         obj.select_set(obj in (body, rig))
     bpy.ops.object.parent_set(type="ARMATURE_AUTO")
-    for limb, names in GROUPS.items():
-        for tag in "LR":
-            groups = [body.vertex_groups[f"{n}.{tag}"].index for n in names]
-            attr = body.data.attributes.new(f"w_{limb}.{tag}", "FLOAT", "POINT")
-            for v in body.data.vertices:
-                total = sum(g.weight for g in v.groups)
-                mine = sum(g.weight for g in v.groups if g.group in groups)
-                attr.data[v.index].value = mine / total if total > 0 else 0.0
+    index = {g.index: g.name for g in body.vertex_groups}
+    out = {name: [0.0] * len(body.data.vertices) for name in bones}
+    for v in body.data.vertices:
+        total = sum(g.weight for g in v.groups)
+        for g in v.groups:
+            if total > 0 and g.group in index:
+                out[index[g.group]][v.index] = g.weight / total
     body.parent = None
     body.modifiers.clear()
     body.vertex_groups.clear()
     bpy.data.objects.remove(rig)
     bpy.data.armatures.remove(data)
+    return out
+
+
+def weigh(body):
+    """Bone heat weights of a one-bone-per-limb skeleton at his joints, kept on `body` as one
+    attribute per limb (`w_arm.L`, …) summed over the limb's bones."""
+    bones = {"trunk": (Vector((0, 0, HIP.z)), Vector((0, 0, STERNUM))), "head": (Vector((0, 0, STERNUM)), Vector((0, 0, TOP)))}
+    for side, tag in ((1, "L"), (-1, "R")):
+        m = lambda v: mirrored(v, side)  # noqa: E731
+        chain = {"arm": (SHOULDER, ELBOW, WRIST, FINGERTIP), "leg": (HIP, KNEE, FOOT, TOE)}
+        for limb, points in chain.items():
+            for name, a, b in zip(CHAINS[limb], points, points[1:]):
+                bones[f"{name}.{tag}"] = (m(a), m(b))
+    weights = heat(body, bones)
+    for limb, names in GROUPS.items():
+        for tag in "LR":
+            attr = body.data.attributes.new(f"w_{limb}.{tag}", "FLOAT", "POINT")
+            for i in range(len(body.data.vertices)):
+                attr.data[i].value = sum(weights[f"{n}.{tag}"][i] for n in names)
+
+
+# The ragdoll's segments (`creeer_sim::character::bones`), in its order.
+SEGMENTS = ["pelvis", "torso", "head"] + [
+    f"{limb}.{tag}" for tag in "RL" for limb in ("upper_arm", "forearm", "hand", "thigh", "shank", "foot")
+]
+# The fitted body's waist and the base of its neck (m): the pelvis's and the torso's ends.
+WAIST, NECK_BASE = 1.083, 1.53
+
+
+def weigh_segments(body):
+    """Bone heat weights of the ragdoll's fifteen segments on the fitted `body` (A-pose: the
+    arms clear of the trunk), kept as attributes `s.<segment>`: what the engineer is skinned
+    with. Garments made from the body carry them."""
+    hip = trunk(HIP).z
+    bones = {
+        "pelvis": (Vector((0, 0, hip - 0.05)), Vector((0, 0, WAIST))),
+        "torso": (Vector((0, 0, WAIST)), Vector((0, 0, NECK_BASE))),
+        "head": (Vector((0, 0, NECK_BASE)), Vector((0, 0, STATURE))),
+    }
+    for side, tag in ((1, "L"), (-1, "R")):
+        arm = [joint(n, side) for n in ("shoulder", "elbow", "wrist", "fingertip")]
+        leg = [joint(n, side) for n in ("hip", "knee", "foot", "toe")]
+        for names, points in ((CHAINS["arm"], arm), (CHAINS["leg"], leg)):
+            for name, a, b in zip(names, points, points[1:]):
+                bones[f"{name}.{tag}"] = (a, b)
+    weights = heat(body, bones)
+    # The heel the foot's: below the ankle bone each leg's shank gives way to its foot over 3 cm
+    # (the heel lies behind the ankle, beside neither bone, and bone heat left it half the
+    # shank's: turned with the shin, it came 1.7 cm out of the boot's heel).
+    for side, tag in ((1, "L"), (-1, "R")):
+        ankle = joint("foot", side).z
+        shank, foot = weights[f"shank.{tag}"], weights[f"foot.{tag}"]
+        for v in body.data.vertices:
+            t = min(max((ankle - v.co.z) / 0.03, 0.0), 1.0)
+            moved = shank[v.index] * t * t * (3.0 - 2.0 * t)
+            shank[v.index] -= moved
+            foot[v.index] += moved
+    for name in SEGMENTS:
+        attr = body.data.attributes.new(f"s.{name}", "FLOAT", "POINT")
+        attr.data.foreach_set("value", weights[name])
 
 
 def weights(mesh):

@@ -207,7 +207,8 @@ def triangles(obj):
 
 
 def export(path):
-    """Writes every mesh in the scene to `path` as a binary glTF, with fixed options."""
+    """Writes every mesh in the scene to `path` as a binary glTF, with fixed options; skinned on
+    the scene's armature if it has one (the engineer)."""
     bpy.ops.export_scene.gltf(
         filepath=str(path),
         export_format="GLB",
@@ -224,7 +225,7 @@ def export(path):
         export_all_vertex_colors=False,
         export_active_vertex_color_when_no_material=False,
         export_animations=False,
-        export_skins=False,
+        export_skins=any(o.type == "ARMATURE" for o in bpy.context.scene.objects),
         export_morph=False,
         export_extras=False,
         export_cameras=False,

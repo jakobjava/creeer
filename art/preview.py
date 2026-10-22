@@ -23,6 +23,9 @@ GRIME_YEARS = 2.0
 # Wood: grain lines per metre across the grain, and how far (in lines) each wanders.
 GRAIN_LINES = 45.0
 GRAIN_WANDER = 6.0
+# Hair: strands per metre across the way it lies, and how far (in strands) each wanders.
+HAIR_LINES = 600.0
+HAIR_WANDER = 2.5
 
 
 class _Tree:
@@ -129,6 +132,15 @@ def _pattern(t, kind, uv, obj):
     if kind == "Fabric":
         weave = t.noise(t.stretch(uv, 400.0, 400.0), 1.0, 1.0)
         return t.math("ADD", t.math("MULTIPLY", weave, 0.12), 0.94)
+    if kind == "Hair":
+        # Strands along the grain, each wandering; darker and lighter hairs in long streaks.
+        across = t.node("ShaderNodeSeparateXYZ")
+        t.link(uv, across.inputs["Vector"])
+        wander = t.math("MULTIPLY", t.noise(t.stretch(uv, 3.0, 60.0), 1.0, 3.0), HAIR_WANDER)
+        phase = t.math("ADD", t.math("MULTIPLY", across.outputs["Y"], HAIR_LINES), wander)
+        strand = t.math("ADD", t.math("MULTIPLY", t.math("SINE", t.math("MULTIPLY", phase, 6.283185)), 0.5), 0.5)
+        shade = t.math("ADD", t.noise(t.stretch(uv, 6.0, 90.0), 1.0, 3.0), 0.5)
+        return t.math("ADD", t.math("MULTIPLY", t.math("MULTIPLY", strand, shade), 0.4), 0.72)
     if kind == "Leather":
         cells = t.node("ShaderNodeTexVoronoi")
         cells.inputs["Scale"].default_value = 180.0

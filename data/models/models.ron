@@ -6,4 +6,8 @@
     // The sandbox's crate: its physics is a 1 m box (creeer_server world/commands.rs); its
     // origin is the centre of its base.
     (name: "crate", file: "models/crate.glb", class: Item, bounds: ((-0.5, 0.0, -0.5), (0.5, 1.0, 0.5))),
+    // The engineer (G1.3f): the base body and the starting outfit, skinned on the ragdoll's
+    // segments, in three levels of detail (art/engineer.py). Its origin is between its feet on
+    // the ground; it faces +z.
+    (name: "engineer", file: "models/engineer.glb", class: Character, bounds: ((-0.30, 0.0, -0.17), (0.30, 1.848, 0.20))),
 ]

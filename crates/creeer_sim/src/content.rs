@@ -14,6 +14,7 @@
 
 use crate::surroundings::Surroundings;
 use creeer_art::model::{Entry, Model};
+use creeer_art::wearable::{self, Wearable};
 use creeer_art::{Exception, Palette, Srgb, checks, model_check};
 use creeer_data::Data;
 use creeer_materials::MaterialTable;
@@ -146,6 +147,25 @@ fn models(data: &Data, palette: &Palette, report: &mut Report) {
             Ok(model) => {
                 for problem in model_check::check(&model, entry) {
                     report.warnings.push(format!("art style: {at}: {problem}"));
+                }
+                // A skinned model is drawn by the ragdoll's segments: a wrong skeleton draws
+                // a wrong body, an error (G1.3f). Its wearables must be its pieces; worn, they
+                // are held to the character's budget.
+                if !model.bones.is_empty() {
+                    for problem in crate::character::bones::skeleton_problems(&model.bones) {
+                        report.errors.push(format!("{at}: {problem}"));
+                    }
+                    match Wearable::all(data) {
+                        Ok(wearables) => {
+                            for problem in wearable::problems(&model, &wearables) {
+                                report.errors.push(format!("{at}: {problem}"));
+                            }
+                            for problem in wearable::over_budget(&model, &wearables) {
+                                report.warnings.push(format!("art style: {at}: {problem}"));
+                            }
+                        }
+                        Err(e) => report.errors.push(e),
+                    }
                 }
             }
             Err(e) => report.errors.push(format!("{at}: {e}")),

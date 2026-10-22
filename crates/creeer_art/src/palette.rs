@@ -69,6 +69,8 @@ pub enum Pattern {
     Leather,
     /// Smooth, with faint streaks.
     Glass,
+    /// Hair: fine strands along the way it lies (its grain), darker and lighter ones.
+    Hair,
 }
 
 /// One token.

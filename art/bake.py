@@ -102,7 +102,7 @@ def _grain_axes(axis, n):
     return rest[0], rest[1]
 
 
-def bake(obj):
+def bake(obj, rays=AO_RAYS, base=None):
     """Writes the "Color" attribute and the "UVMap", per face corner, before the faces are
     triangulated (common.finish).
 
@@ -113,19 +113,23 @@ def bake(obj):
     UNIFORM_AREA takes the mean of its corners, since corners that differ drew dark diagonals
     across its triangles. Wear is full on bevel faces (a band as wide as the bevel). Alpha is the
     corner's height above the model's base over HEIGHT_RANGE: linear, so it interpolates exactly,
-    and the renderer turns it into the ground's splash per pixel."""
+    and the renderer turns it into the ground's splash per pixel.
+
+    `rays` a corner (fewer for a character's many corners, whose larger occlusion is the
+    renderer's); heights from `base` (m; the object's lowest point by default: a piece of a
+    larger model, such as goggles, measures from the model's)."""
     mesh = obj.data
     bm = bmesh.new()
     bm.from_mesh(mesh)
     bm.faces.ensure_lookup_table()
     tree = BVHTree.FromBMesh(bm)
-    rays = _hemisphere(AO_RAYS)
+    rays = _hemisphere(rays)
     bevels = _bevels(bm)
     bm.free()
     normals = [c.vector.copy() for c in mesh.corner_normals]
     parts = mesh.attributes["part"].data if "part" in mesh.attributes else None
     grains = mesh.attributes["grain"].data if "grain" in mesh.attributes else None
-    bottom = min(v.co.z for v in mesh.vertices)
+    bottom = min(v.co.z for v in mesh.vertices) if base is None else base
     colours = [(1.0, 0.0, 0.5, 0.0)] * len(mesh.loops)
     uvs = [(0.0, 0.0)] * len(mesh.loops)
     for poly in mesh.polygons:

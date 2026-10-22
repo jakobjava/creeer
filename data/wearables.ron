@@ -1,0 +1,36 @@
+// The wearables (G1.3f, ADR-0026 decision 7): each a piece of the engineer's model
+// (models/engineer.glb, art/engineer.py), and what it hides when worn: regions of the body and of
+// the wearables beneath, never drawn under it. The starting outfit wears them all, the base
+// layer under the coverall; "naked", the body wears the base layer alone (art-style.md §8).
+// The regions are creeer_art::model_skin::REGIONS.
+[
+    // The vest and shorts: the shorts cover the pelvis; the vest's neck and short sleeves leave
+    // the torso's and upper arms' tops bare, the shorts the thighs' feet.
+    (name: "base_layer", hides: [
+        ("body", ["pelvis"]),
+    ]),
+    // From the neck to the ankles and wrists; the body's neck below the collar is its torso's.
+    (name: "coverall", hides: [
+        ("body", ["torso", "pelvis", "upper_arm.L", "upper_arm.R", "forearm.L", "forearm.R", "thigh.L", "thigh.R", "shank.L", "shank.R"]),
+        ("base_layer", ["torso", "pelvis", "upper_arm.L", "upper_arm.R", "thigh.L", "thigh.R"]),
+    ]),
+    // Over the coverall's trunk and upper sleeves; its lower sleeves end above the gloves, the
+    // coverall's cuffs showing between.
+    (name: "jacket", hides: [
+        ("body", ["torso", "upper_arm.L", "upper_arm.R"]),
+        ("coverall", ["torso", "upper_arm.L", "upper_arm.R"]),
+        ("base_layer", ["torso", "upper_arm.L", "upper_arm.R"]),
+    ]),
+    // Their cuffs tucked under the coverall's sleeves, whose ends (its hands' region) show.
+    (name: "gloves", hides: [
+        ("body", ["hand.L", "hand.R"]),
+    ]),
+    (name: "boots", hides: [
+        ("body", ["foot.L", "foot.R"]),
+        ("coverall", ["foot.L", "foot.R"]),
+    ]),
+    (name: "belt", hides: []),
+    (name: "knee_pads", hides: []),
+    (name: "elbow_pads", hides: []),
+    (name: "goggles", hides: []),
+]

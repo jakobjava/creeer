@@ -1,0 +1,22 @@
+diff --git a/art/engineer/outfit.py b/art/engineer/outfit.py
+index 9b0512f..e55e8ed 100644
+--- a/art/engineer/outfit.py
++++ b/art/engineer/outfit.py
+@@ -191,7 +191,7 @@ def openings():
+         w, up = forearm(side)
+         a = B.posed(w, side, "forearm")
+         up = (B.posed(w + up, side, "forearm") - a).normalized()
+-        out["hand." + tag] = (a + lift + up * INSIDE["hand"], -up)
++        out["hand." + tag] = (a + lift + up * (0.015 + INSIDE["hand"]), -up)
+         ankle = B.posed(B.joint("foot", side), side, "leg")
+         out["foot." + tag] = (Vector((ankle.x, ankle.y, LEG_END + SOLE + INSIDE["foot"])), Vector((0.0, 0.0, -1.0)))
+     return out
+@@ -242,7 +242,7 @@ def clothes(p, skin):
+     c = G.Cloth(skin).cut(*NECK).cut((0, 0, LEG_END), (0, 0, -1))
+     for side, tag in SIDES:
+         w, up = forearm(side)
+-        c.cut(w, -up, where=on_arm(c, tag))
++        c.cut(w + up * 0.015, -up, where=on_arm(c, tag))
+     coverall = p.add("coverall", c.make(p.scene, "coverall", 0.014, over=skin, gap=0.006, passes=200, hang=(G.TRUNK, 500)), "coverall")
+     j = G.Cloth(skin).cut(*NECK)
+     j.cut((0, 0, HEM), (0, 0, -1), where=lambda v: j.arm(v) < 0.5)

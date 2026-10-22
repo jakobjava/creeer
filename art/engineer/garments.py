@@ -15,6 +15,9 @@ LIMBS = ("w_arm.L", "w_arm.R", "w_forearm.L", "w_forearm.R", "w_leg.L", "w_leg.R
 # from the third to the fourth): the hips, from below the buttocks' fold to above the seat (the
 # user, 2026-10-21: not accentuated), and the trunk, for a jacket that falls from the chest.
 SEAT = (0.6, 0.74, 1.02, 1.14)
+# A model's garments get their edges' thickness after their levels are made (`models.py`):
+# decimated with it, a garment's thin rim came out ragged. Set, `make` only records it.
+DEFER_EDGES = [False]
 TRUNK = (0.6, 0.74, 1.4, 1.5)
 
 
@@ -50,27 +53,32 @@ class Cloth:
         bmesh.ops.delete(self.bm, geom=gone, context="VERTS")
         return self
 
-    def hull(self):
+    def hull(self, voxel=0.0025):
         """Each side's part replaced by its convex hull: a boot's shape round a foot, the toes
-        and the arch gone. Open where it was cut (the hull's cap there is dropped)."""
+        and the arch gone; remeshed evenly (`voxel`, m: a hull's faces are long slivers, which
+        subdivided and smoothed into streaks), each vertex weighted as the nearest it had.
+        Open where it was cut (the hull's cap there is cut off)."""
         top = max(v.co.z for v in self.bm.verts)
         out = bmesh.new()
-        layers = {n: out.verts.layers.float.new(n) for n, layer in self.layers.items() if layer is not None}
+        # Every weight the vertices carry, the limbs' and the segments' (`body.weigh_segments`).
+        source = dict(self.bm.verts.layers.float.items())
+        layers = {n: out.verts.layers.float.new(n) for n in source}
         for side in (1, -1):
             verts = []
             for v in self.bm.verts:
                 if v.co.x * side > 0:
                     u = out.verts.new(v.co)
                     for n, layer in layers.items():
-                        u[layer] = v[self.layers[n]]
+                        u[layer] = v[source[n]]
                     verts.append(u)
             r = bmesh.ops.convex_hull(out, input=verts)
             unused = {g for g in r["geom_interior"] + r["geom_unused"] if isinstance(g, bmesh.types.BMVert)}
             bmesh.ops.delete(out, geom=list(unused), context="VERTS")
-        bmesh.ops.delete(out, geom=[f for f in out.faces if all(v.co.z > top - 0.002 for v in f.verts)], context="FACES")
         self.bm.free()
-        self.bm, self.layers = out, {n: out.verts.layers.float.get(n) for n in LIMBS}
-        return self
+        self.bm = remeshed(out, voxel)
+        out.free()
+        self.layers = {n: self.bm.verts.layers.float.get(n) for n in LIMBS}
+        return self.cut((0, 0, top - 0.004), (0, 0, 1))
 
     def keep(self, test):
         """Keeps only the vertices where `test(v)` holds."""
@@ -117,9 +125,13 @@ class Cloth:
             wrap.offset = gap
             with bpy.context.temp_override(object=obj, active_object=obj):
                 bpy.ops.object.modifier_apply(modifier="over")
+        even_rims(mesh)
         boundary = {i for k, n in _edge_uses(mesh).items() if n == 1 for i in k}
         self.rim = [mesh.vertices[i].co.copy() for i in boundary]
-        if edge:
+        if edge and DEFER_EDGES[0]:
+            thickness = mesh.attributes.get("edge") or mesh.attributes.new("edge", "FLOAT", "POINT")
+            thickness.data.foreach_set("value", [edge] * len(mesh.vertices))
+        elif edge:
             solid = obj.modifiers.new("edge", "SOLIDIFY")
             solid.thickness = edge
             solid.offset = -1.0
@@ -129,6 +141,55 @@ class Cloth:
         for p in mesh.polygons:
             p.use_smooth = True
         return obj
+
+
+def even_rims(mesh, passes=8):
+    """Each open edge (a cuff, a hem) made an even line: its points averaged along it, which the
+    cut left straight but the push off the skin beneath made ragged."""
+    neighbours = {}
+    for (a, b), n in _edge_uses(mesh).items():
+        if n == 1:
+            neighbours.setdefault(a, []).append(b)
+            neighbours.setdefault(b, []).append(a)
+    if not neighbours:
+        return
+    co = {i: mesh.vertices[i].co.copy() for i in neighbours}
+    for _ in range(passes):
+        co = {i: c.lerp(sum((co[j] for j in neighbours[i]), Vector()) / len(neighbours[i]), 0.5) for i, c in co.items()}
+    for i, c in co.items():
+        mesh.vertices[i].co = c
+    mesh.update()
+
+
+def remeshed(bm, voxel):
+    """`bm` (closed) remeshed by voxels `voxel` (m) across, Blender's voxel remesh; each new
+    vertex given the float layers of `bm`'s nearest."""
+    from mathutils.kdtree import KDTree
+
+    mesh = bpy.data.meshes.new("remesh")
+    bm.to_mesh(mesh)
+    obj = bpy.data.objects.new("remesh", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    mod = obj.modifiers.new("remesh", "REMESH")
+    mod.mode, mod.voxel_size = "VOXEL", voxel
+    with bpy.context.temp_override(object=obj, active_object=obj):
+        bpy.ops.object.modifier_apply(modifier="remesh")
+    out = bmesh.new()
+    out.from_mesh(mesh)
+    bpy.data.objects.remove(obj)
+    bpy.data.meshes.remove(mesh)
+    tree = KDTree(len(bm.verts))
+    for v in bm.verts:
+        tree.insert(v.co, v.index)
+    tree.balance()
+    bm.verts.ensure_lookup_table()
+    source = dict(bm.verts.layers.float.items())
+    layers = {n: out.verts.layers.float.get(n) or out.verts.layers.float.new(n) for n in source}
+    for v in out.verts:
+        near = bm.verts[tree.find(v.co)[1]]
+        for n, layer in layers.items():
+            v[layer] = near[source[n]]
+    return out
 
 
 def soften(mesh, passes, grow=0.5, shrink=-0.505, where=None):
@@ -275,10 +336,10 @@ def collar(scene, name, rim, skin, height=0.035, gap=0.008, thickness=0.005):
     return obj
 
 
-def pad(scene, name, src, centre, across, up, facing, limb):
+def pad(scene, name, src, centre, across, up, facing, limb, off=0.003, thick=0.008):
     """A pad on the garment `src` (posed): its surface on the `limb` (a weight's name) on the
     side `facing` of `centre`, cut to an octagon `across` by `up` (m, half sizes; across x, up
-    z), 3 mm off it and 8 mm thick."""
+    z), `off` (m) off it and `thick` (m) thick."""
     cloth = Cloth(src)
     cloth.bm.normal_update()
     facing = Vector(facing)
@@ -295,7 +356,9 @@ def pad(scene, name, src, centre, across, up, facing, limb):
         reach = 1.0 / math.hypot(math.cos(a) / across, math.sin(a) / up)
         out = Vector((math.cos(a), 0.0, math.sin(a)))
         cloth.cut(centre + out * reach, out)
-    return cloth.make(scene, name, 0.003, edge=0.008)
+    obj = cloth.make(scene, name, off, edge=thick)
+    obj["off"] = off
+    return obj
 
 
 def head_centre(skin, eyes):
