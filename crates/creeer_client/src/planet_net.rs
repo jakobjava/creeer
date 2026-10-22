@@ -55,7 +55,9 @@ impl PlanetSession {
     /// If the planet cannot be loaded.
     pub fn singleplayer() -> Result<(Self, Arc<Terrain>), String> {
         let data = crate::content::data();
-        let world = ServerWorld::new(Arc::clone(&data), load_terrain(&data, PLANET)?, PLANET);
+        let mut world = ServerWorld::new(Arc::clone(&data), load_terrain(&data, PLANET)?, PLANET);
+        // The planet sandbox: its tools drop crates and dig within 500 m (G1.4d).
+        world.creative = true;
         let mut server = Server::new(world);
         let end = server.connect_memory();
         let mut connection = Connection::memory(end, PLAYER, data.hash());

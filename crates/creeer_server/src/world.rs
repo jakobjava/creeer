@@ -1,8 +1,9 @@
 //! The authoritative world: the physics world on a planet's terrain, every body in it an
 //! entity with an id that clients know it by, and what players may ask of it.
 //!
-//! The server checks what it is asked (plan.md §1, server-authoritative): a command acts
-//! only within [`REACH`] of the asking player's avatar, an edit's brush is no larger than a
+//! The server checks what it is asked (plan.md §1, server-authoritative): the sandbox's
+//! commands are a creative server's alone and act only within [`REACH`] of the asking player's
+//! avatar (what a player reaches for otherwise, `reach.rs`), an edit's brush is no larger than a
 //! tool makes one, and nothing is placed at a point that is not finite.
 
 use crate::things::{frame, upright};
@@ -85,6 +86,11 @@ pub struct ServerWorld {
     /// The hand tools (G1.4c, the packs' `tools.ron`), and the one each player holds, by name.
     tools: Vec<creeer_sim::tools::Tool>,
     wields: std::collections::BTreeMap<String, u8>,
+    /// Where the bodies near players were, for what they reach for (G1.4d, `reach.rs`).
+    history: history::History,
+    /// A creative (or test) server: its players may drop crates, frames and machines and dig
+    /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
+    pub creative: bool,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m, at a temperate latitude
@@ -179,6 +185,8 @@ impl ServerWorld {
             looks: std::collections::BTreeMap::new(),
             tools,
             wields: std::collections::BTreeMap::new(),
+            history: history::History::default(),
+            creative: false,
         }
     }
 
@@ -331,6 +339,9 @@ impl ServerWorld {
         self.surroundings.settle(&mut self.world, DT);
         drop(scope);
         self.tick += 1;
+        let scope = profile::scope("history");
+        self.remember();
+        drop(scope);
         let _scope = profile::scope("ageing");
         self.age_after_step();
     }
@@ -353,6 +364,7 @@ mod machine_tests;
 pub mod machines;
 pub mod people;
 mod persist;
+pub mod reach;
 mod regions;
 pub use regions::Tag;
 mod ageing;
@@ -360,9 +372,12 @@ mod ageing;
 mod ageing_tests;
 pub use ageing::Ages;
 mod commands;
+mod history;
 #[cfg(test)]
 mod looks_tests;
 #[cfg(test)]
 mod people_tests;
+#[cfg(test)]
+mod reach_tests;
 #[cfg(test)]
 pub(crate) mod tests;

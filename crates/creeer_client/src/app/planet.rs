@@ -157,7 +157,8 @@ impl Running {
                 },
             );
             request = planet_ui::window(ui.ctx(), planet, &self.camera);
-            planet_ui::crosshair(ui.ctx());
+            let target = crate::planet_aim::target(planet, &self.camera);
+            planet_ui::crosshair(ui.ctx(), target.as_ref());
             self.profiler
                 .window(ui.ctx(), Some(&mut planet.session.connection));
         });

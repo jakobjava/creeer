@@ -67,9 +67,11 @@ pub fn terrain() -> Arc<Terrain> {
     load_terrain(&Data::base(), PLANET).expect("the reference planet")
 }
 
-/// A new world on the reference planet.
+/// A new world on the reference planet: a test server, creative (G1.4d).
 pub fn world(terrain: Arc<Terrain>) -> ServerWorld {
-    ServerWorld::new(Data::base(), terrain, PLANET)
+    let mut world = ServerWorld::new(Data::base(), terrain, PLANET);
+    world.creative = true;
+    world
 }
 
 /// Plays `scene` for `ticks` ticks.

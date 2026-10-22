@@ -11,9 +11,11 @@ pub(crate) fn terrain() -> Arc<Terrain> {
     load_terrain(&creeer_data::Data::base(), "planets/home.ron").expect("the reference planet")
 }
 
-/// A new world on the reference planet.
+/// A new world on the reference planet: a test server, creative (G1.4d).
 pub(crate) fn world() -> ServerWorld {
-    ServerWorld::new(creeer_data::Data::base(), terrain(), "planets/home.ron")
+    let mut world = ServerWorld::new(creeer_data::Data::base(), terrain(), "planets/home.ron");
+    world.creative = true;
+    world
 }
 
 pub(crate) fn above(world: &ServerWorld, east: f64, height: f64) -> DVec3 {

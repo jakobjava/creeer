@@ -81,7 +81,7 @@ impl Game {
     }
 }
 
-fn still(_: usize) -> (DVec3, bool) {
+pub(crate) fn still(_: usize) -> (DVec3, bool) {
     (DVec3::ZERO, false)
 }
 

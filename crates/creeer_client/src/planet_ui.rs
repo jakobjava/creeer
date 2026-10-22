@@ -185,8 +185,9 @@ fn probe(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
     }
 }
 
-/// A small cross at the centre of the screen, where tools act.
-pub fn crosshair(ctx: &egui::Context) {
+/// A small cross at the centre of the screen, where tools act; walking, ringed when what it is
+/// on is within reach, and named beneath (G1.4d).
+pub fn crosshair(ctx: &egui::Context, target: Option<&crate::planet_aim::Target>) {
     let center = ctx.content_rect().center();
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
@@ -197,6 +198,20 @@ pub fn crosshair(ctx: &egui::Context) {
         let d = egui::vec2(dx, dy) * 8.0;
         painter.line_segment([center - d, center + d], stroke);
     }
+    let Some(target) = target else {
+        return;
+    };
+    let alpha = if target.in_reach { 220 } else { 110 };
+    if target.in_reach {
+        painter.circle_stroke(center, 12.0, stroke);
+    }
+    painter.text(
+        center + egui::vec2(0.0, 20.0),
+        egui::Align2::CENTER_TOP,
+        crate::planet_aim::label(target),
+        egui::FontId::proportional(13.0),
+        egui::Color32::from_white_alpha(alpha),
+    );
 }
 
 /// The world's machines (F7.4): each one's mode (active near a player, abstract beyond

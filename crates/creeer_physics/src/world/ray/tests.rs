@@ -151,3 +151,90 @@ fn a_ray_finds_the_ground_in_a_few_evaluations() {
     let n = ground.1.load(std::sync::atomic::Ordering::Relaxed);
     assert!(n <= 4, "{n} evaluations");
 }
+
+#[test]
+fn a_point_lies_as_far_outside_a_shape_as_geometry_says() {
+    let turn = DQuat::from_rotation_y(0.7);
+    let c = DVec3::new(1.0, 2.0, 3.0);
+    let at = |local: DVec3| c + turn * local;
+    let ball = Shape::Sphere { radius: 0.5 };
+    close(
+        ball.distance(c, turn, at(DVec3::X * 0.8)),
+        0.3,
+        "outside a ball",
+    );
+    close(
+        ball.distance(c, turn, at(DVec3::Y * 0.1)),
+        -0.4,
+        "inside a ball",
+    );
+    let half = DVec3::new(0.3, 0.2, 0.4);
+    let block = Shape::Box { half };
+    close(
+        block.distance(c, turn, at(DVec3::new(0.5, 0.0, 0.0))),
+        0.2,
+        "off a face",
+    );
+    close(
+        block.distance(c, turn, at(DVec3::new(0.6, 0.6, 0.4))),
+        0.5,
+        "off an edge",
+    );
+    close(
+        block.distance(c, turn, at(DVec3::new(0.0, 0.15, 0.0))),
+        -0.05,
+        "inside a box",
+    );
+    // A hull of the box's size: the same off a face and inside, nearer off an edge.
+    let hull = Shape::Hull(Arc::new(Hull::cuboid(half)));
+    close(
+        hull.distance(c, turn, at(DVec3::new(0.5, 0.0, 0.0))),
+        0.2,
+        "off a hull's face",
+    );
+    close(
+        hull.distance(c, turn, at(DVec3::new(0.0, 0.15, 0.0))),
+        -0.05,
+        "inside a hull",
+    );
+    let edge = hull.distance(c, turn, at(DVec3::new(0.6, 0.6, 0.4)));
+    assert!(
+        (0.4 - 1e-9..=0.5).contains(&edge),
+        "off a hull's edge: {edge}"
+    );
+    // A ray into each, from its own frame's +x: the face at its half width.
+    for shape in [&ball, &block, &hull] {
+        let (t, n) = shape
+            .ray(c, turn, at(DVec3::X * 2.0), turn * DVec3::NEG_X)
+            .unwrap();
+        let face = if let Shape::Sphere { radius } = shape {
+            *radius
+        } else {
+            half.x
+        };
+        close(t, 2.0 - face, "a shape's ray");
+        close(n.dot(turn * DVec3::X), 1.0, "its normal");
+    }
+}
+
+#[test]
+fn a_ground_ray_passes_the_bodies_by() {
+    let mut world = World::new(DT);
+    world.ground = Some(Arc::new(Ball(1000.0)));
+    world.add(Body::rigid(
+        Shape::Box {
+            half: DVec3::splat(0.5),
+        },
+        1.0,
+        DVec3::new(0.0, 1001.0, 0.0),
+        DT,
+    ));
+    let o = DVec3::new(0.0, 1003.0, 0.0);
+    // The box first for the whole world's ray, the ground for the ground's.
+    let all = world.ray(o, DVec3::NEG_Y, 5.0, None).unwrap();
+    close(all.distance, 1.5, "the box");
+    let ground = world.ground_ray(o, DVec3::NEG_Y, 5.0).unwrap();
+    assert!((ground.distance - 3.0).abs() < 2e-5, "{}", ground.distance);
+    assert_eq!(ground.body, None);
+    assert!(world.ground_ray(o, DVec3::NEG_Y, 2.5).is_none());
+}

@@ -362,4 +362,11 @@ impl Predicted {
     pub fn orientation(&self) -> Option<DQuat> {
         Some(self.world.bodies.first()?.structure.orientation[0])
     }
+
+    /// The server tick the avatar is predicted at: the snapshot it was last set back to, and a
+    /// tick for each input applied since (none before the first snapshot).
+    pub fn tick(&self) -> Option<u32> {
+        let pending = u32::try_from(self.log.pending().count()).ok()?;
+        Some(self.reconciled? + pending)
+    }
 }

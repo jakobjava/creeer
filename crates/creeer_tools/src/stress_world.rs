@@ -34,7 +34,10 @@ pub fn server() -> Scene {
         .collect();
     let data = Data::base();
     let terrain = load_terrain(&data, "planets/home.ron").expect("home.ron");
-    let w = Arc::new(Mutex::new(ServerWorld::from_save(data, save, terrain)));
+    let mut world = ServerWorld::from_save(data, save, terrain);
+    // A test server: its players drop crates (G1.4d).
+    world.creative = true;
+    let w = Arc::new(Mutex::new(world));
     let (state, seen) = (Arc::clone(&w), Arc::clone(&w));
     Scene {
         tick: Box::new(move |tick| {

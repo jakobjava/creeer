@@ -44,6 +44,7 @@ pub mod planet;
 #[cfg(test)]
 mod planet_tests;
 pub mod powerhouse;
+pub mod reach;
 pub mod save;
 pub mod sea;
 #[cfg(test)]

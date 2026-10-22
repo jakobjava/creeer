@@ -10,6 +10,11 @@ impl ServerWorld {
     /// What was refused, and why.
     pub fn apply(&mut self, command: &Command, by: Option<EntityId>) -> Result<(), String> {
         let _scope = profile::scope("command");
+        // The sandbox's commands, within 500 m: a creative or test server's alone (G1.4d).
+        let sandbox = !matches!(command, Command::Look { .. } | Command::Wield { .. });
+        if sandbox && by.is_some() && !self.creative {
+            return Err("only on a creative server".into());
+        }
         let near = by
             .and_then(|id| self.index(id))
             .map(|i| self.world.bodies[i].structure.position[0]);

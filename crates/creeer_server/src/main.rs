@@ -1,7 +1,7 @@
 //! The dedicated server: a world on a planet, players joining it over UDP.
 //!
 //! `creeer_server [--port <n>] [--planet <data file>] [--save <file>] [--autosave <s>]
-//! [--ticks <n>] [--data <dir>] [--mods <dir>]`
+//! [--ticks <n>] [--creative] [--data <dir>] [--mods <dir>]`
 //!
 //! - `--port`: the UDP port to listen on (default 27015);
 //! - `--planet`: the planet's file in the data packs (default `planets/home.ron`; a save's
@@ -11,6 +11,8 @@
 //! - `--save`: the world's file: loaded if it is there (saves of every earlier version are
 //!   read), saved every `--autosave` seconds (default 60) and when the server stops;
 //! - `--ticks`: run so many ticks as fast as it can, save, and stop (for scripts and tests).
+//! - `--creative`: its players may drop crates, frames and machines and dig and fill within
+//!   500 m (G1.4d); otherwise they act only on what they reach.
 //!
 //! While it runs it reads commands from its console: `save`, `players`, `quit`.
 
@@ -30,6 +32,7 @@ struct Options {
     save: Option<PathBuf>,
     autosave: Duration,
     ticks: Option<u64>,
+    creative: bool,
 }
 
 fn value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
@@ -60,6 +63,7 @@ fn options() -> Result<Options, String> {
         save: value(&args, "--save").map(PathBuf::from),
         autosave: Duration::from_secs(number("--autosave")?.unwrap_or(60)),
         ticks: number("--ticks")?,
+        creative: args.iter().any(|a| a == "--creative"),
     })
 }
 
@@ -120,7 +124,9 @@ fn main() -> Result<(), String> {
             pack.root.display()
         );
     }
-    let mut server = Server::new(world(&options)?);
+    let mut world = world(&options)?;
+    world.creative = options.creative;
+    let mut server = Server::new(world);
     if let Some(ticks) = options.ticks {
         for _ in 0..ticks {
             server.tick();

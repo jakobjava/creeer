@@ -68,6 +68,7 @@ mod physics_scenes;
 mod physics_view;
 #[cfg(test)]
 mod physics_view_tests;
+mod planet_aim;
 mod planet_net;
 mod planet_shot;
 mod planet_ui;
