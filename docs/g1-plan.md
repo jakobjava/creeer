@@ -267,8 +267,13 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - golden frames of a walk cycle;
   - golden screenshots of the base body and the full outfit walking and fallen, on all five grounds (moved from G1.3f).
 - **Budget:** ≤ 0.05 ms of CPU a character a frame.
-
-#### G1.3h Icons and the style board
+- **Done** (2026-10-22; ADR-0026 decision 9, Validation; `crates/creeer_client/src/animate/`):
+  - the gait from measurements instead of authored key poses (the user's direction of "realism", and no Blender animation pipeline needed): walking cadence from the walk ratio (Sekiya et al. 1996), running from a stride-frequency fit, the change at Froude 0.5, each foot's share on the ground 60 % walking and 35 % running;
+  - feet planted where they land and placed by inverse kinematics on the ground found under them (the knee a hinge about its own axis, so the rest pose is the model's exactly), rolling heel–flat–toe (Perry's rockers) on the sole's edges; the hips lowered as far as a foot needs (Johansen 2009); steps shortened on ground steeper than a stair and the stride hurried when a foot is left behind (setting off, steep slopes);
+  - the trunk the simulated body, turned to its motion (the body, a box, never turns); arms swing against the legs; treading water where it is over 0.4 m deep, arms out in the air; a tool's swing hook for G1.4 (`Animator::swing`); fallen, the ragdoll's segments exactly, and standing up blends from them over 0.8 s;
+  - validated: standing still is the model at rest; walking and running up and down slopes to the friction angle (walking only near it, where the legs' push just holds the body), every planted sole on the ground to rounding and no touching corner moving; cadence 114 steps a minute and 0.74 m steps at 1.4 m/s, 171 a minute running at 3.5 m/s, and as many steps taken as the gait says; the hips bob 63 mm walking at 1.4 m/s;
+  - cost: 0.009 ms a walking character a frame and 0.4 µs a ground query on the planet (about six a frame);
+  - drawn on the style board (fallen) and as a walk-cycle sheet (`--style-board <file> --walk <sheet>`); their golden images come with G1.3h's check. Icons and the style board
 
 - **Icons** (`art-style.md` §9): `--icon <model>` renders orthographic three-quarter views at 64 and 128 px on a transparent background, cached by the pack's content hash. Silhouettes of any two items must overlap by IoU < 0.8; the test runs for the items there are (the crate and the jetpack now; tools come in G1.4).
 - **The style board** (`--style-board`): every model on the five grounds, at noon and in the evening. The HUD and the inventory join it in G1.9.

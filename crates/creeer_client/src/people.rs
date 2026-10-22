@@ -2,6 +2,8 @@
 //! engineer skinned on his ragdoll's fifteen bones, in his look's outfit and colours. Standing,
 //! every bone is the body's frame (G1.3g animates the limbs); fallen, each bone is its segment.
 
+use crate::animate::feet::Ground;
+use crate::animate::{Animator, Body};
 use creeer_art::Palette;
 use creeer_art::model::{Entry, Model};
 use creeer_art::wearable::{Wearable, visible};
@@ -17,11 +19,12 @@ use std::collections::HashMap;
 const JACKET_BASE: [u8; 3] = [0x5c, 0x5a, 0x57];
 const JACKET_STRENGTH: f64 = 0.5;
 
-/// A person to draw: how they look, and each segment's bone (the ragdoll's order).
+/// A person to draw: who (a key the animation knows them by), how they look, and their body.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DrawnPerson {
+    pub key: u32,
     pub look: Look,
-    pub bones: Vec<Frame64>,
+    pub body: Body,
 }
 
 /// The engineer, registered with a renderer, and his outfits.
@@ -33,6 +36,8 @@ pub struct People {
     /// For each of the model's bones, the ragdoll segment it is.
     segment_of: Vec<usize>,
     outfits: HashMap<Vec<String>, OutfitId>,
+    /// Their animation (G1.3g).
+    animator: Animator,
 }
 
 impl std::fmt::Debug for People {
@@ -71,6 +76,7 @@ impl People {
             id,
             segment_of,
             outfits: HashMap::new(),
+            animator: Animator::default(),
         };
         for worn in [&STARTING_OUTFIT[..], &["base_layer"]] {
             people.add_outfit(renderer, worn);
@@ -89,20 +95,40 @@ impl People {
         }
     }
 
-    /// `person` as the renderer draws them. An outfit not registered is drawn as the starting
-    /// one (outfits change from G1.6 on, when wearables are items).
-    pub fn character(&self, person: &DrawnPerson) -> Character {
+    /// The people as the renderer draws them this frame, `dt` seconds after the last, animated
+    /// on `ground` (those no longer drawn are forgotten).
+    pub fn characters(
+        &mut self,
+        people: &[DrawnPerson],
+        dt: f64,
+        ground: &dyn Ground,
+    ) -> Vec<Character> {
+        let keys: Vec<u32> = people.iter().map(|p| p.key).collect();
+        self.animator.retain(&keys);
+        people
+            .iter()
+            .map(|p| {
+                let bones = self.animator.bones(p.key, &p.body, dt, ground);
+                self.character(&p.look, &bones)
+            })
+            .collect()
+    }
+
+    /// Someone looking `look` with `bones` (the ragdoll's order) as the renderer draws them. An
+    /// outfit not registered is drawn as the starting one (outfits change from G1.6 on, when
+    /// wearables are items).
+    pub fn character(&self, look: &Look, bones: &[Frame64]) -> Character {
         let start: Vec<String> = STARTING_OUTFIT.iter().map(|&w| w.to_owned()).collect();
-        let outfit = (self.outfits.get(&person.look.outfit))
+        let outfit = (self.outfits.get(&look.outfit))
             .or_else(|| self.outfits.get(&start))
             .copied()
             .expect("the starting outfit is registered");
         Character {
             outfit,
             bones: (self.segment_of.iter())
-                .map(|&s| person.bones.get(s).copied().unwrap_or(Frame64::IDENTITY))
+                .map(|&s| bones.get(s).copied().unwrap_or(Frame64::IDENTITY))
                 .collect(),
-            colours: self.colours(&person.look),
+            colours: self.colours(look),
             material: Material::dielectric([1.0; 3], 0.8),
         }
     }

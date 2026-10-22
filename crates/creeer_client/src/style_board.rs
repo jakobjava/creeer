@@ -5,12 +5,9 @@
 //! [--sun <deg>]` draws the crate new, weathered a year and four years, side by side.
 
 use crate::demo::{self, DemoMeshes};
-use crate::people::DrawnPerson;
 use creeer_math::Frame64;
 use creeer_math::glam::{DQuat, DVec3, Vec3};
-use creeer_net::entity::Look;
 use creeer_render::{Camera, DebugLines, Frame, Instance, Lighting, Material, Renderer, Scene};
-use creeer_sim::character::bones::{STARTING_OUTFIT, standing_bones};
 use std::path::Path;
 
 /// The five grounds (`art-style.md` §4) by name, sRGB.
@@ -84,19 +81,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The engineer (G1.3e) behind them: in his base layer alone, and in the starting outfit,
     // turned a little to the camera.
     let people = crate::people::People::register(&mut renderer)?;
-    for (x, outfit) in [(-0.8, &["base_layer"][..]), (0.8, &STARTING_OUTFIT[..])] {
-        let look = Look {
-            colour: 0,
-            skin: 4,
-            hair: 2,
-            outfit: outfit.iter().map(|&w| w.to_owned()).collect(),
-        };
-        let centre = DVec3::new(x, creeer_sim::character::heights().0, -1.4);
-        let bones = standing_bones(centre, DQuat::from_rotation_y(-0.3 * x));
-        scene
-            .characters
-            .push(people.character(&DrawnPerson { look, bones }));
-    }
+    crate::style_people::add(&people, &mut scene);
     // The board's view, or `--camera x y z yaw pitch` (m, degrees) for a close look.
     let mut camera = Camera::new(DVec3::new(0.0, 1.55, 3.1));
     camera.pitch = -0.3;
@@ -132,6 +117,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         clear_color: creeer_render::wgpu::Color::BLACK,
     });
     image.save_png(Path::new(path))?;
+    if let Some(sheet) = value_of("--walk") {
+        let walk =
+            crate::style_people::walk_sheet(&mut renderer, &people, (&sky, &lighting), &scene);
+        walk.save_png(Path::new(sheet))?;
+        println!("saved {sheet}: a stride walking at 1.4 m/s in eight frames");
+    }
     println!("saved {path}: the crate at {AGES:?} years on {ground}, sun {sun}°");
     Ok(())
 }

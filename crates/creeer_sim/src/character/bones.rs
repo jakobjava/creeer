@@ -156,6 +156,17 @@ pub fn standing_bones(centre: DVec3, orientation: DQuat) -> Vec<Frame64> {
     vec![Frame64::new(feet, orientation); SEGMENTS.len()]
 }
 
+/// The joints as the drawn body bends them (G1.3g): each one's segment, its parent's and where it
+/// is standing (the model at rest), in the ragdoll's order (each parent before its children).
+pub fn joints() -> [(usize, usize, DVec3); 14] {
+    LINKS.map(|(child, parent, at, _, _)| (child, parent, at))
+}
+
+/// Each segment's centre standing (the model at rest).
+pub fn centres() -> [DVec3; 15] {
+    SEGMENTS.map(|(centre, _, _)| centre)
+}
+
 /// Each bone's motion from the model at rest to the world for a ragdoll whose segments are at
 /// `poses` (each its centre and orientation, in the ragdoll's order): segment k's centre at
 /// rest drawn where it is, turned as it is.

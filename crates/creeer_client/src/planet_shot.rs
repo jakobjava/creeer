@@ -183,8 +183,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         crate::demo::Overlay::Off,
     );
     // The players' characters (G1.3e).
-    let people = crate::people::People::register(&mut renderer)?;
-    (scene.characters).extend(snapshot.people.iter().map(|p| people.character(p)));
+    let mut people = crate::people::People::register(&mut renderer)?;
+    let ground = crate::people_ground::PlanetGround {
+        terrain: &view.terrain,
+    };
+    let drawn = people.characters(&snapshot.people, 0.0, &ground);
+    scene.characters.extend(drawn);
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,

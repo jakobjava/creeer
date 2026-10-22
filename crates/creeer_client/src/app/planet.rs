@@ -95,8 +95,12 @@ impl Running {
             (&snapshot, &snapshot, 1.0),
             Overlay::Off,
         );
-        if let Some(people) = &self.people {
-            (self.scene.characters).extend(snapshot.people.iter().map(|p| people.character(p)));
+        if let Some(people) = &mut self.people {
+            let ground = crate::people_ground::PlanetGround {
+                terrain: &planet.terrain,
+            };
+            let drawn = people.characters(&snapshot.people, dt, &ground);
+            self.scene.characters.extend(drawn);
         }
         self.scene_build_times.push(build_start.elapsed());
 

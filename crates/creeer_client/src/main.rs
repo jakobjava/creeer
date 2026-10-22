@@ -30,6 +30,7 @@
 //! `creeer_client --connect <address:port> [--name <player>]` of a dedicated server
 //! (`creeer_server`), joined at once, walking.
 
+mod animate;
 mod app;
 mod circuit_bench;
 mod content;
@@ -49,6 +50,7 @@ mod lab_runs;
 mod lab_tests;
 mod models;
 mod people;
+mod people_ground;
 mod physics_bench;
 mod physics_drive;
 mod physics_fluids;
@@ -73,6 +75,7 @@ mod profiler_ui_tests;
 mod sandbox;
 mod shimmer;
 mod style_board;
+mod style_people;
 mod system_bench;
 mod system_cmd;
 mod system_frame;

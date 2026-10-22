@@ -52,16 +52,14 @@ pub fn add_people(
     ground: f64,
 ) {
     for frame in places(camera, count, ground) {
-        let person = crate::people::DrawnPerson {
-            look: creeer_net::entity::Look {
-                outfit: (creeer_sim::character::bones::STARTING_OUTFIT.iter())
-                    .map(|&w| w.to_owned())
-                    .collect(),
-                ..Default::default()
-            },
-            bones: vec![frame; creeer_sim::character::bones::SEGMENT_NAMES.len()],
+        let look = creeer_net::entity::Look {
+            outfit: (creeer_sim::character::bones::STARTING_OUTFIT.iter())
+                .map(|&w| w.to_owned())
+                .collect(),
+            ..Default::default()
         };
-        scene.characters.push(people.character(&person));
+        let bones = vec![frame; creeer_sim::character::bones::SEGMENT_NAMES.len()];
+        scene.characters.push(people.character(&look, &bones));
     }
 }
 

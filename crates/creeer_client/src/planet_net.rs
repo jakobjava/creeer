@@ -3,6 +3,7 @@
 //! dedicated server over UDP (`--connect`). Either way the window only draws what it is
 //! told and asks for what the player does; the world is the server's.
 
+use crate::animate::Body;
 use crate::people::DrawnPerson;
 use crate::physics_sandbox::PhysicsSnapshot;
 use creeer_math::Frame64;
@@ -183,14 +184,18 @@ impl PlanetSession {
                 Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
                 // A character (G1.3e): standing, its body's frame; fallen, its segments'.
                 Kind::Character { look, fallen, .. } => {
-                    let bones = if *fallen {
-                        fallen_bones(*id, (p, q), c)
+                    let body = if *fallen {
+                        fallen_bones(*id, (p, q), c).map(Body::Fallen)
                     } else {
-                        Some(bones::standing_bones(p, q))
+                        Some(Body::Standing(p, q))
                     };
-                    if let Some(bones) = bones {
+                    if let Some(body) = body {
                         let look = look.clone();
-                        out.people.push(DrawnPerson { look, bones });
+                        out.people.push(DrawnPerson {
+                            key: id.0,
+                            look,
+                            body,
+                        });
                     }
                 }
                 // Drawn with its person.
