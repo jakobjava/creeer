@@ -8,8 +8,9 @@
 - **A realistic physics foundation:** node-beam soft bodies (deformation and fracture from real material properties), rigid bodies, collision, orbital mechanics, electricity, thermodynamics, fluids and gases, aerodynamics, and a physics-based player character.
 - **Realistic manufacturing at chemistry level:** real minerals and ore grades; crushing, grinding, flotation, smelting, refining and alloying; real reactions with stoichiometry, energy balance and kinetics; casting, rolling, machining. Material properties feed into the physics.
 - **Smooth voxel planets** (no blocks), KSP-like scale (radius roughly 300-600 km), procedurally generated, fully interactive (mining, digging, tree felling), with many resources based on real geology.
-- **Free-form, part-based building** with deep customisation: parametric dimensions and materials. Buildings, bases, machines, vehicles and rockets.
-- **No artificial tech tree.** Progress is gated by what you can actually manufacture.
+- **Free-form, part-based building** with deep customisation: parametric dimensions and materials. Buildings, bases, machines, vehicles and rockets. There are few designed parts, in the spirit of Dream Car Builder (rods, tubes, plates and panels of any material and size, joined as built), not a catalogue of finished machines as in Satisfactory or Minecraft.
+- **No artificial tech tree.** Progress is gated by what you can actually manufacture. **Nothing is given** (the user, 2026-10-22): a survival player starts in the clothes they wear and makes everything else, from stone tools on. The game is hard and expects real knowledge of chemistry, mechanics and physics. It explains (the Codex) but does not hand-hold.
+- **Flexible, generic systems with attributes** (the user, 2026-10-22). One system per kind of thing, driven by data: a tool's behaviour comes from the pieces it is made of, and a tree is a species' attributes (form, size, wood, colours) that worldgen's biomes choose from. Tweaking attributes makes content; new content is data, not code.
 - **Light survival:** health, hunger, thirst, oxygen and suit pressure, temperature, fall damage.
 - **PvE and PvP:** fauna, environmental hazards, player-built physical weapons and raids.
 - **Multiplayer:** server-authoritative. Players can host (2-16 players), or run a headless dedicated server.
@@ -281,7 +282,10 @@ Revised 2026-10-18, before G1, with the user's answers: the physics' deferred sp
 5. **Realism debts are paid when gameplay reaches them.** Each milestone lists the items of `docs/future-improvements.md` its gameplay would expose, and lifts them. One that is not lifted is recorded there again, with the user's decision.
 6. **Playtest at every milestone's end.** The user plays the milestone's demo (and from G4 with others, on a rented server). The feedback is taken in before the next milestone starts.
 7. **Process as in Phase A.** Branch `gN`, small commits per sub-milestone passing `cargo xtask ci`, a squash-merge at the end; ADRs for decisions; a validation report in `docs/physics/` where physics changed.
-8. **Research first, in every milestone and package** (§1, principle 12). Each `gN-plan.md` and each performance package starts with a survey of prior work (papers, engines, games) for what it builds; its findings decide the method, and it is recorded in the ADR's Prior work section. A sub-milestone's design is not started before its survey is written.
+8. **Research first, in every milestone and package** (§1, principle 12). Each `gN-plan.md` and each performance package starts with a survey of prior work (papers, engines, games) for what it builds; its findings decide the method, and it is recorded in the ADR's Prior work section. A sub-milestone's design is not started before its survey is written. The survey is focused on what the step builds: enough to choose the method well.
+9. **Nothing given** (the user, 2026-10-22). Survival gives the clothes worn and nothing else: no landing pod, no kit, no free refills, no endless sources. Handouts belong to creative and test servers.
+10. **Fundamentals first, and development time is limited** (the user, 2026-10-22: "basic and fundamental gameplay mechanics and systems and not spend hours on little polish things"; "i DO NOT have unlimited usage and want to get to the fun part of designing production, buildings, vehicles, etc. soon"). Each milestone builds the smallest version of its loop that is real and fast, tested where its physics and gates need it, and the user plays it as soon as it is playable. Story, staging, decoratives, UI themes, golden images of the UI and other polish go to G11 through `docs/future-improvements.md`. Performance is a fundamental, never polish. In the user's words: "good quality but focused and research driven; no faffing about; the game can always be fleshed out later to make it look more flashy".
+11. **Generic systems, few designed parts** (pillars above). A milestone builds the system with its attributes and a few data entries that prove it is generic, not a catalogue of hand-made content.
 
 #### When the physics gets faster: the performance track
 
@@ -302,7 +306,7 @@ The levers within the solvers' present design were measured and taken or rejecte
 
 | # | Milestone | The loop it makes playable | Performance |
 |---|---|---|---|
-| G1 | Player & interaction | Walk the planet, fell a tree, dig ore, carry it home, with friends | P1 |
+| G1 | Player & interaction | Start with nothing but clothes, make stone tools, fell a tree, dig ore, carry it home, with friends | P1 |
 | G2 | Building system | Build a bridge or a tower from parts, load it, watch it hold or collapse | P2, P3 |
 | G3 | Mechanical power & first production chains | Water wheel or windmill → shafts → crusher, mill, furnace → your own steel, made into your own beams | P4 (drivetrains) |
 | G4 | Heat engines & electricity | Coal → boiler → steam engine → generator → grid → lights, motors, aluminium | P4 (grids), P7 |
@@ -316,7 +320,7 @@ The levers within the solvers' present design were measured and taken or rejecte
 
 #### G1: Player & interaction
 
-Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the outline below; it adds joints, a play-scene harness and the art direction with an asset pipeline).
+Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the outline below; it adds joints, a play-scene harness and the art direction with an asset pipeline). **Re-planned 2026-10-22, before G1.5:** there is no landing pod and no kit. The player starts in their clothes, gathers stones and wood, and makes tools with one generic tool system (a head, a haft and a joint, with properties from their materials). Trees are one generic system of species' attributes. Only the fundamentals are built, so that G1 is playable soon.
 
 - **G1.1 The character.** The ball avatar (ADR-0008) becomes a physics character:
   - real mass (about 80 kg plus suit and load); walking as forces through the feet, so slopes are climbable by friction (μ from the materials underfoot) and the ground is pushed back (a raft moves when walked on);
@@ -333,7 +337,7 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
 - **G1.6 HUD and first vitals.** Health; suit readouts measured from the surroundings (pressure, temperature, O₂; consumption and needs come in G9); interaction prompts; the inventory window (egui, the game's theme) showing mass and composition.
 - **P1: piles** (performance track).
 - **Play scenes:** *lumberjack* (20 trees felled on a slope, logs rolling and piling); *quarry* (a 10 m pit dug, 200 boulders and dropped bags); *crowd* (8 players walking, jumping and carrying in one place, ≤ 256 kbit/s each).
-- **Demo:** walk from the spawn to a forest and an outcrop, fell a tree, dig ore, carry both back, save, load; then the same with a second player.
+- **Demo:** spawn with nothing but clothes, make a stone axe and a pick, fell a tree, dig ore, carry both back, save, load; then the same with a second player.
 
 #### G2: Building system
 
@@ -345,7 +349,7 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
   
   Each part's mass, inertia and section properties are computed, and tested against section tables.
 - **G2.2 Placement.** Build mode with ghost previews, snapping to nodes, members and grids, symmetry (mirror, radial), numeric input (lengths, angles), cut to length, undo. A **"will it hold?" preview** solves the structure quasi-statically before a part is placed, with the stress overlay.
-- **G2.3 Construction costs.** Placing a part takes its item from the inventory; welding and bolting are tool actions that take time. Until G3 makes parts, a server rule allows creative building.
+- **G2.3 Construction costs.** Placing a part takes its item from the inventory; welding and bolting are tool actions that take time. In survival a part is made from the player's own material: logs, stone and lashings at first, their own metal from G3. Creative servers build freely.
 - **G2.4 Structure → physics.** A building is a structure (ADR-0004) anchored to the ground. It is quasi-static at rest and collapses when overloaded (yield, buckling, fracture). Lifts *lateral-torsional buckling* (beams in buildings are bent about their strong axis) and *members colliding with each other* (a collapse must not fold through itself).
 - **G2.5 Blueprints.** A selection is saved as a blueprint (a data file, validated like a pack), placed as ghosts, and shared as a file.
 - **G2.6 Damage and deconstruction.** Cutting members (torch, saw); salvage returns the material less the cut's waste; bent parts keep their plastic deformation.
@@ -355,6 +359,9 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
 
 #### G3: Mechanical power & first production chains
 
+Re-planned 2026-10-22 in outline (the full plan comes at G3's start): the player arrives with stone tools only, so the route to steel is history's, kept short. Machines are built from generic parts wherever their function can be computed from them: a crusher is jaws, a frame and a drive; a mill is a drum, its charge and a drive. A machine is a single designed part only where the physics cannot yet be composed, and that is recorded as a limit.
+
+- **G3.0 From stone to metal.** Fire by friction (a bow drill: heat from the friction's power, ignition from the wood's data); charcoal; clay dug and fired in a pit kiln (ceramics as materials); copper from malachite or native copper in a charcoal-fired pit furnace, cast in clay or stone moulds; bronze with tin from cassiterite. The generic tool (G1.6d) takes metal heads. Each step is one generic process (heating, reduction, casting) from `creeer_thermal` and `creeer_chem`, not a recipe.
 - **G3.1 Power sources.** A hand crank; a windmill (aero panels on its blades, lifts *a wind field*: a height profile and gusts); a water wheel fed from a reservoir through a sluice (pipe network). Rivers are not part of the terrain yet: decided at G3's start whether they come here.
 - **G3.2 Drivetrains as gameplay** (`creeer_mech`, ADR-0012). Shafts, gears (module, tooth count), belts, chains, clutches and flywheels, as parts on structures (reaction torques). Lifts *gear-mesh and belt compliance*, *belt creep*, *Stribeck friction*, *gearboxes' churning losses* and *two machines on one drivetrain coupled within a step*: chained machines expose all of them.
 - **G3.3 First machines and bulk handling.** A jaw crusher and a ball mill (energy from the Bond work index, the product's size distribution), screens, a sawmill (logs → planks and timber members), a trip hammer. Conveyors driven by shafts, chutes, hoppers and bins; material on a belt is a bulk flow, not bodies. A simple arm with taught positions (programmed in G7).
@@ -384,7 +391,7 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
 - **G5.1 Pipes and tanks as gameplay.** Pipes as parts (diameter, material and wall → burst pressure), pumps, valves, tanks, gauges, heat exchangers; leaks and bursts. Lifts *compressors in gas networks* and *heat exchange of pipes with their surroundings*, and *water hammer and cavitation* if pumps and valves show the need.
 - **G5.2 Reactors.** Batch, stirred and plug-flow reactors as parts with real kinetics, heating and cooling jackets; runaway reactions as a hazard (heat and kinetics coupled).
 - **G5.3 Separation.** Distillation columns, absorbers, crystallisers, filters, dryers. Lifts *distillation-grade vapour pressures* and *activity models* for azeotropes (ethanol and water).
-- **G5.4 Chains.** Air separation (oxygen, nitrogen, argon; lifts *cryogenic liquids*, which G8 needs), Haber-Bosch ammonia → nitric acid → fertiliser, the contact process (sulfuric acid), crude distillation → fuels, cracking → ethylene → polyethylene (plastics as materials with properties), cement and concrete (a structural material for G2's catalog), glass. Oxygen steelmaking replaces Bessemer.
+- **G5.4 Chains.** Air separation (oxygen, nitrogen, argon; lifts *cryogenic liquids*, which G8 needs; the jetpack's nitrogen comes from here, or its compressed air from G4's compressors, and nothing refills it for free), Haber-Bosch ammonia → nitric acid → fertiliser, the contact process (sulfuric acid), crude distillation → fuels, cracking → ethylene → polyethylene (plastics as materials with properties), cement and concrete (a structural material for G2's catalog), glass. Oxygen steelmaking replaces Bessemer.
 - **P5: meshed pipe networks** (performance track).
 - **Play scenes:** *refinery* (a meshed network of 2,500 junctions with columns, at 60 Hz); *chemical plant* (100 reactors).
 - **Demo:** crude oil to petrol and plastic; air to liquid oxygen; ammonia to fertiliser.
@@ -440,8 +447,8 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
 
 #### G11: Polish
 
-- **G11.1 Look and sound.** The art pass (the Factorio-like style everywhere), audio (`kira`).
-- **G11.2 Learning.** The complete Codex with its formulas; onboarding for the first hour.
+- **G11.1 Look and sound.** The art pass (the Factorio-like style everywhere), audio (`kira`). With it comes the polish deferred from earlier milestones (principle 10, `docs/future-improvements.md`): decoratives, the UI's theme and font, icons in the inventory, golden images of the UI, a first-person camera, and the ragdoll's off-centre collision boxes.
+- **G11.2 Learning and the start.** The complete Codex with its formulas, and onboarding for the first hour. The arrival's staging and story (a landing pod or another start), which never gives the player more than the clothes they wear.
 - **G11.3 Settings.** Quality presets, the render-scale slider, temporal upscaling, MSAA settings (lifts *MSAA memory*), accessibility, key bindings.
 - **G11.4 Modding.** Modding docs and the Lua scripting API for mods.
 - **G11.5 Shipping.** Packaging for all three operating systems and the Steam Deck (§5).

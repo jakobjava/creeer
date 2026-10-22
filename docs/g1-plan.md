@@ -2,9 +2,11 @@
 
 Status: **planned** (2026-10-18). Branch `g1`, squash-merged into main as "G1" at the end.
 
-G1 is the first gameplay milestone. The loop it makes playable: **land on the planet, walk to a forest and an outcrop, fell a tree, dig ore, carry both home, with friends.** It turns F5's test ball into a person with a body, gives that person hands and tools, makes the planet's rock and trees something to take apart, and gives the game its look.
+G1 is the first gameplay milestone. The loop it makes playable: **start with nothing but the clothes you wear, gather stones and wood, make your first tools, fell a tree, dig ore, carry both home, with friends.** It turns F5's test ball into a person with a body, gives that person hands and tools, makes the planet's rock and trees something to take apart, and gives the game its look.
 
 plan.md's G1: the character (G1.1), interaction (G1.2), mining with real composition (G1.3), trees (G1.4), inventory (G1.5), HUD and first vitals (G1.6), performance package P1 (piles). This plan orders and details them, and adds what they need first: joints in the physics core, a harness for play scenes, and the art direction with an asset pipeline.
+
+**Re-planned 2026-10-22, before G1.5** (the user): no landing pod and no starting kit. The player starts in their clothes and makes everything else, from stone tools on. Tools and trees are each one generic system whose attributes make the content. G1 builds only the fundamentals, so that it is playable soon (principles 9–11). G1.5–G1.10 below are the re-planned ones; the order is G1.6 → G1.5 → G1.7 → G1.8 → G1.9 → G1.10 (see "Order and dependencies").
 
 ## Principles
 
@@ -16,8 +18,13 @@ plan.md's G1: the character (G1.1), interaction (G1.2), mining with real composi
 6. **Factorio's vibe in 3D** (below, "Art direction"). Readable first: every material has its own colour, silhouettes are clear, objects are grounded by soft shadows and ambient occlusion, and shapes are chunky and believable. Every new thing in G1 is built in this style from its first version: no programmer art left at the end.
 7. **Gated play scenes** (plan.md, Phase B): every scene's worst tick ≤ 5 ms on the development machine (aim 2–3 ms), its p99 ≤ 2 ms, and its bandwidth ≤ 256 kbit/s per client.
 8. **Research before each sub-milestone's design** (plan.md §1, principle 12; added 2026-10-18). Every sub-milestone from here on starts by surveying how others solved what it builds: papers, engines, games (for G1.3, how Factorio and other stylised 3D games achieve their look; for G1.5, how games and simulators model digging and granular material; for G1.7, tree and wood fracture models). The survey goes into its ADR's Prior work section before any design. P1 learned this the hard way (ADR-0024).
+9. **Nothing given** (the user, 2026-10-22: "the game should only give you that what you have actually researched"). A survival player has the clothes they wear and nothing else: no pod, no kit, no free refill, no endless source of anything. Whatever they hold, they made from what the world holds. The game is hard and expects real knowledge of chemistry, mechanics and physics. It shows what can be observed and leaves the knowing to the player. Handouts (tools, the jetpack, crates, refills) belong to creative and test servers only.
+10. **Fundamentals first** (the user, 2026-10-22: "doing just what is necessary for the game; basic and fundamental gameplay mechanics and systems and not spend hours on little polish things"; "i want to have something playable somewhat soon"). Each step builds what the loop needs, and the user plays it as soon as it is playable. Story, the start's staging, decoratives, the UI's theme, golden images of the UI and other polish wait for G11, recorded in `docs/future-improvements.md`. Performance is a fundamental, not polish: every gate holds (principle 7). **Development time is limited** (the user, 2026-10-22: "i DO NOT have unlimited usage and want to get to the fun part of designing production, buildings, vehicles, etc. soon"). Each step is the smallest version that is real and fast, with the tests that check its physics and its gates, and no more. Whatever else it could have goes to `docs/future-improvements.md`, not into the step. The philosophy (the user, 2026-10-22): "good quality but focused and research driven; no faffing about; the game can always be fleshed out later to make it look more flashy". Research still decides each method, focused on what the step builds.
+11. **Flexible, generic systems with attributes** (the user, 2026-10-22: "make a generic system and then the improved world generation can use that system"; "flexible systems with attributes that can be tweaked to create a lot more actual content"). A system takes any material and any shape, and its results come from them. A tool's mass, swing, cut and wear come from the pieces it is made of, not from a list of tools. A tree is a species' attributes (growth form, size, wood, bark and foliage colours), so worldgen can fill biomes with many trees from data. There are few designed parts, in the spirit of Dream Car Builder (rods, plates and panels of any material), not Satisfactory or Minecraft. New content is data in the packs (ADR-0018), not code.
 
 ## Art direction: Factorio's vibe in 3D
+
+These rules hold for everything that is drawn. From G1.5 on (principle 10), G1 draws only what play needs. Player-made things and trees are drawn procedurally from their pieces and attributes, in their materials' colours, with no model made for each. Decoratives, the UI's theme and the rest wait for G11.
 
 What makes Factorio's look, and how Creëer carries it into 3D: a summary. The rules themselves (palette, limits, checks) are in **`docs/art-style.md`**, the authority, which every asset is checked against.
 
@@ -82,9 +89,9 @@ It replaces `creeer_sim::avatar` (the ball). The decisions are in ADR-0023 and a
   - Speeds from people in work suits: walking 1.4 m/s, running up to 4 m/s, a jump about 0.4 m.
 - **Climbing.** Ladders and handholds are joints (G1.1) with the grip's force limit; climbing is pulling on them.
 - **Swimming.** Buoyancy from the body's and suit's volume, and drag from the water (ADR-0014). Lifts *avatars in water* (`docs/future-improvements.md`): the character now feels the air and the sea. Drowning comes with G9's needs; until then the suit is sealed.
-- **Jetpack and EVA.** Cold-gas nitrogen thrusters (Isp about 70 s, as NASA's MMU and SAFER) with a finite tank: Δv = Isp·g₀·ln(m₀/m₁), refilled at the landing pod (G1.6). In free fall, translation and attitude thrusters (the orbit bubble, ADR-0007).
+- **Jetpack and EVA.** Cold-gas nitrogen thrusters (Isp about 70 s, as NASA's MMU and SAFER) with a finite tank: Δv = Isp·g₀·ln(m₀/m₁). In survival nobody has one until they make it, and its gas is what they compress themselves (G4–G5). Creative servers hand it out and refill it (G1.6b). In free fall, translation and attitude thrusters (the orbit bubble, ADR-0007).
 - **Ragdoll.** Above an impact threshold (an acceleration or impulse the legs cannot take), the capsule hands over to a 15-segment ragdoll on joints, with the same linear and angular momentum to rounding. It gets up again when at rest and able. Getting up is a drive on the joints, a recovery with a time.
-- **Injury.** Per body region, from peak acceleration and impulse, with published tolerance data: the head-injury criterion (HIC₁₅) for the head, the Abbreviated Injury Scale bands for the rest. Health is the sum of injuries, which heal slowly. Death drops the inventory as a bag and respawns the player at their pod.
+- **Injury.** Per body region, from peak acceleration and impulse, with published tolerance data: the head-injury criterion (HIC₁₅) for the head, the Abbreviated Injury Scale bands for the rest. Health is the sum of injuries, which heal slowly. Death leaves what was carried where the body lay, and respawns the player at the world's spawn with nothing (G1.6b).
 - **Prediction.** Lifts *predicting bumps into things*: the client's prediction world (`creeer_server::predicted`) holds the bodies near its player (within a few metres, mirrored from the snapshots), so walking into a crate is predicted, not corrected. The share of corrections over 1 cm is gated (today 5 % on a lossless link; target ≤ 1 %).
 - **Validation:**
   - climbing slopes up to the friction angle and sliding beyond it (μ from the materials);
@@ -315,7 +322,7 @@ The style board and a walk in the planet sandbox, shown to the user: the enginee
 - **G1.4g Play scene and review**: a play scene of players working (reach, strikes, carrying) gated as the others are; shown to the user.
   - **Done** (2026-10-22; ADR-0027, G1.4g): the play scene *work*: four players striking crates with axes and picks, four carrying, throwing and fetching 15 kg boxes, all asked as the game asks; every blow falls, no load is dropped; worst tick 3.0 ms, p99 1.9 ms, 81 kbit/s; gated and its hashes golden. The user played G1.4 and asked for compliant hands, done.
 
-- **Tools as items.** Hands, a pickaxe, a shovel, an axe and a bow saw. Each is a discrete item (G1.6) with a mass, a head material and a striking energy per swing (estimated at first as a pickaxe about 60 J, an axe about 80 J; worked out in G1.4e from measured swings: the pick 338 J, the axe 241 J). Powered tools come with power in G3–G4.
+- **Tools as items** (the original plan. Re-planned 2026-10-22: players make tools from pieces, in one generic system (G1.6d). These four steel tools are the creative kit and the test of the generic model). Hands, a pickaxe, a shovel, an axe and a bow saw. Each is a discrete item (G1.6) with a mass, a head material and a striking energy per swing (estimated at first as a pickaxe about 60 J, an axe about 80 J; worked out in G1.4e from measured swings: the pick 338 J, the axe 241 J). Powered tools come with power in G3–G4.
 - **Reach.** Actions work on what the crosshair ray hits, within 2.5 m of the character's hands (the server checks the reach). The F5 sandbox's 500 m commands are kept for creative and test servers only.
 - **Carrying and throwing.** A grab is a ball joint (G1.1) between the hands and the body's grasped point, with a force limit from human strength (about 50 kg carried easily, 150 kg lifted briefly, heavier only dragged as friction allows). The grasped body's weight acts on the character, which slows and can topple it. Throwing is an impulse from the arm's stroke, with its reaction on the thrower.
 - **Strikes.** A swing hits what the ray finds. The strike's energy goes into what it hits: dug rock (G1.5), cut wood (G1.7), or an impulse on a body.
@@ -327,49 +334,106 @@ The style board and a walk in the planet sandbox, shown to the user: the enginee
   - **The hands:** fingers at rest curled and together (a relaxed hand), closing on what is held (G1.4's tools). The hands need finger bones in the skin: today the fifteen bones are the ragdoll's, so the hand is one rigid piece.
 - **Validation:** a carried 50 kg crate slows walking as its weight on the legs predicts; a 300 kg crate cannot be lifted; throwing conserves momentum; reach is enforced against a cheating client (commands from too far are refused).
 
-### G1.5 Mining with real composition
+### G1.5 Digging with real composition
 
-- **Rock strength data.** `rocks.ron` gains each rock's mechanical properties: uniaxial compressive strength, tensile strength, Young's modulus and dry density. Soils get cohesion and friction angle instead. Sources are rock-mechanics references, cited per entry as the materials do. The validator checks their ranges.
-- **Digging.** A strike removes the volume its energy can break: V = η·E_strike / e_s, with e_s the rock's specific energy of excavation (from its compressive strength, the standard rock-cutting relation) and η the tool's efficiency. Picks suit rock, shovels suit loose soil and gravel. The brush is the tool's own small shape at the strike point (a few centimetres in granite, a spadeful in soil). Lifts *small edits vanish at a distance*: the levels of detail keep sub-cell edits visible (a dug pit stays visible from 1 km).
-- **Composition.** The dug volume's solid mass is ρ·V·(1 − porosity), and its minerals come from the geology at that point, including ore grades from the deposit models (ADR-0006), integrated over the brush, not taken from its centre alone. The result is a bulk item (G1.6): mass, mineral composition, temperature.
+Re-planned 2026-10-22 (principles 9–11). It comes after G1.6, because the player digs with what they made.
+
+- **Rock and soil strength data** (written in G1.6c, which needs it first for loose stones). `rocks.ron` gains each rock's mechanical properties: uniaxial compressive strength, tensile strength, Young's modulus, dry density, fracture toughness, grain size and hardness. Soils get cohesion and friction angle instead. Each entry is cited from rock-mechanics references, as the materials are, and the validator checks the ranges.
+- **Digging, one law for every tool.** A strike removes the volume its energy can break: V = η·E_strike / e_s. Here e_s is the rock's specific energy of excavation (from its compressive strength, the standard rock-cutting relation). The efficiency η comes from the tool as built (G1.6d): its head's shape (a point, an edge, a blade) and its hardness and toughness against the rock's. There is no table per tool kind. A stone-pointed pick and a steel one follow the same law, and a head too soft for a rock barely marks it and wears away. Bare hands dig loose soil and gravel only. The brush is the head's own shape at the strike point.
+- **Tools wear and break.** Each strike takes from the head: wear by the ratio of the hardnesses, and chipping or fracture where the blow passes the head's toughness. Each strike also loads the joint (G1.6d), so a head can break off or fly off.
+- **Composition.** The dug volume's solid mass is ρ·V·(1 − porosity). Its minerals come from the geology at that point, including ore grades from the deposit models (ADR-0006), integrated over the brush, not taken from its centre alone. The result is bulk (G1.6a): mass, mineral composition, temperature.
+- **What the player sees** (principle 9). A dug bulk shows what can be observed: its mass, its volume and so its density, its colour, grain and lustre. Its minerals and grades are the server's truth, shown on creative servers and in debug views. The player identifies them by tests they build themselves (streak, density, roasting, assay: G3 on). There is no hand lens and no prospecting overlay.
 - **Mass conserved.** The mass taken from the terrain equals the items' mass, to rounding. The terrain's removed volume is measured from the same density field as the edit.
-- **Loose boulders.** Worldgen places talus under cliffs and boulders on slopes, as hull bodies (ADR-0005) that are scenery until touched (principle 5). A pickaxe breaks a boulder into bulk; a large one can be rolled.
-- **Prospecting.** A hand lens shows which minerals a surface carries and roughly how much (by the rock's colours and the assay of a strike's sample). A deposit is found by walking, looking and sampling, not by a map overlay.
-- **Validation:** volume per strike against the specific-energy relation for three rocks; the composition of a dug porphyry sample against the deposit model's grade at that point; mass closure over 10,000 strikes; edits visible at distance (golden screenshots); boulders park and wake exactly (ADR-0019).
-- **Budget:** a strike (edit, composition, item) ≤ 0.2 ms on the server; the chunk rebuild off the tick (as now).
+- **Not in G1** (principle 10, `docs/future-improvements.md`): small edits kept visible at a distance (a dug pit seen from 1 km).
+- **Validation:** volume per strike against the specific-energy relation, for three rocks and two heads (stone and steel); a stone head wearing faster on granite than on sandstone, as the hardnesses say; the composition of a dug porphyry sample against the deposit model's grade at that point; mass closure over 10,000 strikes.
+- **Budget:** a strike (edit, composition, item, wear) ≤ 0.2 ms on the server; the chunk rebuild off the tick (as now).
 
-### G1.6 Items, inventory and the landing pod
+### G1.6 Items, the start, and making tools
+
+Re-planned 2026-10-22 with the user (principles 9–11): no landing pod and no starting kit. A player starts in the clothes they wear and makes everything else from what lies on the ground. **The user plays it at G1.6's end:** spawn with nothing, gather stones and branches, knap a stone, haft it, and strike with your own tool. This is the first playtest of the new start, and it comes before digging and trees are built on it.
+
+#### G1.6a Items and inventory
 
 - **Items.**
-  - **Bulk:** a mass, a composition (minerals or species, mass fractions), a temperature and a particle size. Merging two bulks of any composition conserves mass and each species exactly (the composition is the mass-weighted mix) and energy (the temperature follows the heat capacities, `creeer_materials`).
-  - **Discrete:** a part kind, a material, dimensions, a quality, and its plastic deformation if it has any.
-- **Capacity by mass and volume, not slots.** The clothes' pockets and a carried pack (an item with its own model, `art-style.md` §8) hold so many litres and the character carries their mass (it walks slower when loaded). Bulk fills by its bulk density.
-- **Dropping and bags.** A dropped bulk becomes a bag: a physics body whose mass is its contents. Dropped tools and logs are their own bodies.
-- **Containers.** A crate holds items, and its physics mass includes them (it changes as items go in and out).
-- **Wearables as items** (G1.3e made them drawable). Putting one on or taking it off is a transaction like any other. A worn piece's mass is added to the segments it is worn on, so the character's and the ragdoll's masses and inertias follow what is worn. The starting outfit comes from the pod.
-- **The landing pod.** Each player starts at a landing pod: a container with the starting kit (suit, tools, a little food for G9) and the respawn point, with a charger for a jetpack's nitrogen once one is made.
-- **The jetpack as an item** (the user, 2026-10-21: not in the starting kit, "something that you can build if you progress in the game"). The character's jetpack (G1.2c) works only while one is worn, and its mass is on the torso only then. Players make one once production allows (`plan.md`, G3 on); until then the sandbox and the play scenes hand it out.
-- **Transactions.** Every move between inventories, containers and the world is one server-authoritative transaction, atomic and ledgered: mass, species and items conserved, tested over random sequences (proptest).
-- **Saves.** New save sections for inventories and containers (save version 7, migration from 6); bags and pods are bodies like any other.
-- **Validation:** conservation under random transfers; a crate's mass and inertia following its contents; a full pack slowing the walk; save and load mid-transfer; a client asking to move what it does not have is refused.
+  - **Bulk:** a mass, a composition (minerals or species, mass fractions), a temperature and a particle size. Merging two bulks conserves mass and each species exactly (the composition is the mass-weighted mix) and energy (the temperature follows the heat capacities, `creeer_materials`).
+  - **Pieces:** a material and a shape. The shape is a parametric solid with dimensions, from which mass, volume and inertia are computed. A piece also has its quality, wear and any plastic deformation.
+  - **Assemblies:** pieces joined (a tool, G1.6d; later anything built).
+  
+  There is no list of authored item types: a stone, a branch, a stone axe and a steel beam are all pieces or assemblies.
+- **Where things are carried, by mass and volume.**
+  - The hands: G1.4f's grab, one load.
+  - The clothes' pockets: their litres from the outfit's real pockets (the coverall's thigh pockets, the jacket's chest pockets, the belt's pouch).
+  
+  The character carries their mass. There is no pack or bag until a player makes one.
+- **Dropped things are bodies:** a piece as its own shape, a bulk as a heap of its volume.
+- **Containers are generic:** any item with an inner volume holds what fits in it. The sandbox's crate is one; baskets and pots will be once they are made. A container's physics mass follows its contents.
+- **Transactions.** Every move between hands, pockets, containers and the world is one server-authoritative transaction, atomic and ledgered: mass, species and items conserved, tested over random sequences (proptest).
+- **Saves.** A new section for what each player carries and each container holds (the next save version, migrating the last). Dropped things are bodies like any other.
+- **The inventory window:** a plain egui list (mass, volume, what can be observed) from which a thing is taken into the hand. In survival it replaces the number keys. It shows text, not icons, since made things have no authored models to render icons from.
+- **Validation:** conservation under random transfers; a crate's mass and inertia following its contents; full pockets refusing more; save and load mid-transfer; a client asking to move what it does not have is refused.
 
-### G1.7 Trees and vegetation
+#### G1.6b The survival start
 
-- **Species.** Wood species data in the materials pack: spruce exists (EN 338 C24), and pine, birch and oak are added, each with density, moduli and strengths along the grain from EN 338 and the Wood Handbook. Each species has a growth form: height against trunk diameter (allometry), branching, crown shape, and the foliage's mass.
-- **Procedural trees.** A tree is a beam structure (ADR-0004): trunk and branches as members of the species' wood, with tapering sections, and the foliage's mass hung on the branch tips. Trees are placed by biome, slope and altitude, deterministically from the seed. Their shapes are seeded per tree, so no two trees look the same.
-- **Scenery until touched** (principle 5). A standing tree is a static instance: no physics per tick. A strike, a cut, a collision or a load turns it into a structure body. It parks again once it has fallen and come to rest (ADR-0019).
-- **Felling as it really works.** Each axe strike removes wood from the trunk's section at the cut: the member's section there shrinks by the volume the strike's energy cuts (from the wood's strength across the grain). The tree stands until its own weight, and the wind on its crown, exceed what the remaining section carries. Then it breaks and falls towards the notch side, as a felled tree does. The wind (ADR-0014's uniform wind) sways crowns and can decide the fall.
-- **Bucking.** A bow saw cuts a fallen trunk through at a point: the structure splits there, and the logs are bodies (a 3 m spruce log of 30 cm weighs about 90 kg: carried by one person barely, rolled easily). Branches break off into fallen wood. Planks and timber come from G3's sawmill.
-- **Decoratives.** Grass tufts, bushes, pebbles and fallen branches: instanced, non-physical, crushed flat where bodies lie on them (a mask, not a simulation).
-- **Rendering.** Trees are instanced with their own meshes from their beams (bark on the trunk, foliage clumps on the crown, in the style), with LODs down to impostors at distance.
+- **Survival** (the default server). A new player spawns at the world's spawn in the starting outfit, with nothing else: no tools and no food. They have no jetpack: the character has no tank (its dry mass), and thrust is refused. After a death the player respawns at the world's spawn, and what they carried lies where they fell. Nothing refills: today's respawn refills the jetpack (`world/people.rs`), and that is removed.
+- **Creative and test servers** (`--creative`, ADR-0027) keep handing things out: G1.4's four steel tools, the jetpack and its refill, crates, and the 500 m commands. The play scenes use them where they test something else.
+- **Wearables as items** wait for the first wearable a player can make (the jetpack, G3 on). Until then the outfit is fixed.
+
+#### G1.6c Stones and wood on the ground
+
+- **Loose stone,** from the local geology: the rock and its composition at that place. It lies as cobbles and pebbles on the ground, scree under cliffs and boulders on slopes, with sizes from measured distributions (talus and scree data, found in the survey). Stones are hull bodies, scenery until touched (principle 5): instanced, at no tick cost. They are picked up as pieces. A boulder too heavy to lift is only rolled.
+- **Fallen wood:** branches and dead trunks where forest grows (the biomes' rule, which G1.7 places trees by), in the species' wood (G1.7's attributes), dry or decayed (strength reduced as measured).
+- **Breaking.** A stone struck with another, or dropped, breaks by its fracture toughness and the impact's energy, with the pieces' masses conserved. A branch breaks over the knee by its bending strength.
+- **Validation:** placement deterministic (golden hashes); masses from the materials; a stone breaking at the energy its fracture toughness predicts; parking and waking exact (ADR-0019); a square kilometre of ground with its stones at no tick cost.
+
+#### G1.6d Making tools: one generic tool
+
+- **A tool is an assembly:** a head (a piece of stone now, metal from G3) on a haft (a piece of wood), held by a joint (a binding, or the head wedged into a split haft). Everything it does comes from its pieces:
+  - its mass, inertia and balance, from their shapes and densities;
+  - its swing's energy, by G1.4e's law from that inertia;
+  - how it cuts or digs, from the head's shape (a point, an edge and its angle, a blunt face) and its material (hardness, toughness);
+  - how fast it wears and whether it breaks, from the same.
+  
+  There is no table of tool kinds: "axe", "adze", "pick" and "hammer" are names for shapes, not types.
+- **Shaping stone, kept simple.** The head's shape is parametric (length, width, thickness, a point or an edge, its angle). It is drawn procedurally from that shape, in its rock's colour.
+  - Knapping: each strike with a hammerstone takes off a flake, its mass from the blow's energy and the rock's fracture toughness. Whether the edge comes out sharp depends on the rock's grain size and isotropy, a data attribute. Fine-grained, brittle, even rocks (chert, flint, obsidian, quartzite) flake to sharp edges; coarse ones crumble.
+  - Grinding on an abrasive stone: it removes volume at a rate set by the hardnesses, slowly, as ground stone axes were made.
+  
+  No fracture is simulated in 3D. The rates come from experimental archaeology (a short survey).
+- **Working wood:** a branch broken or cut to length, and split with a stone edge, at rates from the wood's strength.
+- **Joining.**
+  - A binding of fibrous strips (spruce roots, inner bark or withies: the survey decides which, with their tensile strengths), or the head wedged into a split haft.
+  - The joint's strength comes from friction and the binding's tension. A loose joint lets the head turn or fly off.
+- **Hands are a tool too:** soft and weak, with nothing sharp.
+- **How a player makes one.** Making is actions on what is in the hands and on the ground (strike this with that, grind this on that, bind these together). Each action is a server transaction that takes real time. There is no recipe list and no menu of what can be made: the player has to know how a stone axe is made (principle 9).
+- **G1.4's four steel tools** stay as the creative kit, and they become the generic model's test. Built from steel and hickory pieces, the model must give their masses, balances and swing energies as `data/tools.ron` has them (within its 15 % and 1 cm). From G3 the same system takes forged and cast heads.
+- **Validation:** a hafted stone axe's mass, balance and swing energy against a measured replica; the steel tools reproduced; a binding failing at its strips' strength; determinism.
+- **Budget:** a making action ≤ 0.2 ms on the server; a tool's mesh built ≤ 1 ms on the client.
+
+### G1.7 Trees: one generic tree
+
+Re-planned 2026-10-22 (principle 11; the user: "make a generic system and then the improved world generation can use that system to have bioms with different trees (shape, colour, size, etc.)").
+
+- **A tree is a species' attributes,** all in the packs' data:
+  - its wood: density, moduli and strengths along and across the grain (EN 338 and the Wood Handbook);
+  - its growth form: height against trunk diameter (allometry), the trunk's taper, branching (angles, counts, lengths by order), the crown's shape, the foliage's mass and clumping;
+  - its look: bark and foliage colours (palette tokens, checked by `art-style.md`'s rules as any token is), the bark's pattern;
+  - where it grows: its ranges of climate, altitude, slope and soil.
+  
+  One generator turns any species into trees. A new tree is a data entry, not code. G1 ships spruce (its wood, EN 338 C24, exists) and at least two species of different form (a broadleaf and a pine, say), which prove that the system is generic. The improved world generation's biomes then choose among the species by their ranges.
+- **Procedural trees.** A tree is a beam structure (ADR-0004): trunk and branches as members of the species' wood, with tapering sections, and the foliage's mass hung on the branch tips. Trees are placed deterministically from the seed, where their species' ranges allow. Each tree's shape is seeded, so no two look the same.
+- **Scenery until touched** (principle 5). A standing tree is a static instance with no physics per tick. A strike, a cut, a collision or a load turns it into a structure body. It parks again once it has fallen and come to rest (ADR-0019).
+- **Felling as it really works.** Each strike removes wood from the trunk's section at the cut, by the tool as built (G1.6d): its edge and energy against the wood's strength across the grain. So a stone axe fells more slowly than a steel one, by the ratio experimental archaeology measured (found in the survey). The tree stands until its own weight and the wind on its crown exceed what the remaining section carries. Then it breaks and falls towards the notch side, as a felled tree does. The wind (ADR-0014's uniform wind) sways crowns and can decide the fall.
+- **Bucking** with an axe (a saw needs metal teeth: G3). The trunk splits at the cut, and the logs are bodies (a 3 m spruce log of 30 cm weighs about 90 kg: one person barely carries it, and rolls it easily). Branches break off as pieces: hafts and firewood (G1.6).
+- **Rendering.** Trees are instanced with meshes built from their beams and their species' look (bark on the trunk, foliage clumps on the crown, in the style), with levels of detail down to impostors at a distance.
+- **Not in G1** (principle 10): grass tufts, bushes, pebbles and branches as decoratives (G11).
 - **Validation:**
-  - a standing tree's stresses under its own weight below the wood's strength for every species and size generated (no tree breaks by itself);
-  - the cut depth at which a trunk fails against the analytic remaining-section capacity;
-  - the fall direction against the notch for 100 seeded trees;
-  - a falling tree's energy within its potential energy;
-  - placement determinism (golden hashes);
-  - parking after a fall.
-- **Budget:** 100,000 standing trees in the loaded 2 km² cost nothing per tick and draw at 60 FPS on min-spec (impostors); a tree turning into a structure ≤ 1 ms, spread so no tick takes more than 2 ms extra.
+  - no generated tree breaks under its own weight;
+  - the cut depth at which a trunk fails, against the remaining section's capacity;
+  - the fall towards the notch;
+  - stone and steel felling times against the measured ratio;
+  - placement deterministic;
+  - a species added as data only, with no code changed.
+- **Budget:** 100,000 standing trees in the loaded 2 km² cost nothing per tick and draw at 60 FPS on min-spec (impostors). A tree turning into a structure takes ≤ 1 ms, spread so that no tick takes more than 2 ms extra.
 
 ### G1.8 P1: piles (ADR-0024; performance track)
 
@@ -387,37 +451,46 @@ G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock p
   - friction on fresh normal forces: no contact's friction rests on a normal force more than 5 % off its own (today 19 % of the pile's steps);
   - edge contacts and face patches made consistent, so rocks no longer rattle awake between them;
   - turn substeps per group, not for the world;
-  - faces over curved ground made cheaper;
-  - collision boxes set off their bodies' centres of mass (as other engines' compound shapes), so the ragdoll's shins and forearms reach the knee pads and elbow patches drawn on them, each limb's mass and inertia kept (deferred from G1.3f by the user, 2026-10-22).
+  - faces over curved ground made cheaper.
+
+  Collision boxes set off their bodies' centres of mass (the knee pads drawn sinking into the ground, deferred here from G1.3f) are polish: they moved to G11 on 2026-10-22 (principle 10, `docs/future-improvements.md`).
   
   Each is removed from `docs/future-improvements.md` when done.
 - **Validation:** every contact, pile, stack and energy test at its present tolerance; the split solve against the whole solve on the same states (same minimum within the tolerance); golden hashes regenerated only after a change is proven rounding-only or deliberate.
 - **Targets:** the rock pile's worst tick 18.2 → ≤ 5 ms, p99 14.2 → ≤ 2 ms; *quarry* and *lumberjack* within their gates; 50 crates on terrain at most 1.2× their cost on a plane.
 
-### G1.9 HUD, the UI theme and first vitals
+### G1.9 The HUD: what play needs
 
-- **The theme.** The egui theme from `docs/art-style.md` §10, used by every window (the sandboxes' too).
-- **HUD.**
+Re-planned 2026-10-22 (principle 10).
+
+- **Shown:**
   - health per body region;
-  - the suit's readouts, measured from the surroundings (pressure, temperature, O₂ outside; the suit's own consumption comes in G9);
-  - the jetpack's nitrogen;
+  - what is in the hands and in the pockets;
+  - a crosshair;
+  - interaction prompts with real numbers ("strike: stone axe, 1.1 kg, 160 J", "pick up: 12 kg");
+  - the jetpack's gas, only while one is worn (creative servers for now).
+- **egui's own look,** with a few of the palette's colours.
+- **Not in G1** (G11, `docs/future-improvements.md`):
+  - the full UI theme and font (`art-style.md` §10);
+  - icons in the inventory;
   - a compass and altitude;
-  - a hotbar of tools;
-  - interaction prompts ("cut", "dig", "pick up 42 kg").
-- **The inventory window.** Items with their icons, mass, volume and composition. Hovering a bulk item shows its minerals and grades; a part shows its material and dimensions.
-- **Cameras.** First person for working, third person for moving about (the character is always visible to others).
-- **Validation:** golden screenshots of the HUD and the inventory; UI tests for transfers by drag and drop.
+  - golden screenshots of the HUD;
+  - a first-person camera.
+  
+  The suit's readouts come with G9's needs.
+- **Validation:** UI tests for transfers.
 
 ### G1.10 Multiplayer, play scenes and the demo
 
-- **Everything replicated.** Characters (standing, ragdolled, swimming), strikes and their edits, trees as they fall, items, bags and containers, within 256 kbit/s per client in *crowd*.
+- **Everything replicated.** Characters (standing, ragdolled, swimming), strikes and their edits, made tools, loose stones, trees as they fall, items and containers, within 256 kbit/s per client in *crowd*.
 - **Play scenes gated** (G1.0):
-  - *lumberjack*: 4 players fell 20 trees on a slope; logs roll and pile.
-  - *quarry*: 4 players dig a 10 m pit with 200 boulders and dropped bags about.
-  - *crowd*: 8 players walking, jumping, carrying and throwing crates in one place.
-  - *fall*: characters falling, ragdolling and getting up on terrain, crates and each other.
-  - *forest*: one player walking through 100,000 trees for 10 minutes (streaming, no tick cost).
-- **The demo and playtest.** Walk from the pod to a forest and an outcrop, fell a tree, dig ore, carry both back, save, load; then the same with a second player over the network.
+  - *crowd* and *work*, as now;
+  - *toolmaking*: 4 players gathering, knapping and hafting;
+  - *lumberjack*: 4 players fell 20 trees on a slope, with stone and steel axes; logs roll and pile;
+  - *quarry*: 4 players dig a 10 m pit among loose boulders and dropped heaps;
+  - *fall*: characters falling, ragdolling and getting up on terrain, crates and each other;
+  - *forest*: one player walking through 100,000 trees of several species for 10 minutes (streaming, no tick cost).
+- **The demo and playtest.** Spawn with nothing but clothes. Gather stones and branches, and make a stone axe and a pick. Fell a tree, dig ore, and carry both back in hands and pockets. Save and load. Then the same with a second player over the network.
 
 ## Blender MCP
 
@@ -434,11 +507,13 @@ Terrain, trees and structures stay procedural.
 
 ## Order and dependencies
 
-G1.0 → G1.1 → G1.2a–d → G1.8's first pass (P1, brought forward: the ragdoll on the ground needed it) → G1.2e → G1.3, then G1.4 → G1.5 and G1.6 (in either order) → G1.7 → G1.9 → G1.10.
+G1.0 → G1.1 → G1.2a–d → G1.8's first pass (P1, brought forward: the ragdoll on the ground needed it) → G1.2e → G1.3 → G1.4, then (re-planned 2026-10-22) G1.6a → G1.6b → G1.6c → G1.6d (the user plays it) → G1.5 → G1.7 → G1.8 → G1.9 → G1.10.
 
 - **Joints come before the character**, because the ragdoll, carrying and ladders need them.
 - **The look comes before the content**, so the tools, items and trees are modelled in the style from the start.
+- **Items and making come before digging and felling,** because in survival the player digs and fells only with what they made.
 - **P1 comes after mining and trees**, so it is tuned on the real *quarry* and *lumberjack* scenes, not only the sandbox's rock pile.
+- **The user plays each step once it is playable** (principle 10), from G1.6's end on.
 
 Each sub-milestone ends with `cargo xtask ci` green and a commit pushed to `g1`.
 
@@ -447,10 +522,10 @@ Each sub-milestone ends with `cargo xtask ci` green and a commit pushed to `g1`.
 Recommended here, to be confirmed with the user at the sub-milestone they belong to:
 
 1. **A skinned body on the ragdoll's bones** (G1.3). **Decided by the user, 2026-10-21** (it replaced "a segmented suit instead of a skinned body"). The fifteen bones are the ragdoll's segments, so the drawn body is still the simulated one, bone for bone, but smooth across its joints. Rigid segments would show seams at every bent joint, against smooth surfaces (`art-style.md` pillar 9). It costs a compute skinning pass, and the ragdoll's segments must be known to the client (protocol 7).
-2. **The landing pod as the start** (G1.6): a starting kit and a respawn point that fit a planet with no one on it.
-3. **Cameras: first and third person** (G1.9). A higher, Factorio-like overview camera for factories is an idea for G3.
+2. **The landing pod as the start** (G1.6). **Decided by the user, 2026-10-22: no pod.** A survival player starts in their clothes alone ("clothes only, make tools"), respawns at the world's spawn, and nothing refills for free (G1.6b, principle 9). A staged arrival and its story are for G11.
+3. **Cameras: first and third person** (G1.9). Third person for now; first person moved to G11 (principle 10). A higher, Factorio-like overview camera for factories is an idea for G3.
 4. **Reach of 2.5 m for survival play** (G1.4), with F5's 500 m commands kept for creative and test servers.
-5. **The jetpack's look** (G1.3f). **Decided by the user, 2026-10-21:** two small nitrogen bottles on a harness frame, a wearable on the back slot, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out. Later the same day the user moved it out of the starting outfit: it is made as the player progresses (G1.6, "The jetpack as an item").
+5. **The jetpack's look** (G1.3f). **Decided by the user, 2026-10-21:** two small nitrogen bottles on a harness frame, a wearable on the back slot, so the thrust visibly comes from somewhere. It is not a rucksack, which the user asked to leave out. Later the same day the user moved it out of the starting outfit: it is made as the player progresses (G1.6b; its gas is compressed by the player, G4–G5).
 
 ## Budgets (development machine; min-spec projections ×2)
 
@@ -459,7 +534,9 @@ Recommended here, to be confirmed with the user at the sub-milestone they belong
 | Every play scene's worst tick / p99 | ≤ 5 ms / ≤ 2 ms (aim 2–3 ms worst) |
 | A walking character / a ragdoll | ≤ 0.03 / ≤ 0.1 ms a tick |
 | A 15-joint ragdoll's step | ≤ 0.1 ms |
-| A strike (edit, composition, item) | ≤ 0.2 ms |
+| A strike (edit, composition, item, wear) | ≤ 0.2 ms |
+| A making action (knapping, grinding, binding) / a made tool's mesh | ≤ 0.2 ms server / ≤ 1 ms client |
+| Loose stones on 1 km² | 0 ms a tick |
 | A tree becoming a structure | ≤ 1 ms, no tick more than 2 ms extra |
 | 100,000 standing trees | 0 ms a tick; 60 FPS on min-spec |
 | SSAO at 1080p | ≤ 1 ms min-spec |

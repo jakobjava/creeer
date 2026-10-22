@@ -217,7 +217,6 @@ The server keeps each object's age (its exposure so far, the rate it ages at now
 | A wearable | ≤ 4,000 at the mid level; at the others in proportion |
 | A tool | ≤ 2,000 |
 | An item, bag or crate | ≤ 1,000 |
-| The landing pod | ≤ 20,000 |
 | A tree (LOD 0, generated) | ≤ 8,000, impostors beyond 150 m |
 | A decorative | ≤ 200 |
 
@@ -241,7 +240,7 @@ The server keeps each object's age (its exposure so far, the rate it ages at now
   - **Proportions.** Those of a real man of normal weight (§2), neither broad nor muscular, in workwear that sits close: the coverall about 1.4 cm off the skin, the jacket 2.2 cm. Cloth hangs rather than following the body in: from the chest, the shoulders and the seat; the sleeves and trouser legs nearly straight from their widest point; across between the legs (the user: "perfectly morphed around the body"). Gloves and boots are chunky. They read as a person in workwear from 50 m and as a silhouette at 64 px.
   - **The bones** are the ragdoll's fifteen segments, one bone per segment, so the drawn body is the simulated one (`docs/g1-plan.md`; ADR-0026). The body and every wearable are skinned on them, smooth across the joints, never a set of separate blocks.
   - **Things held** are separate models attached to a bone: from G1.4, the tool in hand.
-- **Tools.** Wooden handles (`timber`, darkened with use), forged steel heads (`steel` with wear), simple and sturdy. Their outlines differ: pick, axe, shovel and saw are unmistakable.
+- **Tools.** Wooden handles (`timber`, darkened with use), forged steel heads (`steel` with wear), simple and sturdy. Their outlines differ: pick, axe, shovel and saw are unmistakable. These four are the creative kit. Tools that players make (G1.6d) are drawn procedurally from their pieces: the head in its rock's or metal's colour, the haft in `timber`, and the binding.
 - **Trees.** Masses of foliage in clumps, not individual leaves; dark undersides from AO; bark with vertical detail. Stumps and cut ends in `wood_cut`. Species are told apart by shape first (spruce cone, pine umbrella, birch's white trunk, oak's broad crown), colour second.
 - **Machines and structures** (G2 on): painted steel by default, bare where machined or worn, hazard stripes where they move or burn.
 - **Decoratives.** Muted and low, never competing with objects: grass tufts below knee height, pebbles in the ground's own rock colour.
@@ -270,7 +269,7 @@ In Factorio's spirit, not a copy of it.
 
 - **Raised and bevelled** buttons and panels with a 1 px light and dark edge; no rounded pill shapes, no glassy blur.
 - **Dense tooltips with real numbers:** mass, volume, composition, temperature, strength, in SI units with the unit dimmed. Numbers in tabular figures.
-- **One font family**, a clear sans with tabular figures (chosen and bundled in G1.9).
+- **One font family**, a clear sans with tabular figures (chosen and bundled in G11; until then the HUD uses egui's own, `docs/g1-plan.md` G1.9).
 - **The HUD** stays in the corners and edges; the centre of the screen belongs to the world.
 
 ## 11. Keeping the style from drifting

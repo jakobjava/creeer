@@ -39,7 +39,7 @@
   - A step's burn is its push over the exhaust's speed (Isp·g₀).
   - The body steps with half of it spent (the mean mass: Tsiolkovsky to second order) and ends the step without it.
   - Its momentum's share leaves with the gas.
-  - `character::refill` fills the tank (the pod, G1.6).
+  - `character::refill` fills the tank: on creative servers only (re-planned 2026-10-22: no landing pod; in survival nothing refills it, `docs/g1-plan.md` G1.6b).
 - **Attitude jets** damp the body's spin while it thrusts (at most 30 N·m from a pair at 0.3 m, paid in gas): EVA in free fall holds still.
 - **The input.** `AvatarInput.thrust`: a fraction of the most push, in the world's frame, delta-coded as the walk is. In the client it is held Ctrl while walking: up, leaning the way WASD goes.
 - **The tank's level.** The server tells each player their character's gas with every snapshot round (`ServerMessage::Own`), for the HUD (G1.9) and for the prediction, which sets its body's mass from it at each correction.

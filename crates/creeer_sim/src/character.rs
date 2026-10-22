@@ -154,7 +154,7 @@ pub fn gas(body: &Body) -> f64 {
     (body.structure.masses()[0] - DRY).max(0.0)
 }
 
-/// Fills a character's jetpack (at its pod, G1.6).
+/// Fills a character's jetpack (on creative servers only: in survival nothing refills it, G1.6b).
 pub fn refill(body: &mut Body) {
     body.solver.set_mass(&mut body.structure, 0, MASS);
 }

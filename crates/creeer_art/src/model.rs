@@ -65,8 +65,6 @@ pub enum Class {
     Tool,
     /// An item, bag or crate.
     Item,
-    /// The landing pod.
-    Pod,
     /// A decorative.
     Decorative,
 }
@@ -88,7 +86,6 @@ impl Class {
             Self::Wearable => 4_000 * CHARACTER[k] / CHARACTER[1],
             Self::Tool => 2_000,
             Self::Item => 1_000,
-            Self::Pod => 20_000,
             Self::Decorative => 200,
         }
     }

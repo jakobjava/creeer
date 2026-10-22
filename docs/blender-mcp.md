@@ -1,6 +1,6 @@
 # Using Blender with the MCP
 
-Creëer's authored models are made in Blender: the engineer, what the engineer carries (the jetpack, tools), the landing pod, bags and crates. Claude drives a running Blender through **MCP for Blender**, an MCP server with a Blender add-on. You can watch the scene change, and open and change the same models yourself. Whatever is procedural stays in code: terrain, trees, structures and decoratives (`docs/g1-plan.md`, G1.3).
+Creëer's authored models are made in Blender: the engineer, what the engineer carries (the jetpack, the creative kit's tools) and crates. Tools that players make, and trees, are procedural, built from their pieces and attributes (`docs/g1-plan.md` G1.6d, G1.7). Claude drives a running Blender through **MCP for Blender**, an MCP server with a Blender add-on. You can watch the scene change, and open and change the same models yourself. Whatever is procedural stays in code: terrain, trees, structures and decoratives (`docs/g1-plan.md`, G1.3).
 
 The rules every model follows are in `docs/art-style.md`, the authority. The decisions behind this pipeline are in ADR-0026.
 
