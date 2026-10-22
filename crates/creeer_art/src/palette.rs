@@ -71,6 +71,8 @@ pub enum Pattern {
     Glass,
     /// Hair: fine strands along the way it lies (its grain), darker and lighter ones.
     Hair,
+    /// Skin: reflects less than other non-metals (its index, 1.38; ADR-0026).
+    Skin,
 }
 
 /// One token.

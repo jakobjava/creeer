@@ -27,6 +27,10 @@ const PATTERN_STONE: u32 = 4u;
 const PATTERN_FABRIC: u32 = 5u;
 const PATTERN_LEATHER: u32 = 6u;
 const PATTERN_HAIR: u32 = 8u;
+const PATTERN_SKIN: u32 = 9u;
+// Skin's reflectance at normal incidence: ((1.38 − 1) / (1.38 + 1))², its index measured by
+// Weyrich et al. (2006) after Tuchin (2000).
+const SKIN_F0: f32 = 0.0255;
 // Heights are stored over this range (m; art/bake.py), the ground's splash reaches this high.
 const HEIGHT_RANGE: f32 = 2.0;
 const SPLASH: f32 = 0.35;
@@ -153,6 +157,8 @@ struct Surface {
     colour: vec3<f32>,
     roughness: f32,
     metalness: f32,
+    // 1: skin, which reflects less than other non-metals (`SKIN_F0`).
+    skin: f32,
 };
 
 /// The surface of a model's vertex of `token`, with its baked `occlusion`, `wear`, part `tone`
@@ -209,7 +215,9 @@ fn model_surface(
     colour = mix(colour, beneath.colour * pattern, fresh);
 
     let roughness = mix(token.roughness + grime * 0.15, beneath.roughness, fresh);
-    return Surface(colour, clamp(roughness, 0.0, 1.0), mix(token.metalness, beneath.metalness, fresh));
+    let skin = select(0.0, 1.0, token.pattern == PATTERN_SKIN);
+    let metalness = mix(token.metalness, beneath.metalness, fresh);
+    return Surface(colour, clamp(roughness, 0.0, 1.0), metalness, skin);
 }
 
 /// A procedural mesh's surface: its instance's material with mottling and fine grain only (it
@@ -217,5 +225,5 @@ fn model_surface(
 fn plain_surface(colour: vec3<f32>, roughness: f32, metalness: f32, at: Place) -> Surface {
     var c = colour * (0.92 + 0.16 * local_fbm(at, 3.5, 3u));
     c *= 0.95 + 0.10 * local_fbm(at, 420.0, 1u);
-    return Surface(c, roughness, metalness);
+    return Surface(c, roughness, metalness, 0.0);
 }

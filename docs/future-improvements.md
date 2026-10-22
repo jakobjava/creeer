@@ -210,6 +210,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **Icons cached in the player's cache directory**: today in the build's `target/icons/<pack hash>/` | A shipped game needs it; the inventory that shows icons comes in G1.9 | G | Small | ADR-0026, Limits |
 | **Golden images on shared CI**: the style board's check runs on the development machine only (Linux and macOS CI machines have no GPU; Windows' WARP passes within the tolerance: mean ΔE₀₀ 0.04–0.08) | One machine's check is the plan's; a CI step on Windows only would cost about a minute | G | Small | ADR-0026, Limits |
 | **A perceptual image difference for goldens** (FLIP, Andersson et al. 2020) that weighs edges and spatial frequency, if per-pixel ΔE₀₀ ever confuses aliasing with change | Per-pixel ΔE₀₀ separates GPU noise from a just-noticeable change today | G | Small | ADR-0026, Prior work |
+| **Subsurface scattering in skin where it shows**: penumbrae scattered at shadow edges and fine normal-map detail on faces (pre-integrated shading, Penner and Borshukov 2011: its table is in `docs/adr/0026/skin-pre-integrated.diff`, measured to change nothing visible on today's smooth meshes) | No normal maps or soft shadow edges on skin yet | R | Small | ADR-0026, Limits |
 
 ## Networking
 

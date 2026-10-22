@@ -12,7 +12,4 @@
     (subject: "rubber", rules: [Contrast("basalt")], why: "no colour above pure black reaches 12 on basalt; edge wear and occlusion carry it (ΔE00 7.8)", approved: "2026-10-21"),
     (subject: "copper", rules: [Chroma], why: "the original colour kept (chroma 50.7)", approved: "2026-10-21"),
     (subject: "laterite bauxite", rules: [Chroma], why: "the original colour kept (chroma 55.8 for an ore's 55)", approved: "2026-10-21"),
-    (subject: "skin 1", rules: [Lightness], why: "the Monk scale's tone kept (L* 94.2)", approved: "2026-10-21"),
-    (subject: "skin 2", rules: [Lightness], why: "the Monk scale's tone kept (L* 92.3)", approved: "2026-10-21"),
-    (subject: "skin 3", rules: [Lightness], why: "the Monk scale's tone kept (L* 93.1)", approved: "2026-10-21"),
 ]

@@ -289,6 +289,11 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
 
 The style board and a walk in the planet sandbox, shown to the user: the engineer walking, jumping, swimming, flying and falling, crates being pushed, the terrain at noon and in the evening. The look is accepted, or changed, before G1.4 begins.
 
+- **The first review** (2026-10-22): the user: "Looks good, move the spawn; one thing: the skin looks horribly pale, like plastic", then "it looks like the character has holes in the area of the collarbone".
+  - **Skin**: ten tones from measured faces instead of the Monk scale's swatches, and skin's own specular; subsurface scattering built, measured to change nothing visible, and set aside (ADR-0026 decision 12, Measured and rejected).
+  - **The collarbones**: the jacket's taut neckline left a 6 mm groove over each, a dark slit in the game's light; the band now fades out over 8 cm (ADR-0026, Measured and rejected).
+  - **The spawn**: it lies by the pole, where the sun never climbs above 4°. Moving it to flat land at a temperate latitude showed two things. First, a standing character crept downhill at 5 mm/s: the legs stood along the radius, not the plumb line (the planet's centrifugal pull), so it never slept; standing along gravity with the centrifugal pull fixes it. Second, two gates depend on chaotic contact and on where they are measured: walking into crates mispredicts 3–26 of 163 corrections by over 1 cm at the new place (the gate allows 1; even 64 times finer snapshots leave 3 of 8 placements over it), and the crowd scene's worst tick moves across its ceiling with a 0.0004 rad change of up. **Waiting on the user** (the spawn, the fix and the gates go in together).
+
 **Order:** G1.3a → G1.3b → G1.3c → G1.3f, the engineer (blockout, then the models) → G1.3d → G1.3e → G1.3g → G1.3h → G1.3i. The user, 2026-10-21: "lets finish 1.3c and then just do 1.3f (the engineer) before d and e". The engineer is modelled and approved in Blender first, and drawn in the game once G1.3e skins it. Each step ends with `cargo xtask ci` green and a commit pushed to `g1`.
 
 ### G1.4 Tools, reach and carrying

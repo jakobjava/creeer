@@ -207,9 +207,12 @@ fn lit(
     if dot(n, l) > 0.0 {
         visibility = sun_visibility(world, n);
     }
-    let direct = direct_light(n, v, l, base, metal, roughness, globals.sun_color.rgb, visibility);
+    // Skin reflects less than other non-metals (its index is 1.38: Weyrich et al. 2006).
+    let dielectric = select(DIELECTRIC_F0, SKIN_F0, surface.skin > 0.5);
+    let sun = globals.sun_color.rgb;
+    let direct = direct_light(n, v, l, base, metal, dielectric, roughness, sun, visibility);
     let ambient = occlusion * ambient_light(
-        n, v, globals.up.xyz, base, metal, roughness, globals.sky_ambient.rgb,
+        n, v, globals.up.xyz, base, metal, dielectric, roughness, globals.sky_ambient.rgb,
         globals.ground_ambient.rgb,
     );
     return direct + ambient;

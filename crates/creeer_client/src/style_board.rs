@@ -51,11 +51,9 @@ impl Board {
         })
     }
 
-    /// The board's scene on ground of sRGB `colour`.
-    fn scene(&self, colour: [u8; 3]) -> Result<Scene, String> {
-        let crate_model = (self.meshes.models.crate_box).ok_or("the packs have no crate model")?;
+    /// The ground alone: a slab 80 m square of sRGB `colour`, its top at y = 0.
+    fn ground(&self, colour: [u8; 3]) -> Scene {
         let mut scene = Scene::default();
-        // The ground: a slab 80 m square, its top at y = 0.
         let slab = Material::dielectric(colour.map(|c| f32::from(c) / 255.0), 0.92);
         scene.add(
             self.meshes.cube,
@@ -66,6 +64,13 @@ impl Board {
                 heat: None,
             },
         );
+        scene
+    }
+
+    /// The board's scene on ground of sRGB `colour`.
+    fn scene(&self, colour: [u8; 3]) -> Result<Scene, String> {
+        let crate_model = (self.meshes.models.crate_box).ok_or("the packs have no crate model")?;
+        let mut scene = self.ground(colour);
         for (k, &age) in AGES.iter().enumerate() {
             #[allow(clippy::cast_precision_loss)] // three crates
             let x = (k as f64 - 1.0) * 1.6;
@@ -146,6 +151,14 @@ impl Board {
 fn board_camera() -> Camera {
     let mut camera = Camera::new(DVec3::new(0.0, 1.9, 5.0));
     camera.pitch = -0.27;
+    camera.fov_y = 45f32.to_radians();
+    camera
+}
+
+/// The skin tones' view: the row of ten from in front.
+fn tones_camera() -> Camera {
+    let mut camera = Camera::new(DVec3::new(0.0, 1.5, 2.9));
+    camera.pitch = -0.04;
     camera.fov_y = 45f32.to_radians();
     camera
 }
@@ -235,6 +248,13 @@ fn all(
                 ));
             }
             images.push(("walk".into(), board.walk(&scene, TIMES[0].1)));
+            // The ten skin tones side by side (G1.3i).
+            let mut tones = board.ground(colour);
+            crate::style_people::add_tones(&board.people, &mut tones);
+            images.push((
+                "skin-tones".into(),
+                board.image(&tones, TIMES[0].1, &tones_camera()),
+            ));
         }
     }
     for (name, icon) in crate::icons::items(128)? {
@@ -252,7 +272,11 @@ fn all(
         }
         if let Some(golden) = check {
             let path = PathBuf::from(golden).join(&file);
-            let want = Image::load_png(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let Ok(want) = Image::load_png(&path) else {
+                println!("{name}: no golden image ({})", path.display());
+                failed.push(format!("{name} (no golden image)"));
+                continue;
+            };
             match crate::golden::compare(&half, &want) {
                 Some(d) => {
                     let verdict = if d.passes() { "ok" } else { "CHANGED" };

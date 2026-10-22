@@ -78,13 +78,13 @@ The surface columns (§6): **Pattern** is what the renderer draws within the col
 | `leather` | `#4b2c22` | 0.70 | 0 | Leather |  | Dark oxblood-brown: boots, gloves, belt and pouch, straps, knee pads, elbow patches |
 | `lens` | `#2a3b33` | 0.05 | 0 | Glass |  | Smoky green glass of the goggles |
 | `player_accent` | per player | 0.75 | 0 | Fabric |  | The work jacket's body and upper sleeves (§3.6): the player's colour laid on at half strength over grey `#5c5a57`, as Factorio tints its engineer (FFF-218), so it reads muted and worn, never hi-vis |
-| `skin` | per player | 0.55 | 0 | Plain |  | One of the ten skin tones below, the player's choice |
+| `skin` | per player | 0.50 | 0 | Skin |  | One of the ten skin tones below, the player's choice. Roughness from Weyrich et al. (2006): Beckmann m 0.23–0.32 over the face, about 0.26 on cheek and forehead (GGX α ≈ m, roughness √α); specular F0 0.026 from skin's index 1.38 (ADR-0026) |
 | `hair` | per player | 0.70 | 0 | Hair |  | One of the nine hair colours below, the player's choice: the hair and the eyebrows |
 | `base_layer` | `#797e86` | 0.85 | 0 | Fabric |  | The base body's plain vest and shorts: mid grey, apart from every skin tone (the user's choice) |
 | `eye_white` | `#e4ddd2` | 0.20 | 0 | Plain |  | The eyes' whites: a little warm, never pure white (§4) |
 | `iris` | `#3b2a1f` | 0.10 | 0 | Plain |  | The irises: dark brown, the most common eye colour |
 
-**Skin tones.** The Monk Skin Tone Scale (Ellis Monk with Google, 2022; skintone.google, CC BY 4.0), ten tones spanning human skin, lightest first: `#f6ede4` 1, `#f3e7db` 2, `#f7ead0` 3, `#eadaba` 4, `#d7bd96` 5, `#a07e56` 6, `#825c43` 7, `#604134` 8, `#3a312a` 9, `#292420` 10. Tones 1–3 are lighter than §4's L* 92, and 9–10 nearly grey (chroma 6.5 and 3.8): display swatches rather than measured skin. The user kept them (approved exceptions, §4).
+**Skin tones.** Measured skin, ten tones evenly in lightness from L* 70 to 32, lightest first: `#c2a597` 1, `#ba9a89` 2, `#b18f7c` 3, `#a88471` 4, `#9d7a66` 5, `#936f5c` 6, `#896552` 7, `#7d5c4a` 8, `#6f5040` 9, `#604637` 10. The range is that of faces measured by spectrophotometer: Xiao et al. (2017; 960 people in four countries) found faces at L* 56–61 on average and 29–73 in all, and Wang et al. (2015) African faces at about L* 37–43. The hue is 55° (measured faces 51–60°), the chroma about 19 in the middle and less towards both ends, as both studies report. They replaced the Monk Skin Tone Scale's display swatches (L* up to 94, nearly colourless), which looked "horribly pale, like plastic" in the game's light (the user, 2026-10-22).
 
 **Hair colours.** Measured, not painted (real hair measures darker than painted game hair: its shine comes from the light). Dark brown to red and blond from Mengel-From et al. (2009), who measured 107 Scots with a spectrophotometer; black and light brown from a cosmetics journal's samples; grey from a natural grey sample: `#2c2928` black, `#3c332d` dark brown, `#4f3f35` brown, `#5f4836` light brown, `#765f49` dark blond, `#90785c` blond, `#5e4031` auburn, `#7b563f` red, `#968a72` grey.
 
@@ -144,9 +144,6 @@ Measured in CIELAB, automated in tests over the palette.
 | `rubber` | contrast against basalt | No colour above pure black reaches 12 on basalt (ΔE₀₀ 7.8) | 2026-10-21 |
 | `copper` | chroma | Original colour kept (chroma 50.7) | 2026-10-21 |
 | laterite bauxite | chroma | Original colour kept (chroma 55.8, against an ore's 55) | 2026-10-21 |
-| skin 1 | lightness | The Monk scale's tone kept (L* 94.2) | 2026-10-21 |
-| skin 2 | lightness | The Monk scale's tone kept (L* 92.3) | 2026-10-21 |
-| skin 3 | lightness | The Monk scale's tone kept (L* 93.1) | 2026-10-21 |
 
 ## 5. Light and the frame
 
@@ -329,3 +326,4 @@ In Factorio's spirit, not a copy of it.
   - **Hanging cloth** ("perfectly morphed around the body, no hanging things"; "hang more in between the legs [...] (same is true for the bum)"; the shoulders' "back facing collar bones").
   - **Hair** ("proper hair and facial hair (eye brows and maybe a light beard)"; "make it look like real hair on the head"): the Hair pattern (§6), the haircut and eyebrows. A light beard was made and taken out ("the beard looks bad, remove it").
   - **§7's close-up budget raised to 50,000** from 40,000 for the detail (the user's choice; one close-up player measured at 0.02 ms at 40,000).
+- 2026-10-22, G1.3i: **measured skin** (§3.3, §4). The user, reviewing the look: "the skin looks horribly pale, like plastic". The Monk scale's swatches (L* up to 94) gave way to ten tones from measured faces (L* 70 to 32), so skin 1–3 need no exception any more; skin has its own measured specular (ADR-0026).

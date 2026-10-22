@@ -31,7 +31,7 @@
     (name: "leather", group: Character, colour: Hex("#4b2c22"), roughness: 0.70, pattern: Leather),
     (name: "lens", group: Character, colour: Hex("#2a3b33"), roughness: 0.05, pattern: Glass),
     (name: "player_accent", group: Character, colour: PerPlayer, roughness: 0.75, pattern: Fabric),
-    (name: "skin", group: Character, colour: PerPlayer, roughness: 0.55),
+    (name: "skin", group: Character, colour: PerPlayer, roughness: 0.50, pattern: Skin),
     (name: "hair", group: Character, colour: PerPlayer, roughness: 0.70, pattern: Hair),
     (name: "base_layer", group: Character, colour: Hex("#797e86"), roughness: 0.85, pattern: Fabric),
     (name: "eye_white", group: Character, colour: Hex("#e4ddd2"), roughness: 0.20),

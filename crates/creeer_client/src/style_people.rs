@@ -55,6 +55,21 @@ pub fn add(people: &People, scene: &mut Scene) {
         .push(people.character(&look(&bones::STARTING_OUTFIT), &lying));
 }
 
+/// The ten skin tones side by side in the base layer (G1.3i), lightest on the left, in a scene
+/// of their own over `ground`'s slab.
+pub fn add_tones(people: &People, scene: &mut Scene) {
+    for skin in 0..10u8 {
+        let x = (f64::from(skin) - 4.5) * 0.62;
+        let centre = DVec3::new(x, character::heights().0, -1.4);
+        let standing = bones::standing_bones(centre, DQuat::IDENTITY);
+        let look = Look {
+            skin,
+            ..look(&["base_layer"])
+        };
+        scene.characters.push(people.character(&look, &standing));
+    }
+}
+
 /// A ragdoll fallen from standing, tipped over, at rest on the plane, its feet near `at`.
 fn fallen(at: DVec3) -> Vec<Frame64> {
     let dt = 1.0 / 60.0;

@@ -37,6 +37,7 @@ fn pattern(p: Pattern) -> u32 {
         Pattern::Leather => 6,
         Pattern::Glass => 7,
         Pattern::Hair => 8,
+        Pattern::Skin => 9,
     }
 }
 

@@ -41,16 +41,29 @@ class Cloth:
         bmesh.ops.delete(self.bm, geom=[v for v in self.bm.verts if test(v)], context="VERTS")
         return self
 
-    def cut(self, co, no, where=lambda v: True):
+    def cut(self, co, no, where=lambda v: True, through=None):
         """Cuts along the plane through `co` and removes what lies on the side `no` points
-        to, among the vertices where `where(v)` holds."""
+        to, among the vertices where `where(v)` holds; given a point `through`, only the piece
+        of that side nearest it (a neckline round the neck, the shoulders' tops left whole
+        where they rise above the plane: bounding the cut instead left a step in the outline)."""
         co, no = Vector(co), Vector(no).normalized()
         faces = [f for f in self.bm.faces if all(where(v) for v in f.verts)]
         edges = list({e for f in faces for e in f.edges})
         verts = list({v for f in faces for v in f.verts})
         bmesh.ops.bisect_plane(self.bm, geom=verts + edges + faces, plane_co=co, plane_no=no, dist=1e-5)
-        gone = [v for v in self.bm.verts if where(v) and (v.co - co).dot(no) > 1e-5]
-        bmesh.ops.delete(self.bm, geom=gone, context="VERTS")
+        gone = {v for v in self.bm.verts if where(v) and (v.co - co).dot(no) > 1e-5}
+        if through is not None and gone:
+            start = min(gone, key=lambda v: (v.co - Vector(through)).length)
+            piece, todo = {start}, [start]
+            while todo:
+                v = todo.pop()
+                for e in v.link_edges:
+                    w = e.other_vert(v)
+                    if w in gone and w not in piece:
+                        piece.add(w)
+                        todo.append(w)
+            gone = piece
+        bmesh.ops.delete(self.bm, geom=list(gone), context="VERTS")
         return self
 
     def hull(self, voxel=0.0025):

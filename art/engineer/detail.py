@@ -84,7 +84,7 @@ def jacket(p, belt_z):
     # spans the hollows above the collarbones, which the jacket had followed in).
     co, _ = R.arrays(mesh)
     neck = np.hypot(co[:, 0], co[:, 1] + 0.01)
-    band = R.smoothstep(1.4, 1.45, co[:, 2]) * (1.0 - R.smoothstep(0.12, 0.15, neck))
+    band = R.smoothstep(1.4, 1.45, co[:, 2]) * (1.0 - R.smoothstep(0.12, 0.2, neck))
     G.soften(mesh, 200, shrink=0.0, where=band)
     R.blouse(mesh, belt_z, body)
     for side, tag in SIDES:
