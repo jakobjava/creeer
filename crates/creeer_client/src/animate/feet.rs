@@ -120,8 +120,10 @@ impl Foot {
         self.swung = s;
         let landing = self.aimed;
         let eased = s * s * (3.0 - 2.0 * s);
-        let at = self.lifted.lerp(landing.0, eased)
-            + up * self.lift * det::sin(std::f64::consts::PI * s);
+        // Off its toe a foot is already rising; lifted from standing, it rises from rest.
+        let arc = det::sin(std::f64::consts::PI * s);
+        let rise = if self.from_rest { arc * arc } else { arc };
+        let at = self.lifted.lerp(landing.0, eased) + up * self.lift * rise;
         let n = self.lifted_normal.lerp(landing.1, eased).normalize_or(up);
         ((at, n), Through::Swing(s))
     }

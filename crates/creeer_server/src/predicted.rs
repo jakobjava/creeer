@@ -36,6 +36,11 @@ pub struct Predicted {
     around: Option<Surroundings>,
     log: InputLog,
     smoothing: Smoothing,
+    /// The avatar as it was before its last tick, and the time since that tick (s): drawn
+    /// between the two by the share of a tick passed, so it moves smoothly on a screen drawing
+    /// faster than it ticks (render interpolation: Fiedler, "Fix Your Timestep!", 2004).
+    previous: Option<Pose>,
+    since: f64,
     /// The tick of the snapshot it was last set back to.
     reconciled: Option<u32>,
     /// How far the avatar was corrected each time it was set back (m).
@@ -80,6 +85,8 @@ impl Predicted {
             around,
             log: InputLog::default(),
             smoothing: Smoothing::default(),
+            previous: None,
+            since: 0.0,
             reconciled: None,
             corrections: Corrections::default(),
             gas: character::TANK,
@@ -117,6 +124,8 @@ impl Predicted {
     pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         let input = self.log.push(walk, jump, thrust);
         if !self.fallen && !self.world.bodies.is_empty() {
+            self.previous = self.pose_with(DVec3::ZERO);
+            self.since = 0.0;
             Self::step(&mut self.world, &mut self.around, &input);
             self.history.record(input.seq, &self.nearby, &self.world);
         }
@@ -139,6 +148,7 @@ impl Predicted {
             self.nearby.clear();
             self.drawn.clear();
             self.smoothing = Smoothing::default();
+            self.previous = None;
         }
         self.fallen = fallen;
     }
@@ -252,6 +262,10 @@ impl Predicted {
         if let Some(before) = before {
             let after = self.world.bodies[0].structure.position[0];
             self.smoothing.corrected(before, after);
+            // The tick before moves with the correction, so the drawn avatar stays where it was.
+            if let Some(p) = &mut self.previous {
+                p.position += after - before;
+            }
             let c = &mut self.corrections;
             let by = (after - before).length();
             c.count += 1;
@@ -285,6 +299,7 @@ impl Predicted {
     /// `seconds` passed: the avatar as drawn (the prediction, less what is left of the last
     /// corrections), if it has come yet.
     pub fn advance(&mut self, seconds: f64) -> Option<Pose> {
+        self.since += seconds;
         let offset = self.smoothing.advance(seconds);
         for s in self.drawn.values_mut().chain(self.released.values_mut()) {
             s.advance(seconds);
@@ -301,9 +316,15 @@ impl Predicted {
 
     fn pose_with(&self, offset: DVec3) -> Option<Pose> {
         let s = &self.world.bodies.first()?.structure;
+        let (mut position, mut orientation) = (s.position[0], s.orientation[0]);
+        if let Some(p) = &self.previous {
+            let share = (self.since / DT).clamp(0.0, 1.0);
+            position = p.position.lerp(position, share);
+            orientation = p.orientation.slerp(orientation, share);
+        }
         Some(Pose {
-            position: s.position[0] + offset,
-            orientation: s.orientation[0],
+            position: position + offset,
+            orientation,
         })
     }
 

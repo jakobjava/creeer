@@ -5,8 +5,9 @@
 //! place after it unless a foot stands well off where it would.
 
 use super::feet::{self, Foot, Ground, Through};
+use super::pose::free;
 use super::pose::{Mode, Pose};
-use super::{State, gait, skeleton, upper};
+use super::{State, gait, hips, skeleton, upper};
 use creeer_math::Frame64;
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_sim::character::{JUMP_SPEED, bones};
@@ -25,10 +26,13 @@ const CROUCH: f64 = 0.12;
 /// How fast the motion's estimates follow the body (1/s), and the heading turns (rad/s).
 const FOLLOW: f64 = 10.0;
 const TURN: f64 = 8.0;
-/// How fast the hips come back up when no foot holds them down (1/s): critically damped, as
-/// fast as lets the knee straighten through a walking stance to about 5° as people's does
-/// (Perry: the stance knee 15–20° at its most bent, about 5° at mid-stance).
-const HIPS: f64 = 40.0;
+/// Unmoved this long, the body is still (s): nine ticks. The player's avatar moves each tick
+/// (predicted a tick at a time), others each frame (interpolated).
+const STALE: f64 = 0.15;
+/// The fastest the stopping steps go (m/s): a free walk.
+const STOP_PACE: f64 = 1.4;
+/// Slowing faster than this, it is braking to a stop, not walking more slowly (m/s²).
+const BRAKING: f64 = 0.5;
 /// How long the arms take to change their carriage between walking and running (s): within a
 /// step, not within a frame.
 const CARRIAGE: f64 = 0.15;
@@ -61,12 +65,25 @@ impl State {
         let up = orientation * DVec3::Y;
         let before = self.velocity;
         let moved = centre - self.centre;
-        if dt > 0.0 {
-            let seen = (centre - self.centre) / dt;
-            self.velocity += (seen - self.velocity) * (FOLLOW * dt).min(1.0);
+        // The body's motion measured over the time since it was last seen to move: drawn faster
+        // than the simulation ticks, the same place comes several frames running and then a
+        // whole tick's move at once (as frame-to-frame it would look still, then fast). Unmoved
+        // for longer than a tick could take, it is still.
+        self.unseen += dt;
+        let span = if moved != DVec3::ZERO || self.unseen > STALE {
+            std::mem::take(&mut self.unseen)
+        } else {
+            0.0
+        };
+        if span > 0.0 {
+            let seen = moved / span;
+            self.velocity += (seen - self.velocity) * (FOLLOW * span).min(1.0);
             let climb = seen.dot(up);
-            let sinking = (self.climb - climb) / dt;
-            self.sinking += (sinking - self.sinking) * (FOLLOW * dt).min(1.0);
+            // A jump: the body rising faster by half a jump's speed at once (the simulation's
+            // push is given in a tick; nothing on the ground speeds it up so).
+            self.leapt = climb - self.climb > TAKE_OFF;
+            let sinking = (self.climb - climb) / span;
+            self.sinking += (sinking - self.sinking) * (FOLLOW * span).min(1.0);
             self.climb = climb;
         }
         self.centre = centre;
@@ -80,9 +97,9 @@ impl State {
         }
         let forward =
             (self.heading - up * self.heading.dot(up)).normalize_or(orientation * DVec3::Z);
-        if dt > 0.0 {
-            let ahead = (self.velocity - before).dot(forward) / dt;
-            self.ahead += (ahead - self.ahead) * (FOLLOW * dt).min(1.0);
+        if span > 0.0 {
+            let ahead = (self.velocity - before).dot(forward) / span;
+            self.ahead += (ahead - self.ahead) * (FOLLOW * span).min(1.0);
         }
         let turn = DQuat::from_rotation_arc(DVec3::Y, up);
         // About up by the signed angle from the model's forward to the heading (an arc between two
@@ -165,15 +182,26 @@ impl State {
         // rising as a jump leaves it, the feet leaving it with the body (held down they would
         // pin the hips); and from either, as long as it falls freely with ground still below.
         let flying = (beyond && speed > STILL)
+            || self.leapt
             || (self.climb > TAKE_OFF && clear > LIFT_OFF)
             || (self.mode == Mode::Airborne && clear > LIFT_OFF && self.sinking > FREE_FALL);
         if flying {
+            if self.mode != Mode::Airborne {
+                // Leaving the ground it falls freely from then on: the push that sent it up is
+                // not a fall slowing (measured, the leap would read so for a fifth of a second
+                // and set it down at the top of its flight).
+                self.sinking = 2.0 * FREE_FALL;
+                self.flight = self.climb;
+            }
+            // Rising as a body in flight does: seen, its speed changes only as the simulation
+            // ticks, a step at a time.
+            self.flight -= 2.0 * FREE_FALL * dt;
             self.feet = None;
             upper::airborne(&mut turns);
             // The legs drawn up at the top of a flight, straight as they leave the ground and as
-            // they meet it again.
-            let rise = (self.climb / JUMP_SPEED).clamp(-1.0, 1.0);
-            let tuck = 1.0 - rise * rise;
+            // they meet it again, drawing up and letting down from rest.
+            let rise = (self.flight / JUMP_SPEED).clamp(-1.0, 1.0);
+            let tuck = (1.0 - rise * rise) * (1.0 - rise * rise);
             let ankles = free(root, |_, _| TUCK * tuck, self.time, up);
             return (Mode::Airborne, root, turns, ankles);
         }
@@ -194,15 +222,22 @@ impl State {
         let moving = speed > STILL;
         if moving {
             self.stopping = false;
-            self.pace = speed;
+            // Braking, the stride keeps its time, its steps shortened to where the body stops
+            // (`travel` below): people stop in a step or so at about the pace they walked at
+            // (Ridge et al.), not in ever slower steps.
+            if self.ahead > -BRAKING || speed > self.pace {
+                self.pace = speed;
+            }
         } else if self.stepping && !self.stopping {
             // Stopping: the stride goes on, slowing, until the swinging foot lands beside the other.
             self.stopping = true;
         }
         let (pace, aim) = if moving {
-            (speed, along)
+            (self.pace, along)
         } else if self.stopping {
-            (self.pace.max(SHUFFLE), DVec3::ZERO)
+            // The last steps walked, both feet down between them (a run in place never has both
+            // down to end on).
+            (self.pace.clamp(SHUFFLE, STOP_PACE), DVec3::ZERO)
         } else if settled {
             self.stepping = false;
             (0.0, DVec3::ZERO)
@@ -214,15 +249,24 @@ impl State {
         let lean = upper::lean(self.carriage, self.ahead);
         if pace > 0.0 {
             if !self.stepping {
-                // Setting off from standing: the right foot lifts at once (half a stride on, the
-                // left is planted), or it would stay behind as the body went on.
-                self.phase = gait.duty;
+                // Setting off from standing: a foot lifts at once (half a stride on, the other is
+                // planted), or it would stay behind as the body went on: the right; stepping into
+                // place, the one standing furthest from where it would.
+                let off = |s: usize| (feet[s].plant - rest[s].0).length();
+                let first = if moving {
+                    0
+                } else {
+                    usize::from(off(1) > off(0))
+                };
+                #[allow(clippy::cast_precision_loss)] // 0 or 1
+                let half = 0.5 * first as f64;
+                self.phase = (gait.duty + half).fract();
                 self.stepping = true;
                 for f in feet.iter_mut() {
                     f.duty = gait.duty;
                 }
                 // That first foot lifts flat: at rest, it had not rolled onto its toe.
-                feet[0].from_rest = true;
+                feet[first].from_rest = true;
             }
             // A planted foot left further behind than a steady stride leaves it (setting off, or
             // speeding up) hurries the stride, as people take quick steps then.
@@ -231,7 +275,8 @@ impl State {
             for (side, (f, s)) in feet.iter().zip(&spots).enumerate() {
                 #[allow(clippy::cast_precision_loss)] // 0 or 1
                 let into = (self.phase - 0.5 * side as f64).rem_euclid(1.0);
-                if f.down && into < f.duty && aim != DVec3::ZERO {
+                // (Braking, feet land short on purpose: the stride does not hurry for them.)
+                if f.down && into < f.duty && aim != DVec3::ZERO && self.ahead > -BRAKING {
                     // Steady, a planted foot goes from half its stance's travel ahead of its spot
                     // to half behind.
                     let steady = pace * stride_time * (into - 0.5 * f.duty);
@@ -256,6 +301,17 @@ impl State {
         let mut targets = [(DVec3::ZERO, up); 2];
         let mut throughs = [Through::Stance(0.5); 2];
         let mut lands_in = [0.0; 2];
+        // Where the body will be `t` from now: at its speed, or braking, no further than it stops.
+        let brake = (-self.ahead).max(0.0);
+        let travel = |t: f64| {
+            let s = aim.length();
+            if s > 0.0 && brake > 0.0 {
+                let t = t.min(s / brake);
+                aim * (t - 0.5 * brake * t * t / s)
+            } else {
+                aim * t
+            }
+        };
         for side in 0..2 {
             #[allow(clippy::cast_precision_loss)] // 0 or 1
             let along_stride = (self.phase - 0.5 * side as f64).rem_euclid(1.0);
@@ -269,7 +325,7 @@ impl State {
                 -along_stride * stride
             };
             let left = to_land + 0.5 * gait.duty * stride;
-            let landing = feet::shortened(&ground_at, spots[side], aim * left, up);
+            let landing = feet::shortened(&ground_at, spots[side], travel(left), up);
             lands_in[side] = to_land.max(0.0);
             if pace > 0.0 {
                 (targets[side], throughs[side]) = feet[side].step(along_stride, &gait, landing, up);
@@ -277,8 +333,12 @@ impl State {
                 targets[side] = (feet[side].plant, feet[side].normal);
             }
         }
-        // Stopped once both feet stand: the stride that brought them together is done.
-        if self.stopping && feet.iter().all(|f| f.down) {
+        // Stopped once both feet stand where they would: the stride that brought them together is
+        // done. A foot set down before the stop was asked for (ahead, as the body went on) steps
+        // back in the same stride (an unplanned stop takes a little more than a step: Ridge et
+        // al.), not after the body has stood.
+        let placed = |(f, (g, _)): (&Foot, &(DVec3, DVec3))| (f.plant - *g).length() < SETTLE;
+        if self.stopping && feet.iter().all(|f| f.down) && feet.iter().zip(&rest).all(placed) {
             self.stopping = false;
             self.stepping = false;
         }
@@ -300,47 +360,22 @@ impl State {
                 )
             }
         });
-        // The hips lowered as far as the farther foot needs (Johansen 2009). A foot in the air
-        // need not be reached until it lands: through its swing, its need goes over from where it
-        // is to where it will land, from the hips as they will be then, so the hips go up and down
-        // on a smooth path (Saunders, Inman and Eberhart 1953), not all at once as a foot leaves
-        // the ground or meets it.
-        let longest = skeleton::longest_leg();
-        let need = |side: usize, ankle: DVec3, later: f64| {
-            let hip = root.transform_point(joints[skeleton::HIP[side]].2)
-                + along * later
-                + forward * (0.5 * self.ahead * later * later);
-            let to = ankle - hip;
-            let down = -to.dot(up);
-            let across = (to + up * down).length();
-            down - (longest * longest - across * across).max(0.0).sqrt()
+        // The hips lowered as the feet need (`hips.rs`).
+        let reached = std::array::from_fn(|side| hips::Reached {
+            ankle: ankles[side].0,
+            through: throughs[side],
+            aimed: feet[side].aimed,
+            lands_in: lands_in[side],
+        });
+        let going = hips::Going {
+            up,
+            forward,
+            along,
+            ahead: self.ahead,
         };
-        let mut drop = 0.0f64;
-        for (side, (ankle, _)) in ankles.iter().enumerate() {
-            let now = need(side, *ankle, 0.0);
-            if let (true, Through::Swing(s)) = (pace > 0.0 && self.stepping, throughs[side]) {
-                let (g, n) = feet[side].aimed;
-                let (lands, _) = feet::rolled(side, g, n, forward, Through::Stance(0.0), false);
-                let then = need(side, lands, lands_in[side]);
-                drop = drop.max(now + (then - now) * s * s * (3.0 - 2.0 * s));
-            } else {
-                drop = drop.max(now);
-            }
-        }
-        // Lowered at once as far as a foot needs (it must be reached); coming back up, the hips
-        // follow as a mass does, critically damped, so their speed never jumps.
-        let needed = drop.max(0.0);
-        let was = self.drop;
-        let pull = HIPS * HIPS * (needed - self.drop) - 2.0 * HIPS * self.lowering;
-        self.lowering += pull * dt;
-        self.drop += self.lowering * dt;
-        if fresh {
-            // A stance begun: the hips where it needs them, still (a change the pose smooths).
-            (self.drop, self.lowering) = (needed, 0.0);
-        } else if self.drop < needed {
-            self.drop = needed;
-            self.lowering = if dt > 0.0 { (needed - was) / dt } else { 0.0 };
-        }
+        let stepping = pace > 0.0 && self.stepping;
+        let needed = hips::needed(&root, &going, &reached, stepping).max(0.0);
+        self.lower_hips(needed, fresh, dt);
         root.position -= up * self.drop;
         // The trunk leans about the hips, so the legs keep their reach.
         let hips = 0.5 * (joints[skeleton::HIP[0]].2 + joints[skeleton::HIP[1]].2);
@@ -355,21 +390,4 @@ impl State {
         };
         (mode, root, turns, ankles)
     }
-}
-
-/// The ankles with the legs free of the ground: each at `place(side, time)` from its place at
-/// rest, in the body's frame `root`, the soles turned to `up`.
-fn free(
-    root: Frame64,
-    place: impl Fn(f64, f64) -> DVec3,
-    time: f64,
-    up: DVec3,
-) -> [(DVec3, DVec3); 2] {
-    let joints = bones::joints();
-    std::array::from_fn(|side| {
-        #[allow(clippy::cast_precision_loss)] // 0 or 1
-        let ankle =
-            root.transform_point(joints[skeleton::ANKLE[side]].2 + place(side as f64, time));
-        (ankle, up)
-    })
 }

@@ -10,8 +10,10 @@
 //! - **Running arms**: bent near 90° at the elbow (Yegian and Tucker 2019, "straight arm
 //!   walking, bent arm running"), the swing of fast walking.
 //! - **The lean**: 7.3° forward running at 3.4 m/s (Teng and Powers 2014, recreational runners'
-//!   own), and accelerating or braking at a, the line from the feet to the body's centre tilted
-//!   by atan(a/g), as it must be for the push on the ground to pass through the centre.
+//!   own), and setting off or speeding up at a, by atan(a/g), as the push on the ground must
+//!   pass through the body's centre. Braking, the trunk stays upright: people brake by
+//!   setting the foot ahead of the body and lowering it, hips and knees bent, the trunk upright
+//!   or forward (Harper et al. 2022, a review of horizontal deceleration).
 
 use super::gait::Gait;
 use super::skeleton::{ELBOW, SHOULDER};
@@ -58,7 +60,7 @@ const RUN_ELBOW: f64 = 90.0;
 const RUN_LEAN: f64 = 7.3 * std::f64::consts::PI / 180.0;
 /// Standard gravity (m/s²).
 const G: f64 = 9.806_65;
-/// The most the trunk leans either way (rad): a sprinter's start.
+/// The most the trunk leans (rad): a sprinter's start.
 const MOST_LEAN: f64 = 0.6;
 
 /// The elbow's bend in the model at rest (degrees): the forearm hangs about 14.5° forward of
@@ -121,7 +123,7 @@ fn swing_at(speed: f64, running: f64) -> Swing {
 /// The trunk's lean (rad, forward positive) at `running` (0 to 1) of a run, accelerating at
 /// `ahead` (m/s², along the way it faces).
 pub fn lean(running: f64, ahead: f64) -> f64 {
-    (RUN_LEAN * running + det::atan(ahead / G)).clamp(-MOST_LEAN, MOST_LEAN)
+    (RUN_LEAN * running + det::atan(ahead.max(0.0) / G)).min(MOST_LEAN)
 }
 
 /// The upper body's joint turns at `speed`, `running` (0 to 1, as the arms carry themselves),
@@ -220,8 +222,8 @@ mod tests {
     fn the_trunk_leans_into_a_run_and_its_acceleration() {
         assert!((lean(1.0, 0.0) - RUN_LEAN).abs() < 1e-12);
         assert!(lean(0.0, 0.0).abs() < 1e-12);
-        // Braking leans back; a hard start leans far forward, as far as the cap.
-        assert!(lean(0.0, -3.0) < -0.25);
+        // Braking stays upright; a hard start leans far forward, as far as the cap.
+        assert!(lean(0.0, -3.0).abs() < 1e-12 && (lean(1.0, -3.0) - RUN_LEAN).abs() < 1e-12);
         assert!((lean(1.0, 40.0) - MOST_LEAN).abs() < 1e-12);
     }
 }

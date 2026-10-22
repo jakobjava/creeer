@@ -98,6 +98,34 @@ fn knee_for(side: usize, reach: f64) -> f64 {
     0.5 * (lo + hi)
 }
 
+/// Leg `side`'s knee turn from the model at rest at which it is straightest (rad): the model
+/// stands with its knees a little past straight.
+#[cfg(test)]
+pub fn straight_knee(side: usize) -> f64 {
+    knee_for(side, f64::INFINITY)
+}
+
+/// The knee's least bend in stance (rad): about 5°, as people's at its straightest (Perry).
+const STANCE_KNEE: f64 = 5.0 * std::f64::consts::PI / 180.0;
+
+/// The farthest a leg standing on its foot reaches from hip to ankle (m), the knee bent
+/// [`STANCE_KNEE`] from straight: the shorter leg's. Straighter, the knee would swing fast for
+/// a little reach (near straight its bend goes as the square root of the shortfall).
+pub fn stance_leg() -> f64 {
+    let joints = bones::joints();
+    (0..2)
+        .map(|side| {
+            let (h, k, a) = (
+                joints[HIP[side]].2,
+                joints[KNEE[side]].2,
+                joints[ANKLE[side]].2,
+            );
+            let bend = knee_for(side, f64::INFINITY) + STANCE_KNEE;
+            (k + DQuat::from_rotation_x(bend) * (a - k) - h).length()
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
 /// The longest a leg reaches from hip to ankle (m), a hair short of straight: the shorter leg's.
 pub fn longest_leg() -> f64 {
     let joints = bones::joints();

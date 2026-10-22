@@ -11,6 +11,7 @@
 
 pub mod feet;
 pub mod gait;
+mod hips;
 mod inertial;
 mod pose;
 pub mod skeleton;
@@ -43,6 +44,12 @@ struct State {
     /// followed): in the air, as fast as it falls.
     climb: f64,
     sinking: f64,
+    /// The time since the body was last seen to move (s).
+    unseen: f64,
+    /// It jumped as last seen.
+    leapt: bool,
+    /// How fast it rises in flight (m/s), as a body falling freely from its leap.
+    flight: f64,
     heading: DVec3,
     /// Its acceleration along the way it faces (m/s²), as the trunk leans into it.
     ahead: f64,
@@ -153,6 +160,9 @@ impl State {
             velocity: DVec3::ZERO,
             climb: 0.0,
             sinking: 0.0,
+            unseen: 0.0,
+            leapt: false,
+            flight: 0.0,
             heading: orientation * DVec3::Z,
             ahead: 0.0,
             phase: 0.0,

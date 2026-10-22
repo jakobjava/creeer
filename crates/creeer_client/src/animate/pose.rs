@@ -188,3 +188,20 @@ impl Smoother {
         out
     }
 }
+
+/// The ankles with the legs free of the ground: each at `place(side, time)` from its place at
+/// rest, in the body's frame `root`, the soles turned to `up`.
+pub fn free(
+    root: Frame64,
+    place: impl Fn(f64, f64) -> DVec3,
+    time: f64,
+    up: DVec3,
+) -> [(DVec3, DVec3); 2] {
+    let joints = bones::joints();
+    std::array::from_fn(|side| {
+        #[allow(clippy::cast_precision_loss)] // 0 or 1
+        let ankle =
+            root.transform_point(joints[skeleton::ANKLE[side]].2 + place(side as f64, time));
+        (ankle, up)
+    })
+}

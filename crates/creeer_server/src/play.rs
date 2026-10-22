@@ -157,6 +157,14 @@ impl Play {
         &self.players[k].0
     }
 
+    /// Time passing for player `k` between ticks, as its screen draws: its predicted avatar is
+    /// drawn on between its last two ticks (what a client's `update` does each frame).
+    pub fn draw_later(&mut self, k: usize, seconds: f64) {
+        if let Some(p) = &mut self.players[k].0.predicted {
+            p.advance(seconds);
+        }
+    }
+
     /// Where the server has player `k`'s avatar.
     ///
     /// # Panics

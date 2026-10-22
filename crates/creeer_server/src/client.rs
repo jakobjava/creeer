@@ -89,7 +89,7 @@ pub struct Connection {
     playback: Playback,
     drawn_at: f64,
     terrain: Option<Arc<Terrain>>,
-    predicted: Option<Predicted>,
+    pub(crate) predicted: Option<Predicted>,
     /// Whether this tick is a send round (every [`INPUT_EVERY`]: the inputs, and renet's
     /// acknowledgements with them, go out together).
     due: bool,
