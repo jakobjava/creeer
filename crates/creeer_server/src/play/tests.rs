@@ -96,7 +96,7 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// spawn moved to level ground at a temperate latitude (2026-10-22): 127-248 (median 166), and
 /// 4,994 where a crate lands on a fallen player at tick 299. The median a tenth above; the worst
 /// keeps the ceiling above.
-const WORK: [(&str, u64, u64); 1] = [("crowd", 183, 7_300)];
+const WORK: [(&str, u64, u64); 2] = [("crowd", 183, 7_300), ("work", 216, 216)];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).
 const HEADINGS: u32 = 8;

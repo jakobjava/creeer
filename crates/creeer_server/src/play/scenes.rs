@@ -3,7 +3,8 @@
 //! and what the server has (so a scene is the same on every run).
 //!
 //! G1 grows them as it adds what players do: *crowd* starts with the F5 avatars walking,
-//! jumping and dropping crates among each other.
+//! jumping and dropping crates among each other; *work* (G1.4g) has them strike, carry and
+//! throw (`work.rs`).
 
 use super::record::Act;
 use super::{Play, Report, Tick, finish};
@@ -45,14 +46,24 @@ impl std::fmt::Debug for Scene {
 pub const PLANET: &str = "planets/home.ron";
 
 /// The scenes.
-pub const SCENES: [Scene; 1] = [Scene {
-    name: "crowd",
-    what: "8 players walking, jumping and dropping crates in one place",
-    players: &["ada", "ben", "cai", "dee", "eli", "fay", "gus", "hal"],
-    ticks: (1800, 300),
-    build: world,
-    script: crowd,
-}];
+pub const SCENES: [Scene; 2] = [
+    Scene {
+        name: "crowd",
+        what: "8 players walking, jumping and dropping crates in one place",
+        players: &["ada", "ben", "cai", "dee", "eli", "fay", "gus", "hal"],
+        ticks: (1800, 300),
+        build: world,
+        script: crowd,
+    },
+    Scene {
+        name: "work",
+        what: "8 players at work: 4 striking crates with axes and picks, 4 carrying and throwing boxes",
+        players: &["ada", "ben", "cai", "dee", "eli", "fay", "gus", "hal"],
+        ticks: (1800, 300),
+        build: super::work::work_world,
+        script: super::work::work,
+    },
+];
 
 /// The scene called `name`.
 pub fn scene(name: &str) -> Option<&'static Scene> {

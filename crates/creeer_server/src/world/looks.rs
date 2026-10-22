@@ -24,8 +24,10 @@ pub enum Drawn {
         player: String,
         look: Look,
         fallen: bool,
-        /// The tool in its right hand (G1.4c), if any.
+        /// The tool in its right hand (G1.4c), if any, and whether it carries something
+        /// (G1.4f).
         wields: Option<u8>,
+        carrying: bool,
     },
     /// Segment `index` of the fallen character whose avatar is `person`.
     Segment { person: EntityId, index: u8 },
@@ -91,6 +93,7 @@ impl ServerWorld {
                 // Given when the avatar was (`avatar_of`).
                 look: (self.looks.get(&player).cloned()).unwrap_or_else(|| self.new_look(&player)),
                 wields: self.wields.get(&player).copied(),
+                carrying: self.carrying.contains_key(&id),
                 player,
                 fallen,
             };

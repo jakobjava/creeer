@@ -324,6 +324,14 @@ impl Coupling for Contacts {
     fn project(&mut self, members: &mut [crate::structure::group::Member<'_>]) {
         self.joints.project(members);
     }
+
+    fn driven(&self) -> bool {
+        self.joints.driven()
+    }
+
+    fn driven_work(&self) -> f64 {
+        self.joints.driven_work()
+    }
 }
 
 impl Contacts {

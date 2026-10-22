@@ -102,6 +102,18 @@ pub trait Coupling: Sync {
     /// Makes the members' velocities at the end of a substep consistent with the coupling's
     /// constraints (a joint's points moving apart: `world/joint/project.rs`).
     fn project(&mut self, _members: &mut [super::group::Member<'_>]) {}
+
+    /// Whether the coupling's own points are moved (a joint's, by whoever holds it: its work
+    /// is then `driven_work`'s).
+    fn driven(&self) -> bool {
+        false
+    }
+
+    /// The work the coupling's moved points did over the last substep (J), which the members'
+    /// energy does not count.
+    fn driven_work(&self) -> f64 {
+        0.0
+    }
 }
 
 /// No coupling: a single structure on its own.

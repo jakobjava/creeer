@@ -20,8 +20,10 @@ pub(crate) struct Joints {
     /// it is a rigid body (its blocks then go in its 6×6 matrix, else in its structure's).
     pub(super) sides: Vec<[(f64, f64, bool); 2]>,
     /// Each joint's penalties for the step: points, turns (N/m, N·m/rad).
-    stiffness: Vec<(f64, f64)>,
+    pub(super) stiffness: Vec<(f64, f64)>,
     beta: f64,
+    /// The substep (s).
+    pub(super) h: f64,
     /// Each joint's arms' gaps at x̂ (damping's reference).
     hat: Vec<Option<[[f64; 3]; 3]>>,
     /// The blocks for the step's matrices: rigid bodies' own (by member), between nodes (one
@@ -31,6 +33,8 @@ pub(crate) struct Joints {
     pub(super) nodes: Vec<(usize, usize, DMat3)>,
     /// The group's struts (`strut.rs`): their terms ride with the joints'.
     pub(crate) struts: Vec<super::strut::GroupStrut>,
+    /// The work its moved points did over the last substep (J; `project.rs`).
+    pub(super) driven: f64,
 }
 
 /// f₀ and f₀'/x of the friction's smoothing (the contacts' cubic).
@@ -98,7 +102,7 @@ impl Joints {
 
     /// Sets the step up: the penalties, the arms' references, the blocks.
     pub(crate) fn begin(&mut self, info: &StepInfo<'_>) {
-        self.beta = info.beta;
+        (self.beta, self.h) = (info.beta, info.h);
         let reduced = |a: f64, b: f64| if b.is_finite() { a * b / (a + b) } else { a };
         let b2 = info.beta * info.beta;
         self.stiffness = (self.sides.iter())

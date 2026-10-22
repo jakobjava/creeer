@@ -119,6 +119,8 @@ impl Decode for Joint {
             collide,
             anchor,
             multipliers,
+            applied: super::Applied::default(),
+            moving: [creeer_math::glam::DVec3::ZERO; 2],
         })
     }
 }

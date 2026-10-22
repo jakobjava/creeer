@@ -13,7 +13,12 @@ impl ServerWorld {
         // The sandbox's commands, within 500 m: a creative or test server's alone (G1.4d).
         let sandbox = !matches!(
             command,
-            Command::Look { .. } | Command::Wield { .. } | Command::Strike { .. }
+            Command::Look { .. }
+                | Command::Wield { .. }
+                | Command::Strike { .. }
+                | Command::Grab(_)
+                | Command::Drop
+                | Command::Throw(_)
         );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
@@ -39,6 +44,11 @@ impl ServerWorld {
             }
             Command::Strike { target, started } => {
                 self.strike(by.ok_or("only a player strikes")?, target, *started)?;
+            }
+            Command::Grab(target) => self.grab(by.ok_or("only a player grabs")?, target)?,
+            Command::Drop => self.let_go(by.ok_or("only a player lets go")?),
+            Command::Throw(direction) => {
+                self.throw(by.ok_or("only a player throws")?, *direction)?
             }
             Command::Wield { tool } => {
                 let player = (by.and_then(|id| self.index(id)))
@@ -121,4 +131,13 @@ fn check(edit: &Edit) -> Result<(), String> {
             "a brush larger than a tool's ({MOST_BRUSH} m, tunnels {MOST_TUNNEL} m)"
         )),
     }
+}
+
+/// The items of `v` whose bodies `map` kept.
+pub(super) fn kept<T: Clone>(map: &[Option<usize>], v: &[T]) -> Vec<T> {
+    map.iter()
+        .zip(v)
+        .filter(|(m, _)| m.is_some())
+        .map(|(_, x)| x.clone())
+        .collect()
 }

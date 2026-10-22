@@ -37,8 +37,9 @@ impl Running {
     }
 
     /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
-    /// tools' table's, until G1.6's inventory), the same again or 0 put it away. Returns
-    /// whether it was one.
+    /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
+    /// the crosshair is on in both hands, or puts down what they hold (G1.4f). Returns whether
+    /// it was one.
     pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::keyboard::KeyCode;
         let Some(planet) = &mut self.planet else {
@@ -47,6 +48,10 @@ impl Running {
         let tool = match code {
             KeyCode::KeyV => {
                 planet.walking = !planet.walking;
+                return true;
+            }
+            KeyCode::KeyG => {
+                planet.grab_or_drop(&self.camera);
                 return true;
             }
             KeyCode::Digit1 => Some(0),

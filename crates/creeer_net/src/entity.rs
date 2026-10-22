@@ -93,6 +93,8 @@ pub enum Kind {
         fallen: bool,
         /// The tool in its right hand (G1.4c: an index into the tools' table), if any.
         wields: Option<u8>,
+        /// Whether it carries something in both hands (G1.4f).
+        carrying: bool,
     },
     /// A segment of a fallen character's ragdoll (G1.3e): whose (the avatar, its pelvis) and
     /// which (`creeer_sim::character::bones::SEGMENT_NAMES`, 1 to 14), and its shape.
@@ -150,12 +152,14 @@ impl Encode for Kind {
                 look,
                 fallen,
                 wields,
+                carrying,
             } => {
                 w.u8(3);
                 w.put(player);
                 w.put(look);
                 w.u8(u8::from(*fallen));
                 w.u8(wields.unwrap_or(crate::message::NONE));
+                w.u8(u8::from(*carrying));
             }
             Self::Segment {
                 person,
@@ -211,6 +215,7 @@ impl Decode for Kind {
                 look: r.get()?,
                 fallen: flag(r)?,
                 wields: Some(r.u8()?).filter(|&t| t != crate::message::NONE),
+                carrying: flag(r)?,
             },
             5 => Self::Segment {
                 person: r.get()?,

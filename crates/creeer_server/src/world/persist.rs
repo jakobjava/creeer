@@ -34,6 +34,7 @@ impl ServerWorld {
         this.surroundings.restore(water);
         this.reindex();
         this.restore_people(&save.people);
+        this.let_go_after_load();
         this.ages.by_entity = (save.ages.iter())
             .map(|(id, age)| (EntityId(*id), *age))
             .collect();

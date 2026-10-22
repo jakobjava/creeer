@@ -244,6 +244,8 @@ mod tests {
             collide: false,
             anchor: None,
             multipliers: super::super::Multipliers::default(),
+            applied: super::super::Applied::default(),
+            moving: [DVec3::ZERO; 2],
         };
         let ball = Joint {
             kind: Kind::Ball {

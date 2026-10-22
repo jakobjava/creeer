@@ -110,6 +110,16 @@ impl Connection {
     /// from its own tick, and asks the server to begin the swing then (the server's word of it
     /// is for the others).
     pub fn strike(&mut self, aimed: Aimed) {
+        let command = self.strike_command(aimed);
+        self.command(command);
+        let own = self.predicted.as_ref().and_then(|p| p.tick());
+        if let (Some(w), Some(tick)) = (&self.welcome, own) {
+            self.swings.insert(w.avatar, tick);
+        }
+    }
+
+    /// The command striking `aimed` asks the server (the swing begun at the player's own tick).
+    pub fn strike_command(&self, aimed: Aimed) -> creeer_net::message::Command {
         let own = self.predicted.as_ref().and_then(|p| p.tick());
         let started = own.map_or(self.drawn_at, f64::from);
         let target = creeer_net::message::Target {
@@ -117,10 +127,7 @@ impl Connection {
             at: aimed.point,
             seen: aimed.seen,
         };
-        self.command(creeer_net::message::Command::Strike { target, started });
-        if let (Some(w), Some(tick)) = (&self.welcome, own) {
-            self.swings.insert(w.avatar, tick);
-        }
+        creeer_net::message::Command::Strike { target, started }
     }
 
     /// How long ago character `id` began the swing it is in (s), as it is drawn: the player's

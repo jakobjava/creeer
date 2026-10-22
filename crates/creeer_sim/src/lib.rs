@@ -15,6 +15,7 @@ pub mod aero;
 mod aero_tests;
 pub mod ageing;
 pub mod avatar;
+pub mod carry;
 pub mod character;
 pub mod content;
 #[cfg(test)]

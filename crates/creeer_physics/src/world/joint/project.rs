@@ -20,7 +20,7 @@ use super::Joints;
 use super::rows::{Row, Scalar};
 use crate::sparse::{Cholesky, SymbolicCholesky};
 use crate::structure::group::{Member, MemberState};
-use creeer_math::glam::{DMat3, DVec3};
+use creeer_math::glam::{DMat3, DQuat, DVec3};
 
 /// A limit counts as reached within this (rad).
 const AT_STOP: f64 = 1e-6;
@@ -60,6 +60,8 @@ struct Block {
     /// W·rowᵀ of each row on each side.
     weighted: [[[f64; 6]; 2]; 3],
     at: DVec3,
+    /// The rate its rows are to have (the joint's points moving on their sides: m/s).
+    target: DVec3,
     /// A joint's stops (one-sided: held only while run into).
     stop: bool,
 }
@@ -111,9 +113,54 @@ impl Joints {
             return;
         }
         let timer = crate::profile::start();
+        self.record_applied(members);
         self.follow_anchors(members);
         self.project_velocities(members);
         timer.stop(crate::profile::Slot::JointProjection);
+    }
+
+    /// Each joint's force over the step: its multiplier and its penalty on the gap left where
+    /// the members ended (the gradient its point terms gave the step's minimisation).
+    /// And the work its moved points did: the force times how far their moving opened the gap
+    /// over the substep (an energy the members' does not count: unbooked, the energy guard took
+    /// a load lifted by moving a joint's point for the step's gain and stopped it, G1.4f).
+    fn record_applied(&mut self, members: &[Member<'_>]) {
+        let states: Vec<MemberState<'_>> = (members.iter())
+            .map(|(s, _)| MemberState {
+                position: &s.position,
+                orientation: &s.orientation,
+            })
+            .collect();
+        let h = self.h;
+        self.driven = 0.0;
+        for (j, (_, joint)) in self.list.iter_mut().enumerate() {
+            let at = joint.measured(&states, false);
+            let (kt, _) = self.stiffness.get(j).copied().unwrap_or_default();
+            let mut force = joint.multipliers.point;
+            for (k, s) in at.point.iter().enumerate() {
+                force[k] += kt * s.value;
+            }
+            joint.applied = super::Applied(force);
+            if joint.moving != [DVec3::ZERO; 2] {
+                let turn = |side: Option<(usize, usize)>| {
+                    side.map_or(DQuat::IDENTITY, |(m, n)| states[m].orientation[n])
+                };
+                let opened =
+                    turn(Some(joint.a)) * joint.moving[0] - turn(joint.b) * joint.moving[1];
+                self.driven += force.dot(opened) * h;
+            }
+        }
+    }
+
+    /// Whether any joint's points are moved.
+    pub(crate) fn driven(&self) -> bool {
+        self.list.iter().any(|(_, j)| j.moving != [DVec3::ZERO; 2])
+    }
+
+    /// The work the moved points did over the last substep (J; the end's force: a joint's terms
+    /// are potentials at the step's end, not loads Newmark takes the mean of).
+    pub(crate) fn driven_work(&self) -> f64 {
+        self.driven
     }
 
     /// Friction's anchor follows a slip beyond its stick, kept that far behind (as the
@@ -163,9 +210,19 @@ impl Joints {
                     sides,
                     weighted: [[[0.0; 6]; 2]; 3],
                     at: centre,
+                    target: DVec3::ZERO,
                     stop,
                 };
-                blocks.push(block(at.point.map(Some), false));
+                // Its points moved on their sides: the bodies' points move against it.
+                let turn = |side: Option<(usize, usize)>| {
+                    side.map_or(DQuat::IDENTITY, |(m, n)| states[m].orientation[n])
+                };
+                let moving =
+                    turn(Some(joint.a)) * joint.moving[0] - turn(joint.b) * joint.moving[1];
+                blocks.push(Block {
+                    target: -moving,
+                    ..block(at.point.map(Some), false)
+                });
                 if let Some(axis) = at.axis {
                     blocks.push(block(axis.map(Some), false));
                 }
@@ -236,7 +293,16 @@ impl Joints {
         if chol.factor(&diag, &off).is_err() {
             return;
         }
-        let mut mu: Vec<DVec3> = blocks.iter().map(|b| -rates(b, members)).collect();
+        let mut mu: Vec<DVec3> = (blocks.iter())
+            // (Exactly −rate where nothing moves: bit-identical to the joints before G1.4f.)
+            .map(|b| {
+                if b.target == DVec3::ZERO {
+                    -rates(b, members)
+                } else {
+                    b.target - rates(b, members)
+                }
+            })
+            .collect();
         chol.solve(&mut mu);
         // The impulses, through each side's inverse mass.
         for (b, m) in blocks.iter().zip(&mu) {

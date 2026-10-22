@@ -147,3 +147,58 @@ fn a_strike_over_a_slow_link_is_seen_by_the_others_and_its_blow_falls() {
     assert!(told >= mine, "begun at {told}, her own {mine}");
     println!("struck {ticks} ticks after she asked; begun at {told}, her own tick {mine}");
 }
+
+/// Carrying a 20 kg box and walking off with it over the slow and lossy link: the box, held,
+/// is told to the client as a joint's side (not predicted on its own), and the client's own
+/// prediction of its avatar, which knows nothing of the load, is still rarely corrected (the
+/// gates of the prediction's own tests on such a link: at most 5 % over 1 cm, the largest under
+/// 10 cm).
+#[test]
+fn walking_with_a_load_over_a_slow_link_the_avatar_is_rarely_corrected() {
+    let (mut game, centre, up, east) = joined();
+    let at = game.server.world.ground_under(centre + east * 1.0) + up * 0.21;
+    let shape = creeer_physics::world::shape::Shape::Box {
+        half: DVec3::splat(0.2),
+    };
+    let mut body = creeer_physics::world::Body::rigid(shape, 20.0, at, crate::world::DT);
+    body.friction = 0.6;
+    let id = game.server.world.add_body(body, None);
+    game.run(30, still);
+    let client = &mut game.clients[0].0;
+    let drawn = client.poses()[&id].position;
+    let aimed = client.aim(drawn + up * 3.0, -up, 5.0).expect("the box");
+    let target = creeer_net::message::Target {
+        body: aimed.body,
+        at: aimed.point,
+        seen: aimed.seen,
+    };
+    client.command(Command::Grab(target));
+    game.run(90, still);
+    let ada = game.clients[0].0.welcome.as_ref().unwrap().avatar;
+    assert_eq!(game.server.world.carried(ada), Some(id));
+    let before = game.clients[0].0.corrections();
+    let walking = |k: usize| (if k == 0 { east * 1.2 } else { DVec3::ZERO }, false);
+    let mut largest: f64 = 0.0;
+    for _ in 0..180 {
+        let last = game.clients[0].0.corrections().largest;
+        game.run(1, walking);
+        let now = game.clients[0].0.corrections().largest;
+        if now > last {
+            largest = largest.max(now);
+        }
+    }
+    let after = game.clients[0].0.corrections();
+    assert_eq!(game.server.world.carried(ada), Some(id), "still carried");
+    let (count, over) = (
+        after.count - before.count,
+        after.over_a_centimetre - before.over_a_centimetre,
+    );
+    println!(
+        "walking with the load: {over} of {count} corrections over 1 cm, the largest new {largest:.3} m"
+    );
+    assert!(
+        f64::from(over) <= 0.05 * f64::from(count),
+        "{over} of {count} over 1 cm"
+    );
+    assert!(largest < 0.1, "{largest} m");
+}

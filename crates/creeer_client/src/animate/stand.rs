@@ -293,6 +293,9 @@ impl State {
         } else {
             upper::standing(&mut turns, lean);
         }
+        if self.carrying {
+            upper::carrying(&mut turns);
+        }
         if let Some(progress) = self.swing {
             upper::swing(&mut turns, progress);
         }

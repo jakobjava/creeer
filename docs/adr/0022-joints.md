@@ -64,6 +64,20 @@ This decision was made without a survey of prior work (now required: plan.md §1
 
 So the joints of this ADR stay, for loops, grabs and machines, and P1 evaluates ragdolls as one articulated body in reduced coordinates beside them (ADR-0024).
 
+## Amended in G1.4f (2026-10-22): a joint's points moved, and its force
+
+Carrying (ADR-0027, G1.4f) moves a joint's point on its side every step: the hands bringing a load in and holding it as the body turns. Three things were found measuring a 5 kg ball hung from a point drawn up at 0.6 m/s (`joint/tests/motion.rs`), each fixed:
+
+- **The force.** `Joint::force` returned the multiplier alone. When the step's three refreshes run out (each step, with a point moved), the force the step applied is the multiplier and the penalty on the gap left, λ + k·g. It is now recorded where the step ends (`Joint::applied`, `project.rs`): not the joint's state (not saved, not compared), none after a load until the next step.
+- **The velocity.** Projected so the joint's points move together (decision 4), the bodies lost the velocity the moved point gives them: the joint re-accelerated the ball every step. A joint now takes its points' velocities on their sides (`Joint::moving`, set by whoever moves them; an input, not saved), and the projection keeps the points' relative velocity at that rate.
+- **The work.** A moved point does work on the bodies (it lifts the ball). Uncounted, the energy guard took it for the step's gain and removed the ball's kinetic energy every step: it rose 1 cm a step at no speed, held by 229 N against its 49 N weight. The coupling now counts the work of its moved points (`Coupling::driven_work`: the applied force on the gap the moving opened), as the guard counts loads' and torques'. The ball rises at 0.600 m/s, held by 49.03 N.
+
+One more, found carrying in the play scene *work*:
+
+- **Velocities the guard scales down** (`remove_kinetic`) left a joint whose points are moved out of step with them: its load stopped while its point went on, and the next step tore it along (1,000–1,700 N on a 15 kg box). Where a group's points are moved, the joints' velocities are projected again after the guard takes energy.
+
+Joints whose points are not moved are unchanged (the stress scenes' hashes hold).
+
 ## Validation
 
 | Test | Result |

@@ -238,3 +238,19 @@ fn a_ground_ray_passes_the_bodies_by() {
     assert_eq!(ground.body, None);
     assert!(world.ground_ray(o, DVec3::NEG_Y, 2.5).is_none());
 }
+
+#[test]
+fn a_shape_reaches_as_far_as_its_farthest_point() {
+    let turn = DQuat::from_rotation_z(0.4);
+    let half = DVec3::new(0.3, 0.2, 0.4);
+    let d = DVec3::new(0.6, 0.8, 0.0);
+    let local = turn.conjugate() * d;
+    let want = (local.x * 0.3).abs() + (local.y * 0.2).abs();
+    close(Shape::Box { half }.extent(turn, d), want, "a box");
+    close(
+        Shape::Hull(Arc::new(Hull::cuboid(half))).extent(turn, d),
+        want,
+        "a hull",
+    );
+    close(Shape::Sphere { radius: 0.5 }.extent(turn, d), 0.5, "a ball");
+}

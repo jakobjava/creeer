@@ -185,6 +185,15 @@ pub fn airborne(turns: &mut [DQuat; 14]) {
     }
 }
 
+/// Both arms holding a load before the body (G1.4f): the upper arms hanging, the elbows bent a
+/// right angle (the forearms level, towards where the hands hold it: `creeer_sim::carry::held`).
+pub fn carrying(turns: &mut [DQuat; 14]) {
+    for side in 0..2 {
+        turns[SHOULDER[side]] = DQuat::IDENTITY;
+        turns[ELBOW[side]] = DQuat::from_rotation_x(-(90.0 - rest_elbow()).to_radians());
+    }
+}
+
 /// The right arm swinging a tool, `progress` through it (G1.4e): from its pose as it is raised
 /// overhead (−1 to 0), struck down in front (0 to 1: the shoulder from 150° forward to 30°, the
 /// elbow straightening), and back to its pose (1 to 2).

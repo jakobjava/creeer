@@ -81,10 +81,24 @@ pub struct Multipliers {
     pub limits: [f64; 3],
 }
 
+/// The force a joint applied over its last step (N, on A): its multiplier and its penalty on
+/// the gap left at the step's end (G1.4f). Not the joint's state: not saved (none until the
+/// next step) and not compared.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Applied(pub DVec3);
+
+impl PartialEq for Applied {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 impl Joint {
-    /// The force with which side B holds side A at the joint, over the last step (N).
+    /// The force with which side B holds side A at the joint, over the last step (N): what it
+    /// applied, the multiplier with the penalty on the gap left (the multiplier alone lags it
+    /// when the step's refreshes run out, as with a side moved every step).
     pub fn force(&self) -> DVec3 {
-        -self.multipliers.point
+        -self.applied.0
     }
 
     /// The torque of limit `k` over the last step (N·m; order as `Multipliers::limits`).
@@ -123,6 +137,12 @@ pub struct Joint {
     pub anchor: Option<DQuat>,
     /// Its constraint forces, carried to the next step.
     pub multipliers: Multipliers,
+    /// What it applied over the last step.
+    pub applied: Applied,
+    /// How fast its points move on their sides (m/s: `at_a` in A's node frame, `at_b` in B's
+    /// or the world's), for whoever moves them each step (G1.4f: hands bringing a load in);
+    /// its points' velocities are made to follow them. An input, not saved: none after a load.
+    pub moving: [DVec3; 2],
 }
 
 impl Joint {
@@ -171,6 +191,8 @@ impl Joint {
             collide: false,
             anchor: None,
             multipliers: Multipliers::default(),
+            applied: Applied::default(),
+            moving: [DVec3::ZERO; 2],
         }
     }
 

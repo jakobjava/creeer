@@ -53,6 +53,12 @@ pub enum Command {
     /// Strike what the player aims at with the tool in hand (G1.4e), the swing begun at the
     /// player's own tick `started` (fractional, as snapshots are numbered: its avatar's, ahead).
     Strike { target: Target, started: f64 },
+    /// Take what the player aims at in both hands (G1.4f), the tool in hand put away.
+    Grab(Target),
+    /// Let go of what the hands hold.
+    Drop,
+    /// Throw what the hands hold along a direction (the world's frame).
+    Throw(DVec3),
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -268,6 +274,15 @@ impl Encode for ClientMessage {
                         w.put(target);
                         w.f64(*started);
                     }
+                    Command::Grab(target) => {
+                        w.u8(9);
+                        w.put(target);
+                    }
+                    Command::Drop => w.u8(10),
+                    Command::Throw(direction) => {
+                        w.u8(11);
+                        w.put(direction);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -308,6 +323,9 @@ impl Decode for ClientMessage {
                     target: r.get()?,
                     started: r.f64()?,
                 },
+                9 => Command::Grab(r.get()?),
+                10 => Command::Drop,
+                11 => Command::Throw(r.get()?),
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {

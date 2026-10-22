@@ -24,6 +24,10 @@ impl Server {
             let started = self.world_tick(*started);
             return (self.world).apply(&Command::Strike { target, started }, Some(avatar));
         }
+        if let Command::Grab(target) = command {
+            let seen = self.world_tick(target.seen);
+            return (self.world).apply(&Command::Grab(Target { seen, ..*target }), Some(avatar));
+        }
         self.world.apply(command, Some(avatar))
     }
 

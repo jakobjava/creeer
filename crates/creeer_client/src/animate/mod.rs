@@ -73,6 +73,8 @@ struct State {
     lowering: f64,
     /// A tool's swing, through it (`Animator::swing`).
     swing: Option<f64>,
+    /// Both hands hold a load (G1.4f).
+    carrying: bool,
     /// What it did last frame, and its poses smoothed across changes.
     mode: Mode,
     smoother: Smoother,
@@ -130,6 +132,13 @@ impl Animator {
         }
     }
 
+    /// Whether character `key` carries a load in both hands (G1.4f): its arms hold it.
+    pub fn carrying(&mut self, key: u32, carrying: bool) {
+        if let Some(state) = self.states.get_mut(&key) {
+            state.carrying = carrying;
+        }
+    }
+
     /// Forgets the characters not in `keep`.
     pub fn retain(&mut self, keep: &[u32]) {
         self.states.retain(|k, _| keep.contains(k));
@@ -178,6 +187,7 @@ impl State {
             drop: 0.0,
             lowering: 0.0,
             swing: None,
+            carrying: false,
             mode: Mode::Standing,
             smoother: Smoother::default(),
         }

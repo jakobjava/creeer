@@ -116,6 +116,17 @@ impl Shape {
         }
     }
 
+    /// How far this shape, turned by `turn`, reaches from its centre along unit `direction`
+    /// (m; its support).
+    pub fn extent(&self, turn: DQuat, direction: DVec3) -> f64 {
+        let d = turn.conjugate() * direction;
+        match self {
+            Self::Sphere { radius } => *radius,
+            Self::Box { half } => (d * *half).abs().element_sum(),
+            Self::Hull(hull) => hull.vertices()[hull.support(d)].dot(d),
+        }
+    }
+
     /// How far `point` lies outside this shape at `centre`, turned by `turn` (m; negative
     /// inside): exact for a ball and a box; for a hull its farthest face's plane, exact inside
     /// and within its rounding of the corners outside.

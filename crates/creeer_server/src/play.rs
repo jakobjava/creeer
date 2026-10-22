@@ -10,6 +10,7 @@
 
 pub mod record;
 pub mod scenes;
+mod work;
 
 use crate::client::{Connection, Status};
 use crate::{Server, ServerWorld};

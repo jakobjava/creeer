@@ -193,3 +193,27 @@ fn friction_holds_a_load_below_its_torque() {
         }
     }
 }
+
+#[test]
+fn a_ball_lifted_at_a_steady_speed_is_held_with_its_weight() {
+    // 5 kg hung from the world, its point drawn up 1 cm a step (0.6 m/s) for two seconds: the
+    // force the joint applies is the ball's weight (it no longer speeds up), though its
+    // multiplier alone, its refreshes run out each step, is not.
+    let mut world = World::new(DT);
+    let b = ball(&mut world, DVec3::new(0.0, -0.2, 0.0), 5.0);
+    let j = ball_joint(&mut world, b, None, DVec3::ZERO);
+    for _ in 0..120 {
+        let joint = world.joint_mut(j);
+        joint.at_b += DVec3::Y * 0.01;
+        joint.moving[1] = DVec3::Y * 0.6;
+        world.step();
+    }
+    let weight = 5.0 * G;
+    let held = world.joints()[j].force();
+    assert!(
+        (held - DVec3::Y * weight).length() < 0.02 * weight,
+        "the joint holds {held} N of {weight}"
+    );
+    let v = world.bodies[b].structure.velocity[0];
+    assert!((v - DVec3::Y * 0.6).length() < 1e-3, "rising at {v}");
+}

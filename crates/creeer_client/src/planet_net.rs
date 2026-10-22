@@ -189,6 +189,7 @@ impl PlanetSession {
                     look,
                     fallen,
                     wields,
+                    carrying,
                     ..
                 } => {
                     let body = if *fallen {
@@ -204,6 +205,7 @@ impl PlanetSession {
                             body,
                             wields: *wields,
                             swing: c.swinging(*id),
+                            carrying: *carrying,
                         });
                     }
                 }

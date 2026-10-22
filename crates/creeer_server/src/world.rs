@@ -88,11 +88,12 @@ pub struct ServerWorld {
     wields: std::collections::BTreeMap<String, u8>,
     /// Where the bodies near players were, for what they reach for (G1.4d, `reach.rs`).
     history: history::History,
-    /// The swings on their way, those started since the sessions were told, and the blows that
-    /// fell this tick (G1.4e, `strikes.rs`).
+    /// The swings on their way, those begun since the sessions were told, this tick's blows
+    /// (G1.4e, `strikes.rs`), and what each player carries, by avatar (G1.4f, `carry.rs`).
     swings: Vec<strikes::Swinging>,
     started: Vec<(EntityId, u64)>,
     blows: Vec<strikes::Blow>,
+    carrying: std::collections::BTreeMap<EntityId, carry::Carry>,
     /// A creative (or test) server: its players may drop crates, frames and machines and dig
     /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
     pub creative: bool,
@@ -194,6 +195,7 @@ impl ServerWorld {
             swings: Vec::new(),
             started: Vec::new(),
             blows: Vec::new(),
+            carrying: std::collections::BTreeMap::new(),
             creative: false,
         }
     }
@@ -336,10 +338,12 @@ impl ServerWorld {
         self.surroundings.push(&mut self.world);
         drop(scope);
         self.people_before();
+        self.carry_before();
         self.world.step();
         // (What the legs pushed with, for the people's injuries: before their struts come off.)
         let pushes = self.world.strut_pushes();
         character::release(&mut self.world, &mut self.reactions);
+        self.carry_after();
         let scope = profile::scope("people");
         self.people_after(&pushes);
         drop(scope);
@@ -356,15 +360,7 @@ impl ServerWorld {
     }
 }
 
-/// The items of `v` whose bodies `map` kept.
-fn kept<T: Clone>(map: &[Option<usize>], v: &[T]) -> Vec<T> {
-    map.iter()
-        .zip(v)
-        .filter(|(m, _)| m.is_some())
-        .map(|(_, x)| x.clone())
-        .collect()
-}
-
+mod carry;
 #[cfg(test)]
 mod lod_tests;
 pub mod looks;
@@ -382,6 +378,9 @@ mod ageing;
 mod ageing_tests;
 pub use ageing::Ages;
 mod commands;
+use commands::kept;
+#[cfg(test)]
+mod carry_tests;
 mod history;
 #[cfg(test)]
 mod looks_tests;

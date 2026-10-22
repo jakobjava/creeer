@@ -67,6 +67,13 @@ fn client_messages_read_back() {
             },
             started: 12.5,
         },
+        Command::Grab(Target {
+            body: Some(EntityId(3)),
+            at: DVec3::new(2.0, 1.0, -0.5),
+            seen: 77.25,
+        }),
+        Command::Drop,
+        Command::Throw(DVec3::new(0.6, 0.8, 0.0)),
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -115,6 +122,7 @@ fn server_messages_read_back() {
             },
             fallen: true,
             wields: None,
+            carrying: true,
         },
         Kind::Character {
             player: "bob".into(),
@@ -126,6 +134,7 @@ fn server_messages_read_back() {
             },
             fallen: false,
             wields: Some(2),
+            carrying: false,
         },
         Kind::Segment {
             person: EntityId(9),

@@ -81,6 +81,40 @@ pub fn label(target: &Target) -> String {
     }
 }
 
+impl PlanetView {
+    /// Whether the player's character carries something in both hands (G1.4f), as the server
+    /// last told.
+    pub fn carrying(&self) -> bool {
+        let c = &self.session.connection;
+        let avatar = c.welcome.as_ref().map(|w| w.avatar);
+        matches!(
+            avatar.and_then(|a| c.kinds.get(&a)),
+            Some(Kind::Character { carrying: true, .. })
+        )
+    }
+
+    /// Takes what the crosshair is on in both hands, if within reach (the tool in hand put
+    /// away), or puts down what they hold.
+    pub fn grab_or_drop(&mut self, camera: &Camera) {
+        use creeer_net::message::{Command, Target};
+        if self.carrying() {
+            self.send(Command::Drop);
+            return;
+        }
+        let Some(target) = target(self, camera).filter(|t| t.in_reach && t.aimed.body.is_some())
+        else {
+            return;
+        };
+        self.wielding = None;
+        let a = target.aimed;
+        self.send(Command::Grab(Target {
+            body: a.body,
+            at: a.point,
+            seen: a.seen,
+        }));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

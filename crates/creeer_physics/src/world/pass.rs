@@ -167,6 +167,7 @@ impl World {
             for (index, joint) in &contacts.joints.list {
                 self.joints[*index].multipliers = joint.multipliers;
                 self.joints[*index].anchor = joint.anchor;
+                self.joints[*index].applied = joint.applied;
             }
         }
         work.into_iter()
