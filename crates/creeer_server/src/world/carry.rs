@@ -58,6 +58,19 @@ pub(super) fn facing_frame(facing: DVec3, up: DVec3) -> DQuat {
 impl ServerWorld {
     /// Avatar `by` grabs `target` (its tick the world's), putting away the tool in hand.
     pub(super) fn grab(&mut self, by: EntityId, target: &Target) -> Result<(), String> {
+        target.body.ok_or("nothing to hold on the ground")?;
+        let reached = self.reached(by, target.body, target.at, target.seen)?;
+        let load = reached.body.ok_or("nothing to hold")?;
+        self.take_hold(by, load, reached.point)
+    }
+
+    /// Avatar `by` takes body `load`'s node in both hands, gripping it at `point`.
+    pub(super) fn take_hold(
+        &mut self,
+        by: EntityId,
+        (load, node): (usize, usize),
+        point: DVec3,
+    ) -> Result<(), String> {
         let i = self.index(by).ok_or("no such avatar")?;
         let player = self.players[i].clone().ok_or("only a player grabs")?;
         if self.people.get(&by).is_some_and(people::Person::fallen) {
@@ -66,9 +79,7 @@ impl ServerWorld {
         if self.carrying.contains_key(&by) {
             return Err("hands full".into());
         }
-        let id = target.body.ok_or("nothing to hold on the ground")?;
-        let reached = self.reached(by, target.body, target.at, target.seen)?;
-        let (load, node) = reached.body.ok_or("nothing to hold")?;
+        let id = self.ids[load];
         if self.players[load].is_some() || self.carrying.values().any(|c| c.load == id) {
             return Err("not to be carried".into());
         }
@@ -85,14 +96,14 @@ impl ServerWorld {
         let s = &self.world.bodies[i].structure;
         let (centre, turn) = (s.position[0], s.orientation[0]);
         let up = character::plumb(&self.world, centre);
-        let facing = (reached.point - centre)
+        let facing = (point - centre)
             .reject_from(up)
             .normalize_or(up.any_orthonormal_vector());
         let l = &self.world.bodies[load].structure;
         let (c, q) = (l.position[node], l.orientation[node]);
-        let grip = q.conjugate() * (reached.point - c);
-        let from = turn.conjugate() * (reached.point - centre);
-        let ahead = self.ahead((load, node), reached.point, i, facing);
+        let grip = q.conjugate() * (point - c);
+        let from = turn.conjugate() * (point - centre);
+        let ahead = self.ahead((load, node), point, i, facing);
         // Each half of the way (up, then in) as fast as the spare strength lets: smoothly,
         // its most acceleration 24·d/T².
         let held = turn.conjugate() * (carry::held_out(centre, up, facing, ahead) - centre);

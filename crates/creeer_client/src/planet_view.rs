@@ -69,6 +69,8 @@ pub struct PlanetView {
     pub walking: bool,
     /// The tool the player asked to hold (G1.4c), by its index in the tools' table.
     pub wielding: Option<u8>,
+    /// Whether the inventory window is shown (G1.6a).
+    pub inventory: bool,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -149,6 +151,7 @@ impl PlanetView {
             session,
             walking: false,
             wielding: None,
+            inventory: false,
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),

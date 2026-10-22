@@ -1,6 +1,6 @@
 //! What the players reach for and strike, judged as they saw it (G1.4d–e, `world/reach.rs`,
 //! `world/strikes.rs`): a client counts the server's ticks as its snapshots are numbered, the
-//! world its own (which go back when a save is loaded).
+//! world its own (which go back when a save is loaded); and what they carry (G1.6a).
 
 use super::Server;
 use creeer_net::entity::EntityId;
@@ -16,19 +16,40 @@ impl Server {
 
     /// Avatar `avatar`'s player's `command`, a strike's ticks turned to the world's.
     pub(super) fn command(&mut self, command: &Command, avatar: EntityId) -> Result<(), String> {
-        if let Command::Strike { target, started } = command {
-            let target = Target {
-                seen: self.world_tick(target.seen),
-                ..*target
-            };
-            let started = self.world_tick(*started);
-            return (self.world).apply(&Command::Strike { target, started }, Some(avatar));
+        let seen = |t: &Target| Target {
+            seen: self.world_tick(t.seen),
+            ..*t
+        };
+        let command = match command {
+            Command::Strike { target, started } => Command::Strike {
+                target: seen(target),
+                started: self.world_tick(*started),
+            },
+            Command::Grab(t) => Command::Grab(seen(t)),
+            Command::Stow(Some(t)) => Command::Stow(Some(seen(t))),
+            Command::PutIn(t) => Command::PutIn(seen(t)),
+            Command::TakeFrom { container, item } => Command::TakeFrom {
+                container: seen(container),
+                item: *item,
+            },
+            Command::Open(t) => Command::Open(seen(t)),
+            other => other.clone(),
+        };
+        self.world.apply(&command, Some(avatar))
+    }
+
+    /// Tells each player whose inventory changed what they now carry (G1.6a).
+    pub(super) fn tell_inventories(&mut self) {
+        for avatar in self.world.take_inventories() {
+            let inventory = ServerMessage::Inventory(self.world.inventory(avatar));
+            for s in self
+                .sessions
+                .values_mut()
+                .filter(|s| s.avatar == Some(avatar))
+            {
+                s.queue(&inventory);
+            }
         }
-        if let Command::Grab(target) = command {
-            let seen = self.world_tick(target.seen);
-            return (self.world).apply(&Command::Grab(Target { seen, ..*target }), Some(avatar));
-        }
-        self.world.apply(command, Some(avatar))
     }
 
     /// Tells the sessions that see them of the swings started since, as of network ticks.

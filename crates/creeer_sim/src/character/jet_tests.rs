@@ -31,9 +31,9 @@ fn a_full_tank_burnt_in_free_fall_gives_tsiolkovskys_delta_v() {
     // Full thrust: 1.5 kN, 2.2 kg/s, the tank empty after 1.4 s.
     run(&mut world, c, 150, push);
     assert!(
-        gas(&world.bodies[c]) < 1e-12,
+        gas(&world.bodies[c], 0.0) < 1e-12,
         "{} kg left",
-        gas(&world.bodies[c])
+        gas(&world.bodies[c], 0.0)
     );
     assert!((world.bodies[c].structure.masses()[0] - DRY).abs() < 1e-12);
     let v = world.bodies[c].structure.velocity[0];
@@ -66,7 +66,7 @@ fn a_hover_lasts_as_long_as_its_gas() {
     };
     let start = world.bodies[c].structure.position[0].y;
     let mut ticks = 0;
-    while gas(&world.bodies[c]) > 0.0 && ticks < 600 {
+    while gas(&world.bodies[c], 0.0) > 0.0 && ticks < 600 {
         run(&mut world, c, 1, hover);
         ticks += 1;
     }

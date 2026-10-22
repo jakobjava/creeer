@@ -104,7 +104,12 @@ impl ServerWorld {
             let x = x.clamp(0.0, 1.0);
             x * x * (3.0 - 2.0 * x)
         };
-        let x = 2.0 * f64::from(c.since) * DT / c.lift;
+        // (Already where the hands hold it, a load has no way to go: none, not 0/0.)
+        let x = if c.lift > 0.0 {
+            2.0 * f64::from(c.since) * DT / c.lift
+        } else {
+            2.0
+        };
         let at = if x < 1.0 {
             c.from.lerp(raised, smooth(x))
         } else {

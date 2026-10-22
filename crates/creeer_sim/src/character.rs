@@ -136,6 +136,9 @@ pub struct Intent {
     pub jump: bool,
     /// The jetpack's push, as a fraction of its most (world frame; length at most 1).
     pub thrust: DVec3,
+    /// What the body carries beyond its dry mass that is not the jetpack's gas (kg: its
+    /// pockets, G1.6a): not spent by the jets.
+    pub load: f64,
 }
 
 impl Intent {
@@ -145,18 +148,9 @@ impl Intent {
             walk,
             jump,
             thrust: DVec3::ZERO,
+            load: 0.0,
         }
     }
-}
-
-/// The gas left in a character's jetpack (kg).
-pub fn gas(body: &Body) -> f64 {
-    (body.structure.masses()[0] - DRY).max(0.0)
-}
-
-/// Fills a character's jetpack (on creative servers only: in survival nothing refills it, G1.6b).
-pub fn refill(body: &mut Body) {
-    body.solver.set_mass(&mut body.structure, 0, MASS);
 }
 
 /// Up at `at` as a plumb line hangs: against gravity with the planet's centrifugal pull (the
@@ -328,7 +322,7 @@ pub fn steer(
             torque = torque.normalize() * SWIM_BALANCE;
         }
     }
-    if let Some((push, hold, mass)) = jetpack(world, index, intent.thrust, w) {
+    if let Some((push, hold, mass)) = jetpack(world, index, intent.thrust, w, intent.load) {
         force += push;
         torque += hold;
         reactions.push(Reaction {
@@ -388,7 +382,9 @@ mod fall_tests;
 /// Injury from impacts.
 pub mod injury;
 mod jetpack;
+mod mass;
 use jetpack::jetpack;
+pub use mass::{gas, refill, set_load};
 #[cfg(test)]
 mod jet_tests;
 /// A character fallen: its ragdoll.

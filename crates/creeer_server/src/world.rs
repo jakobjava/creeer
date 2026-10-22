@@ -10,7 +10,6 @@ use crate::things::{frame, upright};
 use creeer_core::profile;
 use creeer_data::Data;
 use creeer_materials::species::SpeciesTable;
-use creeer_math::det;
 use creeer_math::glam::DVec3;
 use creeer_net::channel::TICK_RATE;
 use creeer_net::entity::EntityId;
@@ -94,56 +93,11 @@ pub struct ServerWorld {
     started: Vec<(EntityId, u64)>,
     blows: Vec<strikes::Blow>,
     carrying: std::collections::BTreeMap<EntityId, carry::Carry>,
+    /// The bodies that are items, and what each player carries (G1.6a, `items.rs`).
+    items: items::Items,
     /// A creative (or test) server: its players may drop crates, frames and machines and dig
     /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
     pub creative: bool,
-}
-
-/// A point on the ground of `terrain`: on land between 300 and 1500 m, at a temperate latitude
-/// (30-45°, the planet turning about +Y), where the noon sun stands 45-60° high at the equinox;
-/// the first such of a spread of directions, so always the same one. (Until G1.3i the first
-/// land of the spread, by the pole, where the sun never rose above 4°.)
-pub fn spawn_point(terrain: &Terrain) -> DVec3 {
-    let (low, high) = (det::sin(30f64.to_radians()), det::sin(45f64.to_radians()));
-    let up = creeer_terrain::elevation::fibonacci_sphere(5000)
-        .filter(|d| (low..=high).contains(&d.y.abs()))
-        .filter(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
-        .find(|&d| flat(terrain, d))
-        .unwrap_or(DVec3::Y);
-    ground_under(
-        terrain,
-        up * (terrain.planet().radius + terrain.surface_height(up) + 50.0),
-    )
-}
-
-/// Whether the ground about `up` is flat enough to build on: rising or falling at most 1.5° in
-/// every direction out to 5 m, 15 m and 40 m.
-fn flat(terrain: &Terrain, up: DVec3) -> bool {
-    let radius = terrain.planet().radius;
-    let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
-    let here = terrain.surface_height(up);
-    let limit = det::tan(1.5f64.to_radians());
-    (0..8).all(|k| {
-        let (s, c) = det::sin_cos(f64::from(k) * std::f64::consts::FRAC_PI_4);
-        [5.0, 15.0, 40.0].iter().all(|&d| {
-            let p = (up * radius + (east * c + north * s) * d).normalize();
-            (terrain.surface_height(p) - here).abs() <= limit * d
-        })
-    })
-}
-
-/// The point of the ground of `terrain` under (or over) `p`, along the vertical.
-fn ground_under(terrain: &Terrain, mut p: DVec3) -> DVec3 {
-    let up = p.normalize();
-    // The density is the height above the ground: down by it until on it.
-    for _ in 0..30 {
-        let d = terrain.density(p);
-        p -= up * d;
-        if d.abs() < 1e-4 {
-            break;
-        }
-    }
-    p
 }
 
 impl ServerWorld {
@@ -168,6 +122,7 @@ impl ServerWorld {
         let surroundings = Surroundings::of(terrain.planet(), &species)
             .expect("the planet's air is of known gases");
         let tools = creeer_sim::tools::Tool::all(&data).unwrap_or_default();
+        let items = items::Items::from_data(&data);
         Self {
             data,
             terrain,
@@ -196,6 +151,7 @@ impl ServerWorld {
             started: Vec::new(),
             blows: Vec::new(),
             carrying: std::collections::BTreeMap::new(),
+            items,
             creative: false,
         }
     }
@@ -249,10 +205,21 @@ impl ServerWorld {
     }
 
     fn add(&mut self, body: Body, player: Option<String>) -> EntityId {
+        let id = self.add_unlifted_as(body, player);
+        let index = self.index(id).expect("just added");
+        self.lift_clear(index);
+        id
+    }
+
+    /// Adds `body` where it is (a load put in the hands passes the body holding it).
+    fn add_unlifted(&mut self, body: Body) -> EntityId {
+        self.add_unlifted_as(body, None)
+    }
+
+    fn add_unlifted_as(&mut self, body: Body, player: Option<String>) -> EntityId {
         let id = EntityId(self.next_id);
         self.next_id += 1;
-        let index = self.world.add(body);
-        self.lift_clear(index);
+        self.world.add(body);
         self.index.insert(id, self.ids.len());
         self.ids.push(id);
         if player.is_some() {
@@ -324,6 +291,7 @@ impl ServerWorld {
                 walk: input.walk,
                 jump: input.jump,
                 thrust: input.thrust,
+                load: self.items.load(id),
             };
             character::steer(&mut self.world, i, act, (up, water), &mut self.reactions);
         }
@@ -361,6 +329,12 @@ impl ServerWorld {
 }
 
 mod carry;
+mod items;
+#[cfg(test)]
+mod items_tests;
+mod spawn;
+use spawn::ground_under;
+pub use spawn::spawn_point;
 mod hands;
 #[cfg(test)]
 mod lod_tests;

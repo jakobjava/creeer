@@ -1,5 +1,6 @@
 //! What the server sends a client.
 
+pub use super::inventory::{Inventory, ItemView, StoreView};
 use super::{read_text, text};
 use crate::entity::{EntityId, Kind};
 use crate::quant::Quantised;
@@ -60,14 +61,23 @@ pub enum ServerMessage {
     Profile(super::ProfileReport),
     /// The player's own character as only the server knows it (G1.2): its jetpack's gas (kg),
     /// its health (a share of a whole one), whether it is down (its ragdoll: not predicted),
+    /// what its pockets hold (kg, G1.6a: on its body, beyond its dry mass and gas),
     /// for the HUD and the prediction. Sent with every snapshot round.
-    Own { gas: f64, health: f64, fallen: bool },
+    Own {
+        gas: f64,
+        health: f64,
+        fallen: bool,
+        load: f64,
+    },
     /// An entity's age (G1.3c, `creeer_sim::ageing`): sent after its spawn, and when its
     /// rate or wear changes.
     Age(EntityId, Age),
     /// A character began a swing of the tool in its hand at network tick `at` (G1.4e): its
     /// blow falls `creeer_sim::strike::TO_BLOW` later.
     Swing(EntityId, u32),
+    /// What the player carries (G1.6a, `creeer_sim::items`): their pockets, and the container
+    /// they last looked into while it is in reach. Sent when it changes.
+    Inventory(Inventory),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -181,11 +191,13 @@ impl Encode for ServerMessage {
                 gas,
                 health,
                 fallen,
+                load,
             } => {
                 w.u8(9);
                 w.f64(*gas);
                 w.f64(*health);
                 w.put(fallen);
+                w.f64(*load);
             }
             Self::Snapshot(bytes) => {
                 w.u8(6);
@@ -203,6 +215,10 @@ impl Encode for ServerMessage {
                 w.u8(11);
                 w.put(id);
                 w.u32(*at);
+            }
+            Self::Inventory(inventory) => {
+                w.u8(12);
+                w.put(inventory);
             }
         }
     }
@@ -272,6 +288,7 @@ impl Decode for ServerMessage {
                 gas: r.finite()?,
                 health: r.finite()?,
                 fallen: r.get()?,
+                load: r.finite()?,
             },
             10 => Self::Age(
                 r.get()?,
@@ -283,6 +300,7 @@ impl Decode for ServerMessage {
                 },
             ),
             11 => Self::Swing(r.get()?, r.u32()?),
+            12 => Self::Inventory(r.get()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

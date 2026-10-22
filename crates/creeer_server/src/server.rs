@@ -1,6 +1,5 @@
-//! The server: the world, the sessions of the clients connected to it, and their
-//! connections (renet's, carried in process for a singleplayer game and over UDP for a
-//! dedicated server).
+//! The server: the world, the sessions of the clients connected to it, and their connections
+//! (renet's, carried in process for a singleplayer game and over UDP for a dedicated server).
 //!
 //! A tick: what came from every client is taken in (a player joining, commands, inputs);
 //! every avatar is steered by its player's input for the tick; the world steps; and every
@@ -343,6 +342,7 @@ impl Server {
 
     fn send(&mut self) {
         self.tell_swings();
+        self.tell_inventories();
         let changed = self.world.take_changed();
         let aged = self.world.take_aged();
         let world = &self.world;

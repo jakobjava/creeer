@@ -239,6 +239,7 @@ impl Session {
             gas: world.gas(avatar),
             health: person.map_or(1.0, |p| p.health),
             fallen: person.is_some_and(crate::world::people::Person::fallen),
+            load: world.load(avatar),
         });
         renet.send_message(self.client, UNRELIABLE, own);
     }

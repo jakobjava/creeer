@@ -5,7 +5,7 @@ use creeer_math::glam::DVec3;
 use creeer_physics::world::World;
 
 /// The jetpack for a step: its push (`thrust` as a fraction of its most, while gas lasts)
-/// and its attitude jets' hold on the spin `w`, and the body's mass after the step. The gas
+/// and its attitude jets' hold on the spin `w` (its body carrying `load` kg besides), and the body's mass after the step. The gas
 /// they spend is the push over its exhaust's speed (Isp·g₀); the body steps with half the
 /// step's gas spent (the mean mass over the step: Tsiolkovsky's Δv to second order) and ends
 /// it without the step's.
@@ -14,9 +14,10 @@ pub(super) fn jetpack(
     index: usize,
     thrust: DVec3,
     w: DVec3,
+    load: f64,
 ) -> Option<(DVec3, DVec3, f64)> {
     let body = &mut world.bodies[index];
-    let (mass, gas) = (body.structure.masses()[0], gas(body));
+    let (mass, gas) = (body.structure.masses()[0], gas(body, load));
     if thrust == DVec3::ZERO || gas <= 0.0 {
         return None;
     }

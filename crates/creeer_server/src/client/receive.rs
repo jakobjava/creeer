@@ -47,14 +47,17 @@ impl Connection {
             ServerMessage::Snapshot(snapshot) => self.snapshot(&snapshot),
             ServerMessage::Machines(list) => self.machines = list,
             ServerMessage::Profile(report) => self.profile = Some(report),
+            ServerMessage::Inventory(inventory) => self.inventory = inventory,
             ServerMessage::Own {
                 gas,
                 health,
                 fallen,
+                load,
             } => {
                 (self.gas, self.health, self.fallen) = (gas, health, fallen);
                 if let Some(p) = &mut self.predicted {
                     p.set_gas(gas);
+                    p.set_load(load);
                     p.set_fallen(fallen);
                 }
             }

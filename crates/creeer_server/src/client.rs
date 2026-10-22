@@ -83,6 +83,8 @@ pub struct Connection {
     /// server has it: not predicted), as the server last told them.
     pub health: f64,
     pub fallen: bool,
+    /// What the player carries, as the server last told it (G1.6a).
+    pub inventory: creeer_net::message::Inventory,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -128,6 +130,7 @@ impl Connection {
             gas: creeer_sim::character::TANK,
             health: 1.0,
             fallen: false,
+            inventory: creeer_net::message::Inventory::default(),
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),

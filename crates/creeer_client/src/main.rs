@@ -47,6 +47,7 @@ mod held;
 mod hulls;
 mod icon_image;
 mod icons;
+mod inventory_ui;
 mod lab;
 mod lab_ellingham;
 mod lab_plots;

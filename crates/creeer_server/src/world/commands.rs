@@ -1,4 +1,5 @@
-//! What players ask of the world: crates, balls, frames and machines put down, terrain dug and
+//! What players ask of the world: crates, balls, frames, machines and kit items put down, items
+//! put away and taken out (G1.6a, `items.rs`), terrain dug and
 //! filled, the world cleared, each checked against the limits (`world.rs`).
 
 use super::*;
@@ -19,6 +20,11 @@ impl ServerWorld {
                 | Command::Grab(_)
                 | Command::Drop
                 | Command::Throw(_)
+                | Command::Stow(_)
+                | Command::TakeOut { .. }
+                | Command::PutIn(_)
+                | Command::TakeFrom { .. }
+                | Command::Open(_)
         );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
@@ -49,6 +55,19 @@ impl ServerWorld {
             Command::Drop => self.let_go(by.ok_or("only a player lets go")?),
             Command::Throw(direction) => {
                 self.throw(by.ok_or("only a player throws")?, *direction)?
+            }
+            Command::Stow(target) => self.stow(by.ok_or("only a player")?, target.as_ref())?,
+            Command::TakeOut { pocket, item } => {
+                self.take_out(by.ok_or("only a player")?, *pocket, *item)?;
+            }
+            Command::PutIn(target) => self.put_in(by.ok_or("only a player")?, target)?,
+            Command::TakeFrom { container, item } => {
+                self.take_from(by.ok_or("only a player")?, container, *item)?;
+            }
+            Command::Open(target) => self.open(by.ok_or("only a player")?, target)?,
+            Command::Kit { item, at } => {
+                within(*at)?;
+                self.drop_kit(*item, *at)?;
             }
             Command::Wield { tool } => {
                 let player = (by.and_then(|id| self.index(id)))

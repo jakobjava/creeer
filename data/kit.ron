@@ -1,0 +1,14 @@
+// The creative kit's items (G1.6a, ADR-0028): what a creative server's players may drop, to try
+// pockets, containers and carrying with. Survival players find their stones and wood (G1.6c)
+// and make their tools (G1.6d). Each: a material (an engineering material's id, or a rock's
+// name), a shape (m), and a wall (m) if it is a container.
+[
+    // A fist-sized granite cobble: 0.71 kg, too large for any pocket.
+    (name: "cobble", material: "granite", form: Ball(radius: 0.04)),
+    // A granite pebble, 3 cm: 0.04 kg; twelve fit a chest pocket.
+    (name: "pebble", material: "granite", form: Ball(radius: 0.015)),
+    // A spruce stick, 45 cm: too long for any pocket.
+    (name: "stick", material: "spruce_c24", form: Rod(radius: 0.012, length: 0.45)),
+    // A spruce crate of 18 mm boards: 50 × 40 × 40 cm outside, 61 l inside, 7.8 kg.
+    (name: "crate", material: "spruce_c24", form: Block(size: (0.5, 0.4, 0.4)), wall: 0.018),
+]

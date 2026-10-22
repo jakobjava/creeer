@@ -38,8 +38,9 @@ impl Running {
 
     /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
     /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
-    /// the crosshair is on in both hands, or puts down what they hold (G1.4f). Returns whether
-    /// it was one.
+    /// the crosshair is on in both hands, or puts down what they hold (G1.4f); E, F and I put
+    /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`). Returns whether it
+    /// was one.
     pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::keyboard::KeyCode;
         let Some(planet) = &mut self.planet else {
@@ -52,6 +53,18 @@ impl Running {
             }
             KeyCode::KeyG => {
                 planet.grab_or_drop(&self.camera);
+                return true;
+            }
+            KeyCode::KeyE => {
+                planet.stow(&self.camera);
+                return true;
+            }
+            KeyCode::KeyF => {
+                planet.put_in_or_open(&self.camera);
+                return true;
+            }
+            KeyCode::KeyI => {
+                planet.inventory = !planet.inventory;
                 return true;
             }
             KeyCode::Digit1 => Some(0),
@@ -162,6 +175,7 @@ impl Running {
                 },
             );
             request = planet_ui::window(ui.ctx(), planet, &self.camera);
+            crate::inventory_ui::window(ui.ctx(), planet, &self.camera);
             let target = crate::planet_aim::target(planet, &self.camera);
             planet_ui::crosshair(ui.ctx(), target.as_ref());
             self.profiler

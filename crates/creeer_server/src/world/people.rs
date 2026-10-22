@@ -67,20 +67,20 @@ impl ServerWorld {
         self.people.get(&id)
     }
 
-    /// Avatar `id`'s jetpack's gas (kg): what it weighs beyond its dry mass, all its segments
+    /// Avatar `id`'s jetpack's gas (kg): what it weighs beyond its dry mass and its pockets, all its segments
     /// together when it is down.
     pub fn gas(&self, id: EntityId) -> f64 {
         let fallen = self.people.get(&id).filter(|p| p.fallen());
         let Some(p) = fallen else {
-            return self
-                .index(id)
-                .map_or(0.0, |i| character::gas(&self.world.bodies[i]));
+            return self.index(id).map_or(0.0, |i| {
+                character::gas(&self.world.bodies[i], self.load(id))
+            });
         };
         let mass: f64 = (p.parts.iter())
             .filter_map(|e| self.index(*e))
             .map(|i| self.world.bodies[i].structure.masses()[0])
             .sum();
-        (mass - character::DRY).max(0.0)
+        (mass - character::DRY - self.load(id)).max(0.0)
     }
 
     /// Whether entity `id` is part of a fallen person (a ragdoll is not parked: it must
@@ -181,7 +181,8 @@ impl ServerWorld {
                 self.rise(id, p, Some(feet));
                 p.health = 1.0;
                 if let Some(i) = self.index(id) {
-                    character::refill(&mut self.world.bodies[i]);
+                    let load = self.load(id);
+                    character::refill(&mut self.world.bodies[i], load);
                 }
             }
         } else if p.still >= RISES_AFTER {

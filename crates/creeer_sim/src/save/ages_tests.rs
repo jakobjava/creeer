@@ -56,7 +56,9 @@ fn write_v9_fixture() {
 #[test]
 fn the_version_9_fixture_keeps_every_age_exactly() {
     let save = Save::from_bytes(V9).unwrap();
-    assert_eq!(save.to_bytes(), V9);
+    // Re-saved, it is the current version of what the scene writes (version 10 on: the same
+    // sections, its header the newer version).
+    assert_eq!(save.to_bytes(), aged_scene().to_bytes());
     assert_eq!(save.ages, aged_scene().ages);
     // Saves of earlier versions have no ages: everything in them is new.
     assert!(

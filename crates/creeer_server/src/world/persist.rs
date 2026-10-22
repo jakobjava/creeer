@@ -1,4 +1,4 @@
-//! The world to and from a save: its bodies, its entities, and its parked islands.
+//! The world to and from a save: its bodies, its entities, its parked islands, its items.
 
 use super::regions::Tag;
 use super::{DT, ServerWorld};
@@ -51,6 +51,12 @@ impl ServerWorld {
                 .collect();
             this.parked.park(Island::new(bodies));
         }
+        this.items.bodies = (save.items.bodies.into_iter())
+            .map(|(id, item)| (EntityId(id), item))
+            .collect();
+        this.items.pockets = (save.items.pockets.into_iter())
+            .map(|(id, pockets)| (EntityId(id), pockets))
+            .collect();
         this.next_machine = save.machines.iter().map(|m| m.id + 1).max().unwrap_or(1);
         this.machines = (save.machines.iter())
             .map(|m| super::machines::Placed::restored(m, Powerhouse::new()))
@@ -98,6 +104,14 @@ impl ServerWorld {
             ages: (self.ages.by_entity.iter())
                 .map(|(id, age)| (id.0, *age))
                 .collect(),
+            items: creeer_sim::save::SavedItems {
+                bodies: (self.items.bodies.iter())
+                    .map(|(id, item)| (id.0, item.clone()))
+                    .collect(),
+                pockets: (self.items.pockets.iter())
+                    .map(|(id, p)| (id.0, p.clone()))
+                    .collect(),
+            },
         }
     }
 }

@@ -784,6 +784,7 @@ dependencies = [
  "creeer_rates",
  "creeer_terrain",
  "creeer_thermal",
+ "proptest",
  "rayon",
  "serde",
 ]

@@ -35,6 +35,7 @@ mod heat_tests;
 pub mod hydro;
 #[cfg(test)]
 mod hydro_tests;
+pub mod items;
 #[cfg(test)]
 mod joule_tests;
 pub mod lod;

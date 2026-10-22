@@ -3,6 +3,8 @@
 use super::*;
 use crate::entity::{EntityId, Kind};
 use crate::entity::{Frame, Look, Matter, Shape};
+use crate::quant::Quantised;
+use inputs::SAME_WALK;
 
 fn back<T: Encode + Decode + PartialEq + std::fmt::Debug>(m: &T) {
     let bytes = to_bytes(m);
@@ -41,6 +43,11 @@ fn client_messages_read_back() {
         ack: 77,
         inputs: (5..13).map(input).collect(),
     });
+    let target = Target {
+        body: Some(EntityId(5)),
+        at: DVec3::new(0.25, 1.0, -2.0),
+        seen: 40.5,
+    };
     for command in [
         Command::Crate(DVec3::new(1.0, 2.0, 3.0)),
         Command::Ball(DVec3::new(-1.0, 2.5, 3e5)),
@@ -75,6 +82,22 @@ fn client_messages_read_back() {
         Command::Drop,
         Command::Throw(DVec3::new(0.6, 0.8, 0.0)),
         Command::Box(DVec3::new(3.0, 2.0, -1.0)),
+        Command::Kit {
+            item: 2,
+            at: DVec3::new(1.0, 2.0, 3.0),
+        },
+        Command::Stow(None),
+        Command::Stow(Some(target)),
+        Command::TakeOut {
+            pocket: 4,
+            item: 300,
+        },
+        Command::PutIn(target),
+        Command::TakeFrom {
+            container: target,
+            item: 0,
+        },
+        Command::Open(target),
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -151,7 +174,27 @@ fn server_messages_read_back() {
         gas: 2.25,
         health: 0.75,
         fallen: true,
+        load: 0.71,
     });
+    let item = |text: &str| crate::message::ItemView {
+        text: text.into(),
+        mass: 0.04,
+        room: 2.7e-5,
+    };
+    back(&ServerMessage::Inventory(crate::message::Inventory {
+        pockets: vec![
+            crate::message::StoreView {
+                name: "jacket.chest.L".into(),
+                volume: 3.3e-4,
+                items: vec![item("granite, 3 cm across"), item("granite, 2 cm across")],
+            },
+            crate::message::StoreView::default(),
+        ],
+        open: Some((EntityId(9), crate::message::StoreView::default())),
+    }));
+    back(&ServerMessage::Inventory(
+        crate::message::Inventory::default(),
+    ));
     let age = crate::message::Age {
         exposure: 1.5,
         rate: 1.0 / 21_600.0,

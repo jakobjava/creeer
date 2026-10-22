@@ -45,8 +45,10 @@ pub struct Predicted {
     reconciled: Option<u32>,
     /// How far the avatar was corrected each time it was set back (m).
     pub corrections: Corrections,
-    /// The jetpack's gas as the server last told it (kg): its mass is the body's.
+    /// The jetpack's gas and what the pockets hold as the server last told them (kg): their
+    /// mass is the body's.
     gas: f64,
+    load: f64,
     /// Whether the character is down (its ragdoll is the server's alone: not predicted).
     fallen: bool,
     /// The bodies predicted with it, and each one's drawn offset (corrections and coming in).
@@ -90,6 +92,7 @@ impl Predicted {
             reconciled: None,
             corrections: Corrections::default(),
             gas: character::TANK,
+            load: 0.0,
             fallen: false,
             nearby: Vec::new(),
             drawn: BTreeMap::new(),
@@ -99,7 +102,7 @@ impl Predicted {
         }
     }
 
-    fn step(world: &mut World, around: &mut Option<Surroundings>, input: &AvatarInput) {
+    fn step(world: &mut World, around: &mut Option<Surroundings>, input: &AvatarInput, load: f64) {
         let at = world.bodies[0].structure.position[0];
         let water = (around.as_ref().and_then(|a| a.sea.as_ref())).map(|sea| sea.depth(at));
         let mut reactions = Vec::new();
@@ -107,6 +110,7 @@ impl Predicted {
             walk: input.walk,
             jump: input.jump,
             thrust: input.thrust,
+            load,
         };
         let up = character::plumb(world, at);
         character::steer(world, 0, act, (up, water), &mut reactions);
@@ -126,7 +130,7 @@ impl Predicted {
         if !self.fallen && !self.world.bodies.is_empty() {
             self.previous = self.pose_with(DVec3::ZERO);
             self.since = 0.0;
-            Self::step(&mut self.world, &mut self.around, &input);
+            Self::step(&mut self.world, &mut self.around, &input, self.load);
             self.history.record(input.seq, &self.nearby, &self.world);
         }
         input
@@ -135,6 +139,11 @@ impl Predicted {
     /// The jetpack's gas, as the server tells it (kg): set at the next correction.
     pub fn set_gas(&mut self, gas: f64) {
         self.gas = gas;
+    }
+
+    /// What the pockets hold, as the server tells it (kg): set at the next correction.
+    pub fn set_load(&mut self, load: f64) {
+        self.load = load;
     }
 
     /// Whether the character is down, as the server tells it. Up again, it is predicted afresh
@@ -214,8 +223,11 @@ impl Predicted {
         s.orientation[0] = state.orientation();
         s.velocity[0] = state.velocity();
         s.angular_velocity[0] = state.spin();
-        body.solver
-            .set_mass(&mut body.structure, 0, character::DRY + self.gas);
+        body.solver.set_mass(
+            &mut body.structure,
+            0,
+            character::DRY + self.gas + self.load,
+        );
         body.solver.reset_history(&body.structure);
         // Asleep on the server, asleep here too, as the bodies near it are (`nearby.rs`): a
         // character standing still sleeps, and woken it would be stepped where the server's
@@ -236,13 +248,13 @@ impl Predicted {
         }
         self.history.forget_before(last_input);
         let around = self.around.take();
-        let (ids, history) = (&self.nearby, &mut self.history);
+        let (ids, history, load) = (&self.nearby, &mut self.history, self.load);
         (self.world, self.around) = reconcile(
             (world, around),
             last_input,
             &mut self.log,
             |(w, a), input| {
-                Self::step(w, a, input);
+                Self::step(w, a, input, load);
                 history.record(input.seq, ids, w);
             },
         );
