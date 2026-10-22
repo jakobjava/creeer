@@ -74,6 +74,7 @@ fn client_messages_read_back() {
         }),
         Command::Drop,
         Command::Throw(DVec3::new(0.6, 0.8, 0.0)),
+        Command::Box(DVec3::new(3.0, 2.0, -1.0)),
     ] {
         back(&ClientMessage::Command(command));
     }

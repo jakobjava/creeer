@@ -240,3 +240,17 @@ fn walking_off_at_once_the_load_is_lifted_and_carried_along() {
     assert_eq!(w.carried(ada), Some(id));
     assert!(w.terrain.density(at(&w, id)) > 0.5, "off the ground");
 }
+
+#[test]
+fn the_sandboxs_box_is_one_to_carry() {
+    let (mut w, ada, _, east) = ada_and_box(10.0);
+    let centre = at(&w, ada);
+    let ground = w.ground_under(centre - east * 1.0);
+    w.apply(&Command::Box(ground + ground.normalize() * 0.3), Some(ada))
+        .unwrap();
+    let id = *w.ids().last().unwrap();
+    wait(&mut w, ada, 60, DVec3::ZERO);
+    w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap();
+    wait(&mut w, ada, 90, DVec3::ZERO);
+    assert_eq!(w.carried(ada), Some(id));
+}

@@ -59,6 +59,8 @@ pub enum Command {
     Drop,
     /// Throw what the hands hold along a direction (the world's frame).
     Throw(DVec3),
+    /// Drop a box at a point, at rest (G1.4f: 0.4 m of wood, 15 kg, to be carried).
+    Box(DVec3),
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -283,6 +285,10 @@ impl Encode for ClientMessage {
                         w.u8(11);
                         w.put(direction);
                     }
+                    Command::Box(at) => {
+                        w.u8(12);
+                        w.put(at);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -326,6 +332,7 @@ impl Decode for ClientMessage {
                 9 => Command::Grab(r.get()?),
                 10 => Command::Drop,
                 11 => Command::Throw(r.get()?),
+                12 => Command::Box(r.get()?),
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {

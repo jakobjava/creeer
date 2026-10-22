@@ -70,6 +70,15 @@ impl ServerWorld {
                 body.friction = 0.7;
                 self.add(body, None);
             }
+            Command::Box(at) => {
+                within(*at)?;
+                // As the play scene's: 0.4 m of wood, 15 kg (G1.4f: one to carry).
+                let half = DVec3::splat(0.2);
+                let mut body = Body::rigid(Shape::Box { half }, 15.0, *at, DT);
+                body.structure.orientation[0] = upright(*at);
+                body.friction = 0.6;
+                self.add(body, None);
+            }
             Command::Ball(at) => {
                 within(*at)?;
                 let mut body = Body::rigid(Shape::Sphere { radius: 0.4 }, 300.0, *at, DT);

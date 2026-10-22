@@ -35,6 +35,8 @@ pub enum Tool {
     Tunnel,
     /// Drop a crate.
     Crate,
+    /// Drop a box light enough to carry (G1.4f).
+    Box,
     /// Drop a ball.
     Ball,
     /// Put down a steel frame.
@@ -45,11 +47,12 @@ pub enum Tool {
 
 impl Tool {
     /// All tools with their names.
-    pub const ALL: [(Self, &'static str); 7] = [
+    pub const ALL: [(Self, &'static str); 8] = [
         (Self::Dig, "dig"),
         (Self::Fill, "fill"),
         (Self::Tunnel, "tunnel"),
         (Self::Crate, "crate"),
+        (Self::Box, "box"),
         (Self::Ball, "ball"),
         (Self::Frame, "frame"),
         (Self::Powerhouse, "powerhouse"),
@@ -340,6 +343,7 @@ impl PlanetView {
                 radius: 2.5,
             }),
             Tool::Crate => return self.send(Command::Crate(hit + up * 2.0)),
+            Tool::Box => return self.send(Command::Box(hit + up * 0.5)),
             Tool::Ball => return self.send(Command::Ball(hit + up * 2.0)),
             // The server lifts it clear of the ground (on a slope, of its corners too).
             Tool::Frame => return self.send(Command::Frame(hit)),
