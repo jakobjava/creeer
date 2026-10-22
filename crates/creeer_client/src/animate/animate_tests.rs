@@ -5,6 +5,7 @@
 use super::feet::{self, Ground};
 use super::*;
 use creeer_math::det;
+use creeer_sim::character::bones;
 
 /// A plane through the origin of normal `normal`, and water beneath `sea` (m) if any.
 struct Plane {
@@ -38,7 +39,7 @@ fn soles(side: usize) -> [DVec3; 4] {
 }
 
 #[test]
-fn standing_still_is_the_model_at_rest() {
+fn standing_still_is_the_model_at_rest_its_arms_relaxed() {
     let flat = Plane {
         normal: DVec3::Y,
         sea: -100.0,
@@ -51,9 +52,21 @@ fn standing_still_is_the_model_at_rest() {
     }
     let bones = animator.bones(1, &body, 1.0 / 60.0, &flat);
     let rest = bones::standing_bones(centre, DQuat::IDENTITY);
+    // The forearms and hands hang a little more bent at the elbow than the model's (G1.4a:
+    // walking's least bend, 17°, Murray et al. 1967); every other bone is the model at rest.
+    let more = 17.0 - upper::rest_elbow();
+    let arms = [4, 5, 10, 11];
     for (k, (b, r)) in bones.iter().zip(&rest).enumerate() {
         let off = (b.position - r.position).length() + b.rotation.angle_between(r.rotation);
-        assert!(off < 1e-6, "bone {k} off by {off}");
+        if arms.contains(&k) {
+            let bend = b.rotation.angle_between(r.rotation).to_degrees();
+            assert!(
+                (bend - more).abs() < 0.01,
+                "bone {k} bent {bend}°, not {more}°"
+            );
+        } else {
+            assert!(off < 1e-6, "bone {k} off by {off}");
+        }
     }
 }
 

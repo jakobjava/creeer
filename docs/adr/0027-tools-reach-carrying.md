@@ -1,9 +1,9 @@
 # ADR-0027: Tools, reach and carrying, and the body's motion (G1.4)
 
-**Status:** proposed (2026-10-22), for the user's approval of `docs/g1-plan.md`, G1.4.
+**Status:** in progress (2026-10-22). The user approved the plan (`docs/g1-plan.md`, G1.4) and chose, as recommended: the motion first, full finger bones, tools picked by number keys until G1.6's inventory, reach 2.5 m from the hands.
 **Context:** `docs/g1-plan.md`, G1.4: the engineer's first work. He holds tools and strikes with them, reaches what the crosshair finds, carries and throws bodies. The user's first play (2026-10-22, after G1.3) asked for the motion to be better first: "the animation is very rough and it sometimes glitches, when running the player does not lean forward, also when stopping walking it does some more steps without moving, the arms look robotic, the fingers do not move and are always apart from each other: we can improve these things in 1.4".
 **Builds on:** ADR-0022 (joints), ADR-0023 (the character: one rigid body, legs as a strut, balance within its strength), ADR-0025 (prediction of the bodies near the avatar), ADR-0026 (the engineer skinned on the ragdoll's fifteen bones; the gait from measurements, decision 9).
-**Evidence:** to come with each sub-milestone (G1.4a–h).
+**Evidence:** G1.4a (the body's motion): `crates/creeer_client/src/animate/probe_tests.rs`, `animate_tests.rs`, the walk and run sheets of the style board; the rest to come with each sub-milestone (G1.4b–g).
 
 ## Where it starts
 
@@ -25,12 +25,19 @@ Surveyed before the design (`docs/g1-plan.md`, principle 8). Numbers each sub-mi
 | Preece et al., "How do elite endurance runners alter movements of the spine and pelvis as running speed increases?" ([Gait & Posture](https://salford-repository.worktribe.com/output/1404607/how-do-elite-endurance-runners-alter-movements-of-the-spine-and-pelvis-as-running-speed-increases)); a 2023 Gait & Posture study of sprint acceleration | Recreational runners lean the thorax further forward as they run faster (3.3–5.6 m/s); accelerating, the trunk leans further and rises as speed builds | The trunk leans with speed and with acceleration, drawn on the trunk's bones (the body itself is the simulated box) |
 | Ridge et al., planned and unplanned gait termination ([2013](https://scholarsarchive.byu.edu/facpub/2013), [2016](https://scholarsarchive.byu.edu/facpub/2016)); Jaeger and Vanitchatchavan (1992), ground reaction forces at termination | Healthy people stop in about one step: the leading leg brakes harder, the trailing leg pushes off less; unplanned stops flex the knee more | The gait ends in a stopping step that brings the feet together, then stands: no stride runs on |
 | Yegian and Tucker, "Straight arm walking, bent arm running" ([J. Exp. Biol. 2019](https://hsrc.himmelfarb.gwu.edu/smhs_psych_facpubs/1801)); Collins, Adamczyk and Kuo (2009, [Proc. R. Soc. B](https://pmc.ncbi.nlm.nih.gov/articles/PMC2817299)); gait studies of the arm's rotations | The arm is nearly straight walking and bent near 90° running (each the cheaper for the shoulder); the arms swing passively against the legs; walking, the shoulder rotates about 56° and the elbow 25° over a stride | The arms swing from shoulder and elbow with measured amplitudes and phase, the elbow bent with speed |
+| Murray, Sepic and Barnard, "Patterns of sagittal rotation of the upper limbs in walking" (Phys. Ther. 1967; 30 men at free and fast speeds) | Free walking (1.54 m/s): the shoulder 24° back to 8° forward, furthest back at its own side's heel-strike; the elbow 17° to 47°, never straight, following the shoulder by about 0.05 s; fast (2.14 m/s): 31° back, the elbow 15° to 55° | G1.4a: the walking arms exactly so, between the two speeds by speed; the angles the joint's own, so the model's own 14.5° bend at rest is taken off |
+| Teng and Powers, "Sagittal plane trunk posture influences patellofemoral joint stress during running" (J. Orthop. Sports Phys. Ther. 2014) | Recreational runners' own trunk lean at 3.4 m/s: 7.3° forward | G1.4a: the running lean; accelerating or braking, the lean of the push through the centre, atan(a/g) |
+| Perry, *Gait Analysis: Normal and Pathological Function* (1992) | The stance knee bends 15–20° as the foot takes the load and straightens to about 5° at mid-stance | G1.4a: the hips may not stay low through a stance: the knee must straighten |
+| Saunders, Inman and Eberhart, "The major determinants in normal and pathological gait" (J. Bone Joint Surg. 1953) | The body's centre rises and falls on a smooth path, about 5 cm, lowest with both feet down | G1.4a: the hips lowered before a foot lands, on a smooth path, not all at once as it reaches the ground |
+| Wang and Srinivasan, "Stepping in the direction of the fall" (Biol. Lett. 2014) | The next foot placement is largely predicted by the body's state by mid-swing | G1.4a: where a swinging foot lands is chosen through the first half of its swing and settled through the second |
+| Bollo, "Inertialization: High-Performance Animation Transitions in Gears of War" (GDC 2018; SIGGRAPH 2017 talk) | At a transition the new pose is drawn at once plus the old one's offset, decaying on a quintic that starts at the offset and its velocity and never overshoots | G1.4a: every change between standing, stepping, the air and the water smoothed so |
+| Holden, "Spring-It-On: The Game Developer's Spring-Roll-Call" (2021) | An offset's velocity is the old pose's less the new one's: the new pose's own motion is not an offset | G1.4a: the offsets start from both velocities, the old motion carried a frame while the new one's is learnt |
 | The resting hand: hand-surgery literature on the "safe" and resting positions (e.g. MCP 45–90°, PIP 0–20° in the safe position), the "normal cascade" of a relaxed hand | At rest the fingers flex progressively from index to little finger, together, the thumb beside the index | Finger bones in the skin, posed as a relaxed hand at rest and closing on what is held |
 | Hand rigs in games (Unreal's mannequin: three bones per finger and the thumb; VR hands that close procedurally on what they hold, as Half-Life: Alyx's) | Fingers posed procedurally from a few curls rather than keyed | Fingers driven by the client's animation alone (not simulated: the ragdoll keeps its fifteen segments) |
 | Bernier, "Latency compensating methods in client/server in-game protocol design" (Valve, 2001) | The server judges a hit against where things were when the client fired | A strike or grab is checked by the server against what the client saw, within the reach |
 | Minecraft's reach (4.5 blocks to interact, 3 to strike in survival) and anthropometric reach (ANSUR II functional reach about 0.8 m) | A game's reach rounds up a body's | Reach 2.5 m from the hands (the plan's decision 4), the tool's length within it |
 
-## Decision (proposed)
+## Decision
 
 1. **The motion first** (G1.4a–b): the user's notes, each researched and checked in the game, before anything is held. The glitches are recorded and found before anything is smoothed over.
 2. **Fingers as bones of the skin, posed by the client** (G1.4b): three bones per finger and the thumb, weighted in the art pipeline from the model's hands, posed procedurally (relaxed, gripping, open); the physics keeps its fifteen segments.
@@ -39,14 +46,40 @@ Surveyed before the design (`docs/g1-plan.md`, principle 8). Numbers each sub-mi
 5. **Strikes from a swing** (G1.4e): the strike's energy from the tool's mass and balance and the arm's strength, the swing drawn as it is simulated; its energy goes into what it hits (an impulse now; digging in G1.5, cutting in G1.7).
 6. **Carrying and throwing** (G1.4f): a grab is a ball joint at the hands with a force limit from human strength; the load acts on the character, slowing and toppling it; a throw's speed from the object's mass, its reaction on the thrower.
 
+### G1.4a: the body's motion
+
+What the user saw, found first by a probe (`animate/probe_tests.rs`): one player over the real server and client, standing, walking at 1.4 m/s, stopping, running at 3.5 m/s, stopping, walking in a circle, jumping, walking back; every bone's turn between frames, relative to the pelvis. A glitch is a frame that turns much faster than the frames either side (a *spike*, rad/s over its neighbours). G1.3 had spikes up to 48.5 rad/s: setting off (the legs, 47), jumping (everything, 48.5), landing (38); after the run the stride never stopped.
+
+- **Transitions inertialized** (`inertial.rs`, `pose.rs`): the pose (the pelvis in the frame of the feet, the joints' turns, the ankles in the world) of standing, stepping, the air and the water; a change between them draws the new pose at once plus the old one's offset decaying on Bollo's quintic over 0.2 s, from the old pose's velocity less the new one's (Holden). The new pose's velocity known a frame on, the old motion is carried that frame. Leaving the ground, the feet go with the body as it goes: a jump is a push the simulation gives at once.
+- **The air found by the body's motion**: rising faster than half a jump's speed with the feet off the ground, or nothing within reach underfoot; in the air while it falls freely (gathering speed downward faster than half of gravity). The legs drawn up at the top of a flight, straight as they leave the ground and meet it again. Before, the feet stayed planted until 0.3 m clear and pinned the hips 30 cm below the body.
+- **Each step keeps its gait** (`feet.rs`): a foot's share of the stride on the ground is the gait's as it landed, its lift as it lifted; a change of gait shows in the next step (people change over a stride). Before, the share changing under a foot as the speed passed 2.2 m/s lifted a planted foot 10 cm in a frame, or set a swinging one down.
+- **Where a foot lands is settled through its swing** (Wang and Srinivasan) and it comes down where it was aimed. Before, it landed on the place computed in the landing frame, which moves fast as the gait or the speed changes: a planted sole slid 38 mm, and braking from a run the hips dropped 10 cm in five frames.
+- **The hips on a smooth path** (Saunders, Inman and Eberhart): lowered at once as far as a planted foot needs, and as far as a swinging foot will need when it lands, going over from where it is to where it lands, from the hips as they will be then; coming back up as a mass, critically damped at 40/s, as fast as lets the stance knee straighten to about 5° (Perry).
+- **Stopping**: the stride goes on until the swinging foot lands beside the other, then stands; no steps in place unless a foot stands 12 cm off where it would (half a boot). Setting off, the first foot lifts flat. Landing from the air, a stride begins anew.
+- **The trunk leans** 7.3° running (Teng and Powers), and atan(a/g) accelerating or braking, the push on the ground through the centre; about the hips, so the legs keep their reach; the head kept level.
+- **The arms** (`upper.rs`): Murray's swing and elbow, between his two speeds by speed, the elbow following the shoulder by 0.05 s; running, the elbow about 90° (Yegian and Tucker) through fast walking's range; the change of carriage between walking and running over 0.15 s. Standing, the elbows at walking's least bend, 17°.
+
 ## Measured and rejected
 
-To come.
+| Idea | Measured | Why rejected |
+|---|---|---|
+| Planted feet left out of the transitions' smoothing (so they could not slide) | Stopping, the trailing foot snapped from its toe to flat in a frame: 21 rad/s | With the ankles in the world, a planted foot has no offset to decay but its roll, which needs smoothing |
+| The hips coming back up critically damped at 12/s (`0027/hips-damped-rise.txt`) | The stance knee never straighter than 14–16° walking (Perry: about 5°): the engineer walked crouched on the walk sheet; at 30/s 7–9°; at 40/s 1–6° | Too slow; 40/s kept. Without the damping at all, the change from walking to running had a 14.2 rad/s spike as the trailing foot left the ground |
+| Bollo's clamp dropped, an offset's velocity away from zero kept (`0027/inertial-unclamped.diff`) | The probe's worst spikes unchanged to 0.1 rad/s | No gain; the clamp, tested never to overshoot, stays |
+| The future hip in a swinging foot's need without the body's acceleration | Braking from a run, 10.1 rad/s at landing, against 9.9 with it | Kept with it, a small gain; the spike itself went with the settled aim |
 
 ## Validation
 
-To come.
+- **The probe** (`animate/probe_tests.rs`, `the_motion_has_no_glitches_stops_within_a_step_and_leans_running`, over the real server and client): the worst spike 7.4 rad/s (G1.3: 48.5), gated at 8.1; no foot set down after the body has come to rest, stopping from the walk or the run (G1.3: two, and the run's never stopped), gated at one; the trunk leaning 7.4° running (7.3° measured; G1.3 9.2°) and 0.0° walking (G1.3 2.3°), each within 0.5°; the walking stance knee at its straightest 1° and 6° (Perry about 5°), within 10°. The knee running 13–48° on the ground (runners about 40–45° at mid-stance). `measure_the_motion` (ignored) prints all of it.
+- **On slopes** (`animate_tests.rs`) to the friction angle, up and down, walking and running: planted soles within 0.2 mm of the ground, sliding at most 0.01 mm.
+- **The arms**: Murray's swing at his speeds, the running elbow about a right angle, the model's rest bend (14.47°) taken off (`upper.rs` tests); standing, the elbows at 17°.
+- **The walk and run sheets** of the style board (`walk.png`, `run.png`): the stance knee straightening, the arms swinging behind the body, the run leaning with bent arms and a flight.
+- **Cost**: a walking character animates in 0.010 ms a frame (release; budget 0.05 ms).
 
 ## Limits
 
-To come.
+- The swing knee bends to 73–75° walking (Perry about 60–65°): the foot's arc over its swing is not the measured one.
+- A jump has no crouch before it: the simulation's push is at once, so the legs can only follow it (`docs/future-improvements.md`).
+- Landing, the knees bend only as far as the hips are lowered to reach the ground; no absorbing crouch.
+- Walking, the trunk is upright; people lean a little with speed when walking too, not measured here.
+- The running arms are fast walking's swing about a 90° elbow: an extrapolation, not a measurement of runners' arms.

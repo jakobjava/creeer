@@ -95,23 +95,23 @@ fn fallen(at: DVec3) -> Vec<Frame64> {
     bones::fallen_bones(&poses)
 }
 
-/// Renders eight frames of one stride of the engineer walking at 1.4 m/s, seen from his side,
-/// as one sheet.
+/// Renders eight frames of one stride of the engineer going at `speed` (m/s: walking at 1.4,
+/// running at 3.5), seen from his side, as one sheet.
 pub fn walk_sheet(
     renderer: &mut Renderer,
     people: &People,
     (sky, lighting): (&Sky, &Lighting),
     board: &Scene,
+    speed: f64,
 ) -> Image {
     const FRAMES: usize = 8;
-    let speed = 1.4;
     let stride = 2.0 / gait::at(speed).cadence;
     let dt = 1.0 / 120.0;
     let mut animator = Animator::default();
     let look = look(&bones::STARTING_OUTFIT);
     let mut t = 0.0;
     let mut images = Vec::new();
-    // Walked three seconds first, into his stride.
+    // Three seconds first, into his stride.
     let mut next = 3.0;
     while images.len() < FRAMES {
         // Across the board's slab, beside its crates.

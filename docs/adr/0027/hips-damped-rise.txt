@@ -1,0 +1,28 @@
+Measured and rejected (G1.4a): the hips coming back up as a critically damped mass (12/s),
+lowered at once as far as a foot needs. Added to smooth the hips rising as the trailing foot
+left the ground (a 26 rad/s thigh spike as the gait changed), which the swing's need going over
+to its landing also fixed. Held low, the hips kept the stance knee bent 14–16° at its straightest
+walking (Perry: about 5°): the engineer walked crouched on the walk sheet. At 30/s, 7–9°; at
+60/s, 1°, as without it; the spikes no larger without it (the worst 7.2 rad/s).
+
+In `crates/creeer_client/src/animate/stand.rs`, `State::pose`, in place of
+`self.drop = drop.max(0.0);` (with `lowering: f64` beside `drop` in `State`):
+
+/// How fast the hips come back up when no foot holds them down (1/s): critically damped, they
+/// rise over about a quarter of a second, within a step.
+const HIPS: f64 = 12.0;
+
+        // Lowered at once as far as a foot needs (it must be reached); coming back up, the hips
+        // follow as a mass does, critically damped, so their speed never jumps.
+        let needed = drop.max(0.0);
+        let was = self.drop;
+        let pull = HIPS * HIPS * (needed - self.drop) - 2.0 * HIPS * self.lowering;
+        self.lowering += pull * dt;
+        self.drop += self.lowering * dt;
+        if fresh {
+            // A stance begun: the hips where it needs them, still (a change the pose smooths).
+            (self.drop, self.lowering) = (needed, 0.0);
+        } else if self.drop < needed {
+            self.drop = needed;
+            self.lowering = if dt > 0.0 { (needed - was) / dt } else { 0.0 };
+        }

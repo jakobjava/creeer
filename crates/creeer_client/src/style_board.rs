@@ -6,9 +6,10 @@
 //!   weathered a year and four years, the engineer in his base layer, in his outfit and fallen,
 //!   and a stride of him walking (`style_people.rs`).
 //! - `creeer_client --style-board <dir> --all [--check <golden dir> | --save <golden dir>]`:
-//!   the board on each of the five grounds at noon and in the evening, the walk sheet and the
-//!   items' icons, written to `dir`; held to the golden images (`golden.rs`), or made them
-//!   (an intended change, once the user has approved it). `cargo xtask style-board` runs it.
+//!   the board on each of the five grounds at noon and in the evening, the walk and run sheets
+//!   (G1.4a) and the items' icons, written to `dir`; held to the golden images (`golden.rs`),
+//!   or made them (an intended change, once the user has approved it). `cargo xtask style-board`
+//!   runs it.
 
 use crate::demo::{self, DemoMeshes};
 use crate::people::People;
@@ -137,12 +138,18 @@ impl Board {
         })
     }
 
-    /// A stride of the engineer walking, on `scene`'s slab, the sun at `sun`.
-    fn walk(&mut self, scene: &Scene, sun: f64) -> Image {
+    /// A stride of the engineer at `speed` (m/s), on `scene`'s slab, the sun at `sun`.
+    fn walk(&mut self, scene: &Scene, sun: f64, speed: f64) -> Image {
         let sky = demo::sky(DVec3::ZERO);
         let at = DVec3::new(0.0, 1.0, 0.0);
         let lighting = sky.lighting(at, demo::sun_direction(sun), &Lighting::default());
-        crate::style_people::walk_sheet(&mut self.renderer, &self.people, (&sky, &lighting), scene)
+        crate::style_people::walk_sheet(
+            &mut self.renderer,
+            &self.people,
+            (&sky, &lighting),
+            scene,
+            speed,
+        )
     }
 }
 
@@ -215,7 +222,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .image(&scene, sun, &camera)
         .save_png(Path::new(path))?;
     if let Some(sheet) = value_of("--walk") {
-        board.walk(&scene, sun).save_png(Path::new(sheet))?;
+        board.walk(&scene, sun, 1.4).save_png(Path::new(sheet))?;
         println!("saved {sheet}: a stride walking at 1.4 m/s in eight frames");
     }
     println!("saved {path}: the crate at {AGES:?} years on {ground}, sun {sun}°");
@@ -247,7 +254,8 @@ fn all(
                     board.image(&scene, sun, &far_camera()),
                 ));
             }
-            images.push(("walk".into(), board.walk(&scene, TIMES[0].1)));
+            images.push(("walk".into(), board.walk(&scene, TIMES[0].1, 1.4)));
+            images.push(("run".into(), board.walk(&scene, TIMES[0].1, 3.5)));
             // The ten skin tones side by side (G1.3i).
             let mut tones = board.ground(colour);
             crate::style_people::add_tones(&board.people, &mut tones);
