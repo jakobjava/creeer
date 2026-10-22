@@ -216,6 +216,13 @@ Revised 2026-10-21, after the user saw the first crate in Blender. The user foun
   - an outfit's merged mesh draws exactly the visible regions (a test outfit of test wearables), what lies inside a worn wearable left out (the parts `in.<wearable>`, ADR-0026 decision 8);
   - golden screenshots of the base body and the full outfit standing, on all five grounds (moved from G1.3f: the game cannot draw him before).
 - **Budget:** skinning 8 characters ≤ 0.05 ms of GPU time; an outfit change ≤ 0.5 ms on the client.
+- **Done** (2026-10-22; ADR-0026 decisions 6–8, Validation, Cost):
+  - dual-quaternion skinning in one compute dispatch a frame (`skin.wgsl`, `renderer/skin_pass.rs`), each character at the level of detail its error allows (`creeer_art::model_levels`, the levels' errors in `models.ron`), drawn two-sided by the shadow, prepass and scene passes; only what moves is skinned, packed (32 bytes read, 24 written a vertex); the player's colour, skin and hair as each character's own palette entries;
+  - outfits: `wearable::visible` merged into one index list a level (`Renderer::add_outfit`); the starting outfit and the base layer alone registered by the client (`people.rs`);
+  - protocol 8: a character's look (colour, skin, hair, outfit) and whether it has fallen; each ragdoll segment says whose and which (`Kind::Segment`); the server gives each player a free colour and the starting outfit, the player chooses skin and hair in the planet window (`Command::Look`);
+  - validated: one bone moves its vertices rigidly, the rest pose draws the model itself, the GPU skins as the CPU's dual quaternions do (0.7 µm at worst over 55,494 vertices, every character of a frame), an elbow bent 90° keeps its volume (−0.06 %, linear blending −1.70 %), a fallen ragdoll's bones draw each joint at one place, an outfit draws exactly its visible regions; found by drawing him: the vest had a hole over each shoulder (fixed in `art/engineer/outfit.py`);
+  - cost: skinning eight engineers close up 0.020 ms of GPU time; an outfit merged in 0.12 ms;
+  - the golden screenshots of him standing on the five grounds come with G1.3h's style board check (`--style-board` draws him, base layer and full outfit, on any ground).
 
 #### G1.3f The engineer
 

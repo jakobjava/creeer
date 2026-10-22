@@ -33,16 +33,19 @@ fn a_player_sees_their_character_fall_and_stand_up_again() {
     game.run(30, still);
     let client = &game.clients[0].0;
     assert!(client.health < 0.9, "health {}", client.health);
+    // Its pelvis its character fallen, the other fourteen segments its own (G1.3e).
     assert!(
-        matches!(client.kinds[&avatar], Kind::Body(..)),
-        "drawn as its character"
+        matches!(client.kinds[&avatar], Kind::Character { fallen: true, .. }),
+        "drawn as its character, fallen"
     );
-    let segments = client
-        .kinds
-        .values()
-        .filter(|k| matches!(k, Kind::Body(..)))
-        .count();
-    assert_eq!(segments, 15);
+    let mut segments: Vec<u8> = (client.kinds.values())
+        .filter_map(|k| match k {
+            Kind::Segment { person, index, .. } if *person == avatar => Some(*index),
+            _ => None,
+        })
+        .collect();
+    segments.sort_unstable();
+    assert_eq!(segments, (1..15).collect::<Vec<u8>>());
     // Drawn where the server has its pelvis (two ticks behind, as everything else).
     let off = (client.avatar().unwrap().position - game.avatar(0)).length();
     assert!(off < 0.3, "its ragdoll drawn {off} m off");
@@ -55,7 +58,7 @@ fn a_player_sees_their_character_fall_and_stand_up_again() {
     }
     game.run(60, still);
     let client = &game.clients[0].0;
-    assert!(matches!(&client.kinds[&avatar], Kind::Character { player } if player == "ada"));
+    assert!(matches!(&client.kinds[&avatar], Kind::Character { player, .. } if player == "ada"));
     assert_eq!(client.kinds.len(), 1, "its segments still drawn");
     let off = (client.avatar().unwrap().position - game.avatar(0)).length();
     assert!(off < 0.05, "predicted {off} m off");

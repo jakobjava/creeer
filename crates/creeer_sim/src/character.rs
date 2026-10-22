@@ -366,6 +366,8 @@ mod tests;
 /// The ragdoll's bones as a table for the art scripts.
 pub mod bones;
 #[cfg(test)]
+mod drawn_tests;
+#[cfg(test)]
 mod fall_tests;
 /// Injury from impacts.
 pub mod injury;

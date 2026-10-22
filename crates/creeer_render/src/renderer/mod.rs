@@ -29,7 +29,9 @@ use tonemap_pass::TonemapPass;
 
 mod ao_pass;
 mod encode;
+mod encode_occlusion;
 mod exposure_pass;
+mod grown;
 mod levels;
 mod line_pass;
 mod mesh_pass;
@@ -39,6 +41,9 @@ mod readback;
 mod sea_pass;
 mod setup;
 mod shadow_pass;
+mod skin_layout;
+mod skin_pass;
+pub use skin_layout::SkinnedVertex;
 mod sky_pass;
 mod targets;
 mod terrain_pass;
@@ -169,6 +174,8 @@ pub struct Renderer {
     timer: Option<timing::GpuTimer>,
     /// Ambient occlusion (G1.3d).
     ao: ao_pass::AoPass,
+    /// Skinned characters (G1.3e).
+    skin: skin_pass::SkinPass,
 }
 
 impl fmt::Debug for Renderer {
@@ -234,6 +241,23 @@ impl Renderer {
     pub fn set_palette(&mut self, palette: &creeer_art::Palette) {
         self.mesh_pass
             .set_palette(&self.device, &self.queue, palette);
+        let table = self.mesh_pass.palette().slot_table();
+        self.skin.set_slots(&self.device, &self.queue, &table);
+    }
+
+    /// Registers a skinned model (G1.3e) for [`Scene::characters`].
+    pub fn add_skinned(&mut self, data: &crate::skin::SkinnedMeshData) -> crate::skin::SkinnedId {
+        self.skin.add(data)
+    }
+
+    /// Registers an outfit of `model`: the parts it shows (`creeer_art::wearable::visible`),
+    /// merged into one index list a level of detail.
+    pub fn add_outfit(
+        &mut self,
+        model: crate::skin::SkinnedId,
+        shown: &[&creeer_art::model_skin::Part],
+    ) -> crate::skin::OutfitId {
+        self.skin.add_outfit(model, shown)
     }
 
     /// Ambient occlusion's settings.

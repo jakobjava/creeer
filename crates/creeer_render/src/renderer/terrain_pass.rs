@@ -159,6 +159,7 @@ impl TerrainPass {
             &module,
             "vs_main",
             &vertex_layouts(),
+            Some(wgpu::Face::Back),
         );
         Self {
             pipeline: [scene_depth_state(), after_prepass_depth_state()].map(pipeline),

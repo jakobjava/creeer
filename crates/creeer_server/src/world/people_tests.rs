@@ -2,6 +2,7 @@
 //! again where it lies; one killed is taken away and stands whole at the spawn point; a world
 //! saved with a person down loads with them down.
 
+use super::looks::Drawn;
 use super::people::{RESPAWNS_AFTER, RISES_AFTER};
 use super::tests::world;
 use super::*;
@@ -37,10 +38,20 @@ fn a_character_dropped_from_high_falls_hurt_and_stands_up_again() {
     let p = w.person(ada).unwrap().clone();
     assert_eq!(p.parts.len(), 15, "her ragdoll's segments");
     assert_eq!(w.world.bodies.len(), 15);
-    assert!(
-        w.drawn_as(w.index(ada).unwrap()).is_none(),
-        "drawn as her character"
-    );
+    // Her pelvis drawn as her character fallen, each other segment as hers, which (G1.3e).
+    assert!(matches!(
+        w.drawn(w.index(ada).unwrap()),
+        Drawn::Person { fallen: true, .. }
+    ));
+    for (k, part) in p.parts.iter().enumerate().skip(1) {
+        assert_eq!(
+            w.drawn(w.index(*part).unwrap()),
+            Drawn::Segment {
+                person: ada,
+                index: u8::try_from(k).unwrap()
+            }
+        );
+    }
     assert!(w.take_changed().contains(&ada));
     let health = p.health;
     assert!((0.0..0.9).contains(&health), "health {health} after 10 m");
@@ -53,7 +64,10 @@ fn a_character_dropped_from_high_falls_hurt_and_stands_up_again() {
     }
     assert!(ticks >= RISES_AFTER);
     assert_eq!(w.world.bodies.len(), 1);
-    assert_eq!(w.drawn_as(w.index(ada).unwrap()), Some("ada"));
+    assert!(matches!(
+        w.drawn(w.index(ada).unwrap()),
+        Drawn::Person { fallen: false, ref player, .. } if player == "ada"
+    ));
     assert!(w.take_changed().contains(&ada));
     // Standing on her legs, where she fell.
     run(&mut w, ada, 120);

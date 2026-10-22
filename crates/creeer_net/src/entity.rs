@@ -33,6 +33,37 @@ pub struct Frame {
     pub radius: f64,
 }
 
+/// How a player's character looks (G1.3e, ADR-0026 decisions 7 and 8): the player's colour,
+/// skin tone and hair colour (indices into the palette's lists: `creeer_art::Palette`'s
+/// `players`, `skin`, `hair`), and what it wears (wearables by name, `data/wearables.ron`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Look {
+    pub colour: u8,
+    pub skin: u8,
+    pub hair: u8,
+    pub outfit: Vec<String>,
+}
+
+impl Encode for Look {
+    fn encode(&self, w: &mut Writer) {
+        w.u8(self.colour);
+        w.u8(self.skin);
+        w.u8(self.hair);
+        w.put(&self.outfit);
+    }
+}
+
+impl Decode for Look {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            colour: r.u8()?,
+            skin: r.u8()?,
+            hair: r.u8()?,
+            outfit: r.get()?,
+        })
+    }
+}
+
 /// What an entity is.
 /// What a rigid body is made of, for a client to predict it (G1.2e, ADR-0025): what the
 /// physics needs beyond its shape.
@@ -53,10 +84,20 @@ pub struct Matter {
 pub enum Kind {
     /// A rigid body, and what it is made of.
     Body(Shape, Matter),
-    /// A player's character (its shape is the game's: `creeer_sim::character`), and whose.
+    /// A player's character (its shape is the game's: `creeer_sim::character`), whose, and how
+    /// it looks. Fallen, it is its ragdoll's pelvis, the other segments [`Kind::Segment`]s.
     Character {
         /// The player's name.
         player: String,
+        look: Look,
+        fallen: bool,
+    },
+    /// A segment of a fallen character's ragdoll (G1.3e): whose (the avatar, its pelvis) and
+    /// which (`creeer_sim::character::bones::SEGMENT_NAMES`, 1 to 14), and its shape.
+    Segment {
+        person: EntityId,
+        index: u8,
+        shape: Shape,
     },
     /// A structure.
     Structure(Frame),
@@ -102,9 +143,38 @@ impl Encode for Kind {
                 }
                 w.u8(u8::from(matter.predicted));
             }
-            Self::Character { player } => {
+            Self::Character {
+                player,
+                look,
+                fallen,
+            } => {
                 w.u8(3);
                 w.put(player);
+                w.put(look);
+                w.u8(u8::from(*fallen));
+            }
+            Self::Segment {
+                person,
+                index,
+                shape,
+            } => {
+                w.u8(5);
+                w.put(person);
+                w.u8(*index);
+                match shape {
+                    Shape::Box(half) => {
+                        w.u8(0);
+                        w.put(half);
+                    }
+                    Shape::Sphere(radius) => {
+                        w.u8(1);
+                        w.f64(*radius);
+                    }
+                    Shape::Hull(corners) => {
+                        w.u8(2);
+                        w.put(corners);
+                    }
+                }
             }
             Self::Structure(frame) => {
                 w.u8(4);
@@ -132,7 +202,21 @@ impl Decode for Kind {
             0 => Self::Body(Shape::Box(r.get()?), matter(r)?),
             1 => Self::Body(Shape::Sphere(r.finite()?), matter(r)?),
             2 => Self::Body(Shape::Hull(r.get()?), matter(r)?),
-            3 => Self::Character { player: r.get()? },
+            3 => Self::Character {
+                player: r.get()?,
+                look: r.get()?,
+                fallen: flag(r)?,
+            },
+            5 => Self::Segment {
+                person: r.get()?,
+                index: r.u8()?,
+                shape: match r.u8()? {
+                    0 => Shape::Box(r.get()?),
+                    1 => Shape::Sphere(r.finite()?),
+                    2 => Shape::Hull(r.get()?),
+                    _ => return Err(r.error("unknown shape")),
+                },
+            },
             4 => {
                 let radius = r.finite()?;
                 let nodes: Vec<DVec3> = r.get()?;
@@ -151,14 +235,18 @@ impl Decode for Kind {
     }
 }
 
+fn flag(r: &mut Reader<'_>) -> Result<bool, DecodeError> {
+    match r.u8()? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(r.error("not a flag")),
+    }
+}
+
 fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
     let (mass, friction, restitution) = (r.finite()?, r.finite()?, r.finite()?);
     let surface = [r.finite()?, r.finite()?, r.finite()?];
-    let predicted = match r.u8()? {
-        0 => false,
-        1 => true,
-        _ => return Err(r.error("not a flag")),
-    };
+    let predicted = flag(r)?;
     if mass <= 0.0 || friction < 0.0 || !(0.0..=1.0).contains(&restitution) {
         return Err(r.error("a body's matter out of range"));
     }

@@ -110,7 +110,7 @@ fn a_player_joins_sees_the_world_and_walks_in_it() {
     let client = &game.clients[0].0;
     assert_eq!(client.status(), &Status::Joined);
     let avatar = client.welcome.as_ref().unwrap().avatar;
-    assert!(matches!(&client.kinds[&avatar], Kind::Character { player } if player == "ada"));
+    assert!(matches!(&client.kinds[&avatar], Kind::Character { player, .. } if player == "ada"));
     let boxes = client
         .kinds
         .values()

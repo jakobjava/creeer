@@ -23,6 +23,12 @@ impl ServerWorld {
             }
         };
         match command {
+            Command::Look { skin, hair } => {
+                let player = (by.and_then(|id| self.index(id)))
+                    .and_then(|i| self.players[i].clone())
+                    .ok_or("only a player has a look")?;
+                self.set_look(&player, *skin, *hair);
+            }
             Command::Crate(at) => {
                 within(*at)?;
                 let mut body = Body::rigid(

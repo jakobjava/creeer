@@ -105,6 +105,8 @@ pub struct PhysicsSnapshot {
     /// How long each box has weathered (years) and its wear (0–1), where the world keeps ages
     /// (G1.3c; the planet's server); none: new.
     pub box_age: Vec<(f32, f32)>,
+    /// The players' characters (G1.3e; the planet's server).
+    pub people: Vec<crate::people::DrawnPerson>,
     /// Each member's temperature (°C) where heat follows it, else NaN.
     pub beam_heat: Vec<f32>,
     /// A fire's bed (centre, half extents) and its gas temperature (°C).

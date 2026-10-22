@@ -3,6 +3,7 @@
 
 use super::*;
 use creeer_math::glam::DQuat;
+use creeer_net::entity::Look;
 use creeer_physics::structure::Section;
 use creeer_physics::structure::section::STEEL_S235;
 use creeer_physics::structure::shapes::{Base, space_frame};
@@ -42,23 +43,51 @@ fn bodies_are_drawn_as_what_they_are() {
         predicted: true,
     };
     assert_eq!(
-        kind(&crate_, None, false),
+        kind(&crate_, &Drawn::Thing, false),
         Kind::Body(NetShape::Box(DVec3::new(0.5, 0.25, 1.0)), matter)
     );
     // A joint's side (a ragdoll's) and a held body are the server's alone.
     let alone = |k: Kind| matches!(k, Kind::Body(_, m) if !m.predicted);
-    assert!(alone(kind(&crate_, None, true)));
+    assert!(alone(kind(&crate_, &Drawn::Thing, true)));
     crate_.held = true;
-    assert!(alone(kind(&crate_, None, false)));
+    assert!(alone(kind(&crate_, &Drawn::Thing, false)));
     let ball = Body::rigid(Shape::Sphere { radius: 0.4 }, 10.0, DVec3::ZERO, DT);
     assert!(matches!(
-        kind(&ball, None, false),
+        kind(&ball, &Drawn::Thing, false),
         Kind::Body(NetShape::Sphere(r), _) if (r - 0.4).abs() < 1e-12
     ));
+    let look = Look {
+        colour: 3,
+        skin: 4,
+        hair: 5,
+        outfit: vec!["boots".into()],
+    };
+    let ada = |fallen| Drawn::Person {
+        player: "ada".into(),
+        look: look.clone(),
+        fallen,
+    };
+    for fallen in [false, true] {
+        assert_eq!(
+            kind(&ball, &ada(fallen), false),
+            Kind::Character {
+                player: "ada".into(),
+                look: look.clone(),
+                fallen,
+            }
+        );
+    }
+    // A fallen one's segment says whose and which (G1.3e).
+    let shin = Drawn::Segment {
+        person: EntityId(7),
+        index: 7,
+    };
     assert_eq!(
-        kind(&ball, Some("ada"), false),
-        Kind::Character {
-            player: "ada".into()
+        kind(&crate_, &shin, true),
+        Kind::Segment {
+            person: EntityId(7),
+            index: 7,
+            shape: NetShape::Box(DVec3::new(0.5, 0.25, 1.0)),
         }
     );
     let points = [DVec3::ZERO, DVec3::X, DVec3::Y, DVec3::Z, DVec3::ONE];
@@ -66,10 +95,10 @@ fn bodies_are_drawn_as_what_they_are() {
     let corners = hull.vertices().to_vec();
     let rock = Body::rigid(Shape::Hull(Arc::new(hull)), 10.0, DVec3::ZERO, DT);
     assert!(matches!(
-        kind(&rock, None, false),
+        kind(&rock, &Drawn::Thing, false),
         Kind::Body(NetShape::Hull(c), _) if c == corners
     ));
-    let Kind::Structure(f) = kind(&frame(), None, false) else {
+    let Kind::Structure(f) = kind(&frame(), &Drawn::Thing, false) else {
         panic!("a structure")
     };
     assert_eq!((f.nodes.len(), f.members.len()), (8, 12));
@@ -86,7 +115,7 @@ fn a_structure_is_drawn_in_its_own_frame() {
         *p = DVec3::new(100.0, 5.0, -3.0) + turn * *p;
         *q = turn;
     }
-    let Kind::Structure(f) = kind(&body, None, false) else {
+    let Kind::Structure(f) = kind(&body, &Drawn::Thing, false) else {
         panic!("a structure")
     };
     // Relative to node 0, in its frame: as built.
@@ -100,7 +129,7 @@ fn shape_changes_are_told_past_the_tolerance_and_not_too_often() {
     let mut body = frame();
     let mut shapes = Shapes::default();
     let id = EntityId(4);
-    shapes.kind(id, &body, (None, false), 0);
+    shapes.kind(id, &body, (&Drawn::Thing, false), 0);
     let changes =
         |shapes: &mut Shapes, body: &Body, tick| shapes.changes(std::iter::once((id, body)), tick);
     // A sway of 5 mm: nothing.

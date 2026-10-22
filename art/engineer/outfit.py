@@ -36,6 +36,9 @@ BOOT_TOP = 0.2
 # (m), so it lies under it.
 LEG_END = 0.16
 VEST_DROP = 0.03
+# How far either side of the middle the vest's neckline is cut (m): past the neck's base, short
+# of the shoulders' tops (about 0.18 out).
+NECKLINE_HALF_WIDTH = 0.145
 # How far within a garment's opening the body's hidden regions begin (m): looking into the
 # collar, a sleeve's end or a trouser leg, the skin is there.
 INSIDE = {"neck": 0.02, "hand": 0.035, "foot": 0.03}
@@ -224,7 +227,10 @@ def body(p, skin, eyes):
 
 
 def base_layer(p, skin):
-    vest = G.Cloth(skin).cut(Vector(NECK[0]) - Vector(NECK[1]).normalized() * VEST_DROP, NECK[1])
+    # The neckline cut about the neck alone: the shoulders' tops rise above its plane, and cut
+    # whole it left a round hole in each (G1.3e, seen once the game drew the base layer).
+    neck = Vector(NECK[0]) - Vector(NECK[1]).normalized() * VEST_DROP
+    vest = G.Cloth(skin).cut(neck, NECK[1], where=lambda v: abs(v.co.x) < NECKLINE_HALF_WIDTH)
     vest.cut((0, 0, 1.0), (0, 0, -1), where=lambda v: vest.arm(v) < 0.5)
     for side, tag in SIDES:
         s, e = B.joint("shoulder", side), B.joint("elbow", side)

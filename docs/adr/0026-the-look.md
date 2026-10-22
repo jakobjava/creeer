@@ -110,8 +110,8 @@
    - **Settings:** XeGTAO's tuned constants (radius multiplier 1.457, falloff 0.615, distribution power 2, MIP offset 3.3, final power 2.2); a radius of 1 m. Presets: low (one slice of two steps, half resolution), medium (two of two), high (three of three, the default), and off; the sandbox's window switches them. A reference preset (16 × 16, full-resolution depth only) exists for validation.
    - **GPU timestamps** (`renderer/timing.rs`): every pass is timed where the adapter allows it, read back a few frames later, shown in the F9 profiler and printed by `--bench`.
 6. **The engineer is skinned on the ragdoll's bones.** Fifteen bones, one per segment, so the drawn body is the simulated one bone for bone, smooth across its joints.
-   - Dual quaternion skinning, in one compute pass per frame.
-   - A ragdoll's segments say whose they are and which segment they are (protocol 7), so the client can draw the person.
+   - Dual quaternion skinning, in one compute pass per frame. Built in G1.3e (2026-10-22; `skin.wgsl`, `renderer/skin_pass.rs`, `skin_layout.rs`, `creeer_render::skin`): one dispatch for every character of the frame, each at its level of detail (the coarsest whose error against the close-up level, kept in `models.ron` and measured again by a test, projects under half a pixel), into a vertex buffer that the shadow, prepass and scene passes draw two-sided as a plain mesh. Only what moves is skinned: the rest data's place, 16-bit normal, material and 8-bit bones and weights (32 bytes) in, place, normal and material (24 bytes) out; tone, height and grain are drawn straight from the rest data as a second vertex stream. The player's colour (laid on the jacket's grey at half strength), skin tone and hair colour are each character's own three palette entries, which the skinning points its per-player tokens at.
+   - A ragdoll's segments say whose they are and which segment they are (protocol 8, `Kind::Segment`; the avatar is its pelvis, `Kind::Character { fallen }`), so the client can draw the person. Each player's look travels with their character: the server gives the first player colour free and the starting outfit, and the player chooses skin and hair (`Command::Look`).
    - This replaces `docs/g1-plan.md`'s first decision to confirm (a segmented suit). Smooth surfaces are now a rule (`art-style.md` pillar 9), and rigid segments would show seams and gaps at every bent joint.
 7. **A base body and wearables** (the user, 2026-10-21: "in future I want to have many wearables, so there should [be] a 'naked' version that can wear more and more cool stuff as you progress").
    - **One skeleton, animated once.** The base body and every wearable are skinned meshes on the same fifteen bones.
@@ -279,6 +279,15 @@ How GTAO meets the multisampled forward pass, measured both ways as planned, plu
 | An infinite wall as the crease's closed form (half the sky) | GTAO 0.59–0.64 at the crease against 0.52–0.54 | Not GTAO's error: its falloff fades far horizons, so it never sees an unbounded wall. The crease is tested on a block within the radius instead (Validation) |
 | The visibility bitmask (Therrien et al. 2023) | Not built: no dark halos behind the factory's rods and pipes | Nothing over-darkened to mend |
 
+### Skinning (G1.3e, 2026-10-22)
+
+| Tried | Measured | Why rejected |
+|---|---|---|
+| Every rest vertex skinned whole into a `MeshVertex` (60 bytes read, 40 written) | Eight engineers close up: 0.085 ms of GPU time, against a budget of 0.05 | Bound by its bytes; packed and split as decision 6 says, 0.020 ms |
+| Shrink-wrapping the base layer 2 mm clear of the body at each level, against round patches of skin at the shoulders' tops | No change | They were holes, not pokes: the vest's neckline is a plane cut, and the shoulders' tops rise above its plane. The cut now reaches 14.5 cm either side of the middle (`art/engineer/outfit.py`). The fit check looks for pokes and for hidden regions seen, not holes in a garment: drawing him found it |
+
+Found on the way: the skinning shader's job record ended in a `vec3<u32>`, which WGSL aligns to 16 bytes, making it 48 bytes against the CPU's 32: only the first character of a frame was skinned. A test now skins three in one frame.
+
 ### Measured and set aside: colour-blind player colours (G1.3a, 2026-10-21)
 
 The first run of the style's checks found the sixteen player colours of `art-style.md` §3.6 confused under simulated colour-vision deficiencies (Machado et al. 2009, `creeer_art::vision`). For deuteranopes, blue and violet are ΔE₀₀ 1.3 apart, violet and indigo 1.3, and orange and ochre 1.7. For protanopes, violet and indigo are 2.9 apart. In normal vision the closest pair is blue and indigo, at 8.5.
@@ -351,9 +360,16 @@ Steel, titanium and concrete against gravel (ΔE₀₀ 10.3, 7.5, 11.5), rubber 
   - **No flicker** (`creeer_client --shimmer`, 1280 × 720, 32 frames): the shaded surfaces flicker on 0.079 % of their pixels, as before occlusion (gate 0.2 %). The occlusion map alone, in 8-bit levels of occlusion, on 0.37 % (p99 1.06 levels, near its own rounding); the test holds it under 1 %.
   - **Thin occluders:** no dark halos behind the factory's rods and pipes in the occlusion map, so the visibility bitmask was not built.
 
+- **Skinning (G1.3e, 2026-10-22;** `skin_tests.rs`, `tests/gpu_skin.rs`, `character/drawn_tests.rs`, `wearable_tests.rs`, `model_levels_tests.rs`).
+  - A vertex on one bone moves rigidly with it (to 2·10⁻⁵ m 40 m away), and blended with itself across q and −q too; the rest pose draws the model itself on the GPU (within 2 µm, its normals within 16-bit rounding).
+  - The GPU skins as the CPU's dual quaternions do, with the same 8-bit weights: 0.7 µm at worst over the close-up level's 55,494 vertices in a pose of fifteen bones turned each its own way; and every character of a frame is skinned (three at once).
+  - An elbow (a closed tube, its weight passing from one bone to the other over 20 cm) bent 90° keeps its volume within 0.06 %; linear blending loses 1.70 %.
+  - A fallen ragdoll's bones draw each segment's centre where it is (10⁻¹² m) and each joint at one place by both its bones (under 0.01 mm over three seconds of falling).
+  - An outfit draws exactly its visible regions (a test model: hidden regions and what lies inside a worn wearable left out, nothing of what is not worn); the levels' errors as the art pipeline measured them (mid 12.6 mm both ways, far 36.5 mm).
+  - The server gives each player a colour of their own and the starting outfit, keeps a chosen skin and hair and tells it again; the codec reads looks and segments back; a fallen character's client sees its pelvis as the character fallen and its fourteen other segments as its own, by index.
+
 **Still to come:**
-- colour-vision simulation against Machado et al.'s published examples (set aside with the colour-blind mode);
-- dual-quaternion skinning exactly rigid for single-bone vertices.
+- colour-vision simulation against Machado et al.'s published examples (set aside with the colour-blind mode).
 
 ## Cost
 
@@ -411,9 +427,16 @@ Off draws no prepass; what remains of its few hundredths is the timestamps and t
 
 **Projected to min-spec** (a GTX 1660 class GPU): ×4, a margin over PassMark's G3D and memory bandwidth, both about 2.6× between the two cards (nominal FP32 is 7×, inflated by Ada's dual issue). The occlusion's compute: high about 0.9 ms, medium 0.6 ms, low 0.3 ms, each within the 1 ms budget; with the prepass and its barriers, a frame grows by 0.33–0.53 ms here at high (1.3–2.1 ms projected), 0.3–0.45 ms at medium. Min-spec is meant to run medium. XeGTAO's own high costs 0.56 ms on an RTX 2060.
 
+**Skinning (G1.3e), measured** (`creeer_client --bench 300 --view <v> --people <n>`): eight engineers close up are skinned in 0.020 ms of GPU time (budget 0.05; 0.08 projected to min-spec); the frame grows by 0.29 ms in the factory view and 0.55 ms close up, mostly their shadows and scene pass at the close-up level, which they keep within about 20 m at 1080p. Loading the engineer with two outfits takes 15 ms; another outfit merges in 0.12 ms (budget 0.5).
+
 ## Limits
 
 To be written as the work finds them; each also in `docs/future-improvements.md`.
+
+- **Characters' shadows at their camera level.** A character is skinned once a frame, at the level the camera needs, and casts its shadows with it; the primitives' shadows take their own coarser levels. Skinning a coarser level for the shadows would cost a second dispatch.
+- **Outfits made ahead.** The client registers the starting outfit and the base layer alone; another outfit is drawn as the starting one until it is added (`People::add_outfit`, 0.12 ms), which G1.6 does when wearables become items.
+- **Looks are not saved.** A player's look lives with the server while it runs; after a load, a player's colour is given again and their skin and hair are picked from their name until they choose again.
+- **Sixty-four characters with colours of their own** a frame; beyond, they share the last one's.
 
 - **Ambient occlusion without temporal anti-aliasing.** Each pixel's 18 samples (high) are gathered from its 4×4 tile by the filter, so occlusion under thin, close occluders shows a faint 4-pixel texture, and within about 4 pixels of a crease the filter's window (two pixels one way, one the other) reads up to 0.04 too open. TAA would let XeGTAO's own noise average over frames (`docs/future-improvements.md`).
 - **Normals from depth.** GTAO takes each pixel's normal from the depth, so it sees a cylinder's true facets where the shading sees smooth normals: faint vertical bands in its occlusion on curved parts. A normal written by the prepass would mend it, at a colour target's cost.
@@ -427,7 +450,7 @@ To be written as the work finds them; each also in `docs/future-improvements.md`
 - **What lies inside a wearable is that wearable's alone.** A part `in.<wearable>` is hidden while that wearable is worn, whatever else is: another wearable's list of regions does not reach it. So the skin under the vest shows only if the vest is off and the coverall on, which no outfit wears yet.
 - **The ragdoll's cones go beyond a person's range** (the shoulder 92° and the hip 80° every way, the ankle 34° up): there the clothes fit worse (the body 7.6 mm through the shorts with the hip opened 80°), and the body itself takes poses no one takes.
 - **The segment boxes against the outfit.** The boxes keep each limb's cross-section and mass, centred on its centre of mass, so the knee pads' fronts stand 12 cm ahead of the shin box's front face and the elbow patches 8 cm behind the forearm box's back: a ragdoll fallen on its knees sinks the pads into the ground. Likewise, by less, the coverall's legs and the belt's pouch (Validation). A box grown about its centre would stand as far out on the other side; reaching the pads needs a box set off its body's centre of mass, a physics feature deferred to G1.8 (the user, 2026-10-22).
-- **The garments are single shells**, thick only at their edges: G1.3e draws the engineer two-sided, or a look into a collar or a sleeve sees through its far side.
+- **The garments are single shells**, thick only at their edges: drawn two-sided since G1.3e, a look into a collar or a sleeve sees the cloth's inside lit as if it faced the eye.
 - **The far level's soles** are decimated apart from the boots, and the seam between them opens up to the level's error: under half a pixel where it is drawn.
 - **The fit is checked one joint at a time.** Two joints at their limits together (a shoulder raised while the spine bends) are not posed.
 - **The hair is a shell** with the strands in its surface: its outline is smooth, with no strands against the sky.

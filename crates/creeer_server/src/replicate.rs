@@ -8,6 +8,7 @@
 //! while a frame swaying by a millimetre is drawn rigid. Every client is told the same
 //! shape (the one [`Shapes`] keeps), so the changes fit what each has.
 
+use crate::world::looks::Drawn;
 use creeer_math::glam::DVec3;
 use creeer_net::entity::{EntityId, Frame, Kind, Matter, Shape as NetShape};
 use creeer_net::message::Plastic;
@@ -23,23 +24,45 @@ pub const SHAPE_TOLERANCE: f64 = 0.01;
 /// Ticks between two shape changes of one structure at least.
 pub const SHAPE_EVERY: u64 = 6;
 
-/// What a client draws a body as (`player` whose avatar it is; `joined`: a joint's side).
-pub fn kind(body: &Body, player: Option<&str>, joined: bool) -> Kind {
-    if let Some(player) = player {
-        return Kind::Character {
-            player: player.to_owned(),
-        };
+/// What a client draws a body as (as `drawn`; `joined`: a joint's side).
+pub fn kind(body: &Body, drawn: &Drawn, joined: bool) -> Kind {
+    match drawn {
+        Drawn::Person {
+            player,
+            look,
+            fallen,
+        } => {
+            return Kind::Character {
+                player: player.clone(),
+                look: look.clone(),
+                fallen: *fallen,
+            };
+        }
+        Drawn::Segment { person, index } => {
+            if let [(0, shape)] = body.shapes.as_slice() {
+                return Kind::Segment {
+                    person: *person,
+                    index: *index,
+                    shape: net_shape(shape),
+                };
+            }
+        }
+        Drawn::Thing => {}
     }
     match body.shapes.as_slice() {
-        [(0, shape)] if body.structure.element_count() == 0 => Kind::Body(
-            match shape {
-                Shape::Box { half } => NetShape::Box(*half),
-                Shape::Sphere { radius } => NetShape::Sphere(*radius),
-                Shape::Hull(hull) => NetShape::Hull(hull.vertices().to_vec()),
-            },
-            matter(body, joined),
-        ),
+        [(0, shape)] if body.structure.element_count() == 0 => {
+            Kind::Body(net_shape(shape), matter(body, joined))
+        }
         _ => Kind::Structure(frame(&body.structure, &offsets(&body.structure))),
+    }
+}
+
+/// A shape as clients are told it.
+fn net_shape(shape: &Shape) -> NetShape {
+    match shape {
+        Shape::Box { half } => NetShape::Box(*half),
+        Shape::Sphere { radius } => NetShape::Sphere(*radius),
+        Shape::Hull(hull) => NetShape::Hull(hull.vertices().to_vec()),
     }
 }
 
@@ -116,12 +139,12 @@ impl Shapes {
         &mut self,
         id: EntityId,
         body: &Body,
-        (player, joined): (Option<&str>, bool),
+        (drawn, joined): (&Drawn, bool),
         tick: u64,
     ) -> Kind {
         let s = &body.structure;
-        if player.is_some() || s.element_count() == 0 {
-            return kind(body, player, joined);
+        if *drawn != Drawn::Thing || s.element_count() == 0 {
+            return kind(body, drawn, joined);
         }
         let told = self.told.entry(id).or_insert_with(|| {
             let (members, broken, _) = members(s);

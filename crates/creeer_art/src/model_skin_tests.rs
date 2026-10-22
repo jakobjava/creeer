@@ -275,6 +275,7 @@ fn a_skinned_models_checks_hold_each_level_and_its_weights() {
         file: "models/test.glb".into(),
         class: Class::Character,
         bounds: ([-0.08, 0.5, -0.08], [0.08, 0.96, 0.08]),
+        levels: None,
     };
     let says = |problems: &[String], what: &str| {
         assert!(

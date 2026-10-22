@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
 //!
-//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night> <file.png> [--sun <deg>]`
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -100,6 +100,19 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             view.day_fraction = day_for_sun(&view, at, sun_elevation);
             view.ground_camera(at, 200.0, seaward, 6f64.to_radians())
         }
+        // The player's own character (G1.3e), from behind as the game follows it.
+        "avatar" => {
+            play(&mut view, 2.0)?;
+            let at = (view.session.connection.avatar())
+                .ok_or("no avatar")?
+                .position;
+            let up = at.normalize();
+            let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
+            view.day_fraction = day_for_sun(&view, up, sun_elevation);
+            let mut camera = view.ground_camera(up, 2.0, east, 12f64.to_radians());
+            view.follow(&mut camera);
+            camera
+        }
         "surface" => {
             // Drop a few crates and balls in front of the camera and let them land.
             let ahead = view.ground_camera(up, 2.0, east, 0.0);
@@ -169,6 +182,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         (&snapshot, &snapshot, 1.0),
         crate::demo::Overlay::Off,
     );
+    // The players' characters (G1.3e).
+    let people = crate::people::People::register(&mut renderer)?;
+    (scene.characters).extend(snapshot.people.iter().map(|p| people.character(p)));
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,

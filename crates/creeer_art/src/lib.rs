@@ -17,6 +17,7 @@ pub mod colour;
 pub mod exception;
 pub mod model;
 pub mod model_check;
+pub mod model_levels;
 pub mod model_skin;
 pub mod palette;
 pub mod vision;

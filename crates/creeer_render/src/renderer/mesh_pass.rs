@@ -2,6 +2,8 @@
 
 use super::levels;
 use super::palette::GpuPalette;
+use super::skin_layout::skinned_vertex_layouts;
+use super::skin_pass::SkinPass;
 use super::*;
 use crate::scene::Instance;
 use creeer_math::glam::DVec3;
@@ -73,8 +75,10 @@ pub(super) struct MeshPass {
     plain: [wgpu::RenderPipeline; 2],
     /// Models, with the full surface (ADR-0026): alone, and after the prepass.
     model: [wgpu::RenderPipeline; 2],
-    /// Depth only, for the prepass: procedural meshes, models.
-    prepass: [wgpu::RenderPipeline; 2],
+    /// Skinned characters (G1.3e), drawn two-sided: alone, and after the prepass.
+    two_sided: [wgpu::RenderPipeline; 2],
+    /// Depth only, for the prepass: procedural meshes, models, two-sided models.
+    prepass: [wgpu::RenderPipeline; 3],
     /// The tokens model vertices name and the noise (bind group 2).
     palette: GpuPalette,
     vertices: Option<wgpu::Buffer>,
@@ -123,7 +127,14 @@ impl MeshPass {
             ],
             immediate_size: 0,
         });
-        let pipeline = |label, vertex, fragment, depth_stencil| {
+        let (plain_layouts, skinned_layouts) =
+            (instanced_vertex_layouts(), skinned_vertex_layouts());
+        let pipeline = |label, vertex, fragment, depth_stencil, skinned: bool| {
+            let (buffers, cull_mode): (&[_], _) = if skinned {
+                (&skinned_layouts, None)
+            } else {
+                (&plain_layouts, Some(wgpu::Face::Back))
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&layout),
@@ -131,10 +142,10 @@ impl MeshPass {
                     module: &module,
                     entry_point: Some(vertex),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    buffers: &instanced_vertex_layouts(),
+                    buffers,
                 },
                 primitive: wgpu::PrimitiveState {
-                    cull_mode: Some(wgpu::Face::Back),
+                    cull_mode,
                     ..Default::default()
                 },
                 depth_stencil,
@@ -149,29 +160,33 @@ impl MeshPass {
                 cache: None,
             })
         };
+        let back = Some(wgpu::Face::Back);
+        let depths = || [scene_depth_state(), after_prepass_depth_state()];
+        let prepass = |label, vertex, skinned: bool| {
+            let (buffers, cull): (&[_], _) = if skinned {
+                (&skinned_layouts, None)
+            } else {
+                (&plain_layouts, back)
+            };
+            prepass_pipeline(
+                device,
+                label,
+                globals_layout,
+                &module,
+                vertex,
+                buffers,
+                cull,
+            )
+        };
         let instance_capacity = 1024;
         Self {
-            plain: [scene_depth_state(), after_prepass_depth_state()]
-                .map(|depth| pipeline("mesh", "vs_plain", "fs_plain", depth)),
-            model: [scene_depth_state(), after_prepass_depth_state()]
-                .map(|depth| pipeline("model", "vs_main", "fs_main", depth)),
+            plain: depths().map(|d| pipeline("mesh", "vs_plain", "fs_plain", d, false)),
+            model: depths().map(|d| pipeline("model", "vs_main", "fs_main", d, false)),
+            two_sided: depths().map(|d| pipeline("two-sided", "vs_main", "fs_two_sided", d, true)),
             prepass: [
-                prepass_pipeline(
-                    device,
-                    "mesh prepass",
-                    globals_layout,
-                    &module,
-                    "vs_plain",
-                    &instanced_vertex_layouts(),
-                ),
-                prepass_pipeline(
-                    device,
-                    "model prepass",
-                    globals_layout,
-                    &module,
-                    "vs_main",
-                    &instanced_vertex_layouts(),
-                ),
+                prepass("mesh prepass", "vs_plain", false),
+                prepass("model prepass", "vs_main", false),
+                prepass("two-sided prepass", "vs_main", true),
             ],
             palette,
             vertices: None,
@@ -297,34 +312,52 @@ impl MeshPass {
         shadow_sampling: &wgpu::BindGroup,
         ao: &wgpu::BindGroup,
         prepassed: bool,
+        skin: &SkinPass,
     ) {
-        let Some(buffers) = self.buffers() else {
-            return;
-        };
         pass.set_bind_group(1, shadow_sampling, &[]);
         pass.set_bind_group(2, &self.palette.bind_group, &[]);
         pass.set_bind_group(3, ao, &[]);
-        if !self.draws.is_empty() {
-            pass.set_pipeline(&self.plain[usize::from(prepassed)]);
-            buffers.draw(pass, meshes, &self.draws);
+        let p = usize::from(prepassed);
+        if let Some(buffers) = self.buffers() {
+            if !self.draws.is_empty() {
+                pass.set_pipeline(&self.plain[p]);
+                buffers.draw(pass, meshes, &self.draws);
+            }
+            if !self.model_draws.is_empty() {
+                pass.set_pipeline(&self.model[p]);
+                buffers.draw(pass, meshes, &self.model_draws);
+            }
         }
-        if !self.model_draws.is_empty() {
-            pass.set_pipeline(&self.model[usize::from(prepassed)]);
-            buffers.draw(pass, meshes, &self.model_draws);
+        if !skin.camera_draws.is_empty() {
+            pass.set_pipeline(&self.two_sided[p]);
+            skin.draw(pass, &skin.camera_draws);
         }
     }
 
     /// Draws the camera's meshes into the depth prepass (globals bound by the caller).
-    pub(super) fn draw_prepass(&self, pass: &mut wgpu::RenderPass<'_>, meshes: &MeshArena) {
-        let Some(buffers) = self.buffers() else {
-            return;
-        };
-        for (pipeline, draws) in self.prepass.iter().zip([&self.draws, &self.model_draws]) {
-            if !draws.is_empty() {
-                pass.set_pipeline(pipeline);
-                buffers.draw(pass, meshes, draws);
+    pub(super) fn draw_prepass(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        meshes: &MeshArena,
+        skin: &SkinPass,
+    ) {
+        if let Some(buffers) = self.buffers() {
+            for (pipeline, draws) in self.prepass.iter().zip([&self.draws, &self.model_draws]) {
+                if !draws.is_empty() {
+                    pass.set_pipeline(pipeline);
+                    buffers.draw(pass, meshes, draws);
+                }
             }
         }
+        if !skin.camera_draws.is_empty() {
+            pass.set_pipeline(&self.prepass[2]);
+            skin.draw(pass, &skin.camera_draws);
+        }
+    }
+
+    /// The palette's per-character slots (G1.3e).
+    pub(super) fn palette(&self) -> &GpuPalette {
+        &self.palette
     }
 
     /// Replaces the palette model vertices name.

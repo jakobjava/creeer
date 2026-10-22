@@ -93,6 +93,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 }
             });
             machines(ui, view, camera);
+            look(ui, view);
             let edits = view.session.connection.edits.len();
             if view.session.hosted() && Path::new(WORLD_FILE).exists() {
                 ui.small(format!("{edits} edits · saved world: {WORLD_FILE}"));
@@ -221,5 +222,42 @@ fn machines(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
             m.hydrogen,
             m.time / 60.0
         ));
+    }
+}
+
+/// The player's skin tone and hair colour (G1.3e): chosen here, kept by the server
+/// (`Command::Look`), which gives their colour and outfit.
+fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
+    static CHOICES: std::sync::OnceLock<(Vec<String>, Vec<String>)> = std::sync::OnceLock::new();
+    let (skins, hairs) = CHOICES.get_or_init(|| {
+        crate::models::palette().map_or_else(Default::default, |p| {
+            let names = |list: &[(String, creeer_art::colour::Srgb)]| {
+                list.iter().map(|(name, _)| name.clone()).collect()
+            };
+            (names(&p.skin), names(&p.hair))
+        })
+    });
+    let c = &view.session.connection;
+    let mine = c.welcome.as_ref().and_then(|w| c.kinds.get(&w.avatar));
+    let Some(creeer_net::entity::Kind::Character { look, .. }) = mine else {
+        return;
+    };
+    let (mut skin, mut hair) = (look.skin, look.hair);
+    ui.horizontal(|ui| {
+        let choose = |ui: &mut egui::Ui, label: &str, list: &[String], value: &mut u8| {
+            let shown = list.get(usize::from(*value)).map_or("?", String::as_str);
+            egui::ComboBox::from_label(label)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (k, name) in list.iter().enumerate() {
+                        ui.selectable_value(value, u8::try_from(k).unwrap_or(0), name);
+                    }
+                });
+        };
+        choose(ui, "skin", skins, &mut skin);
+        choose(ui, "hair", hairs, &mut hair);
+    });
+    if (skin, hair) != (look.skin, look.hair) {
+        view.send(Command::Look { skin, hair });
     }
 }

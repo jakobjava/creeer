@@ -18,7 +18,7 @@
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
-//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`, and
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night> <file.png> [--sun <deg>]`, and
 //! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
 //!
 //! The F4 solar-system sandbox (button in the Sandbox window): a generated solar system with
@@ -48,6 +48,7 @@ mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
 mod models;
+mod people;
 mod physics_bench;
 mod physics_drive;
 mod physics_fluids;
@@ -138,7 +139,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok::<_, &str>((path.as_str(), count))
             })
             .transpose()?;
-        return bench(frames, view, factory, players, headless::ao_quality(&args)?);
+        // Skinned engineers (G1.3e): `--people <count>`.
+        let people = (args.iter().position(|a| a == "--people"))
+            .and_then(|i| args.get(i + 1))
+            .map_or(Ok(0), |n| n.parse().map_err(|_| "--people needs a count"))?;
+        return bench(
+            frames,
+            view,
+            factory,
+            players,
+            (headless::ao_quality(&args)?, people),
+        );
     }
     if args.iter().any(|a| a == "--physics-bench") {
         return physics_bench::bench(&args).map_err(Into::into);

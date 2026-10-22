@@ -164,6 +164,7 @@ impl Renderer {
             &exposure.exposure,
         );
         let timer = timing::GpuTimer::new(&device, &queue);
+        let skin = skin_pass::SkinPass::new(&device, &queue);
         let egui = egui_wgpu::Renderer::new(
             &device,
             output_format,
@@ -195,6 +196,7 @@ impl Renderer {
             meshes: MeshArena::default(),
             timer,
             ao,
+            skin,
         }
     }
 }

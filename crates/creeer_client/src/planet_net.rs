@@ -3,15 +3,19 @@
 //! dedicated server over UDP (`--connect`). Either way the window only draws what it is
 //! told and asks for what the player does; the world is the server's.
 
+use crate::people::DrawnPerson;
 use crate::physics_sandbox::PhysicsSnapshot;
+use creeer_math::Frame64;
+use creeer_math::glam::DQuat;
 use creeer_math::glam::DVec3;
 use creeer_net::channel::TICK_RATE;
-use creeer_net::entity::{Kind, Shape};
+use creeer_net::entity::{EntityId, Kind, Shape};
 use creeer_net::message::Command;
 use creeer_server::client::Status;
 use creeer_server::host::{Host, read_save, write_save};
 use creeer_server::world::load_terrain;
 use creeer_server::{Connection, Server, ServerWorld};
+use creeer_sim::character::bones;
 use creeer_terrain::Terrain;
 use creeer_terrain::edits::{Edit, Edits};
 use std::net::SocketAddr;
@@ -177,19 +181,20 @@ impl PlanetSession {
                     out.box_age.push(age);
                 }
                 Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
-                // A character (until G1.3's suit): its torso a box, its legs two beams down
-                // to where its feet stand.
-                Kind::Character { .. } => {
-                    let (centre, hip) = creeer_sim::character::heights();
-                    let up = q * creeer_math::glam::DVec3::Y;
-                    out.boxes.push((p, q, creeer_sim::character::torso()));
-                    for side in [-0.1, 0.1] {
-                        let across = q * creeer_math::glam::DVec3::X * side;
-                        let (hip, feet) = (p + up * (hip - centre), p - up * centre);
-                        out.beams
-                            .push((hip + across, feet + across, 0.07, 0.0, false));
+                // A character (G1.3e): standing, its body's frame; fallen, its segments'.
+                Kind::Character { look, fallen, .. } => {
+                    let bones = if *fallen {
+                        fallen_bones(*id, (p, q), c)
+                    } else {
+                        Some(bones::standing_bones(p, q))
+                    };
+                    if let Some(bones) = bones {
+                        let look = look.clone();
+                        out.people.push(DrawnPerson { look, bones });
                     }
                 }
+                // Drawn with its person.
+                Kind::Segment { .. } => {}
                 // The sandbox makes no rocks: a hull is drawn as the ball around it.
                 Kind::Body(Shape::Hull(corners), _) => {
                     let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
@@ -219,4 +224,22 @@ impl PlanetSession {
         out.time = c.drawn_at() / f64::from(TICK_RATE);
         out
     }
+}
+
+/// The bones of the fallen person whose avatar `id` is at `pelvis`: each segment's from its
+/// entity (`Kind::Segment`), none until every one is in view.
+fn fallen_bones(id: EntityId, pelvis: (DVec3, DQuat), c: &Connection) -> Option<Vec<Frame64>> {
+    let poses = c.poses();
+    let mut at = vec![None; bones::SEGMENT_NAMES.len()];
+    at[0] = Some(pelvis);
+    for (segment, kind) in &c.kinds {
+        if let Kind::Segment { person, index, .. } = kind
+            && *person == id
+            && let (Some(slot), Some(pose)) = (at.get_mut(usize::from(*index)), poses.get(segment))
+        {
+            *slot = Some((pose.position, pose.orientation));
+        }
+    }
+    let at: Option<Vec<(DVec3, DQuat)>> = at.into_iter().collect();
+    Some(bones::fallen_bones(&at?))
 }

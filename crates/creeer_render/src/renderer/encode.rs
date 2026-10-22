@@ -126,6 +126,19 @@ impl Renderer {
             focal,
             shadows_on.then_some((&cascades, &basis)),
         );
+        self.skin.prepare(
+            &self.device,
+            &self.queue,
+            &frame.scene.characters,
+            frame.camera.position,
+            &Frustum::from_view_projection(view_proj),
+            shadows_on.then_some((&cascades, &basis)),
+            focal,
+            self.mesh_pass.palette().slot_base(),
+        );
+        for (slot, colours) in &self.skin.colours {
+            (self.mesh_pass.palette()).write_colours(&self.queue, *slot, colours);
+        }
         self.terrain.prepare(
             &self.device,
             &self.queue,
@@ -165,6 +178,10 @@ impl Renderer {
             );
         }
 
+        // The characters skinned, for every pass that draws them.
+        self.skin
+            .encode(&self.device, &mut encoder, self.timer.as_ref());
+
         // Pass 0: sun shadow cascades (cleared even when disabled, so sampling stays valid).
         self.shadows.encode(
             &mut encoder,
@@ -173,35 +190,11 @@ impl Renderer {
             &self.meshes,
             &self.mesh_pass.shadow_draws,
             &self.terrain,
+            &self.skin,
             self.timer.as_ref(),
         );
 
-        // Pass 1a: the meshes' and terrain's depth (G1.3d), for ambient occlusion and so the
-        // scene pass shades each pixel once. Without occlusion it would not pay for itself.
-        let prepassed = self.ao.on();
-        if prepassed {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("prepass"),
-                timestamp_writes: self.timer.as_ref().and_then(|t| t.render("prepass")),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.targets.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        // Reversed-Z: 0 is infinitely far away.
-                        load: wgpu::LoadOp::Clear(0.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                ..Default::default()
-            });
-            pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            self.mesh_pass.draw_prepass(&mut pass, &self.meshes);
-            self.terrain.draw_prepass(&mut pass);
-        }
-        // Pass 1b: ambient occlusion from that depth.
-        self.ao.prepare(&self.queue, frame.camera, aspect);
-        self.ao.encode(&mut encoder, self.timer.as_ref());
+        let prepassed = self.encode_occlusion(&mut encoder, frame.camera, aspect);
 
         // Pass 1c: 3D scene into the multisampled HDR target, resolved to a single sample.
         {
@@ -239,6 +232,7 @@ impl Renderer {
                 &self.shadows.sample_bind_group,
                 &self.ao.sample_bind_group,
                 prepassed,
+                &self.skin,
             );
             self.terrain.draw(
                 &mut pass,

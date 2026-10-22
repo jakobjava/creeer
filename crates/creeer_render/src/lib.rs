@@ -14,6 +14,7 @@ pub mod primitives;
 pub mod renderer;
 pub mod scene;
 mod shadow;
+pub mod skin;
 pub mod terrain;
 pub mod vertex;
 
@@ -24,7 +25,7 @@ pub use debug_lines::{Color, DebugLines, LineVertex};
 pub use heatmap::{Heatmap, Palette};
 pub use mesh::{MeshArena, MeshData, MeshId, MeshVertex};
 pub use renderer::{Frame, GpuTime, OverlayFrame, RenderError, RenderStats, Renderer};
-pub use scene::{Instance, Lighting, Material, Scene, srgb_to_linear};
+pub use scene::{Character, Instance, Lighting, Material, Scene, srgb_to_linear};
 pub use shadow::ShadowQuality;
 pub use terrain::{TerrainFrame, TerrainMeshData, TerrainVertex};
 /// Re-exported so the client does not need its own (possibly mismatched) wgpu dependency.

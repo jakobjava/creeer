@@ -10,6 +10,8 @@ const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 pub(crate) struct ShadowPass {
     pipeline: wgpu::RenderPipeline,
+    /// Skinned characters' casters, two-sided (G1.3e).
+    two_sided: wgpu::RenderPipeline,
     /// Edge length of each cascade's map in texels.
     size: u32,
     layer_views: Vec<wgpu::TextureView>,
@@ -183,28 +185,35 @@ impl ShadowPass {
             bind_group_layouts: &[Some(globals_layout), Some(&cascade_layout)],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("shadow"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &instanced_vertex_layouts(),
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(shadow_depth_state()),
-            multisample: wgpu::MultisampleState::default(),
-            fragment: None,
-            multiview_mask: None,
-            cache: None,
-        });
+        let (plain, skinned) = (
+            instanced_vertex_layouts(),
+            super::skin_layout::skinned_vertex_layouts(),
+        );
+        let pipeline = |cull_mode, buffers: &[_]| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("shadow"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers,
+                },
+                primitive: wgpu::PrimitiveState {
+                    cull_mode,
+                    ..Default::default()
+                },
+                depth_stencil: Some(shadow_depth_state()),
+                multisample: wgpu::MultisampleState::default(),
+                fragment: None,
+                multiview_mask: None,
+                cache: None,
+            })
+        };
 
         Self {
-            pipeline,
+            pipeline: pipeline(Some(wgpu::Face::Back), &plain),
+            two_sided: pipeline(None, &skinned),
             size,
             sampler,
             layer_views,
@@ -253,6 +262,7 @@ impl ShadowPass {
         meshes: &MeshArena,
         draws: &[Vec<Draw>; CASCADES],
         terrain: &super::terrain_pass::TerrainPass,
+        skin: &super::skin_pass::SkinPass,
         timer: Option<&super::timing::GpuTimer>,
     ) {
         const NAMES: [&str; CASCADES] = ["shadow 0", "shadow 1", "shadow 2", "shadow 3"];
@@ -278,6 +288,10 @@ impl ShadowPass {
                 buffers.draw(&mut pass, meshes, &draws[cascade]);
             }
             terrain.draw_shadows(&mut pass, cascade);
+            if !skin.shadow_draws[cascade].is_empty() {
+                pass.set_pipeline(&self.two_sided);
+                skin.draw(&mut pass, &skin.shadow_draws[cascade]);
+            }
         }
     }
 }

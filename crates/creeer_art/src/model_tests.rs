@@ -131,6 +131,7 @@ fn entry(class: Class, lo: [f64; 3], hi: [f64; 3]) -> Entry {
         file: "models/test.glb".into(),
         class,
         bounds: (lo, hi),
+        levels: None,
     }
 }
 

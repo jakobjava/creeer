@@ -5,7 +5,7 @@
 //! character's budget at each level (`art-style.md` §7).
 
 use crate::model::{Class, Model};
-use crate::model_skin::{LEVELS, REGIONS, inside};
+use crate::model_skin::{LEVELS, Part, REGIONS, inside};
 use creeer_data::Data;
 use creeer_data::merge::ron_list;
 use serde::Deserialize;
@@ -39,6 +39,17 @@ impl Wearable {
 /// every part of the body and of the worn pieces but the regions they hide and what lies inside
 /// them.
 pub fn drawn(model: &Model, wearables: &[Wearable], worn: &[&str]) -> [usize; LEVELS as usize] {
+    let mut out = [0; LEVELS as usize];
+    for part in visible(model, wearables, worn) {
+        out[usize::from(part.level)] += part.triangles();
+    }
+    out
+}
+
+/// The parts drawn, at every level, when the body wears `worn` (names among `wearables`):
+/// every part of the body and of the worn pieces but the regions they hide and what lies inside
+/// them, in the model's order (G1.3e merges them into one index list a level).
+pub fn visible<'m>(model: &'m Model, wearables: &[Wearable], worn: &[&str]) -> Vec<&'m Part> {
     let hidden: BTreeSet<(&str, &str)> = (wearables.iter())
         .filter(|w| worn.contains(&w.name.as_str()))
         .flat_map(|w| {
@@ -47,15 +58,13 @@ pub fn drawn(model: &Model, wearables: &[Wearable], worn: &[&str]) -> [usize; LE
             })
         })
         .collect();
-    let mut out = [0; LEVELS as usize];
-    for part in &model.parts {
-        let shown = part.piece == "body" || worn.contains(&part.piece.as_str());
-        let within = inside(&part.region).is_some_and(|w| worn.contains(&w));
-        if shown && !within && !hidden.contains(&(part.piece.as_str(), part.region.as_str())) {
-            out[usize::from(part.level)] += part.triangles();
-        }
-    }
-    out
+    (model.parts.iter())
+        .filter(|part| {
+            let shown = part.piece == "body" || worn.contains(&part.piece.as_str());
+            let within = inside(&part.region).is_some_and(|w| worn.contains(&w));
+            shown && !within && !hidden.contains(&(part.piece.as_str(), part.region.as_str()))
+        })
+        .collect()
 }
 
 /// What is wrong with `wearables` as pieces of `model`: a name no piece of it has, a hidden

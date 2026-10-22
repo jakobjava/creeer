@@ -79,6 +79,8 @@ pub struct ServerWorld {
     changed: Vec<EntityId>,
     /// Every entity's age (G1.3c, `ageing.rs`).
     ages: ageing::Ages,
+    /// How each player's character looks, by name (G1.3e, `looks.rs`).
+    looks: std::collections::BTreeMap<String, creeer_net::entity::Look>,
 }
 
 /// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
@@ -148,6 +150,7 @@ impl ServerWorld {
             people: std::collections::BTreeMap::new(),
             changed: Vec::new(),
             ages: ageing::Ages::default(),
+            looks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -173,14 +176,6 @@ impl ServerWorld {
     /// The player whose avatar body `index` is.
     pub fn player(&self, index: usize) -> Option<&str> {
         self.players[index].as_deref()
-    }
-
-    /// The player whose character body `index` is drawn as (none for a fallen one's pelvis:
-    /// it is drawn as the segment it is).
-    pub fn drawn_as(&self, index: usize) -> Option<&str> {
-        let player = self.players[index].as_deref()?;
-        let fallen = (self.people.get(&self.ids[index])).is_some_and(people::Person::fallen);
-        (!fallen).then_some(player)
     }
 
     /// The point of the ground under (or over) `p`, along the vertical.
@@ -246,6 +241,8 @@ impl ServerWorld {
 
     /// `player`'s avatar: the one they left, or a new one at the spawn point.
     pub fn avatar_of(&mut self, player: &str) -> EntityId {
+        // Its look, chosen once (G1.3e).
+        self.look_of(player);
         // Parked far away while its player was gone: back with its island.
         self.flush();
         if let Some(key) = self.parked.find(|t| t.player.as_deref() == Some(player)) {
@@ -327,6 +324,7 @@ fn kept<T: Clone>(map: &[Option<usize>], v: &[T]) -> Vec<T> {
 
 #[cfg(test)]
 mod lod_tests;
+pub mod looks;
 #[cfg(test)]
 mod machine_tests;
 pub mod machines;
@@ -339,6 +337,8 @@ mod ageing;
 mod ageing_tests;
 pub use ageing::Ages;
 mod commands;
+#[cfg(test)]
+mod looks_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]

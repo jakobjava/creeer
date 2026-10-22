@@ -144,10 +144,28 @@ impl Default for Lighting {
     }
 }
 
+/// A skinned character to draw (G1.3e, ADR-0026 decision 6): a model in an outfit, posed by its
+/// bones.
+#[derive(Clone, Debug)]
+pub struct Character {
+    /// What it wears (`Renderer::add_outfit`).
+    pub outfit: crate::skin::OutfitId,
+    /// Each bone's motion from the model at rest to the world: a point x of the model at rest is
+    /// drawn at `rotation·x + position` (simulation space).
+    pub bones: Vec<Frame64>,
+    /// The linear colours of its per-player tokens: the jacket's (the player's colour as laid
+    /// on), its skin's and its hair's.
+    pub colours: [[f32; 3]; 3],
+    /// Its surface's age and wear (its colour and roughness are its tokens').
+    pub material: Material,
+}
+
 /// Everything to draw this frame, grouped by mesh.
 #[derive(Clone, Debug, Default)]
 pub struct Scene {
     pub(crate) batches: Vec<Vec<Instance>>,
+    /// The skinned characters.
+    pub characters: Vec<Character>,
 }
 
 impl Scene {
@@ -156,6 +174,7 @@ impl Scene {
         for batch in &mut self.batches {
             batch.clear();
         }
+        self.characters.clear();
     }
 
     /// Adds one instance of `mesh`.

@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::entity::{EntityId, Kind};
-use crate::entity::{Frame, Matter, Shape};
+use crate::entity::{Frame, Look, Matter, Shape};
 
 fn back<T: Encode + Decode + PartialEq + std::fmt::Debug>(m: &T) {
     let bytes = to_bytes(m);
@@ -48,6 +48,7 @@ fn client_messages_read_back() {
         Command::Clear,
         Command::Frame(DVec3::new(0.5, 0.25, 0.125)),
         Command::Powerhouse(DVec3::new(4.0, -2.5, 1e5)),
+        Command::Look { skin: 9, hair: 0 },
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -88,6 +89,18 @@ fn server_messages_read_back() {
         ),
         Kind::Character {
             player: "ada".into(),
+            look: Look {
+                colour: 15,
+                skin: 2,
+                hair: 8,
+                outfit: vec!["base_layer".into(), "boots".into()],
+            },
+            fallen: true,
+        },
+        Kind::Segment {
+            person: EntityId(9),
+            index: 14,
+            shape: Shape::Box(DVec3::new(0.06, 0.07, 0.13)),
         },
         Kind::Structure(frame),
     ] {

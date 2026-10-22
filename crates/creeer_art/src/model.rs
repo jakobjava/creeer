@@ -104,6 +104,10 @@ pub struct Entry {
     pub class: Class,
     /// Its bounding box (m), which says its size and where its origin is.
     pub bounds: ([f64; 3], [f64; 3]),
+    /// A model in levels of detail: each level's error against the close-up one (m), as
+    /// `model_levels::level_errors` measures it (too slow to measure on every load).
+    #[serde(default)]
+    pub levels: Option<[f32; 3]>,
 }
 
 /// Where the manifest lives in a pack.

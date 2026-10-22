@@ -141,6 +141,11 @@ fn fs_plain(in: PlainOut) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
+    return shade_model(in);
+}
+
+/// A model's fragment, shaded (entry points cannot call one another).
+fn shade_model(in: ModelOut) -> vec4<f32> {
     let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
     let grain_footprint = max(abs(dpdx(in.grain)), abs(dpdy(in.grain)));
     let spread = normal_spread(in.normal);
@@ -154,6 +159,19 @@ fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
     );
     let occlusion = ambient_occlusion(in.clip.xy, surface.colour, in.masks.x);
     return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, occlusion), 1.0);
+}
+
+/// A model drawn two-sided (G1.3e: the engineer's garments are single shells): a back face
+/// seen, the inside of a collar or a sleeve, is lit as a face turned to the eye (glTF's
+/// `doubleSided`).
+@fragment
+fn fs_two_sided(in: ModelOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    var turned = in;
+    if !front {
+        turned.normal = -in.normal;
+        turned.local_normal = -in.local_normal;
+    }
+    return shade_model(turned);
 }
 
 /// `surface` at `world` lit by the sun (with its shadows) and the sky; `spread` (from

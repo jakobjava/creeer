@@ -1,6 +1,6 @@
 use crate::model::Model;
 use crate::model_skin::{Part, inside, parse_part};
-use crate::wearable::{Wearable, drawn, problems};
+use crate::wearable::{Wearable, drawn, problems, visible};
 
 fn part(name: &str, triangles: usize) -> Part {
     let (piece, region, level) = parse_part(name).expect("a part's name");
@@ -75,5 +75,59 @@ fn a_part_inside_no_wearable_is_a_problem() {
     assert!(
         found[0].contains("in.cape lies inside no wearable"),
         "{found:?}"
+    );
+}
+
+/// What an outfit draws (G1.3e): exactly the regions left visible, of the body and every worn
+/// piece, what is hidden or inside a worn wearable left out, and nothing of what is not worn.
+#[test]
+fn an_outfit_draws_exactly_its_visible_regions() {
+    let model = model(vec![
+        part("body:head@0", 1),
+        part("body:torso@0", 1),
+        part("body:hand.L@0", 1),
+        part("body:torso@1", 1),
+        part("vest:torso@0", 1),
+        part("vest:in.coat@0", 1),
+        part("coat:torso@0", 1),
+        part("coat:forearm.L@0", 1),
+        part("gloves:hand.L@0", 1),
+    ]);
+    let wearables = [
+        wearable("vest", &[("body", &["torso"])]),
+        wearable("coat", &[("vest", &["torso"])]),
+        wearable("gloves", &[("body", &["hand.L"])]),
+    ];
+    let names = |worn: &[&str]| -> Vec<String> {
+        (visible(&model, &wearables, worn).iter())
+            .map(|p| format!("{}:{}@{}", p.piece, p.region, p.level))
+            .collect()
+    };
+    assert_eq!(
+        names(&[]),
+        [
+            "body:head@0",
+            "body:torso@0",
+            "body:hand.L@0",
+            "body:torso@1"
+        ]
+    );
+    assert_eq!(
+        names(&["vest"]),
+        [
+            "body:head@0",
+            "body:hand.L@0",
+            "vest:torso@0",
+            "vest:in.coat@0"
+        ]
+    );
+    assert_eq!(
+        names(&["vest", "coat", "gloves"]),
+        [
+            "body:head@0",
+            "coat:torso@0",
+            "coat:forearm.L@0",
+            "gloves:hand.L@0"
+        ]
     );
 }

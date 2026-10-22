@@ -95,6 +95,9 @@ impl Running {
             (&snapshot, &snapshot, 1.0),
             Overlay::Off,
         );
+        if let Some(people) = &self.people {
+            (self.scene.characters).extend(snapshot.people.iter().map(|p| people.character(p)));
+        }
         self.scene_build_times.push(build_start.elapsed());
 
         // Lighting: colours from the atmosphere for the sun's elevation here (costly, so only

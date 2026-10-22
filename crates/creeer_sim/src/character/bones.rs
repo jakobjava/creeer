@@ -4,7 +4,8 @@
 //! scripts read it; a test keeps that file equal to this.
 
 use super::ragdoll::{LINKS, SEGMENTS};
-use creeer_math::glam::DVec3;
+use creeer_math::Frame64;
+use creeer_math::glam::{DQuat, DVec3};
 use creeer_physics::world::joint::Kind;
 
 /// The segments' names, in the ragdoll's order (Blender's sides: `.L` is the person's left,
@@ -131,6 +132,37 @@ pub fn skeleton_problems(bones: &[creeer_art::model_skin::Bone]) -> Vec<String> 
         }
     }
     out
+}
+
+/// What a character wears from the start (G1.3e, ADR-0026 decision 8), its pieces by name
+/// (`data/wearables.ron`): the starting outfit. They become items in G1.6.
+pub const STARTING_OUTFIT: [&str; 9] = [
+    "base_layer",
+    "coverall",
+    "jacket",
+    "gloves",
+    "boots",
+    "belt",
+    "knee_pads",
+    "elbow_pads",
+    "goggles",
+];
+
+/// Each bone's motion from the model at rest (standing, its origin between the feet) to the
+/// world, for a character standing with its body's centre at `centre`, turned by
+/// `orientation` (G1.3e): one rigid motion for all, until G1.3g animates the limbs.
+pub fn standing_bones(centre: DVec3, orientation: DQuat) -> Vec<Frame64> {
+    let feet = centre - orientation * DVec3::Y * super::CENTRE;
+    vec![Frame64::new(feet, orientation); SEGMENTS.len()]
+}
+
+/// Each bone's motion from the model at rest to the world for a ragdoll whose segments are at
+/// `poses` (each its centre and orientation, in the ragdoll's order): segment k's centre at
+/// rest drawn where it is, turned as it is.
+pub fn fallen_bones(poses: &[(DVec3, DQuat)]) -> Vec<Frame64> {
+    (poses.iter().zip(&SEGMENTS))
+        .map(|((at, q), (rest, _, _))| Frame64::new(*at - *q * *rest, *q))
+        .collect()
 }
 
 #[cfg(test)]

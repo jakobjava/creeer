@@ -124,3 +124,14 @@ impl Running {
             });
     }
 }
+
+impl Running {
+    /// Where the sandbox sits: at the origin, or far from it (the precision switch).
+    pub(super) fn scene_origin(&self) -> DVec3 {
+        if self.settings.far_origin {
+            FAR_ORIGIN
+        } else {
+            DVec3::ZERO
+        }
+    }
+}

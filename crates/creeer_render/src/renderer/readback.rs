@@ -168,3 +168,40 @@ impl Renderer {
         (width, height, values)
     }
 }
+
+impl Renderer {
+    /// The first `count` skinned vertices of the last frame drawn (G1.3e): its characters'
+    /// in the order of [`Scene::characters`] drawn, camera-relative. For tests.
+    ///
+    /// # Panics
+    /// If the GPU readback fails (device lost), or fewer were skinned.
+    pub fn read_skinned(&self, count: usize) -> Vec<SkinnedVertex> {
+        let bytes = (count * std::mem::size_of::<SkinnedVertex>()) as u64;
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("skinned readback"),
+            size: bytes.max(4),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("skin"),
+            });
+        encoder.copy_buffer_to_buffer(self.skin.output(), 0, &readback, 0, bytes);
+        self.queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback.map_async(wgpu::MapMode::Read, .., move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed");
+        receiver
+            .recv()
+            .expect("map callback dropped")
+            .expect("GPU readback failed");
+        let mapped = readback.get_mapped_range(..).expect("readback not mapped");
+        bytemuck::cast_slice(&mapped[..usize::try_from(bytes).expect("fits")]).to_vec()
+    }
+}

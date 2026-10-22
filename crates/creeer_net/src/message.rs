@@ -40,6 +40,9 @@ pub enum Command {
     Frame(DVec3),
     /// Build a powerhouse (F6.8's machine) at a point.
     Powerhouse(DVec3),
+    /// The player's chosen skin tone and hair colour (G1.3e: indices into the palette's
+    /// lists; the server keeps their colour and outfit).
+    Look { skin: u8, hair: u8 },
 }
 
 /// From a client to the server.
@@ -203,6 +206,11 @@ impl Encode for ClientMessage {
                         w.u8(4);
                         w.put(at);
                     }
+                    Command::Look { skin, hair } => {
+                        w.u8(6);
+                        w.u8(*skin);
+                        w.u8(*hair);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -232,6 +240,10 @@ impl Decode for ClientMessage {
                 3 => Command::Clear,
                 4 => Command::Frame(r.get()?),
                 5 => Command::Powerhouse(r.get()?),
+                6 => Command::Look {
+                    skin: r.u8()?,
+                    hair: r.u8()?,
+                },
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {

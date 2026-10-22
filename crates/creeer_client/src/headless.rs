@@ -129,7 +129,7 @@ pub(crate) fn bench(
     view: &str,
     factory: bool,
     players: Option<(&str, usize)>,
-    ao: AoQuality,
+    (ao, people): (AoQuality, usize),
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
     renderer.set_ao(AoSettings {
@@ -144,6 +144,22 @@ pub(crate) fn bench(
             Some((mesh, count))
         }
         None => None,
+    };
+    // Skinned engineers (G1.3e): `--people <n>`.
+    let engineer = if people > 0 {
+        let started = Instant::now();
+        let mut p = crate::people::People::register(&mut renderer)?;
+        let loaded = started.elapsed();
+        let started = Instant::now();
+        p.add_outfit(&mut renderer, &["base_layer", "boots", "gloves"]);
+        println!(
+            "  {people} engineers (loaded with two outfits in {:.1} ms; another outfit merged in {:.3} ms)",
+            loaded.as_secs_f64() * 1e3,
+            started.elapsed().as_secs_f64() * 1e3
+        );
+        Some(p)
+    } else {
+        None
     };
     let camera =
         demo::camera_preset(view, DVec3::ZERO).ok_or_else(|| format!("unknown view `{view}`"))?;
@@ -179,6 +195,9 @@ pub(crate) fn bench(
         demo::build(&mut scene, &mut lines, &meshes, &demo);
         if let Some((mesh, count)) = players {
             crate::players_bench::add(&mut scene, &camera, mesh, count, 0.0);
+        }
+        if let Some(p) = &engineer {
+            crate::players_bench::add_people(&mut scene, &camera, p, people, 0.0);
         }
         let built = start.elapsed();
         renderer.render_offscreen(Frame {

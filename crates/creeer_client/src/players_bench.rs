@@ -29,27 +29,60 @@ pub fn load(path: &str, arena: &mut MeshArena) -> Result<(MeshId, usize), String
 /// Adds `count` copies of `mesh` where players would stand before `camera`, on the ground at
 /// `ground` (m, its height).
 pub fn add(scene: &mut Scene, camera: &Camera, mesh: MeshId, count: usize, ground: f64) {
-    let forward = DVec3::new(camera.forward().x, 0.0, camera.forward().z).normalize_or_zero();
-    let right = forward.cross(DVec3::Y);
-    // The model faces +z: turned to face the camera, back along `forward`.
-    let facing = DQuat::from_rotation_arc(DVec3::Z, -forward);
-    let near = DVec3::new(camera.position.x, ground, camera.position.z) + forward * 3.0;
-    for k in 0..count {
-        #[allow(clippy::cast_precision_loss)]
-        let (row, column) = ((k / 4) as f64, (k % 4) as f64);
-        let at = if k == 0 {
-            near
-        } else {
-            near + forward * (2.0 + row * 1.5) + right * ((column - 1.5) * 1.5)
-        };
+    for frame in places(camera, count, ground) {
         scene.add(
             mesh,
             Instance {
-                frame: Frame64::new(at, facing),
+                frame,
                 scale: Vec3::ONE,
                 material: LOOK,
                 heat: None,
             },
         );
     }
+}
+
+/// As [`add`], the engineer himself (G1.3e): `count` skinned characters in the starting
+/// outfit, standing where the stand-ins stand.
+pub fn add_people(
+    scene: &mut Scene,
+    camera: &Camera,
+    people: &crate::people::People,
+    count: usize,
+    ground: f64,
+) {
+    for frame in places(camera, count, ground) {
+        let person = crate::people::DrawnPerson {
+            look: creeer_net::entity::Look {
+                outfit: (creeer_sim::character::bones::STARTING_OUTFIT.iter())
+                    .map(|&w| w.to_owned())
+                    .collect(),
+                ..Default::default()
+            },
+            bones: vec![frame; creeer_sim::character::bones::SEGMENT_NAMES.len()],
+        };
+        scene.characters.push(people.character(&person));
+    }
+}
+
+/// Where `count` players stand, facing the camera: one 3 m ahead, the rest in rows of four
+/// beyond, on the ground at `ground`.
+fn places(camera: &Camera, count: usize, ground: f64) -> Vec<Frame64> {
+    let forward = DVec3::new(camera.forward().x, 0.0, camera.forward().z).normalize_or_zero();
+    let right = forward.cross(DVec3::Y);
+    // The model faces +z: turned to face the camera, back along `forward`.
+    let facing = DQuat::from_rotation_arc(DVec3::Z, -forward);
+    let near = DVec3::new(camera.position.x, ground, camera.position.z) + forward * 3.0;
+    (0..count)
+        .map(|k| {
+            #[allow(clippy::cast_precision_loss)]
+            let (row, column) = ((k / 4) as f64, (k % 4) as f64);
+            let at = if k == 0 {
+                near
+            } else {
+                near + forward * (2.0 + row * 1.5) + right * ((column - 1.5) * 1.5)
+            };
+            Frame64::new(at, facing)
+        })
+        .collect()
 }

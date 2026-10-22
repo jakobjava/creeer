@@ -76,6 +76,16 @@ pub(crate) fn tokens(palette: &Palette) -> Vec<TokenRaw> {
     out
 }
 
+/// `base`, then a character's three slots for each of `SLOTS` characters: copies of the
+/// per-player tokens until their colours are written.
+fn with_slots(base: &[TokenRaw], players: [Option<usize>; 3]) -> Vec<TokenRaw> {
+    let mut out = base.to_vec();
+    for _ in 0..super::skin_pass::SLOTS {
+        out.extend(players.map(|t| t.map_or_else(TokenRaw::zeroed, |t| base[t])));
+    }
+    out
+}
+
 fn narrow(x: f64) -> f32 {
     #[allow(clippy::cast_possible_truncation)] // 0–1
     let f = x as f32;
@@ -89,7 +99,15 @@ pub(crate) struct GpuPalette {
     pub bind_group: wgpu::BindGroup,
     buffer: wgpu::Buffer,
     noise: (wgpu::TextureView, wgpu::Sampler),
+    /// The palette's own tokens (the buffer holds them, then the characters' slots, G1.3e).
+    base: Vec<TokenRaw>,
+    /// The per-player tokens: the jacket's colour, skin, hair (`PER_PLAYER`), if the palette
+    /// has them.
+    players: [Option<usize>; 3],
 }
+
+/// The per-player tokens in a character's slots, in order (G1.3e).
+pub(crate) const PER_PLAYER: [&str; 3] = ["player_accent", "skin", "hair"];
 
 impl GpuPalette {
     /// An empty palette (until one is set, model vertices draw neutral grey), and the noise.
@@ -127,13 +145,16 @@ impl GpuPalette {
             ],
         });
         let noise = super::noise::upload(device, queue);
+        let base = tokens(&Palette::default());
         let (buffer, bind_group) =
-            Self::make(device, &layout, &noise, &tokens(&Palette::default()));
+            Self::make(device, &layout, &noise, &with_slots(&base, [None; 3]));
         Self {
             layout,
             bind_group,
             buffer,
             noise,
+            base,
+            players: [None; 3],
         }
     }
 
@@ -174,12 +195,46 @@ impl GpuPalette {
 
     /// Replaces the tokens with `palette`'s.
     pub fn set(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, palette: &Palette) {
-        let tokens = tokens(palette);
+        self.base = tokens(palette);
+        self.players = PER_PLAYER.map(|name| palette.index(name));
+        let tokens = with_slots(&self.base, self.players);
         if std::mem::size_of_val(tokens.as_slice()) as u64 == self.buffer.size() {
             queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&tokens));
         } else {
             (self.buffer, self.bind_group) = Self::make(device, &self.layout, &self.noise, &tokens);
         }
+    }
+
+    /// The first character slot's entry.
+    pub fn slot_base(&self) -> u32 {
+        u32::try_from(self.base.len()).expect("few tokens")
+    }
+
+    /// Which slot each token takes (0–2, or `NO_SLOT`), for `skin.wgsl`.
+    pub fn slot_table(&self) -> Vec<u32> {
+        let mut table = vec![super::skin_pass::NO_SLOT; self.base.len()];
+        for (slot, token) in self.players.iter().enumerate() {
+            if let Some(t) = token {
+                table[*t] = u32::try_from(slot).expect("three");
+            }
+        }
+        table
+    }
+
+    /// Writes a character's colours (linear: jacket, skin, hair) into its slots from `slot`.
+    pub fn write_colours(&self, queue: &wgpu::Queue, slot: u32, colours: &[[f32; 3]; 3]) {
+        let raw: Vec<TokenRaw> = (self.players.iter().zip(colours))
+            .map(|(token, colour)| {
+                let base = token.map_or_else(TokenRaw::zeroed, |t| self.base[t]);
+                TokenRaw {
+                    colour: *colour,
+                    per_player: 0.0,
+                    ..base
+                }
+            })
+            .collect();
+        let at = u64::from(slot) * std::mem::size_of::<TokenRaw>() as u64;
+        queue.write_buffer(&self.buffer, at, bytemuck::cast_slice(&raw));
     }
 }
 

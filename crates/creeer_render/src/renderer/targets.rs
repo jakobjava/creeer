@@ -90,6 +90,7 @@ pub(super) fn prepass_pipeline(
     module: &wgpu::ShaderModule,
     entry: &str,
     buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
+    cull_mode: Option<wgpu::Face>,
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(label),
@@ -106,7 +107,7 @@ pub(super) fn prepass_pipeline(
             buffers,
         },
         primitive: wgpu::PrimitiveState {
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode,
             ..Default::default()
         },
         depth_stencil: scene_depth_state(),
