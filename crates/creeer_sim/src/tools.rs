@@ -48,6 +48,9 @@ pub struct Tool {
     /// Its edge, if it has one (G1.7): its included angle (°) and its length (m).
     #[serde(default)]
     pub edge: Option<(f64, f64)>,
+    /// Its head's hardness (Pa) and the radius of what strikes (m), for digging (G1.5).
+    pub hardness: f64,
+    pub tip: f64,
 }
 
 impl Tool {
@@ -98,6 +101,12 @@ pub fn problems(tools: &[Tool], models: &[Entry]) -> Vec<String> {
                 t.gyration, t.strike, t.carry, t.length
             ));
         }
+        if !(t.hardness > 0.0 && t.tip >= 0.0) {
+            out.push(format!(
+                "tool {at}: head {} Pa hard, tip {} m",
+                t.hardness, t.tip
+            ));
+        }
         for r in [t.radius, t.carry_radius] {
             if !(0.01..=0.03).contains(&r) {
                 out.push(format!("tool {at}: a handle {r} m round"));
@@ -144,7 +153,9 @@ mod tests {
             gyration: 0.2,
             strike: 0.3,
             edge: None,
+            hardness: 0.0,
+            tip: -1.0,
         };
-        assert_eq!(problems(&[bad], &[]).len(), 7);
+        assert_eq!(problems(&[bad], &[]).len(), 8);
     }
 }

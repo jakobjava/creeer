@@ -21,6 +21,8 @@ fn tool(mass: f64, inertia: f64, balance: f64, strike: f64) -> Tool {
         gyration: (inertia / mass).sqrt(),
         strike,
         edge: None,
+        hardness: 6e9,
+        tip: 0.003,
     }
 }
 

@@ -29,6 +29,12 @@ impl ServerWorld {
     /// there breaks; the made thing that struck, if its binding gives, comes apart.
     pub(super) fn broken_by(&mut self, by: EntityId, on: EntityId, energy: f64, j: f64) {
         self.break_item(by, on, energy);
+        self.binding_bears(by, j);
+    }
+
+    /// A blow of impulse `j` (N·s) by what avatar `by` holds: if a made thing's binding gives, it
+    /// comes apart.
+    pub(super) fn binding_bears(&mut self, by: EntityId, j: f64) {
         let Some(held) = self.carried(by) else { return };
         let Some(Item::Made(made)) = self.items.bodies.get(&held) else {
             return;

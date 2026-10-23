@@ -12,6 +12,7 @@ mod chunk_tests;
 mod clip;
 pub mod cube;
 pub mod datum;
+pub mod dug;
 pub mod edits;
 #[cfg(test)]
 mod edits_tests;

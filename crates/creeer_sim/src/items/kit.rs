@@ -96,6 +96,16 @@ impl Densities {
         Some(self.materials.get(material)?.ultimate_strength.at(20.0))
     }
 
+    /// The hardness of `material` (Pa, G1.5): a rock's minerals' by their volume fractions, or
+    /// an engineering material's three times its tensile strength (Tabor 1951: the indentation
+    /// pressure of a metal is about three times its flow stress).
+    pub fn hardness(&self, material: &str) -> Option<f64> {
+        if let Some(rock) = self.rocks.rock(material) {
+            return Some(crate::dig::mean_hardness(self.rocks.hardnesses(rock)));
+        }
+        Some(3.0 * self.strength(material)?)
+    }
+
     /// The colour of `material` (sRGB), as it is drawn: a rock's own, or the palette's token
     /// for an engineering material's kind (`art-style.md` §3).
     pub fn colour(&self, material: &str) -> Option<[u8; 3]> {

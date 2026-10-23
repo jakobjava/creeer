@@ -109,8 +109,15 @@ impl Edit {
     }
 
     /// Applies the edit to a density value at `p`, rounded over `round` metres where it meets
-    /// the surface ([`round`]).
+    /// the surface ([`round`]); a brush smaller than the finest grid's round is rounded over
+    /// its own radius at most (G1.5: a hand-dug pit is not rounded wider than itself).
     pub fn apply(&self, p: DVec3, density: f64, round: f64) -> f64 {
+        let r = self.brush().radius();
+        let round = if r < ROUND_CELLS * FINEST_CELL {
+            round.min(r)
+        } else {
+            round
+        };
         match self {
             Self::Dig(b) => smooth_max(density, -b.distance(p), round),
             Self::Fill(b, _) => smooth_min(density, b.distance(p), round),

@@ -1,6 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 12** (G1.5): as version 11, with an optional section `PITS`: what was dug and not
+//! yet cut from the terrain (`save/pits.rs`).
+//!
 //! **Version 11** (G1.7): as version 10, with an optional section `TREE`: what was done to the
 //! trees: cuts, the felled, felled trees' parts as bodies (`crate::trees`; `save/trees.rs`).
 //!
@@ -61,6 +64,7 @@ mod items;
 mod machines;
 mod park;
 mod people;
+mod pits;
 mod trees;
 pub use items::SavedItems;
 pub use machines::SavedMachine;
@@ -69,7 +73,7 @@ pub use people::SavedPerson;
 pub use trees::SavedTrees;
 
 /// The version this game writes.
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -106,6 +110,8 @@ pub struct Save {
     pub items: SavedItems,
     /// What was done to the trees (`crate::trees`).
     pub trees: SavedTrees,
+    /// What was dug and not yet cut from the terrain, by spot: where (m) and how much (m³).
+    pub pits: Vec<(creeer_math::glam::DVec3, f64)>,
 }
 
 /// A body parked far from every player, with what the world keeps of it.
@@ -167,7 +173,8 @@ impl Save {
             + u64::from(!self.people.is_empty())
             + u64::from(!self.ages.is_empty())
             + u64::from(!self.items.is_empty())
-            + u64::from(!self.trees.is_empty());
+            + u64::from(!self.trees.is_empty())
+            + u64::from(!self.pits.is_empty());
         w.varint(sections);
         let mut meta = Writer::new();
         meta.put(&self.planet);
@@ -209,6 +216,9 @@ impl Save {
         if !self.trees.is_empty() {
             section(&mut w, b"TREE", &trees::trees_bytes(&self.trees));
         }
+        if !self.pits.is_empty() {
+            section(&mut w, b"PITS", &pits::pits_bytes(&self.pits));
+        }
         w.finish()
     }
 
@@ -241,6 +251,7 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         ages: Vec::new(),
         items: SavedItems::default(),
         trees: SavedTrees::default(),
+        pits: Vec::new(),
     })
 }
 
@@ -253,7 +264,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     }
     let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
     let (mut surr, mut park, mut mach, mut peop) = (None, None, None, None);
-    let (mut ages, mut item, mut tree) = (None, None, None);
+    let (mut ages, mut item, mut tree, mut pit) = (None, None, None, None);
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -269,6 +280,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"AGES" => ages = Some(body),
             b"ITEM" => item = Some(body),
             b"TREE" => tree = Some(body),
+            b"PITS" => pit = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -326,6 +338,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
     };
     let items = item.map_or_else(|| Ok(SavedItems::default()), items::items_from)?;
     let trees = tree.map_or_else(|| Ok(SavedTrees::default()), trees::trees_from)?;
+    let pits = pit.map_or_else(|| Ok(Vec::new()), pits::pits_from)?;
     // A fallen person's segments are bodies of the world (a ragdoll is never parked).
     let live = |id: &u32| entities.iter().any(|e| e.0 == *id);
     if !people.iter().all(|p| p.parts.iter().all(live)) {
@@ -347,6 +360,7 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         ages,
         items,
         trees,
+        pits,
     })
 }
 

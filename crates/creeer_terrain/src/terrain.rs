@@ -83,6 +83,11 @@ impl Terrain {
         self.edits().density(p, generated)
     }
 
+    /// Density (m) at `p` as generated, before any edit.
+    pub fn generated_density(&self, p: DVec3) -> f64 {
+        generated(&self.planet.datum, &mut self.heights.sampler(1.0), p)
+    }
+
     /// The density and its gradient at `p` (the gradient points into the air). The distance to
     /// the surface is about `density / |gradient|`. Away from edits the gradient is exact (the
     /// derivative of the interpolated heights, the datum and the distance from the centre: one

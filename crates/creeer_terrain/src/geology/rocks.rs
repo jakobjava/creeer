@@ -17,6 +17,8 @@ pub struct Mineral {
     pub formula: Formula,
     /// Density of the pure crystal (kg/m³).
     pub density: f64,
+    /// Vickers hardness (Pa, G1.5).
+    pub hardness: f64,
 }
 
 /// A rock: what terrain is made of. Its index in the [`RockTable`] is its material id.
@@ -36,6 +38,19 @@ pub struct Rock {
     pub ore: bool,
     /// How it breaks (G1.6d), if it is a solid rock: none for loose ground.
     pub breaks: Option<Breaks>,
+    /// How hard it is to dig (G1.5).
+    pub strength: Strength,
+    /// The minerals its deposit's grade scales (indices into its `minerals`; none for most).
+    pub graded: Vec<usize>,
+}
+
+/// How hard a rock is to dig (G1.5, ADR-0032).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Strength {
+    /// Solid rock: its uniaxial compressive strength (Pa).
+    Solid { compressive: f64 },
+    /// Loose ground: its cohesion (Pa) and its angle of internal friction (rad).
+    Loose { cohesion: f64, friction: f64 },
 }
 
 /// How a rock breaks: what knapping and quarrying spend, and what edge it leaves.
@@ -63,6 +78,7 @@ struct MineralDef {
     name: String,
     formula: String,
     density: String,
+    hardness: String,
 }
 
 #[derive(Deserialize)]
@@ -78,6 +94,14 @@ struct RockDef {
     grain: Option<String>,
     #[serde(default)]
     fracture_energy: Option<String>,
+    #[serde(default)]
+    strength: Option<String>,
+    #[serde(default)]
+    cohesion: Option<String>,
+    #[serde(default)]
+    friction: Option<f64>,
+    #[serde(default)]
+    graded: Vec<String>,
 }
 
 impl RockTable {
@@ -121,6 +145,11 @@ impl RockTable {
             let formula = Formula::parse(&m.formula).map_err(|e| context(e.to_string()))?;
             let density =
                 parse_as(&m.density, Dimension::DENSITY).map_err(|e| context(e.to_string()))?;
+            let hardness =
+                parse_as(&m.hardness, Dimension::PRESSURE).map_err(|e| context(e.to_string()))?;
+            if hardness.is_nan() || hardness <= 0.0 {
+                return Err(context("hardness must be positive".into()));
+            }
             if table.minerals.iter().any(|x| x.name == m.name) {
                 return Err(DataError(format!("mineral {} defined twice", m.name)));
             }
@@ -128,6 +157,7 @@ impl RockTable {
                 name: m.name,
                 formula,
                 density,
+                hardness,
             });
         }
         for (r, origin) in rock_defs {
@@ -168,7 +198,38 @@ impl RockTable {
                 (None, None) => None,
                 _ => return Err(context("a grain and a fracture energy, or neither".into())),
             };
+            let pressure =
+                |s: &str| parse_as(s, Dimension::PRESSURE).map_err(|e| context(e.to_string()));
+            let strength = match (&r.strength, &r.cohesion, r.friction) {
+                (Some(s), None, None) => Strength::Solid {
+                    compressive: pressure(s)?,
+                },
+                (None, Some(c), Some(f)) if (0.0..90.0).contains(&f) => Strength::Loose {
+                    cohesion: pressure(c)?,
+                    friction: f.to_radians(),
+                },
+                _ => {
+                    return Err(context(
+                        "a strength, or a cohesion and a friction angle (0–90°)".into(),
+                    ));
+                }
+            };
+            if let Strength::Solid { compressive: v } | Strength::Loose { cohesion: v, .. } =
+                strength
+                && !(v >= 0.0 && v.is_finite())
+            {
+                return Err(context(format!("strength {v} Pa")));
+            }
+            let mut graded = Vec::with_capacity(r.graded.len());
+            for name in &r.graded {
+                let k = (minerals.iter())
+                    .position(|&(m, _)| &table.minerals[m].name == name)
+                    .ok_or_else(|| context(format!("graded {name:?} is not among its minerals")))?;
+                graded.push(k);
+            }
             table.rocks.push(Rock {
+                strength,
+                graded,
                 breaks,
                 color: parse_color(&r.color).ok_or_else(|| context("bad colour".into()))?,
                 porosity: r.porosity,
@@ -190,6 +251,48 @@ impl RockTable {
             .iter()
             .position(|r| r.name == name)
             .map(|i| u16::try_from(i).expect("checked when loading"))
+    }
+
+    /// A rock's minerals by name and mass fraction of its solid (dry), its graded minerals'
+    /// volume fractions scaled by `grade` (a deposit's, relative to the rock's average; 1
+    /// elsewhere) and the rest by what keeps the sum 1; the grade at most what fills it.
+    pub fn composition(&self, rock: u16, grade: f64) -> Vec<(String, f64)> {
+        let rock = &self.rocks[usize::from(rock)];
+        let share: f64 = rock.graded.iter().map(|&k| rock.minerals[k].1).sum();
+        let grade = if share > 0.0 {
+            grade.clamp(0.0, 1.0 / share)
+        } else {
+            1.0
+        };
+        let rest = if share < 1.0 {
+            (1.0 - grade * share) / (1.0 - share)
+        } else {
+            0.0
+        };
+        let volumes: Vec<f64> = (rock.minerals.iter().enumerate())
+            .map(|(k, &(_, v))| {
+                v * if rock.graded.contains(&k) {
+                    grade
+                } else {
+                    rest
+                }
+            })
+            .collect();
+        let solid: f64 = (rock.minerals.iter().zip(&volumes))
+            .map(|(&(m, _), v)| v * self.minerals[m].density)
+            .sum();
+        (rock.minerals.iter().zip(&volumes))
+            .map(|(&(m, _), v)| {
+                let mineral = &self.minerals[m];
+                (mineral.name.clone(), v * mineral.density / solid)
+            })
+            .collect()
+    }
+
+    /// A rock's minerals' hardnesses (Pa) and volume fractions.
+    pub fn hardnesses(&self, rock: u16) -> impl Iterator<Item = (f64, f64)> + '_ {
+        (self.rocks[usize::from(rock)].minerals.iter())
+            .map(|&(m, v)| (self.minerals[m].hardness, v))
     }
 
     /// Mass fraction of element `z` in a rock (0..1, dry).

@@ -48,7 +48,7 @@ impl ServerWorld {
         id: u64,
         started: f64,
     ) -> Result<(), String> {
-        let ready = self.ready_to_swing(by, started)?;
+        let ready = self.ready_to_swing(by, started, false)?;
         let (item, centre, turn) = self.lying_in_reach(by, id)?;
         self.take_lying(id);
         let (i, top) = self.rouse(item, centre, turn);

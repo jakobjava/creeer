@@ -23,6 +23,7 @@ mod content_tests;
 pub mod controls;
 #[cfg(test)]
 mod controls_tests;
+pub mod dig;
 pub mod drive;
 #[cfg(test)]
 mod drive_tests;

@@ -4,7 +4,7 @@
 //! `strike::CYCLE`. The blow is a collision of the tool's effective mass at its striking point,
 //! moving at its swing's speed, with the body's effective mass there (`creeer_sim::strike`): an
 //! impulse along the head's path, in the plane through the shoulders, the point and up. On the
-//! ground its energy is kept for digging (G1.5).
+//! ground it digs (G1.5, `digging.rs`): bare hands too, in loose ground.
 
 use super::*;
 use creeer_net::message::Target;
@@ -59,7 +59,7 @@ impl ServerWorld {
         target: &Target,
         started: f64,
     ) -> Result<(), String> {
-        let ready = self.ready_to_swing(by, started)?;
+        let ready = self.ready_to_swing(by, started, target.body.is_none())?;
         let reached = self.reached(by, target.body, target.at, target.seen)?;
         let aim = match (target.body, reached.body) {
             (Some(id), Some((index, node))) => {
@@ -73,19 +73,21 @@ impl ServerWorld {
         Ok(())
     }
 
-    /// Whether avatar `by` may begin a swing at its tick `started`: what it strikes with (the
-    /// catalogue's tool, or none: what its hands hold) and the world's tick it begins at.
+    /// Whether avatar `by` may begin a swing at its tick `started`, `bare` hands allowed (on the
+    /// ground, G1.5): what it strikes with (the catalogue's tool, or none: what its hands hold)
+    /// and the world's tick it begins at.
     pub(super) fn ready_to_swing(
         &self,
         by: EntityId,
         started: f64,
+        bare: bool,
     ) -> Result<(Option<u8>, u64), String> {
         let i = self.index(by).ok_or("no such avatar")?;
         let player = self.players[i].clone().ok_or("only a player strikes")?;
         // The catalogue's tool in hand, or what the hands hold (G1.6d): a stone, a made axe.
         let tool = self.wields.get(&player).copied();
         let held = self.carried(by).and_then(|c| self.items.bodies.get(&c));
-        if tool.is_none() && held.and_then(creeer_sim::items::Item::swinging).is_none() {
+        if !bare && tool.is_none() && held.and_then(creeer_sim::items::Item::swinging).is_none() {
             return Err("nothing in hand to strike with".into());
         }
         if self.people.get(&by).is_some_and(people::Person::fallen) {
@@ -159,8 +161,14 @@ impl ServerWorld {
         let swing = match s.tool {
             Some(t) => strike::swing(self.tools.get(usize::from(t))?),
             None => {
-                let held = self.items.bodies.get(&self.carried(s.by)?)?.swinging()?;
-                strike::swing_of(held.mass, held.gyration, held.carry, held.strike)
+                let held = (self.carried(s.by))
+                    .and_then(|c| self.items.bodies.get(&c))
+                    .and_then(creeer_sim::items::Item::swinging);
+                match (held, s.aim) {
+                    (Some(h), _) => strike::swing_of(h.mass, h.gyration, h.carry, h.strike),
+                    (None, Aim::Ground(_)) => creeer_sim::dig::hands(),
+                    (None, _) => return None,
+                }
             }
         };
         if let Aim::Tree(tree, z) = s.aim {
@@ -201,6 +209,7 @@ impl ServerWorld {
         };
         let way = if way.dot(up) > 0.0 { -way } else { way };
         let Some((id, node)) = on else {
+            self.dig(s.by, at, (&swing, s.tool));
             return Some(Blow {
                 by: s.by,
                 tool: s.tool,

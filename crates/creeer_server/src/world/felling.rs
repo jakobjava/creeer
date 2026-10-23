@@ -31,7 +31,7 @@ impl ServerWorld {
         height: f64,
         started: f64,
     ) -> Result<(), String> {
-        let ready = self.ready_to_swing(by, started)?;
+        let ready = self.ready_to_swing(by, started, false)?;
         let (standing, grown) = self.standing(tree).ok_or("no tree stands there")?;
         if !(height.is_finite() && (0.05..grown.height).contains(&height)) {
             return Err("not on its stem".into());

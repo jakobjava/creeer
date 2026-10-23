@@ -1,52 +1,57 @@
 // Minerals: chemical formula (atoms per formula unit) and density of the pure crystal.
 // Solid solutions use one representative composition (biotite as K(Mg1.5Fe1.5)..., olivine
 // Fo90, plagioclase An50, pentlandite (Fe,Ni)9S8 as Fe4.5Ni4.5S8).
+//
+// Hardness (G1.5, ADR-0032): Vickers hardness of the crystal, typical of the measured range
+// (Broz, Cook & Whitney 2006; Mindat's VHN; sheet silicates and clays across their sheets). It
+// decides what a tool's head can break and how fast the rock's grains wear it. To add a
+// mineral: its formula, density and hardness; the validator checks each is positive.
 [
     // Silicates
-    (name: "quartz", formula: "SiO2", density: "2650 kg/m^3"),
-    (name: "orthoclase", formula: "KAlSi3O8", density: "2560 kg/m^3"),
-    (name: "plagioclase", formula: "Na0.5Ca0.5Al1.5Si2.5O8", density: "2680 kg/m^3"),
-    (name: "biotite", formula: "KMg1.5Fe1.5AlSi3O10(OH)2", density: "3000 kg/m^3"),
-    (name: "muscovite", formula: "KAl2(AlSi3O10)(OH)2", density: "2820 kg/m^3"),
-    (name: "hornblende", formula: "Ca2Mg4Al2Si7O22(OH)2", density: "3200 kg/m^3"),
-    (name: "augite", formula: "CaMgSi2O6", density: "3300 kg/m^3"),
-    (name: "olivine", formula: "Mg1.8Fe0.2SiO4", density: "3320 kg/m^3"),
-    (name: "garnet", formula: "Fe3Al2(SiO4)3", density: "4190 kg/m^3"),
-    (name: "kaolinite", formula: "Al2Si2O5(OH)4", density: "2600 kg/m^3"),
-    (name: "illite", formula: "K0.65Al2.65Si3.35O10(OH)2", density: "2750 kg/m^3"),
-    (name: "zircon", formula: "ZrSiO4", density: "4650 kg/m^3"),
+    (name: "quartz", formula: "SiO2", density: "2650 kg/m^3", hardness: "11.5 GPa"),
+    (name: "orthoclase", formula: "KAlSi3O8", density: "2560 kg/m^3", hardness: "7.5 GPa"),
+    (name: "plagioclase", formula: "Na0.5Ca0.5Al1.5Si2.5O8", density: "2680 kg/m^3", hardness: "7.5 GPa"),
+    (name: "biotite", formula: "KMg1.5Fe1.5AlSi3O10(OH)2", density: "3000 kg/m^3", hardness: "1.0 GPa"),
+    (name: "muscovite", formula: "KAl2(AlSi3O10)(OH)2", density: "2820 kg/m^3", hardness: "1.0 GPa"),
+    (name: "hornblende", formula: "Ca2Mg4Al2Si7O22(OH)2", density: "3200 kg/m^3", hardness: "6.5 GPa"),
+    (name: "augite", formula: "CaMgSi2O6", density: "3300 kg/m^3", hardness: "6.5 GPa"),
+    (name: "olivine", formula: "Mg1.8Fe0.2SiO4", density: "3320 kg/m^3", hardness: "9.5 GPa"),
+    (name: "garnet", formula: "Fe3Al2(SiO4)3", density: "4190 kg/m^3", hardness: "13 GPa"),
+    (name: "kaolinite", formula: "Al2Si2O5(OH)4", density: "2600 kg/m^3", hardness: "0.3 GPa"),
+    (name: "illite", formula: "K0.65Al2.65Si3.35O10(OH)2", density: "2750 kg/m^3", hardness: "0.3 GPa"),
+    (name: "zircon", formula: "ZrSiO4", density: "4650 kg/m^3", hardness: "13 GPa"),
     // Carbonates, sulfates, halides, phosphates
-    (name: "calcite", formula: "CaCO3", density: "2710 kg/m^3"),
-    (name: "dolomite", formula: "CaMg(CO3)2", density: "2840 kg/m^3"),
-    (name: "malachite", formula: "Cu2CO3(OH)2", density: "4000 kg/m^3"),
-    (name: "gypsum", formula: "CaSO4·2H2O", density: "2310 kg/m^3"),
-    (name: "anhydrite", formula: "CaSO4", density: "2970 kg/m^3"),
-    (name: "halite", formula: "NaCl", density: "2165 kg/m^3"),
-    (name: "sylvite", formula: "KCl", density: "1990 kg/m^3"),
-    (name: "apatite", formula: "Ca5(PO4)3F", density: "3190 kg/m^3"),
+    (name: "calcite", formula: "CaCO3", density: "2710 kg/m^3", hardness: "1.4 GPa"),
+    (name: "dolomite", formula: "CaMg(CO3)2", density: "2840 kg/m^3", hardness: "3.5 GPa"),
+    (name: "malachite", formula: "Cu2CO3(OH)2", density: "4000 kg/m^3", hardness: "2.0 GPa"),
+    (name: "gypsum", formula: "CaSO4·2H2O", density: "2310 kg/m^3", hardness: "0.5 GPa"),
+    (name: "anhydrite", formula: "CaSO4", density: "2970 kg/m^3", hardness: "1.9 GPa"),
+    (name: "halite", formula: "NaCl", density: "2165 kg/m^3", hardness: "0.2 GPa"),
+    (name: "sylvite", formula: "KCl", density: "1990 kg/m^3", hardness: "0.1 GPa"),
+    (name: "apatite", formula: "Ca5(PO4)3F", density: "3190 kg/m^3", hardness: "5.0 GPa"),
     // Oxides and hydroxides
-    (name: "magnetite", formula: "Fe3O4", density: "5175 kg/m^3"),
-    (name: "hematite", formula: "Fe2O3", density: "5260 kg/m^3"),
-    (name: "goethite", formula: "FeO(OH)", density: "4270 kg/m^3"),
-    (name: "ilmenite", formula: "FeTiO3", density: "4720 kg/m^3"),
-    (name: "gibbsite", formula: "Al(OH)3", density: "2420 kg/m^3"),
-    (name: "boehmite", formula: "AlO(OH)", density: "3030 kg/m^3"),
-    (name: "cassiterite", formula: "SnO2", density: "6950 kg/m^3"),
-    (name: "uraninite", formula: "UO2", density: "10600 kg/m^3"),
+    (name: "magnetite", formula: "Fe3O4", density: "5175 kg/m^3", hardness: "5.6 GPa"),
+    (name: "hematite", formula: "Fe2O3", density: "5260 kg/m^3", hardness: "10 GPa"),
+    (name: "goethite", formula: "FeO(OH)", density: "4270 kg/m^3", hardness: "6.0 GPa"),
+    (name: "ilmenite", formula: "FeTiO3", density: "4720 kg/m^3", hardness: "6.0 GPa"),
+    (name: "gibbsite", formula: "Al(OH)3", density: "2420 kg/m^3", hardness: "0.8 GPa"),
+    (name: "boehmite", formula: "AlO(OH)", density: "3030 kg/m^3", hardness: "3.5 GPa"),
+    (name: "cassiterite", formula: "SnO2", density: "6950 kg/m^3", hardness: "11 GPa"),
+    (name: "uraninite", formula: "UO2", density: "10600 kg/m^3", hardness: "7.0 GPa"),
     // Sulfides
-    (name: "pyrite", formula: "FeS2", density: "5010 kg/m^3"),
-    (name: "pyrrhotite", formula: "Fe7S8", density: "4610 kg/m^3"),
-    (name: "chalcopyrite", formula: "CuFeS2", density: "4190 kg/m^3"),
-    (name: "bornite", formula: "Cu5FeS4", density: "5090 kg/m^3"),
-    (name: "molybdenite", formula: "MoS2", density: "4730 kg/m^3"),
-    (name: "pentlandite", formula: "Fe4.5Ni4.5S8", density: "4800 kg/m^3"),
-    (name: "galena", formula: "PbS", density: "7580 kg/m^3"),
-    (name: "sphalerite", formula: "ZnS", density: "4050 kg/m^3"),
+    (name: "pyrite", formula: "FeS2", density: "5010 kg/m^3", hardness: "15 GPa"),
+    (name: "pyrrhotite", formula: "Fe7S8", density: "4610 kg/m^3", hardness: "3.3 GPa"),
+    (name: "chalcopyrite", formula: "CuFeS2", density: "4190 kg/m^3", hardness: "2.0 GPa"),
+    (name: "bornite", formula: "Cu5FeS4", density: "5090 kg/m^3", hardness: "1.0 GPa"),
+    (name: "molybdenite", formula: "MoS2", density: "4730 kg/m^3", hardness: "0.2 GPa"),
+    (name: "pentlandite", formula: "Fe4.5Ni4.5S8", density: "4800 kg/m^3", hardness: "2.3 GPa"),
+    (name: "galena", formula: "PbS", density: "7580 kg/m^3", hardness: "0.75 GPa"),
+    (name: "sphalerite", formula: "ZnS", density: "4050 kg/m^3", hardness: "2.0 GPa"),
     // Native elements and organic matter
-    (name: "gold", formula: "Au", density: "19300 kg/m^3"),
+    (name: "gold", formula: "Au", density: "19300 kg/m^3", hardness: "0.5 GPa"),
     // Coal macerals (mostly vitrinite) as an average organic composition.
-    (name: "coal matter", formula: "CH0.8O0.08N0.015S0.005", density: "1300 kg/m^3"),
+    (name: "coal matter", formula: "CH0.8O0.08N0.015S0.005", density: "1300 kg/m^3", hardness: "0.35 GPa"),
     // Rhyolitic glass (obsidian): rhyolite's oxides (SiO₂ 73, Al₂O₃ 13, K₂O 5, Na₂O 4 wt %) as
     // one formula, its charges balanced; 2.35–2.6 g/cm³ measured.
-    (name: "rhyolitic glass", formula: "K0.11Na0.13Al0.26Si1.22O2.95", density: "2400 kg/m^3"),
+    (name: "rhyolitic glass", formula: "K0.11Na0.13Al0.26Si1.22O2.95", density: "2400 kg/m^3", hardness: "6.0 GPa"),
 ]

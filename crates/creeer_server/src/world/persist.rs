@@ -68,6 +68,12 @@ impl ServerWorld {
             this.items.laid_log.push(id);
         }
         this.restore_trees(save.trees);
+        for (at, volume) in save.pits {
+            this.digging.pits.insert(
+                super::digging::spot(at),
+                super::digging::Pit::new(at, volume),
+            );
+        }
         this.next_machine = save.machines.iter().map(|m| m.id + 1).max().unwrap_or(1);
         this.machines = (save.machines.iter())
             .map(|m| super::machines::Placed::restored(m, Powerhouse::new()))
@@ -128,6 +134,9 @@ impl ServerWorld {
                     .collect(),
             },
             trees: self.saved_trees(),
+            pits: (self.digging.pits.values())
+                .map(|p| (p.centre, p.volume))
+                .collect(),
         }
     }
 }

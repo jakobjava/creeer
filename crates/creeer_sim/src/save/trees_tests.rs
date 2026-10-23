@@ -53,7 +53,9 @@ fn write_v11_fixture() {
 #[test]
 fn the_version_11_fixture_keeps_its_trees_exactly() {
     let save = Save::from_bytes(V11).unwrap();
-    assert_eq!(save.to_bytes(), V11);
+    // Re-saved, it is the current version of what the scene writes (version 12 on: the same
+    // sections, its header the newer version).
+    assert_eq!(save.to_bytes(), trees_scene().to_bytes());
     assert_eq!(save.trees, trees_scene().trees);
     // Saves of earlier versions have every tree whole.
     assert!(

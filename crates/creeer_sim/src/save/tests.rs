@@ -88,6 +88,7 @@ pub(super) fn scene() -> Save {
         ages: Vec::new(),
         items: crate::save::SavedItems::default(),
         trees: crate::save::SavedTrees::default(),
+        pits: Vec::new(),
     }
 }
 
@@ -171,6 +172,21 @@ fn a_save_reads_back_as_written() {
     assert_eq!(read.to_bytes(), bytes);
     assert_eq!(read.entities, save.entities);
     assert_eq!(read.edits.log(), save.edits.log());
+}
+
+#[test]
+fn what_was_dug_and_not_cut_reads_back() {
+    let mut save = scene();
+    save.pits = vec![(DVec3::new(10.0, 0.0, 12.0), 0.004)];
+    let read = Save::from_bytes(&save.to_bytes()).unwrap();
+    assert_eq!(read.pits, save.pits);
+    // Without the section (earlier versions), nothing is owed.
+    assert!(
+        Save::from_bytes(&scene().to_bytes())
+            .unwrap()
+            .pits
+            .is_empty()
+    );
 }
 
 #[test]
