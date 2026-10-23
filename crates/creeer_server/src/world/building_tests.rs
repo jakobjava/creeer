@@ -144,3 +144,29 @@ fn a_pole_alone_has_nothing_to_be_fastened_to() {
     let _ = below;
     assert!(fasten(&mut w, ada, above, far, "nail_100").is_err());
 }
+
+/// The nail pulled out of two nailed poles: the next step makes them two entities again, each
+/// with its own record.
+#[test]
+fn two_nailed_poles_whose_nail_is_pulled_are_two_again() {
+    let (mut w, ada, _, above, at) = crossed(true);
+    fasten(&mut w, ada, above, at, "nail_100").expect("begins");
+    wait(&mut w, ada, 400);
+    let bodies = w.world.bodies.len();
+    let i = w.index(above).expect("built");
+    let s = &w.world.bodies[i].structure;
+    let joint = (0..s.element_count())
+        .find(|&e| s.member(e).is_none())
+        .expect("a joint");
+    w.world.bodies[i].structure.sever(joint);
+    wait(&mut w, ada, 1);
+    assert_eq!(w.world.bodies.len(), bodies + 1);
+    assert_eq!(w.building.built.len(), 2);
+    assert!(
+        w.building
+            .built
+            .values()
+            .all(|b| b.woods.iter().all(Option::is_some))
+    );
+    wait(&mut w, ada, 120);
+}

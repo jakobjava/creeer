@@ -310,6 +310,7 @@ impl ServerWorld {
     }
 }
 
+mod apart;
 mod bucking;
 mod building;
 mod building_parts;

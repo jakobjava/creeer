@@ -175,6 +175,13 @@ impl Surroundings {
         }
     }
 
+    /// Forgets the air and water on body `body`, whose nodes were numbered anew (a structure
+    /// fallen apart, G2.5): its frames and floaters named nodes it no longer has.
+    pub fn forget(&mut self, body: usize) {
+        self.frames.retain(|f| f.body != body);
+        self.floaters.retain(|f| f.body != body);
+    }
+
     /// After the world dropped bodies (`map`: each old body's new index, if kept).
     pub fn retain(&mut self, map: &[Option<usize>]) {
         self.frames.retain_mut(|f| {

@@ -105,3 +105,23 @@ impl Structure {
             .fold(f64::INFINITY, f64::min)
     }
 }
+
+impl Structure {
+    /// Whether node `node` is held fast: neither moving nor turning (a post's ground).
+    pub fn held_fast(&self, node: NodeId) -> bool {
+        use creeer_math::glam::DVec3;
+        self.free_translation[node] == DVec3::ZERO && self.free_rotation[node] == DVec3::ZERO
+    }
+}
+
+impl Structure {
+    /// Severs element `e` (a member sawn through, a joint's fasteners pulled, G2.6): it carries
+    /// nothing from now on, and the structure may fall apart (`World::fall_apart`). Its solver
+    /// must be refactored (`ImplicitSolver::refactor`).
+    pub fn sever(&mut self, e: usize) {
+        if let Some(el) = self.elements.get_mut(e) {
+            el.broken = true;
+            el.stiffness = super::element::Stiffness::zeroed();
+        }
+    }
+}

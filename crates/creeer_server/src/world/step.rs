@@ -31,6 +31,7 @@ impl ServerWorld {
         drop(scope);
         self.blows_fall();
         self.fastenings_due();
+        self.come_apart();
         self.lay_resting();
         let scope = profile::scope("trees");
         self.trees_after_step();

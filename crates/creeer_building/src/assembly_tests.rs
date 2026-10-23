@@ -226,3 +226,52 @@ fn poles_joined_after_assembly_step() {
     }
     assert!(s.position.iter().all(|p| p.is_finite()));
 }
+
+/// Two poles nailed, the nail pulled: the structure falls apart into two bodies, mass and
+/// momentum kept, each with its own shapes.
+#[test]
+fn a_structure_whose_joint_is_pulled_falls_apart_into_bodies() {
+    use creeer_physics::world::shape::StaticShape;
+    use creeer_physics::world::{Body, World};
+    let (parts, fastenings) = tee([
+        Motion {
+            velocity: DVec3::new(0.2, 0.0, 0.0),
+            ..Motion::default()
+        },
+        Motion::default(),
+    ]);
+    let built = assemble(&parts, &fastenings).expect("builds");
+    let mut w = World::new(1.0 / 60.0);
+    w.statics.push(StaticShape::Plane {
+        normal: DVec3::Y,
+        offset: -5.0,
+    });
+    let mut body = Body::structure(built.structure, 1.0 / 60.0);
+    body.shapes = built.shapes;
+    let shapes = body.shapes.len();
+    w.add(body);
+    let s = &w.bodies[0].structure;
+    let (mass, momentum) = (s.total_mass(), w.momentum());
+    let joint = (0..s.element_count())
+        .find(|&e| s.member(e).is_none())
+        .expect("a joint");
+    w.bodies[0].structure.sever(joint);
+    let apart = w.fall_apart();
+    assert_eq!(apart.len(), 1);
+    assert_eq!(w.bodies.len(), 2);
+    let total: f64 = w.bodies.iter().map(|b| b.structure.total_mass()).sum();
+    assert!((total / mass - 1.0).abs() < 1e-12);
+    assert!((w.momentum() - momentum).length() < 1e-12);
+    assert_eq!(
+        w.bodies.iter().map(|b| b.shapes.len()).sum::<usize>(),
+        shapes
+    );
+    for _ in 0..30 {
+        w.step();
+    }
+    assert!(
+        w.bodies
+            .iter()
+            .all(|b| b.structure.position.iter().all(|p| p.is_finite()))
+    );
+}
