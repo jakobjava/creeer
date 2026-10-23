@@ -25,6 +25,9 @@ mod element;
 #[cfg(test)]
 mod element_tests;
 mod factor;
+pub mod fastened;
+#[cfg(test)]
+mod fastened_tests;
 mod flow;
 pub mod group;
 #[cfg(test)]
@@ -62,6 +65,7 @@ pub use added::AddedMass;
 pub use builder::StructureBuilder;
 pub use dashpot::Dashpot;
 use element::Element;
+pub use fastened::JointLaw;
 pub use heat::BUILT_AT;
 pub use plastic::Yielding;
 pub(crate) use save::{read_solver, write_solver};

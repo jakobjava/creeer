@@ -37,9 +37,25 @@ fn perturb(state: (DVec3, DMat3, DVec3, DMat3), step: [DVec3; 4]) -> (DVec3, DMa
     )
 }
 
+/// The same ends as a fastened joint (`fastened.rs`): its stretch is measured along a's axis.
+fn joint() -> Element {
+    let mut el = element();
+    el.fastened = Some(super::fastened::Fastened {
+        withdrawal: 1.0,
+        lateral: 1.0,
+        interaction: 1.0,
+    });
+    el
+}
+
 #[test]
 fn gradients_match_finite_differences() {
-    let el = element();
+    for el in [element(), joint()] {
+        gradients_match_for(&el);
+    }
+}
+
+fn gradients_match_for(el: &Element) {
     let state = deformed();
     let (xa, ra, xb, rb) = state;
     let (s, grads) = el.kinematics(xa, ra, xb, rb);
@@ -75,7 +91,12 @@ fn gradients_match_finite_differences() {
 
 #[test]
 fn rigid_motion_measures_no_deformation() {
-    let el = element();
+    for el in [element(), joint()] {
+        rigid_motion_for(&el);
+    }
+}
+
+fn rigid_motion_for(el: &Element) {
     let (xa, ra, xb, rb) = deformed();
     let before = el.measures(xa, ra, xb, rb);
     let q = DMat3::from_quat(DQuat::from_axis_angle(

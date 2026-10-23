@@ -1,7 +1,7 @@
 //! Building structures node by node and member by member.
 
 use super::element::Element;
-use super::{Material, NodeId, STANDARD_GRAVITY, Section, Structure, Support};
+use super::{JointLaw, Material, NodeId, STANDARD_GRAVITY, Section, Structure, Support};
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 
 /// Builds a [`Structure`] node by node and member by member.
@@ -86,6 +86,19 @@ impl StructureBuilder {
             material,
         );
         self.elements.push(element);
+        self
+    }
+
+    /// Fastens `a` and `b` (a node on each of two members, where the fasteners cross their
+    /// axes) with a joint of law `law` (`fastened.rs`).
+    pub fn fasten(&mut self, a: NodeId, b: NodeId, law: &JointLaw) -> &mut Self {
+        let d = self.positions[b] - self.positions[a];
+        let (section, material, kept) = law.equivalent(d.length());
+        let up = d.any_orthonormal_vector();
+        self.beam_oriented(a, b, section, material, up);
+        if let Some(joint) = self.elements.last_mut() {
+            joint.fastened = Some(kept);
+        }
         self
     }
 

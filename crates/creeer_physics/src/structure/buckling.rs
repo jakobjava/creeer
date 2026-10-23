@@ -47,7 +47,8 @@ impl Element {
     /// Whether a member with elastic measures `s` is compressed enough to be split.
     pub(crate) fn wants_split(&self, s: &[f64; MEASURES]) -> bool {
         let compression = -self.stiffness.apply(s)[0];
-        if compression <= 0.0 || self.broken {
+        // A joint bears on the wood: it has no length to buckle over.
+        if compression <= 0.0 || self.broken || self.is_joint() {
             return false;
         }
         let l = self.rest_length;

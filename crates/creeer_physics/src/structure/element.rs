@@ -141,6 +141,8 @@ pub(crate) struct Element {
     /// A half of a split member: its share of the member's crookedness is already in its
     /// rest shape (`buckling.rs`).
     pub crooked: bool,
+    /// A fastened joint's own capacities (`fastened.rs`); none for a member.
+    pub fastened: Option<super::fastened::Fastened>,
 }
 
 impl Element {
@@ -177,6 +179,7 @@ impl Element {
             thermal: 0.0,
             broken: false,
             crooked: false,
+            fastened: None,
         }
     }
 
@@ -202,14 +205,21 @@ impl Element {
     /// `rb` (as matrices).
     pub(crate) fn measures(&self, xa: DVec3, ra: DMat3, xb: DVec3, rb: DMat3) -> [f64; MEASURES] {
         let d = xb - xa;
-        let l = d.length();
+        // A joint measures in a's frame as a bushing: d/L, not the unit chord (`fastened.rs`).
+        let joint = self.is_joint();
+        let l = if joint { self.rest_length } else { d.length() };
         let e = d / l;
         let (ta, ya, za) = (ra * self.axis, ra * self.y, ra * self.z);
         let (tb, yb, zb) = (rb * self.axis, rb * self.y, rb * self.z);
         let (pa, pb) = (e.cross(ta), e.cross(tb));
         let bend = [pa.dot(ya), pb.dot(yb), pa.dot(za), pb.dot(zb)];
+        let stretch = if joint {
+            d.dot(ta) - self.rest_length
+        } else {
+            l - self.rest_length + self.rest_length * bowing(&bend)
+        };
         let raw = [
-            l - self.rest_length + self.rest_length * bowing(&bend),
+            stretch,
             0.5 * (ya.cross(yb) + za.cross(zb)).dot(e),
             bend[0],
             bend[1],
@@ -231,10 +241,13 @@ impl Element {
         rb: DMat3,
     ) -> ([f64; MEASURES], [Gradient; MEASURES]) {
         let d = xb - xa;
-        let l = d.length();
+        let joint = self.is_joint();
+        let l = if joint { self.rest_length } else { d.length() };
         let e = d / l;
-        // de = P·dd / l with P = I − e·eᵀ and dd = dxb − dxa.
-        let chord = |v: DVec3| (v - e * e.dot(v)) / l;
+        // de = P·dd / l with P = I − e·eᵀ and dd = dxb − dxa; a joint's e = d/L: de = dd/L.
+        let chord = |v: DVec3| {
+            if joint { v / l } else { (v - e * e.dot(v)) / l }
+        };
         let (ta, ya, za) = (ra * self.axis, ra * self.y, ra * self.z);
         let (tb, yb, zb) = (rb * self.axis, rb * self.y, rb * self.z);
         let mut s = [0.0; MEASURES];
@@ -274,6 +287,17 @@ impl Element {
             } else {
                 [-c, turn, c, DVec3::ZERO]
             };
+        }
+        if self.is_joint() {
+            // A joint's stretch is its members' separation along its fastener (a's axis t_a):
+            // slipping past each other they do not move apart, as a chord would.
+            // d(d·t_a) = t_a·dd + δθ_a·(t_a × d).
+            s[0] = d.dot(ta) - self.rest_length;
+            g[0] = [-ta, ta.cross(d), ta, DVec3::ZERO];
+            for (s, p) in s.iter_mut().zip(&self.plastic) {
+                *s -= p;
+            }
+            return (s, g);
         }
         // The bowing of the stretch: L·Σ (2·θa² − θa·θb + 2·θb²)/30 over both planes.
         let bend = [s[2], s[3], s[4], s[5]];

@@ -135,13 +135,20 @@ impl Encode for Element {
         w.f64(self.plastic_strain);
         w.f64(self.thermal);
         w.put(&self.broken);
-        w.put(&self.crooked);
+        // One byte: bit 0 crooked (a bool's byte, as before G2.1), bit 1 a joint's capacities
+        // follow (so members save bit for bit as they did).
+        w.u8(u8::from(self.crooked) | if self.fastened.is_some() { 2 } else { 0 });
+        if let Some(f) = &self.fastened {
+            w.f64(f.withdrawal);
+            w.f64(f.lateral);
+            w.f64(f.interaction);
+        }
     }
 }
 
 impl Decode for Element {
     fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
+        Self {
             a: r.get()?,
             b: r.get()?,
             rest_length: r.finite()?,
@@ -161,8 +168,29 @@ impl Decode for Element {
             // Version 3 (F6) on.
             thermal: if r.version() >= 3 { r.finite()? } else { 0.0 },
             broken: r.get()?,
-            crooked: r.get()?,
-        })
+            crooked: false,
+            fastened: None,
+        }
+        .with_flags(r)
+    }
+}
+
+impl Element {
+    /// Its crooked flag and a joint's capacities (see `encode`).
+    fn with_flags(mut self, r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let flags = r.u8()?;
+        if flags > 3 {
+            return Err(r.error("not a member's flags"));
+        }
+        self.crooked = flags & 1 != 0;
+        if flags & 2 != 0 {
+            self.fastened = Some(super::fastened::Fastened {
+                withdrawal: r.finite()?,
+                lateral: r.finite()?,
+                interaction: r.finite()?,
+            });
+        }
+        Ok(self)
     }
 }
 

@@ -264,7 +264,21 @@ impl Structure {
                 let dissipated = step.work(e, &p);
                 e.flow_rate = p.map(|p| p / work.h);
                 // Compressed enough to be split (`buckling.rs`), on its elastic part.
-                let wants = splits && e.wants_split(&std::array::from_fn(|m| s[m] - p[m]));
+                let elastic = std::array::from_fn(|m| s[m] - p[m]);
+                let wants = splits && e.wants_split(&elastic);
+                // A joint's fasteners pulled out (`fastened.rs`): brittle, it lets go at once.
+                if let Some(f) = e.fastened
+                    && f.withdrawn(&e.stiffness.apply(&elastic), e.rest_length)
+                {
+                    e.broken = true;
+                    e.stiffness = Stiffness::zeroed();
+                    let y = Yielding {
+                        broke: 1,
+                        work: dissipated,
+                        ..Yielding::default()
+                    };
+                    return (y, false);
+                }
                 if p.iter().all(|v| *v == 0.0) {
                     return (Yielding::default(), wants);
                 }
