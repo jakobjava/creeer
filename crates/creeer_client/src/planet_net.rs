@@ -116,17 +116,17 @@ impl PlanetSession {
     }
 
     /// A frame of `dt` seconds passed: takes in what the server sent, and runs the client's
-    /// ticks due (each the player's input `walk`, `jump` and `thrust` for its avatar).
+    /// ticks due (each the player's input `walk`, `jump` and `thrust` for its avatar), each at
+    /// its moment within the frame, so the avatar is drawn the time since its last tick on.
     pub fn update(&mut self, dt: f64, (walk, jump, thrust): (DVec3, bool, DVec3)) {
-        self.connection.update(Duration::from_secs_f64(dt));
-        let tick = 1.0 / f64::from(TICK_RATE);
-        // A frame of a slow machine catches up at most a quarter of a second.
-        self.behind = (self.behind + dt).min(0.25);
-        while self.behind >= tick {
-            self.behind -= tick;
+        let (to_each, after, behind) = frame_ticks(self.behind, dt);
+        for to in to_each {
+            self.connection.update(Duration::from_secs_f64(to));
             self.connection.input(walk, jump, thrust);
             self.connection.flush();
         }
+        self.connection.update(Duration::from_secs_f64(after));
+        self.behind = behind;
     }
 
     /// Asks the world for something.
@@ -280,4 +280,56 @@ fn fallen_bones(id: EntityId, pelvis: (DVec3, DQuat), c: &Connection) -> Option<
     }
     let at: Option<Vec<(DVec3, DQuat)>> = at.into_iter().collect();
     Some(bones::fallen_bones(&at?))
+}
+
+/// A frame of `dt` seconds, `behind` seconds after the last tick: the time to each tick that
+/// falls due in it (from the frame's start, then from the tick before), the time after the
+/// last, and how far behind the next tick it ends. Each tick must come at its moment: ticked
+/// at the frame's start and drawn from there, the avatar hung back by the time past the tick
+/// for a frame each tick, a stutter the planted feet hide and the trunk shows (fixed after
+/// G1.10). A frame of a slow machine catches up at most a quarter of a second.
+fn frame_ticks(behind: f64, dt: f64) -> (Vec<f64>, f64, f64) {
+    let tick = 1.0 / f64::from(TICK_RATE);
+    let mut left = dt.clamp(0.0, 0.25);
+    let mut behind = behind;
+    let mut to_each = Vec::new();
+    // (A tick due within rounding of the frame's end is due.)
+    while behind + left >= tick - 1e-12 {
+        let to = (tick - behind).min(left);
+        to_each.push(to);
+        left -= to;
+        behind = 0.0;
+    }
+    (to_each, left, behind + left)
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::frame_ticks;
+
+    /// At 144 frames a second against 60 ticks: every tick comes once at its moment, and the
+    /// time passed adds up to the frames'.
+    #[test]
+    fn each_tick_comes_at_its_moment_within_its_frame() {
+        let (dt, tick) = (1.0 / 144.0, 1.0 / 60.0);
+        let (mut behind, mut clock, mut ticks) = (0.0, 0.0, Vec::new());
+        for _ in 0..1440 {
+            let (to_each, after, next) = frame_ticks(behind, dt);
+            for to in to_each {
+                clock += to;
+                ticks.push(clock);
+            }
+            clock += after;
+            behind = next;
+        }
+        assert!((clock - 10.0).abs() < 1e-9, "{clock}");
+        assert_eq!(ticks.len(), 600);
+        for (k, t) in ticks.iter().enumerate() {
+            #[allow(clippy::cast_precision_loss)]
+            let due = (k + 1) as f64 * tick;
+            assert!((t - due).abs() < 1e-9, "tick {k} at {t}, due {due}");
+        }
+        // A slow frame catches up at most a quarter of a second.
+        assert_eq!(frame_ticks(0.0, 2.0).0.len(), 15);
+    }
 }
