@@ -23,6 +23,7 @@
 
 use super::element::{Element, MEASURES};
 use super::section::{Material, RateSensitivity, Section};
+use creeer_math::glam::DQuat;
 
 /// The equivalent member's Φ: shear dominates its lateral stiffness a hundredfold, so it
 /// slips as a joint, not as a bent stub (the bending share, 1/Φ, is 1 %).
@@ -64,6 +65,9 @@ pub struct Fastened {
     pub lateral: f64,
     /// The interaction exponent e.
     pub interaction: f64,
+    /// b's rest frame relative to a's (its node turned apart from a's when the joint was
+    /// made, `Structure::join`): the joint's axes at b are these, turned.
+    pub to_b: DQuat,
 }
 
 impl JointLaw {
@@ -122,6 +126,7 @@ impl JointLaw {
             withdrawal: self.withdrawal,
             lateral: self.lateral_peak,
             interaction: self.interaction,
+            to_b: DQuat::IDENTITY,
         };
         (section, material, kept)
     }
@@ -152,5 +157,24 @@ impl Element {
     /// Whether it is a fastened joint, not a member.
     pub(crate) fn is_joint(&self) -> bool {
         self.fastened.is_some()
+    }
+
+    /// Its axes at end b for b's node turned by `rb`: a member's rest axes, a joint's turned
+    /// into b's rest frame (`Fastened::to_b`).
+    pub(crate) fn b_axes(
+        &self,
+        rb: creeer_math::glam::DMat3,
+    ) -> (
+        creeer_math::glam::DVec3,
+        creeer_math::glam::DVec3,
+        creeer_math::glam::DVec3,
+    ) {
+        match &self.fastened {
+            None => (rb * self.axis, rb * self.y, rb * self.z),
+            Some(f) => {
+                let r = rb * creeer_math::glam::DMat3::from_quat(f.to_b);
+                (r * self.axis, r * self.y, r * self.z)
+            }
+        }
     }
 }

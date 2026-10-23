@@ -44,6 +44,7 @@ fn joint() -> Element {
         withdrawal: 1.0,
         lateral: 1.0,
         interaction: 1.0,
+        to_b: DQuat::IDENTITY,
     });
     el
 }

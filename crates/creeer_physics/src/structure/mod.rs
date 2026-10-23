@@ -30,6 +30,9 @@ pub mod fastened;
 mod fastened_tests;
 mod flow;
 pub mod group;
+mod grow;
+#[cfg(test)]
+mod grow_tests;
 #[cfg(test)]
 mod hardening_tests;
 mod heat;

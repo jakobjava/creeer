@@ -142,6 +142,7 @@ impl Encode for Element {
             w.f64(f.withdrawal);
             w.f64(f.lateral);
             w.f64(f.interaction);
+            w.put(&f.to_b);
         }
     }
 }
@@ -188,6 +189,7 @@ impl Element {
                 withdrawal: r.finite()?,
                 lateral: r.finite()?,
                 interaction: r.finite()?,
+                to_b: r.get()?,
             });
         }
         Ok(self)

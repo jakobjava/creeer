@@ -210,7 +210,7 @@ impl Element {
         let l = if joint { self.rest_length } else { d.length() };
         let e = d / l;
         let (ta, ya, za) = (ra * self.axis, ra * self.y, ra * self.z);
-        let (tb, yb, zb) = (rb * self.axis, rb * self.y, rb * self.z);
+        let (tb, yb, zb) = self.b_axes(rb);
         let (pa, pb) = (e.cross(ta), e.cross(tb));
         let bend = [pa.dot(ya), pb.dot(yb), pa.dot(za), pb.dot(zb)];
         let stretch = if joint {
@@ -249,7 +249,7 @@ impl Element {
             if joint { v / l } else { (v - e * e.dot(v)) / l }
         };
         let (ta, ya, za) = (ra * self.axis, ra * self.y, ra * self.z);
-        let (tb, yb, zb) = (rb * self.axis, rb * self.y, rb * self.z);
+        let (tb, yb, zb) = self.b_axes(rb);
         let mut s = [0.0; MEASURES];
         let mut g = [[DVec3::ZERO; 4]; MEASURES];
 
