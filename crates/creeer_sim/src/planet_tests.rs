@@ -231,9 +231,14 @@ fn planet_physics_is_bit_identical_across_platforms() {
     // a second and 0.6 mm after two (crates settling on terrain), after 0x71ef_08e3_442a_4dc9.
     // Then for the contacts' lever arms and normals in the matrices measured at each iterate
     // (not the step's start): the bodies within 0.1 mm after two seconds, after
-    // 0xccbf_8f27_2ce7_305c.
+    // 0xccbf_8f27_2ce7_305c. Then for turning contacts starting where they are found, so that
+    // the energy guard measures them as the step does (ADR-0024): the bodies within 5.6 mm
+    // after two seconds, after 0x95c9_9d4f_d3cf_d727 (which the old start gave back). Then for
+    // the turn's substeps only for boxes the step can bring into contact, and for their groups
+    // alone (G1.8, ADR-0024): the bodies within 2.4 µm after two seconds, after
+    // 0x4286_a939_2f61_b08c.
     assert_eq!(
-        hash, 0x95c9_9d4f_d3cf_d727,
+        hash, 0xf693_96db_e738_02d4,
         "planet physics hash {hash:#018x}"
     );
 }

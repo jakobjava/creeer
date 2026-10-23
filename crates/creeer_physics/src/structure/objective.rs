@@ -55,31 +55,39 @@ impl Work {
         // thread wake-up), the terms summed in node order.
         let mut rotations = std::mem::take(&mut self.rotations);
         let this = &*self;
-        let nodes: Vec<f64> = rotations
-            .par_iter_mut()
-            .enumerate()
-            .with_min_len(CHUNK)
-            .map(|(i, rotation)| {
-                *rotation = DMat3::from_quat(q[i]);
-                let offset = x[i] - this.x_star[i];
-                let turn = so3::log(q[i] * this.q_star[i].conjugate());
-                let moved = x[i] - this.x_hat[i];
-                // Air drag: a dashpot on the new velocity (x − x̂)/β.
-                // A planet's field enters through its potential, relative to x* like the rest.
-                let field = s.planet.as_ref().map_or(0.0, |g| {
-                    s.mass[i] * g.potential_difference(x[i], this.x_star[i])
-                });
-                0.5 * this.drag_rate[i] / this.beta * moved.length_squared()
-                    + 0.5
-                        * inv_b2
-                        * (s.mass[i] * offset.length_squared()
-                            + turn.dot(this.inertia_star[i] * turn))
-                    - (s.gravity * s.mass[i] + s.load[i] + this.coriolis[i]).dot(offset)
-                    + field
-                    - (s.torque[i] + this.frame_torque[i]).dot(turn)
-            })
-            .collect();
-        let value = nodes.iter().fold(0.0, |sum, v| sum + v);
+        let term = |i: usize, rotation: &mut DMat3| {
+            *rotation = DMat3::from_quat(q[i]);
+            let offset = x[i] - this.x_star[i];
+            let turn = so3::log(q[i] * this.q_star[i].conjugate());
+            let moved = x[i] - this.x_hat[i];
+            // Air drag: a dashpot on the new velocity (x − x̂)/β.
+            // A planet's field enters through its potential, relative to x* like the rest.
+            let field = s.planet.as_ref().map_or(0.0, |g| {
+                s.mass[i] * g.potential_difference(x[i], this.x_star[i])
+            });
+            0.5 * this.drag_rate[i] / this.beta * moved.length_squared()
+                + 0.5
+                    * inv_b2
+                    * (s.mass[i] * offset.length_squared() + turn.dot(this.inertia_star[i] * turn))
+                - (s.gravity * s.mass[i] + s.load[i] + this.coriolis[i]).dot(offset)
+                + field
+                - (s.torque[i] + this.frame_torque[i]).dot(turn)
+        };
+        // (Within one chunk rayon runs it on this thread too: the same terms, summed in the
+        // same order, without its machinery and a vector each time: a rigid body's.)
+        let value = if rotations.len() <= CHUNK {
+            let mut value = 0.0;
+            for (i, rotation) in rotations.iter_mut().enumerate() {
+                value += term(i, rotation);
+            }
+            value
+        } else {
+            let nodes: Vec<f64> = (rotations.par_iter_mut().enumerate())
+                .with_min_len(CHUNK)
+                .map(|(i, rotation)| term(i, rotation))
+                .collect();
+            nodes.iter().fold(0.0, |sum, v| sum + v)
+        };
         self.rotations = rotations;
         let mut element_force = std::mem::take(&mut self.element_force);
         let mut element_energy = std::mem::take(&mut self.element_energy);

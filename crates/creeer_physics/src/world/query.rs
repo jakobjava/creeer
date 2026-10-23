@@ -84,6 +84,34 @@ impl World {
         }
         body.solver.reset_history(&body.structure);
     }
+
+    /// The mass node `node` of body `index` has against an impulse along unit `direction` at
+    /// `point` (world; kg): 1/m = 1/M + (r × d)·I⁻¹(r × d), its free axes alone (a fixed node,
+    /// unmoved by any impulse, infinite).
+    pub fn effective_mass(
+        &self,
+        index: usize,
+        node: NodeId,
+        point: DVec3,
+        direction: DVec3,
+    ) -> f64 {
+        let s = &self.bodies[index].structure;
+        let mass = s.mass[node];
+        let moved = if mass > 0.0 {
+            (direction * s.free_translation[node]).dot(direction) / mass
+        } else {
+            0.0
+        };
+        let r = DMat3::from_quat(s.orientation[node]);
+        let inertia = r * s.inertia[node] * r.transpose();
+        let turned = if inertia.determinant() > 0.0 {
+            let arm = (point - s.position[node]).cross(direction);
+            arm.dot(inertia.inverse() * arm * s.free_rotation[node])
+        } else {
+            0.0
+        };
+        1.0 / (moved + turned)
+    }
 }
 
 /// What a body touches now (found from where everything is, not from the last step).
@@ -154,3 +182,7 @@ impl World {
         out
     }
 }
+
+#[cfg(test)]
+#[path = "query_tests.rs"]
+mod tests;

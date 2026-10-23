@@ -93,6 +93,7 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 }
             });
             machines(ui, view, camera);
+            look(ui, view);
             let edits = view.session.connection.edits.len();
             if view.session.hosted() && Path::new(WORLD_FILE).exists() {
                 ui.small(format!("{edits} edits · saved world: {WORLD_FILE}"));
@@ -121,6 +122,17 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
             ui.label(format!(
                 "altitude {altitude:.1} m · {latitude:.2}° lat, {longitude:.2}° lon"
             ));
+            let c = &view.session.connection;
+            ui.label(format!(
+                "health {:.0} %{}{}",
+                c.health * 100.0,
+                if c.gas > 0.0 {
+                    format!(" · jetpack gas {:.2} kg", c.gas)
+                } else {
+                    String::new()
+                },
+                if c.fallen { " · down" } else { "" }
+            ));
             let (bodies, asleep, _) = snapshot.counts;
             let net = view.session.connection.network();
             ui.label(format!(
@@ -140,8 +152,9 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 view.draw.len()
             ));
             ui.label("Right mouse: look · WASD/Space/Ctrl: fly (speed follows altitude)");
-            ui.label("V: walk the avatar (WASD, Space jumps, Shift runs)");
+            ui.label("V: walk the avatar (WASD, Space jumps, Shift runs, Ctrl: jetpack)");
             ui.label("Mouse wheel: speed · Left click: use tool at the crosshair");
+            ui.label("Walking: 1–4 take a tool in hand (0 puts it away); left click strikes");
         });
     request
 }
@@ -177,8 +190,9 @@ fn probe(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
     }
 }
 
-/// A small cross at the centre of the screen, where tools act.
-pub fn crosshair(ctx: &egui::Context) {
+/// A small cross at the centre of the screen, where tools act; walking, ringed when what it is
+/// on is within reach, and named beneath (G1.4d).
+pub fn crosshair(ctx: &egui::Context, target: Option<&crate::planet_aim::Target>) {
     let center = ctx.content_rect().center();
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
@@ -189,6 +203,20 @@ pub fn crosshair(ctx: &egui::Context) {
         let d = egui::vec2(dx, dy) * 8.0;
         painter.line_segment([center - d, center + d], stroke);
     }
+    let Some(target) = target else {
+        return;
+    };
+    let alpha = if target.in_reach { 220 } else { 110 };
+    if target.in_reach {
+        painter.circle_stroke(center, 12.0, stroke);
+    }
+    painter.text(
+        center + egui::vec2(0.0, 20.0),
+        egui::Align2::CENTER_TOP,
+        crate::planet_aim::label(target),
+        egui::FontId::proportional(13.0),
+        egui::Color32::from_white_alpha(alpha),
+    );
 }
 
 /// The world's machines (F7.4): each one's mode (active near a player, abstract beyond
@@ -214,5 +242,42 @@ fn machines(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
             m.hydrogen,
             m.time / 60.0
         ));
+    }
+}
+
+/// The player's skin tone and hair colour (G1.3e): chosen here, kept by the server
+/// (`Command::Look`), which gives their colour and outfit.
+fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
+    static CHOICES: std::sync::OnceLock<(Vec<String>, Vec<String>)> = std::sync::OnceLock::new();
+    let (skins, hairs) = CHOICES.get_or_init(|| {
+        crate::models::palette().map_or_else(Default::default, |p| {
+            let names = |list: &[(String, creeer_art::colour::Srgb)]| {
+                list.iter().map(|(name, _)| name.clone()).collect()
+            };
+            (names(&p.skin), names(&p.hair))
+        })
+    });
+    let c = &view.session.connection;
+    let mine = c.welcome.as_ref().and_then(|w| c.kinds.get(&w.avatar));
+    let Some(creeer_net::entity::Kind::Character { look, .. }) = mine else {
+        return;
+    };
+    let (mut skin, mut hair) = (look.skin, look.hair);
+    ui.horizontal(|ui| {
+        let choose = |ui: &mut egui::Ui, label: &str, list: &[String], value: &mut u8| {
+            let shown = list.get(usize::from(*value)).map_or("?", String::as_str);
+            egui::ComboBox::from_label(label)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (k, name) in list.iter().enumerate() {
+                        ui.selectable_value(value, u8::try_from(k).unwrap_or(0), name);
+                    }
+                });
+        };
+        choose(ui, "skin", skins, &mut skin);
+        choose(ui, "hair", hairs, &mut hair);
+    });
+    if (skin, hair) != (look.skin, look.hair) {
+        view.send(Command::Look { skin, hair });
     }
 }

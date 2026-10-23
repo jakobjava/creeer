@@ -19,9 +19,9 @@ pub(super) type Stepped = (Vec<usize>, Contacts, Vec<anchor::Anchor>);
 impl World {
     /// Steps the awake bodies, joined into groups by the contacts `found`. `anchors`: the
     /// friction anchors at the start of the step.
-    pub(super) fn pass(&mut self, found: &[Found], anchors: &[anchor::Anchor]) -> Vec<Stepped> {
-        let setup = crate::profile::start();
-        // Groups: bodies joined by contacts (union-find).
+    /// Each body's group, as the least body of it: bodies joined by the contacts `found`, by
+    /// joints and by struts (union-find).
+    pub(super) fn roots(&self, found: &[Found]) -> Vec<usize> {
         let mut parent: Vec<usize> = (0..self.bodies.len()).collect();
         fn root(parent: &mut [usize], mut i: usize) -> usize {
             while parent[i] != i {
@@ -30,16 +30,30 @@ impl World {
             }
             i
         }
-        for (a, _, b, _) in found {
-            if let Some((b, _)) = b {
-                let (ra, rb) = (root(&mut parent, *a), root(&mut parent, *b));
-                parent[ra.max(rb)] = ra.min(rb);
-            }
+        let joined = (self.joints.iter()).filter_map(|j| j.b.map(|b| (j.a.0, b.0)));
+        let strutted = (self.struts.iter()).filter_map(|s| s.b.map(|b| (s.a.0, b.0)));
+        let touching = found
+            .iter()
+            .filter_map(|(a, _, b, _)| b.map(|(b, _)| (*a, b)));
+        for (a, b) in touching.chain(joined).chain(strutted) {
+            let (ra, rb) = (root(&mut parent, a), root(&mut parent, b));
+            parent[ra.max(rb)] = ra.min(rb);
         }
+        (0..self.bodies.len())
+            .map(|b| root(&mut parent, b))
+            .collect()
+    }
+
+    pub(super) fn pass(&mut self, found: &[Found], anchors: &[anchor::Anchor]) -> Vec<Stepped> {
+        let setup = crate::profile::start();
+        // Groups: bodies joined by contacts, joints and struts, of those stepped now.
+        let roots = self.roots(found);
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut group_of = vec![usize::MAX; self.bodies.len()];
-        for body in (0..self.bodies.len()).filter(|&b| !self.bodies[b].sleep.asleep) {
-            let r = root(&mut parent, body);
+        for body in
+            (0..self.bodies.len()).filter(|&b| !self.bodies[b].sleep.asleep && self.in_step(b))
+        {
+            let r = roots[body];
             if group_of[r] == usize::MAX {
                 group_of[r] = groups.len();
                 groups.push(Vec::new());
@@ -125,6 +139,7 @@ impl World {
         // Step every group, in parallel, each borrowing its own bodies (in their order, as
         // its contacts number them): moving them out and back cost more than stepping 200
         // free bodies.
+        let joints = self.group_joints(&groups, &group_of);
         let dt = self.dt;
         let ground = self.ground.clone();
         let mut members: Vec<Vec<&mut Body>> =
@@ -139,11 +154,15 @@ impl World {
             .zip(contacts)
             .zip(left)
             .zip(members)
-            .map(|(((g, (c, p, measures, shapes)), left), bodies)| {
-                let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
-                contacts.set_left(left);
-                (bodies, contacts, Vec::new(), g)
-            })
+            .zip(joints)
+            .map(
+                |((((g, (c, p, measures, shapes)), left), bodies), joints)| {
+                    let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
+                    contacts.set_left(left);
+                    contacts.joints = joints;
+                    (bodies, contacts, Vec::new(), g)
+                },
+            )
             .collect();
         setup.stop(crate::profile::Slot::PassSetup);
         work.par_iter_mut()
@@ -154,9 +173,76 @@ impl World {
                 *anchors = anchor::after_step(bodies, group, contacts);
                 timer.stop(crate::profile::Slot::GroupWorld);
             });
+        // The joints' constraint forces, carried to the next step.
+        for (_, contacts, _, _) in &work {
+            for (index, joint) in &contacts.joints.list {
+                self.joints[*index].multipliers = joint.multipliers;
+                self.joints[*index].anchor = joint.anchor;
+                self.joints[*index].applied = joint.applied;
+            }
+        }
         work.into_iter()
             .map(|(_, contacts, anchors, g)| (g.clone(), contacts, anchors))
             .collect()
+    }
+
+    /// Each group's joints, their sides numbered as the group's members, with the sides'
+    /// mass and inertia (for the joints' penalties).
+    fn group_joints(&self, groups: &[Vec<usize>], group_of: &[usize]) -> Vec<super::joint::Joints> {
+        let mut lists = vec![(Vec::new(), Vec::new()); groups.len()];
+        for (index, joint) in self.joints.iter().enumerate() {
+            let Some(&g) = group_of.get(joint.a.0).filter(|&&g| g != usize::MAX) else {
+                continue;
+            };
+            let member = |body: usize| groups[g].iter().position(|&b| b == body);
+            let (Some(a), b) = (member(joint.a.0), joint.b.map(|b| member(b.0))) else {
+                continue;
+            };
+            let mut local = joint.clone();
+            local.a.0 = a;
+            if let (Some(side), Some(Some(m))) = (&mut local.b, b) {
+                side.0 = m;
+            }
+            let inertia = |side: Option<(usize, NodeId)>| {
+                side.map_or((f64::INFINITY, f64::INFINITY, false), |(body, node)| {
+                    let s = &self.bodies[body].structure;
+                    let i = s.inertia[node];
+                    let rigid = s.node_count() == 1 && s.element_count() == 0;
+                    (
+                        s.mass[node],
+                        (i.x_axis.x + i.y_axis.y + i.z_axis.z) / 3.0,
+                        rigid,
+                    )
+                })
+            };
+            lists[g].0.push((index, local));
+            lists[g].1.push([inertia(Some(joint.a)), inertia(joint.b)]);
+        }
+        let mut joints: Vec<super::joint::Joints> = (lists.into_iter())
+            .map(|(list, sides)| super::joint::Joints::new(list, sides))
+            .collect();
+        // The struts alike (`strut.rs`), with whether each side is a rigid body.
+        for strut in &self.struts {
+            let Some(&g) = group_of.get(strut.a.0).filter(|&&g| g != usize::MAX) else {
+                continue;
+            };
+            let member = |body: usize| groups[g].iter().position(|&b| b == body);
+            let rigid = |side: Option<(usize, NodeId)>| {
+                side.is_some_and(|(body, _)| {
+                    let s = &self.bodies[body].structure;
+                    s.node_count() == 1 && s.element_count() == 0
+                })
+            };
+            let mut local = *strut;
+            let Some(a) = member(strut.a.0) else { continue };
+            local.a.0 = a;
+            if let Some((body, node)) = strut.b {
+                let Some(b) = member(body) else { continue };
+                local.b = Some((b, node));
+            }
+            joints[g].add_strut(local, [rigid(Some(strut.a)), rigid(strut.b)]);
+        }
+        joints
     }
 
     /// The surface of body `b`, or of the fixed world.
@@ -215,17 +301,29 @@ impl World {
         );
         let local_a = body_a.structure.orientation[na].conjugate()
             * (raw.point_a - body_a.structure.position[na]);
-        let body = |at| Turning::Body {
-            at,
-            from: DQuat::IDENTITY,
+        // A turning normal starts from the bodies as they are found (the step's start): the
+        // energy guard measures the contacts before the step sets them up, and with no start
+        // (identity) it turned each normal by its body's whole orientation (a ragdoll's foot
+        // under a crate found 21 J in an edge 6 mm apart, every step, `turning.rs`).
+        let orientation = |body: usize, node: NodeId| self.bodies[body].structure.orientation[node];
+        let body = |(m, body, node)| Turning::Body {
+            at: (m, node),
+            from: orientation(body, node),
         };
         contact.turning = match raw.follows {
-            Follows::A => body((member(a), na)),
-            Follows::B => b.map_or(Turning::Frozen, |(b, nb)| body((member(b), nb))),
+            Follows::A => body((member(a), a, na)),
+            Follows::B => b.map_or(Turning::Frozen, |(b, nb)| body((member(b), b, nb))),
             Follows::Edges(ea, eb) => Turning::Edges {
                 edges: (ea, eb),
-                from: (DQuat::IDENTITY, DQuat::IDENTITY),
-                sign: 1.0,
+                from: (
+                    orientation(a, na),
+                    b.map_or(DQuat::IDENTITY, |(b, nb)| orientation(b, nb)),
+                ),
+                sign: if ea.cross(eb).dot(raw.normal) < 0.0 {
+                    -1.0
+                } else {
+                    1.0
+                },
             },
             Follows::Neither | Follows::ShapeA | Follows::ShapeB => Turning::Frozen,
         };

@@ -1,8 +1,9 @@
 //! The authoritative world: the physics world on a planet's terrain, every body in it an
 //! entity with an id that clients know it by, and what players may ask of it.
 //!
-//! The server checks what it is asked (plan.md §1, server-authoritative): a command acts
-//! only within [`REACH`] of the asking player's avatar, an edit's brush is no larger than a
+//! The server checks what it is asked (plan.md §1, server-authoritative): the sandbox's
+//! commands are a creative server's alone and act only within [`REACH`] of the asking player's
+//! avatar (what a player reaches for otherwise, `reach.rs`), an edit's brush is no larger than a
 //! tool makes one, and nothing is placed at a point that is not finite.
 
 use crate::things::{frame, upright};
@@ -16,7 +17,7 @@ use creeer_net::message::{AvatarInput, Command};
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::{Body, World};
 use creeer_sim::surroundings::Surroundings;
-use creeer_sim::{TerrainGround, avatar, planet_gravity};
+use creeer_sim::{TerrainGround, character, planet_gravity};
 use creeer_terrain::edits::{Brush, Edit, Edits};
 use creeer_terrain::{Planet, Terrain};
 use std::collections::HashMap;
@@ -60,8 +61,8 @@ pub struct ServerWorld {
     next_id: u32,
     /// Where avatars first appear: on land, on the ground.
     spawn: DVec3,
-    /// The planet's air and sea on its bodies (F6.6; avatars spared: their players'
-    /// machines predict them without).
+    /// The planet's air and sea on its bodies (F6.6), characters too (G1.2: their players'
+    /// machines predict them in the same).
     surroundings: Surroundings,
     /// Resting islands far from every player (F7.2, `creeer_sim::lod`).
     parked: creeer_sim::lod::Parked<regions::Tag>,
@@ -70,32 +71,36 @@ pub struct ServerWorld {
     /// Its machines (F7.4), and the next id for one.
     machines: Vec<machines::Placed>,
     next_machine: u32,
-}
-
-/// A point on the ground of `terrain`: on land between 300 and 1500 m (the first such of a
-/// spread of directions, so always the same one).
-fn spawn_point(terrain: &Terrain) -> DVec3 {
-    let up = creeer_terrain::elevation::fibonacci_sphere(5000)
-        .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
-        .unwrap_or(DVec3::Y);
-    ground_under(
-        terrain,
-        up * (terrain.planet().radius + terrain.surface_height(up) + 50.0),
-    )
-}
-
-/// The point of the ground of `terrain` under (or over) `p`, along the vertical.
-fn ground_under(terrain: &Terrain, mut p: DVec3) -> DVec3 {
-    let up = p.normalize();
-    // The density is the height above the ground: down by it until on it.
-    for _ in 0..30 {
-        let d = terrain.density(p);
-        p -= up * d;
-        if d.abs() < 1e-4 {
-            break;
-        }
-    }
-    p
+    /// The characters' legs' reactions on what they stand on, for this step alone
+    /// (`creeer_sim::character::release`).
+    reactions: Vec<character::Reaction>,
+    /// The players' characters as people (G1.2d), by their avatars, and the entities that
+    /// became something else since the sessions were last told (`people.rs`).
+    people: std::collections::BTreeMap<EntityId, people::Person>,
+    changed: Vec<EntityId>,
+    /// Every entity's age (G1.3c, `ageing.rs`).
+    ages: ageing::Ages,
+    /// How each player's character looks, by name (G1.3e, `looks.rs`).
+    looks: std::collections::BTreeMap<String, creeer_net::entity::Look>,
+    /// The hand tools (G1.4c, the packs' `tools.ron`), and the one each player holds, by name.
+    tools: Vec<creeer_sim::tools::Tool>,
+    wields: std::collections::BTreeMap<String, u8>,
+    /// Where the bodies near players were, for what they reach for (G1.4d, `reach.rs`).
+    history: history::History,
+    /// The swings on their way, those begun since the sessions were told, this tick's blows
+    /// (G1.4e, `strikes.rs`), and what each player carries, by avatar (G1.4f, `carry.rs`).
+    swings: Vec<strikes::Swinging>,
+    started: Vec<(EntityId, u64)>,
+    blows: Vec<strikes::Blow>,
+    carrying: std::collections::BTreeMap<EntityId, carry::Carry>,
+    /// The bodies that are items, and what each player carries (G1.6a, `items.rs`).
+    items: items::Items,
+    /// What was done to its trees (G1.7, `trees.rs`) and dug from its ground (G1.5, `digging.rs`).
+    trees: trees::Trees,
+    digging: digging::Digging,
+    /// A creative (or test) server: its players may drop crates, frames and machines and dig
+    /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
+    pub creative: bool,
 }
 
 impl ServerWorld {
@@ -119,6 +124,9 @@ impl ServerWorld {
         let species = SpeciesTable::from_data(&data).expect("the packs' species load");
         let surroundings = Surroundings::of(terrain.planet(), &species)
             .expect("the planet's air is of known gases");
+        let tools = creeer_sim::tools::Tool::all(&data).unwrap_or_default();
+        let items = items::Items::from_data(&data, &terrain);
+        let trees = trees::Trees::from_data(&data, &terrain, spawn);
         Self {
             data,
             terrain,
@@ -135,6 +143,22 @@ impl ServerWorld {
             returning: std::collections::VecDeque::new(),
             machines: Vec::new(),
             next_machine: 1,
+            reactions: Vec::new(),
+            people: std::collections::BTreeMap::new(),
+            changed: Vec::new(),
+            ages: ageing::Ages::default(),
+            looks: std::collections::BTreeMap::new(),
+            tools,
+            wields: std::collections::BTreeMap::new(),
+            history: history::History::default(),
+            swings: Vec::new(),
+            started: Vec::new(),
+            blows: Vec::new(),
+            carrying: std::collections::BTreeMap::new(),
+            items,
+            trees,
+            digging: digging::Digging::default(),
+            creative: false,
         }
     }
 
@@ -187,15 +211,26 @@ impl ServerWorld {
     }
 
     fn add(&mut self, body: Body, player: Option<String>) -> EntityId {
+        let id = self.add_unlifted_as(body, player);
+        let index = self.index(id).expect("just added");
+        self.lift_clear(index);
+        id
+    }
+
+    /// Adds `body` where it is (a load put in the hands passes the body holding it).
+    fn add_unlifted(&mut self, body: Body) -> EntityId {
+        self.add_unlifted_as(body, None)
+    }
+
+    fn add_unlifted_as(&mut self, body: Body, player: Option<String>) -> EntityId {
         let id = EntityId(self.next_id);
         self.next_id += 1;
-        let index = self.world.add(body);
-        if player.is_some() {
-            self.surroundings.spare(index);
-        }
-        self.lift_clear(index);
+        self.world.add(body);
         self.index.insert(id, self.ids.len());
         self.ids.push(id);
+        if player.is_some() {
+            self.people.insert(id, people::Person::default());
+        }
         self.players.push(player);
         id
     }
@@ -225,6 +260,8 @@ impl ServerWorld {
 
     /// `player`'s avatar: the one they left, or a new one at the spawn point.
     pub fn avatar_of(&mut self, player: &str) -> EntityId {
+        // Its look, chosen once (G1.3e).
+        self.look_of(player);
         // Parked far away while its player was gone: back with its island.
         self.flush();
         if let Some(key) = self.parked.find(|t| t.player.as_deref() == Some(player)) {
@@ -242,92 +279,31 @@ impl ServerWorld {
         // Side by side, two metres apart, a little above the ground.
         #[allow(clippy::cast_precision_loss)] // a few
         let along = self.players.iter().flatten().count() as f64 * 2.0;
-        let at = self.spawn + east * along + up * (avatar::RADIUS + 0.3);
-        self.add(avatar::body(at, DT), Some(player.to_owned()))
+        let feet = self.ground_under(self.spawn + east * along) + up * 0.05;
+        let id = self.add(character::body(feet, up, DT), Some(player.to_owned()));
+        self.equip(id);
+        id
     }
 
     /// Steers avatar `id` by `input` for the next step.
     pub fn steer(&mut self, id: EntityId, input: &AvatarInput) {
+        // A fallen character is its ragdoll: there is nothing to steer.
+        if self.people.get(&id).is_some_and(people::Person::fallen) {
+            return;
+        }
         if let Some(i) = self.index(id) {
-            let up = self.world.bodies[i].structure.position[0].normalize();
-            avatar::steer(&mut self.world, i, (input.walk, input.jump), up);
+            let at = self.world.bodies[i].structure.position[0];
+            let water = self.surroundings.sea.as_ref().map(|sea| sea.depth(at));
+            let up = character::plumb(&self.world, at);
+            let act = character::Intent {
+                walk: input.walk,
+                jump: input.jump,
+                thrust: input.thrust,
+                load: self.items.load(id),
+                stopping: input.stopping,
+            };
+            character::steer(&mut self.world, i, act, (up, water), &mut self.reactions);
         }
-    }
-
-    /// Does what a player asks, `by` their avatar (none: the host itself, unchecked).
-    ///
-    /// # Errors
-    /// What was refused, and why.
-    pub fn apply(&mut self, command: &Command, by: Option<EntityId>) -> Result<(), String> {
-        let _scope = profile::scope("command");
-        let near = by
-            .and_then(|id| self.index(id))
-            .map(|i| self.world.bodies[i].structure.position[0]);
-        let within = |p: DVec3| -> Result<(), String> {
-            if !p.is_finite() {
-                return Err("a point that is not finite".into());
-            }
-            match near {
-                Some(a) if (p - a).length() > REACH => Err(format!("beyond reach ({REACH} m)")),
-                _ => Ok(()),
-            }
-        };
-        match command {
-            Command::Crate(at) => {
-                within(*at)?;
-                let mut body = Body::rigid(
-                    Shape::Box {
-                        half: DVec3::splat(0.5),
-                    },
-                    200.0,
-                    *at,
-                    DT,
-                );
-                body.structure.orientation[0] = upright(*at);
-                body.friction = 0.7;
-                self.add(body, None);
-            }
-            Command::Ball(at) => {
-                within(*at)?;
-                let mut body = Body::rigid(Shape::Sphere { radius: 0.4 }, 300.0, *at, DT);
-                body.friction = 0.7;
-                body.restitution = 0.3;
-                self.add(body, None);
-            }
-            Command::Frame(at) => {
-                within(*at)?;
-                self.add(frame(*at), None);
-            }
-            Command::Powerhouse(at) => {
-                within(*at)?;
-                self.place_powerhouse(*at);
-            }
-            Command::Edit(bytes) => {
-                let edits = Edits::from_bytes(bytes).map_err(|e| e.to_string())?;
-                let [edit] = edits.log() else {
-                    return Err("an edit command holds one edit".into());
-                };
-                let (lo, hi) = edit.brush().bounds();
-                within((lo + hi) * 0.5)?;
-                check(edit)?;
-                self.terrain.edit(*edit);
-                // Bodies resting on removed ground must fall.
-                self.world
-                    .wake_near((lo + hi) * 0.5, (hi - lo).length() * 0.5 + 1.0);
-            }
-            Command::Clear => {
-                self.flush();
-                while let Some(key) = self.parked.find(|_| true) {
-                    self.unpark(key);
-                }
-                let players = &self.players;
-                let map = self.world.retain_bodies(|i, _| players[i].is_some());
-                self.surroundings.retain(&map);
-                (self.ids, self.players) = (kept(&map, &self.ids), kept(&map, &self.players));
-                self.reindex();
-            }
-        }
-        Ok(())
     }
 
     /// One step.
@@ -338,47 +314,86 @@ impl ServerWorld {
         let scope = profile::scope("surroundings");
         self.surroundings.push(&mut self.world);
         drop(scope);
+        self.people_before();
+        self.carry_before();
         self.world.step();
-        let _scope = profile::scope("surroundings");
+        // (What the legs pushed with, for the people's injuries: before their struts come off.)
+        let pushes = self.world.strut_pushes();
+        character::release(&mut self.world, &mut self.reactions);
+        self.carry_after();
+        let scope = profile::scope("people");
+        self.people_after(&pushes);
+        drop(scope);
+        let scope = profile::scope("surroundings");
         self.surroundings.settle(&mut self.world, DT);
+        drop(scope);
         self.tick += 1;
+        let scope = profile::scope("history");
+        self.remember();
+        drop(scope);
+        self.blows_fall();
+        self.lay_resting();
+        let scope = profile::scope("trees");
+        self.trees_after_step();
+        drop(scope);
+        let _scope = profile::scope("ageing");
+        self.age_after_step();
     }
 }
 
-/// The items of `v` whose bodies `map` kept.
-fn kept<T: Clone>(map: &[Option<usize>], v: &[T]) -> Vec<T> {
-    map.iter()
-        .zip(v)
-        .filter(|(m, _)| m.is_some())
-        .map(|(_, x)| x.clone())
-        .collect()
-}
-
-/// Whether an edit is one a tool makes.
-fn check(edit: &Edit) -> Result<(), String> {
-    match *edit.brush() {
-        Brush::Sphere { center, radius } if center.is_finite() && radius <= MOST_BRUSH => Ok(()),
-        Brush::Capsule { a, b, radius }
-            if a.is_finite()
-                && b.is_finite()
-                && radius <= MOST_BRUSH
-                && (b - a).length() <= MOST_TUNNEL =>
-        {
-            Ok(())
-        }
-        _ => Err(format!(
-            "a brush larger than a tool's ({MOST_BRUSH} m, tunnels {MOST_TUNNEL} m)"
-        )),
-    }
-}
-
+mod bucking;
+mod carry;
+mod digging;
+mod felling;
+mod item_bodies;
+mod items;
+#[cfg(test)]
+mod items_tests;
+mod laid;
+mod loose;
+#[cfg(test)]
+mod loose_tests;
+pub(crate) mod making;
+#[cfg(test)]
+mod making_tests;
+mod spawn;
+mod survival;
+#[cfg(test)]
+mod survival_tests;
+pub mod trees;
+#[cfg(test)]
+mod trees_tests;
+use spawn::ground_under;
+pub use spawn::spawn_point;
+mod hands;
 #[cfg(test)]
 mod lod_tests;
+pub mod looks;
 #[cfg(test)]
 mod machine_tests;
 pub mod machines;
+pub mod people;
 mod persist;
+pub mod reach;
 mod regions;
+pub mod strikes;
 pub use regions::Tag;
+mod ageing;
+#[cfg(test)]
+mod ageing_tests;
+pub use ageing::Ages;
+mod commands;
+use commands::kept;
+#[cfg(test)]
+mod carry_tests;
+mod history;
+#[cfg(test)]
+mod looks_tests;
+#[cfg(test)]
+mod people_tests;
+#[cfg(test)]
+mod reach_tests;
+#[cfg(test)]
+mod strike_tests;
 #[cfg(test)]
 pub(crate) mod tests;

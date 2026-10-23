@@ -11,9 +11,11 @@ pub(crate) fn terrain() -> Arc<Terrain> {
     load_terrain(&creeer_data::Data::base(), "planets/home.ron").expect("the reference planet")
 }
 
-/// A new world on the reference planet.
+/// A new world on the reference planet: a test server, creative (G1.4d).
 pub(crate) fn world() -> ServerWorld {
-    ServerWorld::new(creeer_data::Data::base(), terrain(), "planets/home.ron")
+    let mut world = ServerWorld::new(creeer_data::Data::base(), terrain(), "planets/home.ron");
+    world.creative = true;
+    world
 }
 
 pub(crate) fn above(world: &ServerWorld, east: f64, height: f64) -> DVec3 {
@@ -41,15 +43,20 @@ fn avatars_appear_on_the_ground_and_are_their_players_own() {
     let bob = w.avatar_of("bob");
     assert_ne!(ada, bob);
     assert_eq!(w.avatar_of("ada"), ada);
-    // It stands on the ground after a second, side by side with the other.
+    // It stands on its legs after a second (steered as the server steers every character),
+    // side by side with the other.
     for _ in 0..60 {
+        for id in [ada, bob] {
+            w.steer(id, &AvatarInput::default());
+        }
         w.step();
     }
     let at = |w: &ServerWorld, id| w.world.bodies[w.index(id).unwrap()].structure.position[0];
     let height = w.terrain.density(at(&w, ada));
+    let standing = creeer_sim::character::heights().0;
     assert!(
-        (height - avatar::RADIUS).abs() < 0.05,
-        "{height} m above the ground"
+        (height - standing).abs() < 0.05,
+        "its centre {height} m above the ground, standing {standing}"
     );
     assert!((at(&w, ada) - at(&w, bob)).length() > 1.0);
 }

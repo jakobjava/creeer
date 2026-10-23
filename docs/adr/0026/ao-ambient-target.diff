@@ -1,0 +1,2556 @@
+diff --git a/crates/creeer_client/src/app/mod.rs b/crates/creeer_client/src/app/mod.rs
+index 86c506d..15786dc 100644
+--- a/crates/creeer_client/src/app/mod.rs
++++ b/crates/creeer_client/src/app/mod.rs
+@@ -368,6 +368,7 @@ impl Running {
+             self.water.window(ui.ctx());
+             self.controls.window(ui.ctx());
+             self.powerhouse.window(ui.ctx());
++            self.profiler.set_gpu(self.renderer.gpu_times());
+             self.profiler.window(ui.ctx(), None);
+             if let Some(heatmap) = self.settings.overlay.heatmap() {
+                 let (title, unit) = self.settings.overlay.label();
+diff --git a/crates/creeer_client/src/app/system.rs b/crates/creeer_client/src/app/system.rs
+index 76e484f..c03a188 100644
+--- a/crates/creeer_client/src/app/system.rs
++++ b/crates/creeer_client/src/app/system.rs
+@@ -140,6 +140,7 @@ impl Running {
+                 },
+             );
+             request = system_ui::window(ui.ctx(), view, &s, &built.camera);
++            self.profiler.set_gpu(self.renderer.gpu_times());
+             self.profiler.window(ui.ctx(), None);
+             if view.map {
+                 system_ui::paint_labels(ui.ctx(), &built.camera, &built.labels);
+diff --git a/crates/creeer_client/src/gpu_passes.rs b/crates/creeer_client/src/gpu_passes.rs
+new file mode 100644
+index 0000000..9fa5c9e
+--- /dev/null
++++ b/crates/creeer_client/src/gpu_passes.rs
+@@ -0,0 +1,39 @@
++//! GPU time per pass over a bench run (G1.3d): the renderer's timestamps gathered frame by
++//! frame and reported as medians.
++
++use creeer_render::GpuTime;
++
++/// Each pass's GPU times (ms), in the order the passes first appeared.
++#[derive(Debug, Default)]
++pub(crate) struct GpuPasses {
++    passes: Vec<(&'static str, Vec<f32>)>,
++}
++
++impl GpuPasses {
++    /// Adds one frame's times.
++    pub fn push(&mut self, times: &[GpuTime]) {
++        for time in times {
++            match self.passes.iter_mut().find(|(name, _)| *name == time.name) {
++                Some((_, list)) => list.push(time.ms),
++                None => self.passes.push((time.name, vec![time.ms])),
++            }
++        }
++    }
++
++    /// One line per pass with its median, and the frame's total (the sum of the medians).
++    pub fn report(&mut self) -> String {
++        if self.passes.is_empty() {
++            return "  GPU passes: no timestamps on this adapter".to_owned();
++        }
++        let mut total = 0.0;
++        let mut lines = vec!["  GPU passes (p50):".to_owned()];
++        for (name, list) in &mut self.passes {
++            list.sort_by(f32::total_cmp);
++            let median = list[list.len() / 2];
++            total += median;
++            lines.push(format!("    {name:<12} {median:.3} ms"));
++        }
++        lines.push(format!("    {:<12} {total:.3} ms", "all"));
++        lines.join("\n")
++    }
++}
+diff --git a/crates/creeer_client/src/headless.rs b/crates/creeer_client/src/headless.rs
+index 1fdda73..ee468c4 100644
+--- a/crates/creeer_client/src/headless.rs
++++ b/crates/creeer_client/src/headless.rs
+@@ -3,6 +3,8 @@
+ use super::*;
+ use crate::physics_sandbox::{PhysicsSandbox, PhysicsScene};
+ use crate::physics_view;
++use creeer_render::renderer::{AoQuality, AoSettings};
++use creeer_render::Image;
+ 
+ /// Command-line options of the headless screenshot mode.
+ #[derive(Debug)]
+@@ -18,6 +20,10 @@ pub(crate) struct ScreenshotOptions {
+     overlay: Overlay,
+     /// A physics scene to add, and how many seconds to simulate it first.
+     physics: Option<(PhysicsScene, f64)>,
++    /// Ambient occlusion's quality (`--ao off|low|medium|high`), and where to save its map
++    /// (`--ao-map <file.png>`, G1.3d).
++    ao: AoQuality,
++    ao_map: Option<PathBuf>,
+ }
+ 
+ impl ScreenshotOptions {
+@@ -35,6 +41,8 @@ impl ScreenshotOptions {
+         };
+         Ok(Some(Self {
+             path: PathBuf::from(path),
++            ao: ao_quality(args)?,
++            ao_map: value_of("--ao-map").map(PathBuf::from),
+             view: value_of("--view")
+                 .cloned()
+                 .unwrap_or_else(|| "overview".into()),
+@@ -96,14 +104,34 @@ impl ScreenshotOptions {
+     }
+ }
+ 
++/// Ambient occlusion's quality from `--ao off|low|medium|high` (high when not given).
++pub(crate) fn ao_quality(args: &[String]) -> Result<AoQuality, String> {
++    let value = args
++        .iter()
++        .position(|a| a == "--ao")
++        .and_then(|i| args.get(i + 1));
++    Ok(match value.map(String::as_str) {
++        None | Some("high") => AoQuality::High,
++        Some("medium") => AoQuality::Medium,
++        Some("low") => AoQuality::Low,
++        Some("off") => AoQuality::Off,
++        Some(other) => return Err(format!("--ao expects off, low, medium or high, got `{other}`")),
++    })
++}
++
+ /// Renders `frames` animated frames headless at 1080p and prints frame-time percentiles.
+ pub(crate) fn bench(
+     frames: usize,
+     view: &str,
+     factory: bool,
+     players: Option<(&str, usize)>,
++    ao: AoQuality,
+ ) -> Result<(), Box<dyn std::error::Error>> {
+     let mut renderer = pollster::block_on(Renderer::new_headless((1920, 1080)))?;
++    renderer.set_ao(AoSettings {
++        quality: ao,
++        ..renderer.ao_settings()
++    });
+     let meshes = DemoMeshes::register_for(&mut renderer);
+     let players = match players {
+         Some((path, count)) => {
+@@ -125,6 +153,7 @@ pub(crate) fn bench(
+     let (mut scene, mut lines) = (Scene::default(), DebugLines::default());
+     let mut total = TimingStats::new(frames.max(1));
+     let mut build = TimingStats::new(frames.max(1));
++    let mut passes = crate::gpu_passes::GpuPasses::default();
+     let dt = 1.0 / f64::from(TICK_RATE_HZ);
+     for frame in 0..frames + 30 {
+         let start = Instant::now();
+@@ -164,6 +193,7 @@ pub(crate) fn bench(
+         if frame >= 30 {
+             total.push(start.elapsed());
+             build.push(built);
++            passes.push(renderer.gpu_times());
+         }
+     }
+     let stats = renderer.stats();
+@@ -190,6 +220,7 @@ pub(crate) fn bench(
+         p(&build, 50.0),
+         p(&build, 99.0)
+     );
++    println!("{}", passes.report());
+     Ok(())
+ }
+ 
+@@ -197,6 +228,10 @@ pub(crate) fn bench(
+ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std::error::Error>> {
+     let mut renderer = pollster::block_on(Renderer::new_headless(options.size))?;
+     renderer.set_shadow_quality(options.shadows);
++    renderer.set_ao(AoSettings {
++        quality: options.ao,
++        ..renderer.ao_settings()
++    });
+     let meshes = DemoMeshes::register_for(&mut renderer);
+     let origin = if options.far { FAR_ORIGIN } else { DVec3::ZERO };
+     let camera = demo::camera_preset(&options.view, origin)
+@@ -271,6 +306,18 @@ pub(crate) fn screenshot(options: &ScreenshotOptions) -> Result<(), Box<dyn std:
+         clear_color: BACKGROUND,
+     });
+     image.save_png(&options.path)?;
++    if let Some(path) = &options.ao_map {
++        let (width, height, values) = renderer.read_ao();
++        let rgba = values
++            .iter()
++            .flat_map(|v| {
++                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=1
++                let g = (v * 255.0).round() as u8;
++                [g, g, g, 255]
++            })
++            .collect();
++        Image { width, height, rgba }.save_png(path)?;
++    }
+     let stats = renderer.stats();
+     let info = renderer.adapter_info();
+     println!(
+diff --git a/crates/creeer_client/src/main.rs b/crates/creeer_client/src/main.rs
+index 605c987..ffab247 100644
+--- a/crates/creeer_client/src/main.rs
++++ b/crates/creeer_client/src/main.rs
+@@ -38,6 +38,7 @@ mod control_rigs;
+ mod demo;
+ mod drive_bench;
+ mod fly_camera;
++mod gpu_passes;
+ mod headless;
+ mod hulls;
+ mod lab;
+@@ -137,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                 Ok::<_, &str>((path.as_str(), count))
+             })
+             .transpose()?;
+-        return bench(frames, view, factory, players);
++        return bench(frames, view, factory, players, headless::ao_quality(&args)?);
+     }
+     if args.iter().any(|a| a == "--physics-bench") {
+         return physics_bench::bench(&args).map_err(Into::into);
+diff --git a/crates/creeer_client/src/profiler_ui.rs b/crates/creeer_client/src/profiler_ui.rs
+index 7296c8c..3aa63e7 100644
+--- a/crates/creeer_client/src/profiler_ui.rs
++++ b/crates/creeer_client/src/profiler_ui.rs
+@@ -4,6 +4,7 @@
+ 
+ use creeer_core::profile::{self, Frame, Want};
+ use creeer_net::message::ProfileReport;
++use creeer_render::GpuTime;
+ use creeer_server::Connection;
+ use creeer_ui::egui;
+ use std::collections::VecDeque;
+@@ -30,6 +31,8 @@ pub(crate) struct ProfilerWindow {
+     /// The server's tick lengths (µs) from its reports, and the last report taken in.
+     server_ticks: VecDeque<u32>,
+     last_report: Option<ProfileReport>,
++    /// Each GPU pass's time (ms), smoothed over about half a second of frames (G1.3d).
++    gpu: Vec<(&'static str, f32)>,
+ }
+ 
+ impl ProfilerWindow {
+@@ -38,6 +41,18 @@ impl ProfilerWindow {
+         self.open = !self.open;
+     }
+ 
++    /// Takes in the GPU's pass times of the latest frame it finished.
++    pub fn set_gpu(&mut self, times: &[GpuTime]) {
++        /// Weight of a new frame: about half a second's mean at 60 FPS.
++        const NEW: f32 = 1.0 / 30.0;
++        for time in times {
++            match self.gpu.iter_mut().find(|(name, _)| *name == time.name) {
++                Some((_, ms)) => *ms += NEW * (time.ms - *ms),
++                None => self.gpu.push((time.name, time.ms)),
++            }
++        }
++    }
++
+     /// Draws it (when open), `connection` the server's if connected.
+     pub fn window(&mut self, ctx: &egui::Context, mut connection: Option<&mut Connection>) {
+         self.want = if self.open {
+@@ -127,6 +142,7 @@ impl ProfilerWindow {
+         }
+         let Some(frame) = frame else {
+             ui.label("No ticks profiled yet.");
++            gpu(ui, &self.gpu);
+             return;
+         };
+         ui.label(format!(
+@@ -136,9 +152,33 @@ impl ProfilerWindow {
+         ));
+         flame(ui, &frame);
+         totals(ui, &frame);
++        gpu(ui, &self.gpu);
+     }
+ }
+ 
++/// The GPU's time per pass (its timestamps), against a 60 FPS frame.
++fn gpu(ui: &mut egui::Ui, passes: &[(&'static str, f32)]) {
++    ui.collapsing("GPU passes", |ui| {
++        if passes.is_empty() {
++            ui.label("This GPU has no timestamp queries.");
++            return;
++        }
++        egui::Grid::new("gpu passes").striped(true).show(ui, |ui| {
++            for (name, ms) in passes {
++                ui.label(*name);
++                ui.label(format!("{ms:.3} ms"));
++                ui.label(format!("{:.1} %", 100.0 * ms / TICK_MS));
++                ui.end_row();
++            }
++            let all: f32 = passes.iter().map(|(_, ms)| ms).sum();
++            ui.strong("all");
++            ui.strong(format!("{all:.3} ms"));
++            ui.strong(format!("{:.1} %", 100.0 * all / TICK_MS));
++            ui.end_row();
++        });
++    });
++}
++
+ /// The ticks' lengths as bars against a 60 Hz tick; a click gives the bar's index, a
+ /// right-click `Some(None)`.
+ fn bars(ui: &mut egui::Ui, lengths: &[f32]) -> Option<Option<usize>> {
+diff --git a/crates/creeer_render/src/lib.rs b/crates/creeer_render/src/lib.rs
+index d25dfb4..ac8e601 100644
+--- a/crates/creeer_render/src/lib.rs
++++ b/crates/creeer_render/src/lib.rs
+@@ -23,7 +23,7 @@ pub use capture::Image;
+ pub use debug_lines::{Color, DebugLines, LineVertex};
+ pub use heatmap::{Heatmap, Palette};
+ pub use mesh::{MeshArena, MeshData, MeshId, MeshVertex};
+-pub use renderer::{Frame, OverlayFrame, RenderError, RenderStats, Renderer};
++pub use renderer::{Frame, GpuTime, OverlayFrame, RenderError, RenderStats, Renderer};
+ pub use scene::{Instance, Lighting, Material, Scene, srgb_to_linear};
+ pub use shadow::ShadowQuality;
+ pub use terrain::{TerrainFrame, TerrainMeshData, TerrainVertex};
+diff --git a/crates/creeer_render/src/renderer/ao_composite.rs b/crates/creeer_render/src/renderer/ao_composite.rs
+new file mode 100644
+index 0000000..7c91746
+--- /dev/null
++++ b/crates/creeer_render/src/renderer/ao_composite.rs
+@@ -0,0 +1,95 @@
++//! Experiment (b): the scene's ambient light occluded after the scene pass.
++
++use super::*;
++
++pub(super) struct AoComposite {
++    pipeline: wgpu::RenderPipeline,
++    layout: wgpu::BindGroupLayout,
++    pub(super) bind_group: wgpu::BindGroup,
++}
++
++impl AoComposite {
++    pub(super) fn new(device: &wgpu::Device, ao_layout: &wgpu::BindGroupLayout, targets: &Targets) -> Self {
++        let source = concat!(
++            include_str!("../shaders/ao_sample.wgsl"),
++            "\n",
++            include_str!("../shaders/ao_composite.wgsl")
++        );
++        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
++            label: Some("ao composite"),
++            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(source)),
++        });
++        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
++            label: Some("ao composite"),
++            entries: &[wgpu::BindGroupLayoutEntry {
++                binding: 0,
++                visibility: wgpu::ShaderStages::FRAGMENT,
++                ty: wgpu::BindingType::Texture {
++                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
++                    view_dimension: wgpu::TextureViewDimension::D2,
++                    multisampled: false,
++                },
++                count: None,
++            }],
++        });
++        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
++            label: Some("ao composite"),
++            bind_group_layouts: &[Some(&layout), None, None, Some(ao_layout)],
++            immediate_size: 0,
++        });
++        let add = wgpu::BlendComponent {
++            src_factor: wgpu::BlendFactor::One,
++            dst_factor: wgpu::BlendFactor::One,
++            operation: wgpu::BlendOperation::Add,
++        };
++        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
++            label: Some("ao composite"),
++            layout: Some(&pipeline_layout),
++            vertex: wgpu::VertexState {
++                module: &module,
++                entry_point: Some("vs_main"),
++                compilation_options: wgpu::PipelineCompilationOptions::default(),
++                buffers: &[],
++            },
++            primitive: wgpu::PrimitiveState::default(),
++            depth_stencil: None,
++            multisample: wgpu::MultisampleState::default(),
++            fragment: Some(wgpu::FragmentState {
++                module: &module,
++                entry_point: Some("fs_main"),
++                compilation_options: wgpu::PipelineCompilationOptions::default(),
++                targets: &[Some(wgpu::ColorTargetState {
++                    format: HDR_FORMAT,
++                    blend: Some(wgpu::BlendState { color: add, alpha: add }),
++                    write_mask: wgpu::ColorWrites::ALL,
++                })],
++            }),
++            multiview_mask: None,
++            cache: None,
++        });
++        let bind_group = Self::group(device, &layout, targets);
++        Self { pipeline, layout, bind_group }
++    }
++
++    fn group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, targets: &Targets) -> wgpu::BindGroup {
++        device.create_bind_group(&wgpu::BindGroupDescriptor {
++            label: Some("ao composite"),
++            layout,
++            entries: &[wgpu::BindGroupEntry {
++                binding: 0,
++                resource: wgpu::BindingResource::TextureView(&targets.ambient_resolved),
++            }],
++        })
++    }
++
++    pub(super) fn rebind(&mut self, device: &wgpu::Device, targets: &Targets) {
++        self.bind_group = Self::group(device, &self.layout, targets);
++    }
++
++    pub(super) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, ao: &wgpu::BindGroup) {
++        pass.set_pipeline(&self.pipeline);
++        pass.set_bind_group(0, &self.bind_group, &[]);
++        pass.set_bind_group(3, ao, &[]);
++        pass.draw(0..3, 0..1);
++    }
++}
+diff --git a/crates/creeer_render/src/renderer/ao_pass.rs b/crates/creeer_render/src/renderer/ao_pass.rs
+new file mode 100644
+index 0000000..75b380f
+--- /dev/null
++++ b/crates/creeer_render/src/renderer/ao_pass.rs
+@@ -0,0 +1,306 @@
++//! Ambient occlusion (G1.3d, ADR-0026): GTAO after XeGTAO, in three compute passes between
++//! the depth prepass and the scene pass. The scene's meshes and terrain read the result and
++//! shade their ambient light with it, never the sun's.
++
++use super::*;
++use ao_textures::AoTextures;
++
++#[path = "ao_textures.rs"]
++mod ao_textures;
++
++/// How much ambient occlusion costs and how good it is (XeGTAO's presets: slices × steps
++/// per side).
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub enum AoQuality {
++    /// None: ambient light unoccluded.
++    Off,
++    /// One slice of two steps, at half resolution.
++    Low,
++    /// Two slices of two steps.
++    Medium,
++    /// Three slices of three steps.
++    #[default]
++    High,
++}
++
++impl AoQuality {
++    /// Slices, steps per side, MIP the grid is computed at (0 full, 1 half resolution).
++    fn shape(self) -> Option<(f32, f32, u32)> {
++        match self {
++            Self::Off => None,
++            Self::Low => Some((1.0, 2.0, 1)),
++            Self::Medium => Some((2.0, 2.0, 0)),
++            Self::High => Some((3.0, 3.0, 0)),
++        }
++    }
++}
++
++/// Ambient occlusion's settings (XeGTAO's defaults where not said).
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub struct AoSettings {
++    pub quality: AoQuality,
++    /// The distance occluders count to (m): the length of the rays the ray-traced
++    /// occlusion GTAO is fitted to.
++    pub radius: f32,
++    /// Power on the final value: XeGTAO's 2.2 fits ray-traced references; 1 gives the
++    /// method's own integral (for tests against closed forms).
++    pub power: f32,
++    /// Denoise passes (0: none).
++    pub denoise: u32,
++    /// The darkest the ambient light may become (`art-style.md` §5: creases darken by at
++    /// most half). Tests set 0 to read the raw value.
++    pub floor: f32,
++}
++
++impl Default for AoSettings {
++    fn default() -> Self {
++        Self {
++            quality: AoQuality::default(),
++            radius: 1.0,
++            power: 2.2,
++            denoise: 2,
++            floor: 0.5,
++        }
++    }
++}
++
++/// XeGTAO's tuned constants (`XeGTAO.h`, found by searching for the least error against
++/// ray-traced references).
++const RADIUS_MULTIPLIER: f32 = 1.457;
++const FALLOFF_RANGE: f32 = 0.615;
++const SAMPLE_DISTRIBUTION_POWER: f32 = 2.0;
++const DEPTH_MIP_SAMPLING_OFFSET: f32 = 3.30;
++const DENOISE_BLUR_BETA: f32 = 1.2;
++
++/// The constants the compute passes share (`ao_common.wgsl`).
++#[repr(C)]
++#[derive(Clone, Copy, Debug, Pod, Zeroable)]
++struct AoConstants {
++    size: [f32; 2],
++    pixel: [f32; 2],
++    ndc_to_view_mul: [f32; 2],
++    ndc_to_view_add: [f32; 2],
++    mul_x_pixel: [f32; 2],
++    near: f32,
++    radius: f32,
++    falloff: f32,
++    power: f32,
++    distribution: f32,
++    mip_offset: f32,
++    slices: f32,
++    steps: f32,
++    base_mip: f32,
++    blur_beta: f32,
++    pad: [f32; 2],
++}
++
++/// What the scene's shaders read (bind group 3): x, y one over the screen's size, z 1 when
++/// occlusion is on, w the floor.
++#[repr(C)]
++#[derive(Clone, Copy, Debug, Pod, Zeroable)]
++struct AoView([f32; 4]);
++
++pub(super) struct AoPass {
++    settings: AoSettings,
++    constants: wgpu::Buffer,
++    view: wgpu::Buffer,
++    prefilter: wgpu::ComputePipeline,
++    last_mip: wgpu::ComputePipeline,
++    main: wgpu::ComputePipeline,
++    working: wgpu::ComputePipeline,
++    final_pass: wgpu::ComputePipeline,
++    layouts: ao_textures::Layouts,
++    textures: AoTextures,
++    /// Read by the scene's mesh and terrain shaders.
++    pub(super) sample_layout: wgpu::BindGroupLayout,
++    pub(super) sample_bind_group: wgpu::BindGroup,
++}
++
++impl AoPass {
++    pub(super) fn new(device: &wgpu::Device, depth: &wgpu::TextureView, size: (u32, u32)) -> Self {
++        let common = include_str!("../shaders/ao_common.wgsl");
++        let module = |label, body: &str| {
++            device.create_shader_module(wgpu::ShaderModuleDescriptor {
++                label: Some(label),
++                source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!("{common}\n{body}"))),
++            })
++        };
++        let layouts = ao_textures::Layouts::new(device);
++        let pipeline = |label, module: &wgpu::ShaderModule, entry, layout| {
++            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
++                label: Some(label),
++                bind_group_layouts: &[Some(layout)],
++                immediate_size: 0,
++            });
++            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
++                label: Some(label),
++                layout: Some(&layout),
++                module,
++                entry_point: Some(entry),
++                compilation_options: wgpu::PipelineCompilationOptions::default(),
++                cache: None,
++            })
++        };
++        let depth_module = module("ao depth", include_str!("../shaders/ao_depth.wgsl"));
++        let main_module = module("gtao", include_str!("../shaders/gtao.wgsl"));
++        let denoise_module = module("ao denoise", include_str!("../shaders/ao_denoise.wgsl"));
++        let buffer = |label, size: usize| {
++            device.create_buffer(&wgpu::BufferDescriptor {
++                label: Some(label),
++                size: size as u64,
++                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
++                mapped_at_creation: false,
++            })
++        };
++        let constants = buffer("ao constants", std::mem::size_of::<AoConstants>());
++        let view = buffer("ao view", std::mem::size_of::<AoView>());
++        let settings = AoSettings::default();
++        let textures = AoTextures::new(device, &layouts, &constants, depth, size, base_mip(settings));
++        let sample_layout = ao_textures::sample_layout(device);
++        let sample_bind_group = textures.sample_bind_group(device, &sample_layout, &view);
++        Self {
++            prefilter: pipeline("ao depth", &depth_module, "prefilter", &layouts.prefilter),
++            last_mip: pipeline("ao last mip", &depth_module, "last_mip", &layouts.last_mip),
++            main: pipeline("gtao", &main_module, "main", &layouts.main),
++            working: pipeline("ao denoise", &denoise_module, "working", &layouts.denoise),
++            final_pass: pipeline("ao denoise", &denoise_module, "final_pass", &layouts.denoise),
++            settings,
++            constants,
++            view,
++            layouts,
++            textures,
++            sample_layout,
++            sample_bind_group,
++        }
++    }
++
++    pub(super) fn settings(&self) -> AoSettings {
++        self.settings
++    }
++
++    /// Changes the settings; the textures follow the resolution they need.
++    pub(super) fn set(&mut self, device: &wgpu::Device, depth: &wgpu::TextureView, settings: AoSettings) {
++        let size = self.textures.full;
++        self.settings = settings;
++        self.resize(device, depth, size);
++    }
++
++    /// Makes the textures for a new screen size (and depth target).
++    pub(super) fn resize(&mut self, device: &wgpu::Device, depth: &wgpu::TextureView, size: (u32, u32)) {
++        self.textures = AoTextures::new(
++            device,
++            &self.layouts,
++            &self.constants,
++            depth,
++            size,
++            base_mip(self.settings),
++        );
++        self.sample_bind_group = self
++            .textures
++            .sample_bind_group(device, &self.sample_layout, &self.view);
++    }
++
++    /// Writes this frame's constants for the camera's projection.
++    pub(super) fn prepare(&self, queue: &wgpu::Queue, camera: &Camera, aspect: f32) {
++        let (w, h) = self.textures.full;
++        #[allow(clippy::cast_precision_loss)] // screen sizes
++        let inverse_full = [1.0 / w as f32, 1.0 / h as f32];
++        let on = self.settings.quality.shape().is_some();
++        let view = AoView([
++            inverse_full[0],
++            inverse_full[1],
++            f32::from(u8::from(on)),
++            self.settings.floor,
++        ]);
++        queue.write_buffer(&self.view, 0, bytemuck::bytes_of(&view));
++        let Some((slices, steps, base)) = self.settings.quality.shape() else {
++            return;
++        };
++        let (gw, gh) = self.textures.grid;
++        #[allow(clippy::cast_precision_loss)]
++        let (size, pixel) = ([gw as f32, gh as f32], [1.0 / gw as f32, 1.0 / gh as f32]);
++        let tan_y = (0.5 * camera.fov_y).tan();
++        let tan_x = tan_y * aspect;
++        let mul = [2.0 * tan_x, -2.0 * tan_y];
++        #[allow(clippy::cast_precision_loss)] // 0 or 1
++        let constants = AoConstants {
++            size,
++            pixel,
++            ndc_to_view_mul: mul,
++            ndc_to_view_add: [-tan_x, tan_y],
++            mul_x_pixel: [mul[0] * pixel[0], mul[1] * pixel[1]],
++            near: camera.near,
++            radius: self.settings.radius * RADIUS_MULTIPLIER,
++            falloff: FALLOFF_RANGE,
++            power: self.settings.power,
++            distribution: SAMPLE_DISTRIBUTION_POWER,
++            mip_offset: DEPTH_MIP_SAMPLING_OFFSET,
++            slices,
++            steps,
++            base_mip: base as f32,
++            // No denoise: the centre outweighs everything (XeGTAO's way of turning it off).
++            blur_beta: if self.settings.denoise == 0 { 1e4 } else { DENOISE_BLUR_BETA },
++            pad: [0.0; 2],
++        };
++        queue.write_buffer(&self.constants, 0, bytemuck::bytes_of(&constants));
++    }
++
++    /// Records the three passes (nothing when off).
++    pub(super) fn encode(&self, encoder: &mut wgpu::CommandEncoder, timer: Option<&super::timing::GpuTimer>) {
++        if self.settings.quality.shape().is_none() {
++            return;
++        }
++        let t = &self.textures;
++        let groups = |(w, h): (u32, u32), tile: u32| (w.div_ceil(tile), h.div_ceil(tile));
++        // A compute pass each, so the profiler times each stage.
++        let mut pass = begin(encoder, timer, "ao depth");
++        pass.set_pipeline(&self.prefilter);
++        pass.set_bind_group(0, &t.prefilter, &[]);
++        let (x, y) = groups(t.full, 16);
++        pass.dispatch_workgroups(x, y, 1);
++        // MIP 4 has a texel for every 16 pixels; one thread each.
++        pass.set_pipeline(&self.last_mip);
++        pass.set_bind_group(0, &t.last_mip, &[]);
++        let (x, y) = groups(t.full, 16 * 8);
++        pass.dispatch_workgroups(x, y, 1);
++        drop(pass);
++        let mut pass = begin(encoder, timer, "ao main");
++        pass.set_pipeline(&self.main);
++        pass.set_bind_group(0, &t.main, &[]);
++        let (x, y) = groups(t.grid, 8);
++        pass.dispatch_workgroups(x, y, 1);
++        drop(pass);
++        let mut pass = begin(encoder, timer, "ao denoise");
++        // a → b → a … then the last into the texture the scene reads.
++        let passes = self.settings.denoise.max(1);
++        for i in 0..passes {
++            let from_a = i % 2 == 0;
++            let group = if from_a { &t.denoise_a } else { &t.denoise_b };
++            let last = i + 1 == passes;
++            pass.set_pipeline(if last { &self.final_pass } else { &self.working });
++            pass.set_bind_group(0, group, &[]);
++            pass.dispatch_workgroups(x, y, 1);
++        }
++    }
++
++    /// The texture of the last occlusion computed (for tests and screenshots).
++    pub(super) fn result(&self) -> (&wgpu::Texture, (u32, u32)) {
++        (&self.textures.result, self.textures.grid)
++    }
++}
++
++fn base_mip(settings: AoSettings) -> u32 {
++    settings.quality.shape().map_or(0, |(_, _, base)| base)
++}
++
++/// A compute pass of its own for a stage of the occlusion, timed under `name`.
++fn begin<'e>(
++    encoder: &'e mut wgpu::CommandEncoder,
++    timer: Option<&super::timing::GpuTimer>,
++    name: &'static str,
++) -> wgpu::ComputePass<'e> {
++    encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
++        label: Some(name),
++        timestamp_writes: timer.and_then(|t| t.compute(name)),
++    })
++}
+diff --git a/crates/creeer_render/src/renderer/ao_textures.rs b/crates/creeer_render/src/renderer/ao_textures.rs
+new file mode 100644
+index 0000000..cdbfce3
+--- /dev/null
++++ b/crates/creeer_render/src/renderer/ao_textures.rs
+@@ -0,0 +1,294 @@
++//! Ambient occlusion's textures and bind groups, made for one screen size.
++
++/// MIPs of the view-space depth chain (XeGTAO's `XE_GTAO_DEPTH_MIP_LEVELS`).
++const DEPTH_MIPS: u32 = 5;
++
++/// The compute passes' bind group layouts.
++pub(super) struct Layouts {
++    pub prefilter: wgpu::BindGroupLayout,
++    pub last_mip: wgpu::BindGroupLayout,
++    pub main: wgpu::BindGroupLayout,
++    pub denoise: wgpu::BindGroupLayout,
++}
++
++fn entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
++    wgpu::BindGroupLayoutEntry {
++        binding,
++        visibility: wgpu::ShaderStages::COMPUTE,
++        ty,
++        count: None,
++    }
++}
++
++fn uniform() -> wgpu::BindingType {
++    wgpu::BindingType::Buffer {
++        ty: wgpu::BufferBindingType::Uniform,
++        has_dynamic_offset: false,
++        min_binding_size: None,
++    }
++}
++
++fn storage(format: wgpu::TextureFormat) -> wgpu::BindingType {
++    wgpu::BindingType::StorageTexture {
++        access: wgpu::StorageTextureAccess::WriteOnly,
++        format,
++        view_dimension: wgpu::TextureViewDimension::D2,
++    }
++}
++
++fn unfiltered() -> wgpu::BindingType {
++    wgpu::BindingType::Texture {
++        sample_type: wgpu::TextureSampleType::Float { filterable: false },
++        view_dimension: wgpu::TextureViewDimension::D2,
++        multisampled: false,
++    }
++}
++
++impl Layouts {
++    pub fn new(device: &wgpu::Device) -> Self {
++        let layout = |label, entries: &[wgpu::BindGroupLayoutEntry]| {
++            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
++                label: Some(label),
++                entries,
++            })
++        };
++        let r32 = wgpu::TextureFormat::R32Float;
++        let rgba8 = wgpu::TextureFormat::Rgba8Unorm;
++        let mut prefilter = vec![
++            entry(0, uniform()),
++            entry(
++                1,
++                wgpu::BindingType::Texture {
++                    sample_type: wgpu::TextureSampleType::Depth,
++                    view_dimension: wgpu::TextureViewDimension::D2,
++                    multisampled: true,
++                },
++            ),
++        ];
++        prefilter.extend((0..DEPTH_MIPS - 1).map(|m| entry(2 + m, storage(r32))));
++        Self {
++            prefilter: layout("ao depth", &prefilter),
++            last_mip: layout(
++                "ao last mip",
++                &[entry(0, uniform()), entry(6, unfiltered()), entry(7, storage(r32))],
++            ),
++            main: layout(
++                "gtao",
++                &[
++                    entry(0, uniform()),
++                    entry(1, unfiltered()),
++                    entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering)),
++                    entry(3, storage(r32)),
++                    entry(4, storage(rgba8)),
++                ],
++            ),
++            denoise: layout(
++                "ao denoise",
++                &[
++                    entry(0, uniform()),
++                    entry(1, unfiltered()),
++                    entry(2, unfiltered()),
++                    entry(3, storage(r32)),
++                    entry(4, storage(rgba8)),
++                ],
++            ),
++        }
++    }
++}
++
++/// What the scene's shaders bind to read the occlusion (group 3).
++pub(super) fn sample_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
++    let fragment = |binding, ty| wgpu::BindGroupLayoutEntry {
++        binding,
++        visibility: wgpu::ShaderStages::FRAGMENT,
++        ty,
++        count: None,
++    };
++    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
++        label: Some("ao sample"),
++        entries: &[
++            fragment(
++                0,
++                wgpu::BindingType::Texture {
++                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
++                    view_dimension: wgpu::TextureViewDimension::D2,
++                    multisampled: false,
++                },
++            ),
++            fragment(1, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
++            fragment(2, uniform()),
++        ],
++    })
++}
++
++/// The textures for one screen size and resolution.
++pub(super) struct AoTextures {
++    /// The screen's size, and the grid occlusion is computed on.
++    pub full: (u32, u32),
++    pub grid: (u32, u32),
++    /// The last pass's output, which the scene reads.
++    pub result: wgpu::Texture,
++    pub prefilter: wgpu::BindGroup,
++    pub last_mip: wgpu::BindGroup,
++    pub main: wgpu::BindGroup,
++    /// Denoise reading the main pass's output (a) or the first denoise's (b).
++    pub denoise_a: wgpu::BindGroup,
++    pub denoise_b: wgpu::BindGroup,
++    result_view: wgpu::TextureView,
++    sampler: wgpu::Sampler,
++}
++
++impl AoTextures {
++    pub fn new(
++        device: &wgpu::Device,
++        layouts: &Layouts,
++        constants: &wgpu::Buffer,
++        depth: &wgpu::TextureView,
++        full: (u32, u32),
++        base_mip: u32,
++    ) -> Self {
++        let grid = ((full.0 >> base_mip).max(1), (full.1 >> base_mip).max(1));
++        let texture = |label, (width, height): (u32, u32), format, mips, extra| {
++            device.create_texture(&wgpu::TextureDescriptor {
++                label: Some(label),
++                size: wgpu::Extent3d {
++                    width,
++                    height,
++                    depth_or_array_layers: 1,
++                },
++                mip_level_count: mips,
++                sample_count: 1,
++                dimension: wgpu::TextureDimension::D2,
++                format,
++                usage: wgpu::TextureUsages::STORAGE_BINDING
++                    | wgpu::TextureUsages::TEXTURE_BINDING
++                    | extra,
++                view_formats: &[],
++            })
++        };
++        let r32 = wgpu::TextureFormat::R32Float;
++        let rgba8 = wgpu::TextureFormat::Rgba8Unorm;
++        let none = wgpu::TextureUsages::empty();
++        // Five levels need 16 pixels each way; smaller screens compute on a padded chain.
++        let padded = (full.0.max(16), full.1.max(16));
++        let mips = texture("ao depth mips", padded, r32, DEPTH_MIPS, none);
++        let mip_view = |m| {
++            mips.create_view(&wgpu::TextureViewDescriptor {
++                base_mip_level: m,
++                mip_level_count: Some(1),
++                ..Default::default()
++            })
++        };
++        let mip_views: Vec<_> = (0..DEPTH_MIPS).map(mip_view).collect();
++        let view = |t: &wgpu::Texture| t.create_view(&wgpu::TextureViewDescriptor::default());
++        let a = view(&texture("ao a", grid, r32, 1, none));
++        let b = view(&texture("ao b", grid, r32, 1, none));
++        let edges = view(&texture("ao edges", grid, rgba8, 1, none));
++        let result = texture("ao", grid, rgba8, 1, wgpu::TextureUsages::COPY_SRC);
++        let result_view = view(&result);
++        let group = |label, layout, resources: &[wgpu::BindingResource<'_>]| {
++            let entries: Vec<_> = resources
++                .iter()
++                .enumerate()
++                .map(|(i, resource)| wgpu::BindGroupEntry {
++                    binding: u32::try_from(i).expect("few bindings"),
++                    resource: resource.clone(),
++                })
++                .collect();
++            device.create_bind_group(&wgpu::BindGroupDescriptor {
++                label: Some(label),
++                layout,
++                entries: &entries,
++            })
++        };
++        let tv = wgpu::BindingResource::TextureView;
++        let mut prefilter = vec![constants.as_entire_binding(), tv(depth)];
++        prefilter.extend(mip_views[..DEPTH_MIPS as usize - 1].iter().map(tv));
++        let last_mip = device.create_bind_group(&wgpu::BindGroupDescriptor {
++            label: Some("ao last mip"),
++            layout: &layouts.last_mip,
++            entries: &[
++                wgpu::BindGroupEntry {
++                    binding: 0,
++                    resource: constants.as_entire_binding(),
++                },
++                wgpu::BindGroupEntry {
++                    binding: 6,
++                    resource: tv(&mip_views[3]),
++                },
++                wgpu::BindGroupEntry {
++                    binding: 7,
++                    resource: tv(&mip_views[4]),
++                },
++            ],
++        });
++        let nearest = device.create_sampler(&wgpu::SamplerDescriptor {
++            label: Some("ao nearest"),
++            ..Default::default()
++        });
++        let all_mips = view(&mips);
++        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
++            label: Some("ao linear"),
++            mag_filter: wgpu::FilterMode::Linear,
++            min_filter: wgpu::FilterMode::Linear,
++            ..Default::default()
++        });
++        Self {
++            full,
++            grid,
++            prefilter: group("ao depth", &layouts.prefilter, &prefilter),
++            last_mip,
++            main: group(
++                "gtao",
++                &layouts.main,
++                &[
++                    constants.as_entire_binding(),
++                    tv(&all_mips),
++                    wgpu::BindingResource::Sampler(&nearest),
++                    tv(&a),
++                    tv(&edges),
++                ],
++            ),
++            denoise_a: group(
++                "ao denoise a",
++                &layouts.denoise,
++                &[constants.as_entire_binding(), tv(&a), tv(&edges), tv(&b), tv(&result_view)],
++            ),
++            denoise_b: group(
++                "ao denoise b",
++                &layouts.denoise,
++                &[constants.as_entire_binding(), tv(&b), tv(&edges), tv(&a), tv(&result_view)],
++            ),
++            result,
++            result_view,
++            sampler,
++        }
++    }
++
++    /// The bind group the scene reads the occlusion through.
++    pub fn sample_bind_group(
++        &self,
++        device: &wgpu::Device,
++        layout: &wgpu::BindGroupLayout,
++        view: &wgpu::Buffer,
++    ) -> wgpu::BindGroup {
++        device.create_bind_group(&wgpu::BindGroupDescriptor {
++            label: Some("ao sample"),
++            layout,
++            entries: &[
++                wgpu::BindGroupEntry {
++                    binding: 0,
++                    resource: wgpu::BindingResource::TextureView(&self.result_view),
++                },
++                wgpu::BindGroupEntry {
++                    binding: 1,
++                    resource: wgpu::BindingResource::Sampler(&self.sampler),
++                },
++                wgpu::BindGroupEntry {
++                    binding: 2,
++                    resource: view.as_entire_binding(),
++                },
++            ],
++        })
++    }
++}
+diff --git a/crates/creeer_render/src/renderer/encode.rs b/crates/creeer_render/src/renderer/encode.rs
+index 10a889b..a8e8075 100644
+--- a/crates/creeer_render/src/renderer/encode.rs
++++ b/crates/creeer_render/src/renderer/encode.rs
+@@ -47,6 +47,12 @@ impl Renderer {
+             .map_or(0.0, |last| (now - last).as_secs_f32().min(0.25));
+         let snap_exposure = snap_exposure || self.last_frame.is_none();
+         self.last_frame = Some(now);
++        if let Some(timer) = &mut self.timer {
++            // Takes in the timestamps of frames the GPU has finished, without waiting.
++            let _ = self.device.poll(wgpu::PollType::Poll);
++            timer.collect();
++            timer.begin();
++        }
+ 
+         // Upload meshes registered since the last frame.
+         if let Some((vertices, indices)) = self.meshes.take_upload() {
+@@ -167,12 +173,14 @@ impl Renderer {
+             &self.meshes,
+             &self.mesh_pass.shadow_draws,
+             &self.terrain,
++            self.timer.as_ref(),
+         );
+ 
+-        // Pass 1: 3D scene into the multisampled HDR target, resolved to a single sample.
++        // Pass 1c: 3D scene into the multisampled HDR target, resolved to a single sample.
+         {
+             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                 label: Some("scene"),
++                timestamp_writes: self.timer.as_ref().and_then(|t| t.render("scene")),
+                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                     view: &self.targets.hdr_msaa,
+                     depth_slice: None,
+@@ -181,13 +189,20 @@ impl Renderer {
+                         load: wgpu::LoadOp::Clear(frame.clear_color),
+                         store: wgpu::StoreOp::Discard,
+                     },
++                }), Some(wgpu::RenderPassColorAttachment {
++                    view: &self.targets.ambient_msaa,
++                    depth_slice: None,
++                    resolve_target: Some(&self.targets.ambient_resolved),
++                    ops: wgpu::Operations {
++                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
++                        store: wgpu::StoreOp::Discard,
++                    },
+                 })],
+                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                     view: &self.targets.depth,
+                     depth_ops: Some(wgpu::Operations {
+-                        // Reversed-Z: 0 is infinitely far away.
+                         load: wgpu::LoadOp::Clear(0.0),
+-                        store: wgpu::StoreOp::Discard,
++                        store: wgpu::StoreOp::Store,
+                     }),
+                     stencil_ops: None,
+                 }),
+@@ -195,11 +210,12 @@ impl Renderer {
+             });
+             pass.set_bind_group(0, &self.globals_bind_group, &[]);
+             self.mesh_pass
+-                .draw(&mut pass, &self.meshes, &self.shadows.sample_bind_group);
++                .draw(&mut pass, &self.meshes, &self.shadows.sample_bind_group, &self.ao.sample_bind_group);
+             self.terrain.draw(
+                 &mut pass,
+                 &self.shadows.sample_bind_group,
+                 self.sky_pipeline.luts().1,
++                &self.ao.sample_bind_group,
+             );
+             if frame.sky.is_some_and(|s| s.sea.is_some()) {
+                 self.sea.draw(&mut pass, self.sky_pipeline.luts().1);
+@@ -210,14 +226,32 @@ impl Renderer {
+             self.line_pass.draw(&mut pass, line_count);
+         }
+ 
++        self.ao.prepare(&self.queue, frame.camera, aspect);
++        self.ao.encode(&mut encoder, self.timer.as_ref());
++        {
++            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
++                label: Some("ao composite"),
++                timestamp_writes: self.timer.as_ref().and_then(|t| t.render("composite")),
++                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
++                    view: &self.targets.hdr_resolved,
++                    depth_slice: None,
++                    resolve_target: None,
++                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
++                })],
++                ..Default::default()
++            });
++            self.composite.draw(&mut pass, &self.ao.sample_bind_group);
++        }
++
+         // Measure the image and adapt the exposure (compute), then tonemap with it.
+         self.exposure
+-            .encode(&mut encoder, &self.globals_bind_group, self.size);
++            .encode(&mut encoder, &self.globals_bind_group, self.size, self.timer.as_ref());
+ 
+         // Pass 2: tonemap HDR → output.
+         {
+             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                 label: Some("tonemap"),
++                timestamp_writes: self.timer.as_ref().and_then(|t| t.render("tonemap")),
+                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                     view: output,
+                     depth_slice: None,
+@@ -238,6 +272,7 @@ impl Renderer {
+             let mut pass = encoder
+                 .begin_render_pass(&wgpu::RenderPassDescriptor {
+                     label: Some("ui"),
++                    timestamp_writes: self.timer.as_ref().and_then(|t| t.render("ui")),
+                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                         view: output,
+                         depth_slice: None,
+@@ -256,6 +291,9 @@ impl Renderer {
+         if let Some(after) = after {
+             after(&mut encoder);
+         }
++        if let Some(timer) = &mut self.timer {
++            timer.resolve(&mut encoder);
++        }
+         commands.push(encoder.finish());
+         commands
+     }
+diff --git a/crates/creeer_render/src/renderer/exposure_pass.rs b/crates/creeer_render/src/renderer/exposure_pass.rs
+index cd15fe6..66c1ed0 100644
+--- a/crates/creeer_render/src/renderer/exposure_pass.rs
++++ b/crates/creeer_render/src/renderer/exposure_pass.rs
+@@ -134,10 +134,11 @@ impl ExposurePass {
+         encoder: &mut wgpu::CommandEncoder,
+         globals: &wgpu::BindGroup,
+         (width, height): (u32, u32),
++        timer: Option<&super::timing::GpuTimer>,
+     ) {
+         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+             label: Some("exposure"),
+-            timestamp_writes: None,
++            timestamp_writes: timer.and_then(|t| t.compute("exposure")),
+         });
+         pass.set_bind_group(0, globals, &[]);
+         pass.set_bind_group(1, &self.bind_group, &[]);
+diff --git a/crates/creeer_render/src/renderer/line_pass.rs b/crates/creeer_render/src/renderer/line_pass.rs
+index c025219..7dfb41c 100644
+--- a/crates/creeer_render/src/renderer/line_pass.rs
++++ b/crates/creeer_render/src/renderer/line_pass.rs
+@@ -44,7 +44,7 @@ impl LinePass {
+                     format: HDR_FORMAT,
+                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                     write_mask: wgpu::ColorWrites::ALL,
+-                })],
++                }), Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: None, write_mask: wgpu::ColorWrites::empty() })],
+             }),
+             multiview_mask: None,
+             cache: None,
+diff --git a/crates/creeer_render/src/renderer/mesh_pass.rs b/crates/creeer_render/src/renderer/mesh_pass.rs
+index aa1c48c..7815a37 100644
+--- a/crates/creeer_render/src/renderer/mesh_pass.rs
++++ b/crates/creeer_render/src/renderer/mesh_pass.rs
+@@ -72,6 +72,8 @@ pub(super) struct MeshPass {
+     plain: wgpu::RenderPipeline,
+     /// Models, with the full surface (ADR-0026).
+     model: wgpu::RenderPipeline,
++    /// Depth only, for the prepass: procedural meshes, models.
++    prepass: [wgpu::RenderPipeline; 2],
+     /// The tokens model vertices name and the noise (bind group 2).
+     palette: GpuPalette,
+     vertices: Option<wgpu::Buffer>,
+@@ -95,8 +97,11 @@ impl MeshPass {
+         queue: &wgpu::Queue,
+         globals_layout: &wgpu::BindGroupLayout,
+         shadow_sample_layout: &wgpu::BindGroupLayout,
++        ao_layout: &wgpu::BindGroupLayout,
+     ) -> Self {
+         let source = concat!(
++            include_str!("../shaders/ao_sample.wgsl"),
++            "\n",
+             include_str!("../shaders/heatmap.wgsl"),
+             "\n",
+             include_str!("../shaders/lighting.wgsl"),
+@@ -113,6 +118,7 @@ impl MeshPass {
+                 Some(globals_layout),
+                 Some(shadow_sample_layout),
+                 Some(&palette.layout),
++                Some(ao_layout),
+             ],
+             immediate_size: 0,
+         });
+@@ -136,7 +142,7 @@ impl MeshPass {
+                     module: &module,
+                     entry_point: Some(fragment),
+                     compilation_options: wgpu::PipelineCompilationOptions::default(),
+-                    targets: &[Some(HDR_FORMAT.into())],
++                    targets: &[Some(HDR_FORMAT.into()), Some(HDR_FORMAT.into())],
+                 }),
+                 multiview_mask: None,
+                 cache: None,
+@@ -146,6 +152,10 @@ impl MeshPass {
+         Self {
+             plain: pipeline("mesh", "vs_plain", "fs_plain"),
+             model: pipeline("model", "vs_main", "fs_main"),
++            prepass: [
++                prepass_pipeline(device, "mesh prepass", globals_layout, &module, "vs_plain", &instanced_vertex_layouts()),
++                prepass_pipeline(device, "model prepass", globals_layout, &module, "vs_main", &instanced_vertex_layouts()),
++            ],
+             palette,
+             vertices: None,
+             indices: None,
+@@ -268,12 +278,14 @@ impl MeshPass {
+         pass: &mut wgpu::RenderPass<'_>,
+         meshes: &MeshArena,
+         shadow_sampling: &wgpu::BindGroup,
++        ao: &wgpu::BindGroup,
+     ) {
+         let Some(buffers) = self.buffers() else {
+             return;
+         };
+         pass.set_bind_group(1, shadow_sampling, &[]);
+         pass.set_bind_group(2, &self.palette.bind_group, &[]);
++        pass.set_bind_group(3, ao, &[]);
+         if !self.draws.is_empty() {
+             pass.set_pipeline(&self.plain);
+             buffers.draw(pass, meshes, &self.draws);
+@@ -284,6 +296,19 @@ impl MeshPass {
+         }
+     }
+ 
++    /// Draws the camera's meshes into the depth prepass (globals bound by the caller).
++    pub(super) fn draw_prepass(&self, pass: &mut wgpu::RenderPass<'_>, meshes: &MeshArena) {
++        let Some(buffers) = self.buffers() else {
++            return;
++        };
++        for (pipeline, draws) in self.prepass.iter().zip([&self.draws, &self.model_draws]) {
++            if !draws.is_empty() {
++                pass.set_pipeline(pipeline);
++                buffers.draw(pass, meshes, draws);
++            }
++        }
++    }
++
+     /// Replaces the palette model vertices name.
+     pub(super) fn set_palette(
+         &mut self,
+diff --git a/crates/creeer_render/src/renderer/mod.rs b/crates/creeer_render/src/renderer/mod.rs
+index 5ec4e50..765920a 100644
+--- a/crates/creeer_render/src/renderer/mod.rs
++++ b/crates/creeer_render/src/renderer/mod.rs
+@@ -20,10 +20,15 @@ use mesh_pass::MeshPass;
+ use sea_pass::SeaPass;
+ use shadow_pass::ShadowPass;
+ use sky_pass::SkyPass;
+-use targets::{Targets, scene_depth_state, scene_multisample, shader};
++use targets::{
++    Targets, after_prepass_depth_state, prepass_pipeline, scene_depth_state, scene_multisample,
++    shader,
++};
+ use terrain_pass::TerrainPass;
+ use tonemap_pass::TonemapPass;
+ 
++mod ao_composite;
++mod ao_pass;
+ mod encode;
+ mod exposure_pass;
+ mod levels;
+@@ -38,7 +43,10 @@ mod shadow_pass;
+ mod sky_pass;
+ mod targets;
+ mod terrain_pass;
++mod timing;
+ mod tonemap_pass;
++pub use ao_pass::{AoQuality, AoSettings};
++pub use timing::GpuTime;
+ use bytemuck::{Pod, Zeroable};
+ use creeer_math::glam::Mat4;
+ use std::borrow::Cow;
+@@ -158,6 +166,11 @@ pub struct Renderer {
+     sky_table: Option<(Atmosphere, [f64; 3], [[f32; 4]; SKY_TABLE])>,
+     /// Meshes available to [`Scene`]s drawn by this renderer.
+     pub meshes: MeshArena,
++    /// GPU timestamps per pass (none where the adapter lacks them).
++    timer: Option<timing::GpuTimer>,
++    /// Ambient occlusion (G1.3d).
++    ao: ao_pass::AoPass,
++    composite: ao_composite::AoComposite,
+ }
+ 
+ impl fmt::Debug for Renderer {
+@@ -186,6 +199,21 @@ impl Renderer {
+         self.stats
+     }
+ 
++    /// Each pass's GPU time in the latest frame the GPU has finished (a few frames behind a
++    /// window's; the frame itself after [`Renderer::render_offscreen`] and
++    /// [`Renderer::capture`]). Empty where the adapter has no timestamp queries.
++    pub fn gpu_times(&self) -> &[GpuTime] {
++        self.timer.as_ref().map_or(&[], timing::GpuTimer::latest)
++    }
++
++    /// Submits a frame's commands; its timestamps are read back once the GPU is done.
++    fn submit(&mut self, commands: Vec<wgpu::CommandBuffer>) {
++        self.queue.submit(commands);
++        if let Some(timer) = &mut self.timer {
++            timer.submitted();
++        }
++    }
++
+     /// Call when the window is resized. Zero sizes (minimised windows) are ignored.
+     pub fn resize(&mut self, width: u32, height: u32) {
+         if width == 0 || height == 0 {
+@@ -198,6 +226,9 @@ impl Renderer {
+             surface.configure(&self.device, config);
+         }
+         self.targets = Targets::new(&self.device, self.size);
++        self.ao
++            .resize(&self.device, &self.targets.depth, self.size);
++        self.composite.rebind(&self.device, &self.targets);
+         self.tonemap.rebind(&self.device, &self.targets);
+         self.exposure.rebind(&self.device, &self.targets);
+     }
+@@ -209,6 +240,18 @@ impl Renderer {
+             .set_palette(&self.device, &self.queue, palette);
+     }
+ 
++    /// Ambient occlusion's settings.
++    pub fn ao_settings(&self) -> AoSettings {
++        self.ao.settings()
++    }
++
++    /// Changes ambient occlusion's settings.
++    pub fn set_ao(&mut self, settings: AoSettings) {
++        if settings != self.ao.settings() {
++            self.ao.set(&self.device, &self.targets.depth, settings);
++        }
++    }
++
+     /// Changes the sun shadow resolution (see [`ShadowQuality`] for the memory cost).
+     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
+         self.shadows.resize(&self.device, quality.map_size());
+@@ -250,7 +293,7 @@ impl Renderer {
+                 .texture
+                 .create_view(&wgpu::TextureViewDescriptor::default());
+             let commands = self.encode(&frame, &view, None, false);
+-            self.queue.submit(commands);
++            self.submit(commands);
+             self.queue.present(surface_texture);
+         }
+         self.free_ui_textures(&mut frame);
+@@ -282,10 +325,13 @@ impl Renderer {
+             })
+             .create_view(&wgpu::TextureViewDescriptor::default());
+         let commands = self.encode(&frame, &view, None, false);
+-        self.queue.submit(commands);
++        self.submit(commands);
+         self.device
+             .poll(wgpu::PollType::wait_indefinitely())
+             .expect("GPU poll failed");
++        if let Some(timer) = &mut self.timer {
++            timer.collect();
++        }
+         self.free_ui_textures(&mut frame);
+     }
+ 
+diff --git a/crates/creeer_render/src/renderer/readback.rs b/crates/creeer_render/src/renderer/readback.rs
+index 5435aad..df6a789 100644
+--- a/crates/creeer_render/src/renderer/readback.rs
++++ b/crates/creeer_render/src/renderer/readback.rs
+@@ -60,7 +60,7 @@ impl Renderer {
+             );
+         };
+         let commands = self.encode(&frame, &view, Some(&copy), true);
+-        self.queue.submit(commands);
++        self.submit(commands);
+         self.free_ui_textures(&mut frame);
+ 
+         let (sender, receiver) = std::sync::mpsc::channel();
+@@ -74,6 +74,9 @@ impl Renderer {
+             .recv()
+             .expect("map callback dropped")
+             .expect("GPU readback failed");
++        if let Some(timer) = &mut self.timer {
++            timer.collect();
++        }
+ 
+         let mapped = readback.get_mapped_range(..).expect("readback not mapped");
+         let state = |i: usize| {
+@@ -106,3 +109,62 @@ impl Renderer {
+         }
+     }
+ }
++
++impl Renderer {
++    /// The ambient occlusion of the last frame drawn, row by row (1 open, 0 closed), and its
++    /// grid's size (half the screen's at low quality). For tests and screenshots.
++    ///
++    /// # Panics
++    /// If the GPU readback fails (device lost).
++    pub fn read_ao(&self) -> (u32, u32, Vec<f32>) {
++        let (texture, (width, height)) = self.ao.result();
++        let padded_row = (width * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
++        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
++            label: Some("ao readback"),
++            size: u64::from(padded_row * height),
++            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
++            mapped_at_creation: false,
++        });
++        let mut encoder = self
++            .device
++            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ao") });
++        encoder.copy_texture_to_buffer(
++            texture.as_image_copy(),
++            wgpu::TexelCopyBufferInfo {
++                buffer: &readback,
++                layout: wgpu::TexelCopyBufferLayout {
++                    offset: 0,
++                    bytes_per_row: Some(padded_row),
++                    rows_per_image: Some(height),
++                },
++            },
++            wgpu::Extent3d {
++                width,
++                height,
++                depth_or_array_layers: 1,
++            },
++        );
++        self.queue.submit([encoder.finish()]);
++        let (sender, receiver) = std::sync::mpsc::channel();
++        readback.map_async(wgpu::MapMode::Read, .., move |result| {
++            let _ = sender.send(result);
++        });
++        self.device
++            .poll(wgpu::PollType::wait_indefinitely())
++            .expect("GPU poll failed");
++        receiver
++            .recv()
++            .expect("map callback dropped")
++            .expect("GPU readback failed");
++        let mapped = readback.get_mapped_range(..).expect("readback not mapped");
++        let mut values = Vec::with_capacity((width * height) as usize);
++        for row in mapped.chunks(padded_row as usize).take(height as usize) {
++            values.extend(
++                row[..(width * 4) as usize]
++                    .chunks(4)
++                    .map(|texel| f32::from(texel[0]) / 255.0),
++            );
++        }
++        (width, height, values)
++    }
++}
+diff --git a/crates/creeer_render/src/renderer/sea_pass.rs b/crates/creeer_render/src/renderer/sea_pass.rs
+index 03d89a1..8464303 100644
+--- a/crates/creeer_render/src/renderer/sea_pass.rs
++++ b/crates/creeer_render/src/renderer/sea_pass.rs
+@@ -41,7 +41,7 @@ impl SeaPass {
+                 module: &module,
+                 entry_point: Some("fs_main"),
+                 compilation_options: wgpu::PipelineCompilationOptions::default(),
+-                targets: &[Some(HDR_FORMAT.into())],
++                targets: &[Some(HDR_FORMAT.into()), Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: None, write_mask: wgpu::ColorWrites::empty() })],
+             }),
+             multiview_mask: None,
+             cache: None,
+diff --git a/crates/creeer_render/src/renderer/setup.rs b/crates/creeer_render/src/renderer/setup.rs
+index 0cd535e..69a80b4 100644
+--- a/crates/creeer_render/src/renderer/setup.rs
++++ b/crates/creeer_render/src/renderer/setup.rs
+@@ -19,6 +19,8 @@ async fn request_device(
+     let (device, queue) = adapter
+         .request_device(&wgpu::DeviceDescriptor {
+             label: Some("creeer device"),
++            // Optional: GPU timestamps per pass (G1.3d, ADR-0026), where the adapter has them.
++            required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
+             // Portable WebGPU defaults: anything beyond must be justified in an ADR,
+             // since it might not exist on Metal or older GPUs.
+             required_limits: wgpu::Limits::default(),
+@@ -134,7 +136,14 @@ impl Renderer {
+             GLOBALS_WGSL,
+             ShadowQuality::default().map_size(),
+         );
+-        let mesh_pass = MeshPass::new(&device, &queue, &globals_layout, &shadows.sample_layout);
++        let ao = ao_pass::AoPass::new(&device, &targets.depth, size);
++        let mesh_pass = MeshPass::new(
++            &device,
++            &queue,
++            &globals_layout,
++            &shadows.sample_layout,
++            &ao.sample_layout,
++        );
+         let line_pass = LinePass::new(&device, &globals_layout);
+         let sky_pipeline = SkyPass::new(&device, &globals_layout);
+         let terrain = TerrainPass::new(
+@@ -143,6 +152,7 @@ impl Renderer {
+             &shadows.sample_layout,
+             sky_pipeline.luts().0,
+             &shadows.cascade_layout,
++            &ao.sample_layout,
+         );
+         let sea = SeaPass::new(&device, &globals_layout, sky_pipeline.luts().0);
+         let exposure = ExposurePass::new(&device, &globals_layout, &targets);
+@@ -153,6 +163,8 @@ impl Renderer {
+             &targets,
+             &exposure.exposure,
+         );
++        let timer = timing::GpuTimer::new(&device, &queue);
++        let composite = ao_composite::AoComposite::new(&device, &ao.sample_layout, &targets);
+         let egui = egui_wgpu::Renderer::new(
+             &device,
+             output_format,
+@@ -182,6 +194,9 @@ impl Renderer {
+             stats: RenderStats::default(),
+             sky_table: None,
+             meshes: MeshArena::default(),
++            timer,
++            composite,
++            ao,
+         }
+     }
+ }
+diff --git a/crates/creeer_render/src/renderer/shadow_pass.rs b/crates/creeer_render/src/renderer/shadow_pass.rs
+index cf984ee..8dde342 100644
+--- a/crates/creeer_render/src/renderer/shadow_pass.rs
++++ b/crates/creeer_render/src/renderer/shadow_pass.rs
+@@ -252,10 +252,13 @@ impl ShadowPass {
+         meshes: &MeshArena,
+         draws: &[Vec<Draw>; CASCADES],
+         terrain: &super::terrain_pass::TerrainPass,
++        timer: Option<&super::timing::GpuTimer>,
+     ) {
++        const NAMES: [&str; CASCADES] = ["shadow 0", "shadow 1", "shadow 2", "shadow 3"];
+         for (cascade, view) in self.layer_views.iter().enumerate() {
+             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                 label: Some("shadow cascade"),
++                timestamp_writes: timer.and_then(|t| t.render(NAMES[cascade])),
+                 color_attachments: &[],
+                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                     view,
+diff --git a/crates/creeer_render/src/renderer/sky_pass.rs b/crates/creeer_render/src/renderer/sky_pass.rs
+index e016dc0..2c849cb 100644
+--- a/crates/creeer_render/src/renderer/sky_pass.rs
++++ b/crates/creeer_render/src/renderer/sky_pass.rs
+@@ -124,7 +124,7 @@ impl SkyPass {
+                 module: &module,
+                 entry_point: Some("fs_main"),
+                 compilation_options: wgpu::PipelineCompilationOptions::default(),
+-                targets: &[Some(HDR_FORMAT.into())],
++                targets: &[Some(HDR_FORMAT.into()), Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: None, write_mask: wgpu::ColorWrites::empty() })],
+             }),
+             multiview_mask: None,
+             cache: None,
+diff --git a/crates/creeer_render/src/renderer/targets.rs b/crates/creeer_render/src/renderer/targets.rs
+index 8fad81d..fb929a8 100644
+--- a/crates/creeer_render/src/renderer/targets.rs
++++ b/crates/creeer_render/src/renderer/targets.rs
+@@ -14,6 +14,8 @@ pub(super) struct Targets {
+     pub(super) hdr_msaa: wgpu::TextureView,
+     pub(super) hdr_resolved: wgpu::TextureView,
+     pub(super) depth: wgpu::TextureView,
++    pub(super) ambient_msaa: wgpu::TextureView,
++    pub(super) ambient_resolved: wgpu::TextureView,
+ }
+ 
+ impl Targets {
+@@ -49,11 +51,14 @@ impl Targets {
+                 1,
+                 wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+             ),
++            ambient_msaa: make("ambient msaa", HDR_FORMAT, MSAA_SAMPLES, wgpu::TextureUsages::RENDER_ATTACHMENT),
++            ambient_resolved: make("ambient resolved", HDR_FORMAT, 1, wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING),
++            // Read by ambient occlusion between the prepass and the scene pass.
+             depth: make(
+                 "depth",
+                 DEPTH_FORMAT,
+                 MSAA_SAMPLES,
+-                wgpu::TextureUsages::RENDER_ATTACHMENT,
++                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+             ),
+         }
+     }
+@@ -70,6 +75,52 @@ pub(super) fn scene_depth_state() -> Option<wgpu::DepthStencilState> {
+     })
+ }
+ 
++/// What the scene pass's meshes and terrain test against the depth their prepass wrote: the
++/// same depth, from the same vertex shader (`@invariant`), so each pixel is shaded once.
++pub(super) fn after_prepass_depth_state() -> Option<wgpu::DepthStencilState> {
++    Some(wgpu::DepthStencilState {
++        depth_write_enabled: Some(false),
++        depth_compare: Some(wgpu::CompareFunction::Equal),
++        ..scene_depth_state()?
++    })
++}
++
++/// A depth-only pipeline for the prepass (G1.3d): `entry` of `module`, whose vertex stage reads
++/// the globals (group 0) only.
++pub(super) fn prepass_pipeline(
++    device: &wgpu::Device,
++    label: &str,
++    globals_layout: &wgpu::BindGroupLayout,
++    module: &wgpu::ShaderModule,
++    entry: &str,
++    buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
++) -> wgpu::RenderPipeline {
++    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
++        label: Some(label),
++        bind_group_layouts: &[Some(globals_layout)],
++        immediate_size: 0,
++    });
++    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
++        label: Some(label),
++        layout: Some(&layout),
++        vertex: wgpu::VertexState {
++            module,
++            entry_point: Some(entry),
++            compilation_options: wgpu::PipelineCompilationOptions::default(),
++            buffers,
++        },
++        primitive: wgpu::PrimitiveState {
++            cull_mode: Some(wgpu::Face::Back),
++            ..Default::default()
++        },
++        depth_stencil: scene_depth_state(),
++        multisample: scene_multisample(),
++        fragment: None,
++        multiview_mask: None,
++        cache: None,
++    })
++}
++
+ pub(super) fn scene_multisample() -> wgpu::MultisampleState {
+     wgpu::MultisampleState {
+         count: MSAA_SAMPLES,
+diff --git a/crates/creeer_render/src/renderer/terrain_pass.rs b/crates/creeer_render/src/renderer/terrain_pass.rs
+index 2eb2a44..3e7ca58 100644
+--- a/crates/creeer_render/src/renderer/terrain_pass.rs
++++ b/crates/creeer_render/src/renderer/terrain_pass.rs
+@@ -54,6 +54,8 @@ struct GpuChunk {
+ /// Terrain chunks and the pipelines that draw them.
+ pub(super) struct TerrainPass {
+     pipeline: wgpu::RenderPipeline,
++    /// Depth only, for the prepass.
++    prepass: wgpu::RenderPipeline,
+     shadow_pipeline: wgpu::RenderPipeline,
+     chunks: HashMap<u64, GpuChunk>,
+     instances: wgpu::Buffer,
+@@ -72,8 +74,11 @@ impl TerrainPass {
+         shadow_sample_layout: &wgpu::BindGroupLayout,
+         luts_layout: &wgpu::BindGroupLayout,
+         cascade_layout: &wgpu::BindGroupLayout,
++        ao_layout: &wgpu::BindGroupLayout,
+     ) -> Self {
+         let source = concat!(
++            include_str!("../shaders/ao_sample.wgsl"),
++            "\n",
+             include_str!("../shaders/atmosphere.wgsl"),
+             "\n",
+             include_str!("../shaders/lighting.wgsl"),
+@@ -87,6 +92,7 @@ impl TerrainPass {
+                 Some(globals_layout),
+                 Some(shadow_sample_layout),
+                 Some(luts_layout),
++                Some(ao_layout),
+             ],
+             immediate_size: 0,
+         });
+@@ -109,7 +115,7 @@ impl TerrainPass {
+                 module: &module,
+                 entry_point: Some("fs_main"),
+                 compilation_options: wgpu::PipelineCompilationOptions::default(),
+-                targets: &[Some(HDR_FORMAT.into())],
++                targets: &[Some(HDR_FORMAT.into()), Some(HDR_FORMAT.into())],
+             }),
+             multiview_mask: None,
+             cache: None,
+@@ -143,8 +149,17 @@ impl TerrainPass {
+             multiview_mask: None,
+             cache: None,
+         });
++        let prepass = prepass_pipeline(
++            device,
++            "terrain prepass",
++            globals_layout,
++            &module,
++            "vs_main",
++            &vertex_layouts(),
++        );
+         Self {
+             pipeline,
++            prepass,
+             shadow_pipeline,
+             chunks: HashMap::new(),
+             instances: instance_buffer(device, 256),
+@@ -297,6 +312,7 @@ impl TerrainPass {
+         pass: &mut wgpu::RenderPass<'_>,
+         shadow_sampling: &wgpu::BindGroup,
+         luts: &wgpu::BindGroup,
++        ao: &wgpu::BindGroup,
+     ) {
+         if self.draws.is_empty() {
+             return;
+@@ -304,9 +320,18 @@ impl TerrainPass {
+         pass.set_pipeline(&self.pipeline);
+         pass.set_bind_group(1, shadow_sampling, &[]);
+         pass.set_bind_group(2, luts, &[]);
++        pass.set_bind_group(3, ao, &[]);
+         self.issue(pass, &self.draws);
+     }
+ 
++    /// Draws the camera's chunks into the depth prepass (globals bound by the caller).
++    pub(super) fn draw_prepass(&self, pass: &mut wgpu::RenderPass<'_>) {
++        if !self.draws.is_empty() {
++            pass.set_pipeline(&self.prepass);
++            self.issue(pass, &self.draws);
++        }
++    }
++
+     /// Draws the shadow casters of one cascade (globals and cascade bound by the caller).
+     pub(super) fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, cascade: usize) {
+         if self.shadow_draws[cascade].is_empty() {
+diff --git a/crates/creeer_render/src/renderer/timing.rs b/crates/creeer_render/src/renderer/timing.rs
+new file mode 100644
+index 0000000..abc08fd
+--- /dev/null
++++ b/crates/creeer_render/src/renderer/timing.rs
+@@ -0,0 +1,216 @@
++//! GPU timestamps per pass (G1.3d, ADR-0026): each pass writes a timestamp where it begins
++//! and where it ends; the frame's stamps are resolved into a buffer and read back a few
++//! frames later, so no frame waits for the GPU. Every GPU budget is measured with them.
++//!
++//! Timestamp queries are an optional feature: on adapters without it the timer is off and
++//! reports nothing.
++
++use std::cell::RefCell;
++use std::sync::Arc;
++use std::sync::atomic::{AtomicU8, Ordering};
++
++/// Passes a frame can time.
++const MOST_PASSES: u32 = 32;
++/// Readback buffers in flight: a frame's stamps are read up to this many frames later.
++const IN_FLIGHT: usize = 3;
++/// What a readback buffer is doing (in [`Readback::state`]).
++const FREE: u8 = 0;
++const MAPPING: u8 = 1;
++const MAPPED: u8 = 2;
++
++/// One pass's GPU time in the last frame read back.
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub struct GpuTime {
++    /// The pass.
++    pub name: &'static str,
++    /// Its GPU time (ms).
++    pub ms: f32,
++}
++
++struct Readback {
++    buffer: wgpu::Buffer,
++    state: Arc<AtomicU8>,
++    /// The passes it holds, in order.
++    names: Vec<&'static str>,
++    /// The frame they were recorded in.
++    frame: u64,
++}
++
++/// The frame's query set and the buffers its stamps travel through.
++pub(super) struct GpuTimer {
++    set: wgpu::QuerySet,
++    resolve: wgpu::Buffer,
++    readbacks: Vec<Readback>,
++    /// Nanoseconds per timestamp tick.
++    period: f32,
++    /// The passes timed in the frame being recorded (interior: passes take `&self`).
++    names: RefCell<Vec<&'static str>>,
++    /// The readback the frame being recorded will be copied into.
++    pending: Option<usize>,
++    /// Frames recorded, and the frame `latest` comes from.
++    frames: u64,
++    latest_frame: u64,
++    latest: Vec<GpuTime>,
++}
++
++impl GpuTimer {
++    /// A timer, if the device has timestamp queries.
++    pub(super) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
++        if !device.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
++            return None;
++        }
++        let bytes = u64::from(MOST_PASSES) * 2 * wgpu::QUERY_SIZE as u64;
++        let buffer = |label, usage| {
++            device.create_buffer(&wgpu::BufferDescriptor {
++                label: Some(label),
++                size: bytes,
++                usage,
++                mapped_at_creation: false,
++            })
++        };
++        Some(Self {
++            set: device.create_query_set(&wgpu::QuerySetDescriptor {
++                label: Some("gpu timer"),
++                ty: wgpu::QueryType::Timestamp,
++                count: MOST_PASSES * 2,
++            }),
++            resolve: buffer(
++                "gpu timer resolve",
++                wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
++            ),
++            readbacks: (0..IN_FLIGHT)
++                .map(|_| Readback {
++                    buffer: buffer(
++                        "gpu timer readback",
++                        wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
++                    ),
++                    state: Arc::new(AtomicU8::new(FREE)),
++                    names: Vec::new(),
++                    frame: 0,
++                })
++                .collect(),
++            period: queue.get_timestamp_period(),
++            names: RefCell::new(Vec::new()),
++            pending: None,
++            frames: 0,
++            latest_frame: 0,
++            latest: Vec::new(),
++        })
++    }
++
++    /// Starts recording a frame. Frames recorded while every readback is still in flight are
++    /// not timed.
++    pub(super) fn begin(&mut self) {
++        self.frames += 1;
++        self.names.get_mut().clear();
++        self.pending = self
++            .readbacks
++            .iter()
++            .position(|r| r.state.load(Ordering::Acquire) == FREE);
++    }
++
++    /// The next two stamps, for the pass `name` (none when the frame is not timed).
++    fn take(&self, name: &'static str) -> Option<(u32, u32)> {
++        self.pending?;
++        let mut names = self.names.borrow_mut();
++        let index = u32::try_from(names.len()).ok()?;
++        if index >= MOST_PASSES {
++            return None;
++        }
++        names.push(name);
++        Some((2 * index, 2 * index + 1))
++    }
++
++    /// Stamps for a render pass named `name`.
++    pub(super) fn render(&self, name: &'static str) -> Option<wgpu::RenderPassTimestampWrites<'_>> {
++        self.take(name)
++            .map(|(begin, end)| wgpu::RenderPassTimestampWrites {
++                query_set: &self.set,
++                beginning_of_pass_write_index: Some(begin),
++                end_of_pass_write_index: Some(end),
++            })
++    }
++
++    /// Stamps for a compute pass named `name`.
++    pub(super) fn compute(
++        &self,
++        name: &'static str,
++    ) -> Option<wgpu::ComputePassTimestampWrites<'_>> {
++        self.take(name)
++            .map(|(begin, end)| wgpu::ComputePassTimestampWrites {
++                query_set: &self.set,
++                beginning_of_pass_write_index: Some(begin),
++                end_of_pass_write_index: Some(end),
++            })
++    }
++
++    /// Resolves the frame's stamps and copies them to its readback (at the frame's end).
++    pub(super) fn resolve(&mut self, encoder: &mut wgpu::CommandEncoder) {
++        let Some(slot) = self.pending else {
++            return;
++        };
++        let names = std::mem::take(self.names.get_mut());
++        if names.is_empty() {
++            self.pending = None;
++            return;
++        }
++        let count = u32::try_from(names.len()).expect("at most MOST_PASSES") * 2;
++        encoder.resolve_query_set(&self.set, 0..count, &self.resolve, 0);
++        let readback = &mut self.readbacks[slot];
++        encoder.copy_buffer_to_buffer(
++            &self.resolve,
++            0,
++            &readback.buffer,
++            0,
++            u64::from(count) * wgpu::QUERY_SIZE as u64,
++        );
++        readback.names = names;
++        readback.frame = self.frames;
++    }
++
++    /// After the frame's submission: asks for its readback to be mapped.
++    pub(super) fn submitted(&mut self) {
++        let Some(slot) = self.pending.take() else {
++            return;
++        };
++        let readback = &self.readbacks[slot];
++        readback.state.store(MAPPING, Ordering::Release);
++        let state = Arc::clone(&readback.state);
++        readback.buffer.map_async(wgpu::MapMode::Read, .., move |result| {
++            // A failed map (device lost) frees the slot; the frame is simply not timed.
++            state.store(if result.is_ok() { MAPPED } else { FREE }, Ordering::Release);
++        });
++    }
++
++    /// Takes in every readback the GPU has finished (the device must have been polled).
++    pub(super) fn collect(&mut self) {
++        for readback in &mut self.readbacks {
++            if readback.state.load(Ordering::Acquire) != MAPPED {
++                continue;
++            }
++            if readback.frame > self.latest_frame {
++                self.latest_frame = readback.frame;
++                let bytes = readback
++                    .buffer
++                    .get_mapped_range(..)
++                    .expect("mapped readback");
++                let stamps: &[u64] = bytemuck::cast_slice(&bytes);
++                self.latest.clear();
++                for (i, &name) in readback.names.iter().enumerate() {
++                    let (begin, end) = (stamps[2 * i], stamps[2 * i + 1]);
++                    // Stamps can wrap; a pass is never negative.
++                    #[allow(clippy::cast_precision_loss)] // ticks of a frame: far below 2^24 ms
++                    let ms = end.saturating_sub(begin) as f32 * self.period * 1e-6;
++                    self.latest.push(GpuTime { name, ms });
++                }
++            }
++            readback.buffer.unmap();
++            readback.state.store(FREE, Ordering::Release);
++        }
++    }
++
++    /// The passes' times in the last frame read back.
++    pub(super) fn latest(&self) -> &[GpuTime] {
++        &self.latest
++    }
++}
+diff --git a/crates/creeer_render/src/shaders/ao_common.wgsl b/crates/creeer_render/src/shaders/ao_common.wgsl
+new file mode 100644
+index 0000000..34876a4
+--- /dev/null
++++ b/crates/creeer_render/src/shaders/ao_common.wgsl
+@@ -0,0 +1,48 @@
++// Ground-truth ambient occlusion (GTAO; Jimenez et al. 2016), ported from Intel's XeGTAO
++// (MIT, 2021; ADR-0026): what the three compute passes share. View space here is XeGTAO's:
++// x right, y up, z the distance along the view (positive), in metres.
++
++struct Ao {
++    // The grid the occlusion is computed on (pixels), and one over it.
++    size: vec2<f32>,
++    pixel: vec2<f32>,
++    // Screen position (0..1, y down) → view-space x and y at depth 1.
++    ndc_to_view_mul: vec2<f32>,
++    ndc_to_view_add: vec2<f32>,
++    // ndc_to_view_mul × pixel: a pixel's size in view space at depth 1.
++    mul_x_pixel: vec2<f32>,
++    // The near plane (m): reversed-Z infinite depth d is near / z.
++    near: f32,
++    // The effect radius (m), XeGTAO's radius multiplier included.
++    radius: f32,
++    // The part of the radius over which samples fade out.
++    falloff: f32,
++    // Power on the final value (XeGTAO's fit to ray-traced references; 1: the integral).
++    power: f32,
++    // Power on the samples' distances (small crevices weigh more).
++    distribution: f32,
++    // Depth MIP chosen at log2(sample distance) minus this.
++    mip_offset: f32,
++    slices: f32,
++    steps: f32,
++    // MIP of the depth chain that is the grid's own (0 full, 1 half resolution).
++    base_mip: f32,
++    // The denoise's weight on the centre pixel.
++    blur_beta: f32,
++    _pad: vec2<f32>,
++};
++
++@group(0) @binding(0) var<uniform> ao: Ao;
++
++const PI: f32 = 3.14159265;
++// Depths beyond this (m) are the sky.
++const FAR_DEPTH: f32 = 100000.0;
++const DEPTH_MIPS: i32 = 5;
++
++fn view_depth(ndc: f32) -> f32 {
++    return min(ao.near / max(ndc, 1e-30), FAR_DEPTH);
++}
++
++fn view_position(screen: vec2<f32>, z: f32) -> vec3<f32> {
++    return vec3<f32>((ao.ndc_to_view_mul * screen + ao.ndc_to_view_add) * z, z);
++}
+diff --git a/crates/creeer_render/src/shaders/ao_composite.wgsl b/crates/creeer_render/src/shaders/ao_composite.wgsl
+new file mode 100644
+index 0000000..a94134a
+--- /dev/null
++++ b/crates/creeer_render/src/shaders/ao_composite.wgsl
+@@ -0,0 +1,17 @@
++// Experiment (b): ambient occlusion applied after the scene pass to the ambient light it
++// wrote to its own target (rgb ambient, a albedo luminance).
++
++@group(0) @binding(0) var ambient_map: texture_2d<f32>;
++
++@vertex
++fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
++    let uv = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
++    return vec4<f32>(uv * 2.0 - 1.0, 0.0, 1.0);
++}
++
++@fragment
++fn fs_main(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
++    let a = textureLoad(ambient_map, vec2<i32>(p.xy), 0);
++    let occlusion = ambient_occlusion(p.xy, vec3<f32>(a.w), 1.0);
++    return vec4<f32>(a.rgb * (occlusion - 1.0), 0.0);
++}
+diff --git a/crates/creeer_render/src/shaders/ao_denoise.wgsl b/crates/creeer_render/src/shaders/ao_denoise.wgsl
+new file mode 100644
+index 0000000..01a56c0
+--- /dev/null
++++ b/crates/creeer_render/src/shaders/ao_denoise.wgsl
+@@ -0,0 +1,71 @@
++// GTAO, pass 3 (XeGTAO's Denoise): an edge-aware 3×3 blur, run once or more. Each neighbour
++// weighs as much as the edges between it and this pixel say they share a surface, so the
++// occlusion is smoothed along surfaces but not across their silhouettes.
++
++@group(0) @binding(1) var source: texture_2d<f32>;
++@group(0) @binding(2) var edge_map: texture_2d<f32>;
++@group(0) @binding(3) var out_working: texture_storage_2d<r32float, write>;
++@group(0) @binding(4) var out_final: texture_storage_2d<rgba8unorm, write>;
++
++fn at(p: vec2<i32>) -> f32 {
++    let last = vec2<i32>(ao.size) - 1;
++    return textureLoad(source, clamp(p, vec2<i32>(0), last), 0).r;
++}
++
++fn edges_at(p: vec2<i32>) -> vec4<f32> {
++    let last = vec2<i32>(ao.size) - 1;
++    return textureLoad(edge_map, clamp(p, vec2<i32>(0), last), 0);
++}
++
++/// The blurred value at `p`; `beta` weighs the centre.
++fn blurred(p: vec2<i32>, beta: f32) -> f32 {
++    let l = edges_at(p + vec2<i32>(-1, 0));
++    let r = edges_at(p + vec2<i32>(1, 0));
++    let t = edges_at(p + vec2<i32>(0, -1));
++    let b = edges_at(p + vec2<i32>(0, 1));
++    // Made symmetric: a left edge here is the right edge of the pixel to the left.
++    var c = edges_at(p) * vec4<f32>(l.y, r.x, t.w, b.z);
++    // A little leak where three or four edges meet, against aliasing.
++    let leak_threshold = 2.5;
++    let leak_strength = 0.5;
++    let edginess = clamp(4.0 - leak_threshold - dot(c, vec4<f32>(1.0)), 0.0, 1.0) / (4.0 - leak_threshold) * leak_strength;
++    c = clamp(c + edginess, vec4<f32>(0.0), vec4<f32>(1.0));
++    let diagonal = 0.85 * 0.5;
++    let w_tl = diagonal * (c.x * l.z + c.z * t.x);
++    let w_tr = diagonal * (c.z * t.y + c.y * r.z);
++    let w_bl = diagonal * (c.w * b.x + c.x * l.w);
++    let w_br = diagonal * (c.y * r.w + c.w * b.y);
++    var sum = beta * at(p);
++    var weight = beta;
++    sum += c.x * at(p + vec2<i32>(-1, 0));
++    sum += c.y * at(p + vec2<i32>(1, 0));
++    sum += c.z * at(p + vec2<i32>(0, -1));
++    sum += c.w * at(p + vec2<i32>(0, 1));
++    weight += c.x + c.y + c.z + c.w;
++    sum += w_tl * at(p + vec2<i32>(-1, -1));
++    sum += w_tr * at(p + vec2<i32>(1, -1));
++    sum += w_bl * at(p + vec2<i32>(-1, 1));
++    sum += w_br * at(p + vec2<i32>(1, 1));
++    weight += w_tl + w_tr + w_bl + w_br;
++    return sum / weight;
++}
++
++/// A pass before the last: a gentler blur (XeGTAO: a fifth of the centre's weight).
++@compute @workgroup_size(8, 8)
++fn working(@builtin(global_invocation_id) id: vec3<u32>) {
++    if any(vec2<f32>(id.xy) >= ao.size) {
++        return;
++    }
++    let p = vec2<i32>(id.xy);
++    textureStore(out_working, p, vec4<f32>(blurred(p, ao.blur_beta / 5.0)));
++}
++
++/// The last pass, into the texture the scene reads.
++@compute @workgroup_size(8, 8)
++fn final_pass(@builtin(global_invocation_id) id: vec3<u32>) {
++    if any(vec2<f32>(id.xy) >= ao.size) {
++        return;
++    }
++    let p = vec2<i32>(id.xy);
++    textureStore(out_final, p, vec4<f32>(min(blurred(p, ao.blur_beta), 1.0)));
++}
+diff --git a/crates/creeer_render/src/shaders/ao_depth.wgsl b/crates/creeer_render/src/shaders/ao_depth.wgsl
+new file mode 100644
+index 0000000..156635b
+--- /dev/null
++++ b/crates/creeer_render/src/shaders/ao_depth.wgsl
+@@ -0,0 +1,79 @@
++// GTAO, pass 1 (XeGTAO's PrefilterDepths16x16): the scene's depth, sample 0 of each pixel,
++// as view-space depth in five MIPs, each a weighted mean of its four texels that leaves out
++// what lies far behind the nearest (so a thin rod in front stays in the coarse MIPs).
++
++@group(0) @binding(1) var depth: texture_depth_multisampled_2d;
++@group(0) @binding(2) var mip0: texture_storage_2d<r32float, write>;
++@group(0) @binding(3) var mip1: texture_storage_2d<r32float, write>;
++@group(0) @binding(4) var mip2: texture_storage_2d<r32float, write>;
++@group(0) @binding(5) var mip3: texture_storage_2d<r32float, write>;
++// WebGPU allows four storage textures a stage: the last MIP is a small pass of its own.
++@group(0) @binding(6) var mip3_read: texture_2d<f32>;
++@group(0) @binding(7) var mip4: texture_storage_2d<r32float, write>;
++
++var<workgroup> scratch: array<array<f32, 8>, 8>;
++
++fn mip_filter(d0: f32, d1: f32, d2: f32, d3: f32) -> f32 {
++    let deepest = max(max(d0, d1), max(d2, d3));
++    // XeGTAO: 0.75 of the radius, found empirically.
++    let radius = 0.75 * ao.radius;
++    let range = ao.falloff * radius;
++    let fade_from = radius * (1.0 - ao.falloff);
++    let mul = -1.0 / range;
++    let add = fade_from / range + 1.0;
++    let w = clamp((vec4<f32>(deepest) - vec4<f32>(d0, d1, d2, d3)) * mul + add, vec4<f32>(0.0), vec4<f32>(1.0));
++    return dot(w, vec4<f32>(d0, d1, d2, d3)) / (w.x + w.y + w.z + w.w);
++}
++
++fn load(p: vec2<i32>) -> f32 {
++    let last = vec2<i32>(textureDimensions(depth)) - 1;
++    return view_depth(textureLoad(depth, clamp(p, vec2<i32>(0), last), 0));
++}
++
++@compute @workgroup_size(8, 8)
++fn prefilter(@builtin(global_invocation_id) id: vec3<u32>, @builtin(local_invocation_id) local: vec3<u32>) {
++    let base = vec2<i32>(id.xy);
++    let p = base * 2;
++    let d0 = load(p);
++    let d1 = load(p + vec2<i32>(1, 0));
++    let d2 = load(p + vec2<i32>(0, 1));
++    let d3 = load(p + vec2<i32>(1, 1));
++    textureStore(mip0, p, vec4<f32>(d0));
++    textureStore(mip0, p + vec2<i32>(1, 0), vec4<f32>(d1));
++    textureStore(mip0, p + vec2<i32>(0, 1), vec4<f32>(d2));
++    textureStore(mip0, p + vec2<i32>(1, 1), vec4<f32>(d3));
++
++    let m1 = mip_filter(d0, d1, d2, d3);
++    textureStore(mip1, base, vec4<f32>(m1));
++    scratch[local.x][local.y] = m1;
++    workgroupBarrier();
++
++    let t = local.xy;
++    if all(t % 2u == vec2<u32>(0u)) {
++        let m2 = mip_filter(
++            scratch[t.x][t.y], scratch[t.x + 1u][t.y], scratch[t.x][t.y + 1u], scratch[t.x + 1u][t.y + 1u],
++        );
++        textureStore(mip2, base / 2, vec4<f32>(m2));
++        scratch[t.x][t.y] = m2;
++    }
++    workgroupBarrier();
++
++    if all(t % 4u == vec2<u32>(0u)) {
++        let m3 = mip_filter(
++            scratch[t.x][t.y], scratch[t.x + 2u][t.y], scratch[t.x][t.y + 2u], scratch[t.x + 2u][t.y + 2u],
++        );
++        textureStore(mip3, base / 4, vec4<f32>(m3));
++    }
++}
++
++/// MIP 4 from MIP 3, one texel a thread.
++@compute @workgroup_size(8, 8)
++fn last_mip(@builtin(global_invocation_id) id: vec3<u32>) {
++    let p = vec2<i32>(id.xy) * 2;
++    let last = vec2<i32>(textureDimensions(mip3_read)) - 1;
++    let d0 = textureLoad(mip3_read, min(p, last), 0).r;
++    let d1 = textureLoad(mip3_read, min(p + vec2<i32>(1, 0), last), 0).r;
++    let d2 = textureLoad(mip3_read, min(p + vec2<i32>(0, 1), last), 0).r;
++    let d3 = textureLoad(mip3_read, min(p + vec2<i32>(1, 1), last), 0).r;
++    textureStore(mip4, vec2<i32>(id.xy), vec4<f32>(mip_filter(d0, d1, d2, d3)));
++}
+diff --git a/crates/creeer_render/src/shaders/ao_sample.wgsl b/crates/creeer_render/src/shaders/ao_sample.wgsl
+new file mode 100644
+index 0000000..405866f
+--- /dev/null
++++ b/crates/creeer_render/src/shaders/ao_sample.wgsl
+@@ -0,0 +1,29 @@
++// Ambient occlusion as the scene's meshes and terrain read it (G1.3d, `ao_pass.rs`).
++
++@group(3) @binding(0) var ao_map: texture_2d<f32>;
++@group(3) @binding(1) var ao_linear: sampler;
++// x, y: one over the screen's size (pixels); z: 1 when occlusion is on; w: the floor, the
++// darkest it may make the ambient light (`art-style.md` §5).
++@group(3) @binding(2) var<uniform> ao_view: vec4<f32>;
++
++/// GTAO's multi-bounce fit (Jimenez et al. 2016, eq. 10): light bounced within a crease
++/// lightens it more on bright surfaces, so white paint is not greyed like dark rock.
++fn multi_bounce(v: f32, albedo: vec3<f32>) -> vec3<f32> {
++    let a = 2.0404 * albedo - 0.3324;
++    let b = -4.7951 * albedo + 0.6417;
++    let c = 2.7552 * albedo + 0.6903;
++    return max(vec3<f32>(v), ((v * a + b) * v + c) * v);
++}
++
++/// The ambient light's occlusion at the pixel `frag` (its position in pixels) of a surface
++/// of `albedo`: the screen's GTAO with its bounces, no darker than the floor, or `baked`
++/// where that is darker (the lesser of the two, as Filament combines a material's occlusion
++/// with the screen's).
++fn ambient_occlusion(frag: vec2<f32>, albedo: vec3<f32>, baked: f32) -> vec3<f32> {
++    var screen = vec3<f32>(1.0);
++    if ao_view.z > 0.5 {
++        let v = textureSampleLevel(ao_map, ao_linear, frag * ao_view.xy, 0.0).r;
++        screen = max(multi_bounce(v, albedo), vec3<f32>(ao_view.w));
++    }
++    return min(screen, vec3<f32>(baked));
++}
+diff --git a/crates/creeer_render/src/shaders/gtao.wgsl b/crates/creeer_render/src/shaders/gtao.wgsl
+new file mode 100644
+index 0000000..74ee577
+--- /dev/null
++++ b/crates/creeer_render/src/shaders/gtao.wgsl
+@@ -0,0 +1,175 @@
++// GTAO, pass 2 (XeGTAO's MainPass, normals generated in place from the 32-bit depth): for
++// each pixel, slices through the hemisphere about the view direction; in each, the highest
++// horizon on either side found by stepping out over the depth MIPs, and the cosine-weighted
++// visible arc between them integrated in closed form (Jimenez et al. 2016, Algorithm 1).
++
++@group(0) @binding(1) var depths: texture_2d<f32>;
++@group(0) @binding(2) var nearest: sampler;
++@group(0) @binding(3) var out_ao: texture_storage_2d<r32float, write>;
++@group(0) @binding(4) var out_edges: texture_storage_2d<rgba8unorm, write>;
++
++const HALF_PI: f32 = 1.5707963;
++
++fn base_level() -> i32 {
++    return i32(ao.base_mip);
++}
++
++fn grid_depth(p: vec2<i32>) -> f32 {
++    let level = base_level();
++    let last = vec2<i32>(textureDimensions(depths, level)) - 1;
++    return textureLoad(depths, clamp(p, vec2<i32>(0), last), level).r;
++}
++
++/// How far each neighbour (left, right, top, bottom) lies on this pixel's surface: 1 the
++/// same surface, 0 an edge (XeGTAO's slope-adjusted test).
++fn edges(z: f32, l: f32, r: f32, t: f32, b: f32) -> vec4<f32> {
++    var e = vec4<f32>(l, r, t, b) - z;
++    let slope_lr = (e.y - e.x) * 0.5;
++    let slope_tb = (e.w - e.z) * 0.5;
++    let adjusted = e + vec4<f32>(slope_lr, -slope_lr, slope_tb, -slope_tb);
++    e = min(abs(e), abs(adjusted));
++    return clamp(1.25 - e / (z * 0.011), vec4<f32>(0.0), vec4<f32>(1.0));
++}
++
++fn normal_from(e: vec4<f32>, c: vec3<f32>, l: vec3<f32>, r: vec3<f32>, t: vec3<f32>, b: vec3<f32>) -> vec3<f32> {
++    let accepted = clamp(vec4<f32>(e.x * e.z, e.z * e.y, e.y * e.w, e.w * e.x) + 0.01, vec4<f32>(0.0), vec4<f32>(1.0));
++    let dl = normalize(l - c);
++    let dr = normalize(r - c);
++    let dt = normalize(t - c);
++    let db = normalize(b - c);
++    return normalize(
++        accepted.x * cross(dl, dt) + accepted.y * cross(dt, dr) + accepted.z * cross(dr, db)
++            + accepted.w * cross(db, dl),
++    );
++}
++
++/// acos for [−1, 1] (Lagarde 2014), as XeGTAO uses it.
++fn fast_acos(x: f32) -> f32 {
++    let a = abs(x);
++    let r = (-0.156583 * a + HALF_PI) * sqrt(1.0 - a);
++    return select(PI - r, r, x >= 0.0);
++}
++
++/// XeGTAO's Hilbert curve index in a 64-pixel tile: neighbouring pixels get well-spread
++/// noise.
++fn hilbert(p: vec2<u32>) -> u32 {
++    var x = p.x;
++    var y = p.y;
++    var index = 0u;
++    for (var level = 32u; level > 0u; level /= 2u) {
++        let rx = u32((x & level) > 0u);
++        let ry = u32((y & level) > 0u);
++        index += level * level * ((3u * rx) ^ ry);
++        if ry == 0u {
++            if rx == 1u {
++                x = 63u - x;
++                y = 63u - y;
++            }
++            let swap = x;
++            x = y;
++            y = swap;
++        }
++    }
++    return index;
++}
++
++@compute @workgroup_size(8, 8)
++fn main(@builtin(global_invocation_id) id: vec3<u32>) {
++    let pix = vec2<i32>(id.xy);
++    if any(vec2<f32>(id.xy) >= ao.size) {
++        return;
++    }
++    let screen = (vec2<f32>(id.xy) + 0.5) * ao.pixel;
++    var z = grid_depth(pix);
++    let zl = grid_depth(pix + vec2<i32>(-1, 0));
++    let zr = grid_depth(pix + vec2<i32>(1, 0));
++    let zt = grid_depth(pix + vec2<i32>(0, -1));
++    let zb = grid_depth(pix + vec2<i32>(0, 1));
++    let e = edges(z, zl, zr, zt, zb);
++    textureStore(out_edges, pix, e);
++    if z >= FAR_DEPTH {
++        textureStore(out_ao, pix, vec4<f32>(1.0));
++        return;
++    }
++    let normal = normal_from(
++        e,
++        view_position(screen, z),
++        view_position(screen + vec2<f32>(-ao.pixel.x, 0.0), zl),
++        view_position(screen + vec2<f32>(ao.pixel.x, 0.0), zr),
++        view_position(screen + vec2<f32>(0.0, -ao.pixel.y), zt),
++        view_position(screen + vec2<f32>(0.0, ao.pixel.y), zb),
++    );
++    // Towards the camera by a hair, against depth rounding (XeGTAO's value for 32-bit depth).
++    z *= 0.99999;
++    let centre = view_position(screen, z);
++    let view = normalize(-centre);
++
++    let radius = ao.radius;
++    let range = ao.falloff * radius;
++    let fade_from = radius * (1.0 - ao.falloff);
++    let falloff_mul = -1.0 / range;
++    let falloff_add = fade_from / range + 1.0;
++
++    let index = hilbert(id.xy % 64u);
++    let noise = fract(0.5 + f32(index) * vec2<f32>(0.75487766, 0.56984029));
++
++    let pixel_size = z * ao.mul_x_pixel;
++    let screen_radius = radius / pixel_size.x;
++    // Tiny on screen: fades to unoccluded.
++    var visibility = clamp((10.0 - screen_radius) / 100.0, 0.0, 1.0) * 0.5;
++    // Never sample the centre pixel itself.
++    let too_close = 1.3;
++    let min_s = too_close / screen_radius;
++    let level = base_level();
++
++    for (var slice = 0.0; slice < ao.slices; slice += 1.0) {
++        let phi = (slice + noise.x) / ao.slices * PI;
++        let cos_phi = cos(phi);
++        let sin_phi = sin(phi);
++        let omega = vec2<f32>(cos_phi, -sin_phi) * screen_radius;
++        let direction = vec3<f32>(cos_phi, sin_phi, 0.0);
++        let ortho = direction - dot(direction, view) * view;
++        let axis = normalize(cross(ortho, view));
++        let projected = normal - axis * dot(normal, axis);
++        let sign_n = sign(dot(ortho, projected));
++        var projected_length = length(projected);
++        let cos_n = clamp(dot(projected, view) / projected_length, 0.0, 1.0);
++        let n = sign_n * fast_acos(cos_n);
++        let low0 = cos(n + HALF_PI);
++        let low1 = cos(n - HALF_PI);
++        var horizon0 = low0;
++        var horizon1 = low1;
++        for (var step = 0.0; step < ao.steps; step += 1.0) {
++            // R1 sequence over the steps.
++            let step_noise = fract(noise.y + (slice + step * ao.steps) * 0.618034);
++            var s = (step + step_noise) / ao.steps;
++            s = pow(s, ao.distribution) + min_s;
++            var offset = s * omega;
++            let mip = clamp(log2(length(offset)) - ao.mip_offset, 0.0, f32(DEPTH_MIPS - 1));
++            let lod = min(f32(level) + mip, f32(DEPTH_MIPS - 1));
++            offset = round(offset) * ao.pixel;
++            let at0 = screen + offset;
++            let at1 = screen - offset;
++            let delta0 = view_position(at0, textureSampleLevel(depths, nearest, at0, lod).r) - centre;
++            let delta1 = view_position(at1, textureSampleLevel(depths, nearest, at1, lod).r) - centre;
++            let dist0 = length(delta0);
++            let dist1 = length(delta1);
++            let w0 = clamp(dist0 * falloff_mul + falloff_add, 0.0, 1.0);
++            let w1 = clamp(dist1 * falloff_mul + falloff_add, 0.0, 1.0);
++            let shc0 = mix(low0, dot(delta0 / dist0, view), w0);
++            let shc1 = mix(low1, dot(delta1 / dist1, view), w1);
++            horizon0 = max(horizon0, shc0);
++            horizon1 = max(horizon1, shc1);
++        }
++        // XeGTAO's correction for slight over-darkening on steep slopes.
++        projected_length = mix(projected_length, 1.0, 0.05);
++        let h0 = -fast_acos(horizon1);
++        let h1 = fast_acos(horizon0);
++        let arc0 = (cos_n + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) / 4.0;
++        let arc1 = (cos_n + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) / 4.0;
++        visibility += projected_length * (arc0 + arc1);
++    }
++    visibility /= ao.slices;
++    visibility = max(0.03, pow(max(visibility, 0.0), ao.power));
++    textureStore(out_ao, pix, vec4<f32>(visibility));
++}
+diff --git a/crates/creeer_render/src/shaders/mesh.wgsl b/crates/creeer_render/src/shaders/mesh.wgsl
+index b4ce8fb..783bd1a 100644
+--- a/crates/creeer_render/src/shaders/mesh.wgsl
++++ b/crates/creeer_render/src/shaders/mesh.wgsl
+@@ -30,7 +30,8 @@ struct InstanceIn {
+ };
+ 
+ struct PlainOut {
+-    @builtin(position) clip: vec4<f32>,
++    // Invariant: the prepass computes the same depth (`after_prepass_depth_state`).
++    @builtin(position) @invariant clip: vec4<f32>,
+     @location(0) world: vec3<f32>,
+     // Centroid: a triangle thinner than a pixel (a bevel) is shaded within itself, not at
+     // the pixel's centre with its normal extrapolated beyond the faces'.
+@@ -45,7 +46,7 @@ struct PlainOut {
+ };
+ 
+ struct ModelOut {
+-    @builtin(position) clip: vec4<f32>,
++    @builtin(position) @invariant clip: vec4<f32>,
+     @location(0) world: vec3<f32>,
+     @location(1) @interpolate(perspective, centroid) normal: vec3<f32>,
+     @location(2) local: vec3<f32>,
+@@ -123,42 +124,57 @@ fn normal_spread(normal: vec3<f32>) -> f32 {
+     return min(2.0 * PIXEL_VARIANCE * (dot(du, du) + dot(dv, dv)), SPREAD_CAP);
+ }
+ 
++struct SceneOut {
++    @location(0) color: vec4<f32>,
++    @location(1) ambient: vec4<f32>,
++};
++
++struct Lit {
++    direct: vec3<f32>,
++    ambient: vec3<f32>,
++};
++
++fn scene_out(l: Lit, albedo: vec3<f32>) -> SceneOut {
++    return SceneOut(vec4<f32>(l.direct + l.ambient, 1.0), vec4<f32>(l.ambient, dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722))));
++}
++
+ @fragment
+-fn fs_plain(in: PlainOut) -> @location(0) vec4<f32> {
++fn fs_plain(in: PlainOut) -> SceneOut {
+     // Derivatives first: they need uniform control flow.
+     let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
+     let spread = normal_spread(in.normal);
+     // Metalness from 2 up marks a light source emitting (w − 2) times its colour.
+     if in.material.x >= 2.0 {
+-        return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
++        return SceneOut(vec4<f32>(in.color * (in.material.x - 2.0), 1.0), vec4<f32>(0.0));
+     }
+     let at = Place(in.local, vec3<f32>(0.0, 1.0, 0.0), vec2<f32>(0.0), footprint, vec2<f32>(0.0));
+     let surface = plain_surface(in.color, in.material.y, in.material.x, at);
+-    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, 1.0), 1.0);
++    return scene_out(lit(in.world, in.normal, spread, surface, in.heat, vec3<f32>(1.0)), surface.colour);
+ }
+ 
+ @fragment
+-fn fs_main(in: ModelOut) -> @location(0) vec4<f32> {
++fn fs_main(in: ModelOut) -> SceneOut {
+     let footprint = max(length(dpdx(in.local)), length(dpdy(in.local)));
+     let grain_footprint = max(abs(dpdx(in.grain)), abs(dpdy(in.grain)));
+     let spread = normal_spread(in.normal);
+     if in.material.x >= 2.0 {
+-        return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
++        return SceneOut(vec4<f32>(in.color * (in.material.x - 2.0), 1.0), vec4<f32>(0.0));
+     }
+     let at = Place(in.local, normalize(in.local_normal), in.grain, footprint, grain_footprint);
+     let surface = model_surface(
+         in.token, in.color, in.masks.x, in.masks.y, in.masks.z, in.masks.w,
+         in.ageing.x, in.ageing.y, at,
+     );
+-    return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, in.masks.x), 1.0);
++    return scene_out(lit(in.world, in.normal, spread, surface, in.heat, vec3<f32>(in.masks.x)), surface.colour);
+ }
+ 
+ /// `surface` at `world` lit by the sun (with its shadows) and the sky; `spread` (from
+-/// `normal_spread`) widens its highlights, `occlusion` shades the ambient light only. With the
+-/// engineering overlay on, `heat` replaces the material.
++/// `normal_spread`) widens its highlights, `occlusion` (baked and on screen:
++/// `ambient_occlusion`) shades the ambient light only. With the engineering overlay on, `heat`
++/// replaces the material.
+ fn lit(
+-    world: vec3<f32>, normal: vec3<f32>, spread: f32, surface: Surface, heat: f32, occlusion: f32,
+-) -> vec3<f32> {
++    world: vec3<f32>, normal: vec3<f32>, spread: f32, surface: Surface, heat: f32, occlusion: vec3<f32>,
++) -> Lit {
+     let n = normalize(normal);
+     let v = normalize(-world);
+     let l = globals.sun_direction.xyz;
+@@ -190,5 +206,5 @@ fn lit(
+         n, v, globals.up.xyz, base, metal, roughness, globals.sky_ambient.rgb,
+         globals.ground_ambient.rgb,
+     );
+-    return direct + ambient;
++    return Lit(direct, ambient);
+ }
+diff --git a/crates/creeer_render/src/shaders/terrain.wgsl b/crates/creeer_render/src/shaders/terrain.wgsl
+index 2a9de47..8966535 100644
+--- a/crates/creeer_render/src/shaders/terrain.wgsl
++++ b/crates/creeer_render/src/shaders/terrain.wgsl
+@@ -30,7 +30,8 @@ struct InstanceIn {
+ };
+ 
+ struct VertexOut {
+-    @builtin(position) clip: vec4<f32>,
++    // Invariant: the prepass computes the same depth (`after_prepass_depth_state`).
++    @builtin(position) @invariant clip: vec4<f32>,
+     @location(0) world: vec3<f32>,
+     @location(1) normal: vec3<f32>,
+     // Chunk-local position: the detail texture repeats every 32 m, and every chunk origin
+@@ -117,8 +118,13 @@ fn sky_radiance(mu_s: f32) -> vec3<f32> {
+     return mix(globals.sky_irradiance[i].rgb, globals.sky_irradiance[i + 1u].rgb, x - f32(i));
+ }
+ 
++struct SceneOut {
++    @location(0) color: vec4<f32>,
++    @location(1) ambient: vec4<f32>,
++};
++
+ @fragment
+-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
++fn fs_main(in: VertexOut) -> SceneOut {
+     let n = normalize(in.normal);
+     let v = normalize(-in.world);
+     let l = globals.sun_direction.xyz;
+@@ -153,6 +159,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+     // Light bounced from the surroundings: the planet's albedo under sun and sky.
+     let bounce = globals.ground_albedo.rgb / PI * (sun * max(dot(up, l), 0.0) + sky * PI);
+     let ambient = ambient_light(n, v, up, base, 0.0, roughness, sky, bounce) * openness;
++    var seen = ambient;
+     var color = direct + ambient;
+ 
+     if sky_on {
+@@ -160,7 +167,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+         if span.y > 0.0 {
+             let air = inscatter(h0, mu, mu_s0, nu, span.x, min(span.y, t), AIR_STEPS);
+             color = color * air.transmittance + air.radiance;
++            seen = ambient * air.transmittance;
+         }
+     }
+-    return vec4<f32>(color, 1.0);
++    return SceneOut(vec4<f32>(color, 1.0), vec4<f32>(seen, dot(base, vec3<f32>(0.2126, 0.7152, 0.0722))));
+ }

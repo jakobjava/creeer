@@ -73,6 +73,9 @@ pub struct Material {
     pub ultimate_strength: Curve,
     /// Compressive strength where it differs from the tensile (Pa).
     pub compressive_strength: Option<f64>,
+    /// Wood's compressive strength across the grain (Pa): what an edge driven into it crushes
+    /// (G1.7, chopping).
+    pub across: Option<f64>,
     /// Plastic strain at break.
     pub elongation: f64,
     /// Plastic strain where strain hardening starts (after a yield plateau).
@@ -169,6 +172,8 @@ pub(crate) struct MaterialDef {
     ultimate_strength: CurveDef,
     #[serde(default)]
     compressive_strength: Option<String>,
+    #[serde(default)]
+    across: Option<String>,
     elongation: f64,
     hardening_start: f64,
     uniform_elongation: f64,
@@ -220,6 +225,9 @@ impl MaterialDef {
             ultimate_strength: self.ultimate_strength.parse(Dimension::PRESSURE)?,
             compressive_strength: self
                 .compressive_strength
+                .map(|s| quantity(&s, Dimension::PRESSURE))
+                .transpose()?,
+            across: (self.across)
                 .map(|s| quantity(&s, Dimension::PRESSURE))
                 .transpose()?,
             elongation: self.elongation,

@@ -3,18 +3,9 @@
 //! Winding convention: counter-clockwise triangles face outwards (wgpu's default front face),
 //! so back faces can be culled.
 
-use bytemuck::{Pod, Zeroable};
+pub use crate::primitives::Round;
+pub use crate::vertex::{MeshVertex, NO_TOKEN};
 use creeer_math::glam::Vec3;
-
-/// One mesh vertex as stored on the GPU.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
-pub struct MeshVertex {
-    /// Position in mesh space (m).
-    pub position: [f32; 3],
-    /// Unit normal in mesh space.
-    pub normal: [f32; 3],
-}
 
 /// CPU-side mesh.
 #[derive(Clone, Debug, Default)]
@@ -28,11 +19,17 @@ pub struct MeshData {
 impl MeshData {
     fn push_vertex(&mut self, position: Vec3, normal: Vec3) -> u32 {
         let index = u32::try_from(self.vertices.len()).expect("mesh too large");
-        self.vertices.push(MeshVertex {
-            position: position.to_array(),
-            normal: normal.to_array(),
-        });
+        self.vertices
+            .push(MeshVertex::plain(position.to_array(), normal.to_array()));
         index
+    }
+
+    /// A model read from the packs, its tokens indices into the palette the renderer holds.
+    pub fn from_model(model: &creeer_art::model::Model) -> Self {
+        Self {
+            vertices: model.vertices.iter().map(MeshVertex::from_model).collect(),
+            indices: model.indices.clone(),
+        }
     }
 
     /// Adds a planar quad with corners in counter-clockwise order as seen from the front.
@@ -154,6 +151,19 @@ pub(crate) struct MeshRange {
     pub index_count: u32,
     pub base_vertex: i32,
     pub bounding_radius: f32,
+    /// A model's (its vertices name palette tokens): drawn with the full surface.
+    pub model: bool,
+    /// For a level of detail, its silhouette error as a share of the shape's radius.
+    pub error: f32,
+}
+
+/// One registered mesh: its levels of detail among the arena's ranges, coarsest first.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Levels {
+    pub first: usize,
+    pub count: usize,
+    /// How its error is measured, when it has levels.
+    pub round: Option<Round>,
 }
 
 /// All meshes in one vertex and one index buffer (ADR-0003).
@@ -162,33 +172,68 @@ pub struct MeshArena {
     vertices: Vec<MeshVertex>,
     indices: Vec<u32>,
     pub(crate) ranges: Vec<MeshRange>,
+    pub(crate) meshes: Vec<Levels>,
     dirty: bool,
 }
 
 impl MeshArena {
     /// Registers a mesh; it is uploaded before the next frame.
     pub fn add(&mut self, mesh: &MeshData) -> MeshId {
-        let range = MeshRange {
+        let first = self.push_range(mesh, 0.0);
+        self.register(Levels {
+            first,
+            count: 1,
+            round: None,
+        })
+    }
+
+    /// Registers a round shape's levels of detail, coarsest first, each with its silhouette
+    /// error as a share of its radius (`crate::primitives`). Each instance is drawn with the
+    /// coarsest whose error projects under half a pixel.
+    pub fn add_levels(&mut self, levels: &[(MeshData, f32)], round: Round) -> MeshId {
+        assert!(!levels.is_empty(), "a mesh has at least one level");
+        let first = self.ranges.len();
+        for (mesh, error) in levels {
+            self.push_range(mesh, *error);
+        }
+        self.register(Levels {
+            first,
+            count: levels.len(),
+            round: Some(round),
+        })
+    }
+
+    fn push_range(&mut self, mesh: &MeshData, error: f32) -> usize {
+        self.ranges.push(MeshRange {
             first_index: u32::try_from(self.indices.len()).expect("arena too large"),
             index_count: u32::try_from(mesh.indices.len()).expect("mesh too large"),
             base_vertex: i32::try_from(self.vertices.len()).expect("arena too large"),
             bounding_radius: mesh.bounding_radius(),
-        };
+            model: mesh
+                .vertices
+                .iter()
+                .any(|v| v.material & 0xffff != u32::from(NO_TOKEN)),
+            error,
+        });
         self.vertices.extend_from_slice(&mesh.vertices);
         self.indices.extend_from_slice(&mesh.indices);
-        self.ranges.push(range);
         self.dirty = true;
-        MeshId(u32::try_from(self.ranges.len() - 1).expect("too many meshes"))
+        self.ranges.len() - 1
+    }
+
+    fn register(&mut self, levels: Levels) -> MeshId {
+        self.meshes.push(levels);
+        MeshId(u32::try_from(self.meshes.len() - 1).expect("too many meshes"))
     }
 
     /// Number of registered meshes.
     pub fn len(&self) -> usize {
-        self.ranges.len()
+        self.meshes.len()
     }
 
     /// True if no mesh is registered.
     pub fn is_empty(&self) -> bool {
-        self.ranges.is_empty()
+        self.meshes.is_empty()
     }
 
     /// Returns the data to upload if it changed since the last call.
@@ -261,6 +306,23 @@ mod tests {
         let range_b = arena.ranges[b.0 as usize];
         assert_eq!(range_b.first_index, 36);
         assert_eq!(range_b.base_vertex, 24);
+        assert!(
+            !range_b.model,
+            "procedural meshes take their instance's material"
+        );
+        let mut model = MeshData::cuboid(Vec3::ONE);
+        model.vertices[0].material = crate::vertex::pack_material(3, 1.0, 0.0);
+        let c = arena.add(&model);
+        assert!(
+            arena.ranges[c.0 as usize].model,
+            "a vertex naming a token makes a model"
+        );
+        // A round shape's levels: one mesh, a range for each level, after the others.
+        let d = arena.add_levels(&crate::primitives::cylinder_levels(), Round::Cylinder);
+        let levels = arena.meshes[d.0 as usize];
+        assert_eq!((levels.first, levels.count), (3, 10));
+        assert_eq!(arena.len(), 4);
+        assert!((arena.ranges[3].error - crate::primitives::sagitta(6)).abs() < 1e-7);
         assert!(arena.take_upload().is_some());
         assert!(arena.take_upload().is_none(), "uploads only when changed");
     }

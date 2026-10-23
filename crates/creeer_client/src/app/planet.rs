@@ -12,7 +12,9 @@ const RUN: f64 = 6.5;
 impl Running {
     /// Opens the planet sandbox, starting in orbit.
     pub(super) fn enter_planet(&mut self) {
-        match PlanetView::singleplayer() {
+        // Survival unless asked for creative (G1.6b: the user, 2026-10-22).
+        let creative = std::env::args().any(|a| a == "--creative");
+        match PlanetView::singleplayer(creative) {
             Ok(view) => {
                 self.camera = view.orbit_camera();
                 self.planet = Some(view);
@@ -36,15 +38,62 @@ impl Running {
         Ok(())
     }
 
-    /// A key for the planet sandbox: V walks or flies. Returns whether it was one.
+    /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
+    /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
+    /// the crosshair is on in both hands, or puts down what they hold (G1.4f); E, F and I put
+    /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`); the left click strikes
+    /// with what the hands hold, T throws it, R strips bark from it, B binds the head the
+    /// crosshair is on to it (G1.6d). Returns whether it
+    /// was one.
     pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
-        match (&mut self.planet, code) {
-            (Some(planet), winit::keyboard::KeyCode::KeyV) => {
+        use winit::keyboard::KeyCode;
+        let Some(planet) = &mut self.planet else {
+            return false;
+        };
+        let tool = match code {
+            KeyCode::KeyV => {
                 planet.walking = !planet.walking;
-                true
+                return true;
             }
-            _ => false,
-        }
+            KeyCode::KeyG => {
+                planet.grab_or_drop(&self.camera);
+                return true;
+            }
+            KeyCode::KeyE => {
+                planet.stow(&self.camera);
+                return true;
+            }
+            KeyCode::KeyF => {
+                planet.put_in_or_open(&self.camera);
+                return true;
+            }
+            KeyCode::KeyI => {
+                planet.inventory = !planet.inventory;
+                return true;
+            }
+            KeyCode::KeyT => {
+                planet.send(creeer_net::message::Command::Throw(self.camera.forward()));
+                return true;
+            }
+            KeyCode::KeyR => {
+                planet.send(creeer_net::message::Command::Strip);
+                return true;
+            }
+            KeyCode::KeyB => {
+                planet.bind(&self.camera);
+                return true;
+            }
+            KeyCode::Digit1 => Some(0),
+            KeyCode::Digit2 => Some(1),
+            KeyCode::Digit3 => Some(2),
+            KeyCode::Digit4 => Some(3),
+            KeyCode::Digit0 => None,
+            _ => return false,
+        };
+        let tool = if tool == planet.wielding { None } else { tool };
+        planet.wielding = tool;
+        planet.send(creeer_net::message::Command::Wield { tool });
+        true
     }
 
     /// Back to the tech demo.
@@ -65,7 +114,10 @@ impl Running {
             self.fly.look(&mut self.camera);
             let speed = if self.fly.running() { RUN } else { WALK };
             let walk = planet.walk(&self.camera, self.fly.walk_axes(), speed);
-            planet.session.update(dt, (walk, self.fly.jumping()));
+            let thrust = planet.thrust(walk, self.fly.thrusting());
+            planet
+                .session
+                .update(dt, (walk, self.fly.jumping(), thrust));
             planet.follow(&mut self.camera);
         } else {
             // Flying speed follows the height above the ground: the wheel sets how many
@@ -74,7 +126,7 @@ impl Running {
             self.fly.speed = base * planet.altitude(self.camera.position).max(2.0) / 10.0;
             self.fly.update(&mut self.camera, dt);
             self.fly.speed = base;
-            planet.session.update(dt, (DVec3::ZERO, false));
+            planet.session.update(dt, (DVec3::ZERO, false, DVec3::ZERO));
             planet.constrain_camera(&mut self.camera);
         }
         planet.advance_day(dt);
@@ -92,6 +144,26 @@ impl Running {
             (&snapshot, &snapshot, 1.0),
             Overlay::Off,
         );
+        if let Some(people) = &mut self.people {
+            let ground = crate::people_ground::PlanetGround {
+                terrain: &planet.terrain,
+            };
+            // The made tools in hands as their pieces, as the world's made things are drawn.
+            for (c, q, half, [r, g, b]) in
+                people.draw(&snapshot.people, dt, &ground, &mut self.scene)
+            {
+                let colour = [r, g, b].map(|x| f32::from(x) / 255.0);
+                let material = creeer_render::Material::dielectric(colour, 0.85);
+                physics_view::add_box(
+                    &mut self.scene,
+                    &self.meshes,
+                    DVec3::ZERO,
+                    (c, q, half),
+                    material,
+                    None,
+                );
+            }
+        }
         self.scene_build_times.push(build_start.elapsed());
 
         // Lighting: colours from the atmosphere for the sun's elevation here (costly, so only
@@ -133,7 +205,11 @@ impl Running {
                 },
             );
             request = planet_ui::window(ui.ctx(), planet, &self.camera);
-            planet_ui::crosshair(ui.ctx());
+            crate::inventory_ui::window(ui.ctx(), planet, &self.camera);
+            let target = crate::planet_aim::target(planet, &self.camera);
+            planet_ui::crosshair(ui.ctx(), target.as_ref());
+            crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
+            crate::inventory_ui::vitals(ui.ctx(), &planet.session.connection);
             self.profiler
                 .window(ui.ctx(), Some(&mut planet.session.connection));
         });

@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
 //!
-//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night> <file.png> [--sun <deg>]`
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -28,13 +28,13 @@ fn play(view: &mut PlanetView, seconds: f64) -> Result<(), String> {
             return Err("the hosted server did not welcome the client".into());
         }
         view.session
-            .update(step.as_secs_f64(), (DVec3::ZERO, false));
+            .update(step.as_secs_f64(), (DVec3::ZERO, false, DVec3::ZERO));
         std::thread::sleep(step);
     }
     let start = Instant::now();
     while start.elapsed().as_secs_f64() < seconds {
         view.session
-            .update(step.as_secs_f64(), (DVec3::ZERO, false));
+            .update(step.as_secs_f64(), (DVec3::ZERO, false, DVec3::ZERO));
         std::thread::sleep(step);
     }
     Ok(())
@@ -62,13 +62,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         sun_elevation = -30.0;
     }
 
-    let mut view = PlanetView::singleplayer()?;
+    let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
     play(&mut view, 0.0)?;
-    // A land spot with relief: the first point between 300 and 1500 m above the datum.
-    let up = fibonacci_sphere(5000)
-        .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))
-        .ok_or("no land spot found")?;
+    // Where players appear (land with relief at a temperate latitude, G1.3i): bodies are
+    // simulated only near a player, and the noon sun stands 45-60° high there.
+    let up = creeer_server::world::spawn_point(&terrain).normalize();
     view.day_fraction = day_for_sun(&view, up, sun_elevation);
     view.day_speed = 0.0;
     let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
@@ -99,6 +98,19 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or("no coast found")?;
             view.day_fraction = day_for_sun(&view, at, sun_elevation);
             view.ground_camera(at, 200.0, seaward, 6f64.to_radians())
+        }
+        // The player's own character (G1.3e), from behind as the game follows it.
+        "avatar" => {
+            play(&mut view, 2.0)?;
+            let at = (view.session.connection.avatar())
+                .ok_or("no avatar")?
+                .position;
+            let up = at.normalize();
+            let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
+            view.day_fraction = day_for_sun(&view, up, sun_elevation);
+            let mut camera = view.ground_camera(up, 2.0, east, 12f64.to_radians());
+            view.follow(&mut camera);
+            camera
         }
         "surface" => {
             // Drop a few crates and balls in front of the camera and let them land.
@@ -139,7 +151,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut renderer = pollster::block_on(Renderer::new_headless((1600, 900)))?;
-    let meshes = DemoMeshes::register(&mut renderer.meshes);
+    let meshes = DemoMeshes::register_for(&mut renderer);
     // Stream until settled.
     let start = Instant::now();
     loop {
@@ -160,7 +172,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut lighting = sky.lighting(camera.position, sun, &Lighting::default());
     lighting.shadow_distance = 250.0;
     let mut scene = Scene::default();
-    view.session.update(0.0, (DVec3::ZERO, false));
+    view.session.update(0.0, (DVec3::ZERO, false, DVec3::ZERO));
     let snapshot = view.snapshot();
     physics_view::draw(
         &mut scene,
@@ -169,6 +181,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         (&snapshot, &snapshot, 1.0),
         crate::demo::Overlay::Off,
     );
+    // The players' characters (G1.3e).
+    let mut people = crate::people::People::register(&mut renderer)?;
+    let ground = crate::people_ground::PlanetGround {
+        terrain: &view.terrain,
+    };
+    people.draw(&snapshot.people, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,
@@ -192,6 +210,48 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         view.altitude(camera.position),
         snapshot.counts.0,
     );
+    // `--frames n`: the same view drawn n times more, each from the snapshot on (G1.7: what a
+    // forest costs a frame).
+    let frames = (args.iter().position(|a| a == "--frames"))
+        .and_then(|i| args.get(i + 1)?.parse::<usize>().ok());
+    if let Some(n) = frames {
+        let mut stats = creeer_core::TimingStats::new(n);
+        for _ in 0..n {
+            let started = Instant::now();
+            let snapshot = view.snapshot();
+            let mut scene = Scene::default();
+            let pair = (&snapshot, &snapshot, 1.0);
+            physics_view::draw(
+                &mut scene,
+                &meshes,
+                DVec3::ZERO,
+                pair,
+                crate::demo::Overlay::Off,
+            );
+            people.draw(&snapshot.people, 0.0, &ground, &mut scene);
+            renderer.render_offscreen(Frame {
+                camera: &camera,
+                scene: &scene,
+                terrain: &view.draw,
+                terrain_frames: &[],
+                lighting: &lighting,
+                lines: &DebugLines::default(),
+                sky: Some(&sky),
+                heatmap: None,
+                overlay: None,
+                clear_color: crate::BACKGROUND,
+            });
+            stats.push(started.elapsed());
+        }
+        let p = |q| stats.percentile_ms(q).unwrap_or(0.0);
+        println!(
+            "{n} frames: p50 {:.2} ms, p99 {:.2} ms; {} rods, {} blobs",
+            p(50.0),
+            p(99.0),
+            snapshot.rods.len(),
+            snapshot.blobs.len()
+        );
+    }
     Ok(())
 }
 
@@ -210,6 +270,11 @@ fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
             best = (error, f);
         }
     }
+    // Far from the equator or in winter, the sun may never stand that high: say so.
+    let reached = det::asin(view.sun_direction_at(best.1).dot(up)).to_degrees();
+    if (reached - elevation).abs() > 1.0 {
+        eprintln!("the sun reaches {reached:.1}° here at most, not {elevation}°");
+    }
     best.1
 }
 
@@ -223,7 +288,7 @@ pub fn descent_bench(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(40.0);
-    let mut view = PlanetView::singleplayer()?;
+    let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
     let up = fibonacci_sphere(5000)
         .find(|&d| (300.0..1500.0).contains(&terrain.surface_height(d)))

@@ -8,9 +8,14 @@
 //! - the data integrity checks of plan.md §6 over the merged data: species' heat capacities
 //!   positive over their ranges and their enthalpies continuous where ranges meet, and the
 //!   signs of ΔG of reactions whose direction is known (so a mod's species cannot make water
-//!   fall apart by itself at room temperature).
+//!   fall apart by itself at room temperature);
+//! - the palette and its approved exceptions (G1.3a, `docs/art-style.md`) and every model in
+//!   the manifests (G1.3b): they must load, and what breaks the style is a warning.
 
 use crate::surroundings::Surroundings;
+use creeer_art::model::{Entry, Model};
+use creeer_art::wearable::{self, Wearable};
+use creeer_art::{Exception, Palette, Srgb, checks, model_check};
 use creeer_data::Data;
 use creeer_materials::MaterialTable;
 use creeer_materials::species::{Species, SpeciesTable};
@@ -84,6 +89,7 @@ pub fn validate(data: &Data) -> Report {
         Ok(t) => {
             report.counts.push(("minerals", t.minerals.len()));
             report.counts.push(("rocks", t.rocks.len()));
+            art(data, &t, &mut report);
         }
         Err(e) => {
             // Every planet would fail the same way: say it once.
@@ -94,6 +100,94 @@ pub fn validate(data: &Data) -> Report {
     planets(data, species.as_ref(), &mut report);
     systems(data, &mut report);
     report
+}
+
+/// The palette and its exceptions (G1.3a): they must load. The style's checks are warnings,
+/// since a mod may choose its own look; the base pack is held to them by `creeer_art`'s tests.
+fn art(data: &Data, rocks: &RockTable, report: &mut Report) {
+    let palette = Palette::from_data(data);
+    let exceptions = Exception::from_data(data);
+    let (palette, exceptions) = match (palette, exceptions) {
+        (Ok(p), Ok(e)) => (p, e),
+        (p, e) => {
+            report.errors.extend(p.err());
+            report.errors.extend(e.err());
+            return;
+        }
+    };
+    report.counts.push(("palette tokens", palette.tokens.len()));
+    let rocks: Vec<checks::Rock> = (rocks.rocks.iter())
+        .map(|r| checks::Rock {
+            name: &r.name,
+            colour: Srgb(r.color),
+            ore: r.ore,
+        })
+        .collect();
+    for finding in checks::check(&palette, &rocks, &exceptions) {
+        report.warnings.push(format!("art style: {finding}"));
+    }
+    models(data, &palette, report);
+    // The hand tools (G1.4c): catalogue tools, each with its model.
+    match (crate::tools::Tool::all(data), Entry::all(data)) {
+        (Ok(tools), Ok(entries)) => {
+            report.counts.push(("tools", tools.len()));
+            report
+                .errors
+                .extend(crate::tools::problems(&tools, &entries));
+        }
+        (Err(e), _) | (_, Err(e)) => report.errors.push(e),
+    }
+    // Trees (G1.7): every species' wood, grounds, colours and numbers (a broken material is
+    // told once, by the materials' check).
+    match crate::trees::species::load(data) {
+        Ok(species) => report.counts.push(("tree species", species.len())),
+        Err(e) if creeer_materials::MaterialTable::from_data(data).is_ok() => report.errors.push(e),
+        Err(_) => {}
+    }
+}
+
+/// Every model in the manifests (G1.3b): it must load, its materials palette tokens; what
+/// breaks the style (budget, bounds, facets) is a warning.
+fn models(data: &Data, palette: &Palette, report: &mut Report) {
+    let entries = match Entry::all(data) {
+        Ok(e) => e,
+        Err(e) => return report.errors.push(e),
+    };
+    report.counts.push(("models", entries.len()));
+    for entry in &entries {
+        let at = format!("{}: {}", origin(data, &entry.file), entry.file);
+        let model = data
+            .binary(&entry.file)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| Model::read(bytes, palette));
+        match model {
+            Ok(model) => {
+                for problem in model_check::check(&model, entry) {
+                    report.warnings.push(format!("art style: {at}: {problem}"));
+                }
+                // A skinned model is drawn by the ragdoll's segments: a wrong skeleton draws
+                // a wrong body, an error (G1.3f). Its wearables must be its pieces; worn, they
+                // are held to the character's budget.
+                if !model.bones.is_empty() {
+                    for problem in crate::character::bones::skeleton_problems(&model.bones) {
+                        report.errors.push(format!("{at}: {problem}"));
+                    }
+                    match Wearable::all(data) {
+                        Ok(wearables) => {
+                            for problem in wearable::problems(&model, &wearables) {
+                                report.errors.push(format!("{at}: {problem}"));
+                            }
+                            for problem in wearable::over_budget(&model, &wearables) {
+                                report.warnings.push(format!("art style: {at}: {problem}"));
+                            }
+                        }
+                        Err(e) => report.errors.push(e),
+                    }
+                }
+            }
+            Err(e) => report.errors.push(format!("{at}: {e}")),
+        }
+    }
 }
 
 /// Whether a file's first item (past comments) is `Planet(`.

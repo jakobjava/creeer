@@ -58,7 +58,10 @@ impl Server {
         self.world.join_machines();
         let terrain = std::sync::Arc::clone(&self.world.terrain);
         let data = std::sync::Arc::clone(&self.world.data);
+        // (Creative is the server's, not the save's.)
+        let creative = self.world.creative;
         self.world = ServerWorld::from_save(data, save, terrain);
+        self.world.creative = creative;
         self.restart_sessions();
         Ok(())
     }

@@ -33,7 +33,7 @@ fn the_client_rebuilds_what_the_server_sent() {
         .map(|i| state(f64::from(i), 0.1 * f64::from(i), i % 3 == 0))
         .collect();
     let v = view(&bodies);
-    let bytes = sender.write(2, 7, &v, usize::MAX);
+    let bytes = sender.write(2, 7, &v, (usize::MAX, &[]));
     let got = receiver.read(&bytes).expect("a snapshot");
     assert_eq!(got.tick, 2);
     assert_eq!(got.last_input, 7);
@@ -44,11 +44,11 @@ fn the_client_rebuilds_what_the_server_sent() {
 fn what_did_not_change_costs_nothing_and_what_moved_little_costs_little() {
     let (mut sender, mut receiver) = (Sender::default(), Receiver::default());
     let mut bodies: Vec<BodyState> = (0..100).map(|i| state(f64::from(i), 0.0, true)).collect();
-    let first = sender.write(2, 0, &view(&bodies), usize::MAX);
+    let first = sender.write(2, 0, &view(&bodies), (usize::MAX, &[]));
     receiver.read(&first).expect("first");
     sender.ack(2);
     // Nothing changed: a header and no entries.
-    let same = sender.write(4, 0, &view(&bodies), usize::MAX);
+    let same = sender.write(4, 0, &view(&bodies), (usize::MAX, &[]));
     assert!(same.len() <= 8, "{} bytes for nothing", same.len());
     assert_eq!(
         receiver.read(&same).expect("same").states,
@@ -57,7 +57,7 @@ fn what_did_not_change_costs_nothing_and_what_moved_little_costs_little() {
     sender.ack(4);
     // One body moved a centimetre (awake now): a few bytes.
     bodies[40] = state(40.01, 0.0, false);
-    let moved = sender.write(6, 0, &view(&bodies), usize::MAX);
+    let moved = sender.write(6, 0, &view(&bodies), (usize::MAX, &[]));
     assert!(moved.len() <= 20, "{} bytes for a centimetre", moved.len());
     assert!(first.len() > 100 * 20, "{} bytes in all", first.len());
     assert_eq!(
@@ -70,16 +70,16 @@ fn what_did_not_change_costs_nothing_and_what_moved_little_costs_little() {
 fn lost_snapshots_and_late_acknowledgements_lose_nothing() {
     let (mut sender, mut receiver) = (Sender::default(), Receiver::default());
     let mut bodies: Vec<BodyState> = (0..10).map(|i| state(f64::from(i), 0.0, false)).collect();
-    let first = sender.write(2, 0, &view(&bodies), usize::MAX);
+    let first = sender.write(2, 0, &view(&bodies), (usize::MAX, &[]));
     receiver.read(&first).expect("first");
     sender.ack(2);
     // Two snapshots lost on the way: each written against tick 2, the newest acknowledged.
     for tick in [4, 6] {
         bodies[3] = state(3.0 + f64::from(tick), 0.0, false);
-        let _lost = sender.write(tick, 0, &view(&bodies), usize::MAX);
+        let _lost = sender.write(tick, 0, &view(&bodies), (usize::MAX, &[]));
     }
     bodies[5] = state(-5.0, 1.0, false);
-    let third = sender.write(8, 0, &view(&bodies), usize::MAX);
+    let third = sender.write(8, 0, &view(&bodies), (usize::MAX, &[]));
     assert_eq!(
         receiver.read(&third).expect("third").states,
         expected(&view(&bodies))
@@ -89,7 +89,7 @@ fn lost_snapshots_and_late_acknowledgements_lose_nothing() {
     let mut v = view(&bodies);
     v.remove(2);
     v.push((EntityId(1000), state(9.0, 2.0, true), 1.0));
-    let fourth = sender.write(10, 0, &v, usize::MAX);
+    let fourth = sender.write(10, 0, &v, (usize::MAX, &[]));
     assert_eq!(receiver.read(&fourth).expect("fourth").states, expected(&v));
 }
 
@@ -97,17 +97,17 @@ fn lost_snapshots_and_late_acknowledgements_lose_nothing() {
 fn a_snapshot_without_its_baseline_is_dropped_and_the_next_recovers() {
     let (mut sender, mut receiver) = (Sender::default(), Receiver::default());
     let bodies: Vec<BodyState> = (0..5).map(|i| state(f64::from(i), 0.0, false)).collect();
-    let _never_arrived = sender.write(2, 0, &view(&bodies), usize::MAX);
+    let _never_arrived = sender.write(2, 0, &view(&bodies), (usize::MAX, &[]));
     sender.ack(2); // a client that lies, or a late duplicate acknowledgement
     let moved: Vec<BodyState> = (0..5)
         .map(|i| state(f64::from(i) + 0.5, 0.0, false))
         .collect();
-    let next = sender.write(4, 0, &view(&moved), usize::MAX);
+    let next = sender.write(4, 0, &view(&moved), (usize::MAX, &[]));
     assert!(receiver.read(&next).is_err(), "its baseline never arrived");
     // The client acknowledges nothing it has: the server's acknowledged tick stays, but a
     // fresh sender (or one past its history) writes whole states.
     let mut fresh = Sender::default();
-    let whole = fresh.write(6, 0, &view(&moved), usize::MAX);
+    let whole = fresh.write(6, 0, &view(&moved), (usize::MAX, &[]));
     assert_eq!(
         receiver.read(&whole).expect("whole").states,
         expected(&view(&moved))
@@ -132,7 +132,7 @@ fn a_budget_shares_the_bytes_and_every_body_gets_its_turn() {
             })
             .collect();
         let v = view(&bodies);
-        let bytes = sender.write(tick, 0, &v, budget);
+        let bytes = sender.write(tick, 0, &v, (budget, &[]));
         assert!(bytes.len() <= budget, "{} bytes", bytes.len());
         let got = receiver.read(&bytes).expect("a snapshot").states.clone();
         sender.ack(tick);
@@ -145,6 +145,35 @@ fn a_budget_shares_the_bytes_and_every_body_gets_its_turn() {
             // No body waits for long: each was brought up to date within the last 20.
             let stale = last_sent.iter().filter(|&&r| round - r >= 20).count();
             assert_eq!(stale, 0, "round {round}");
+        }
+    }
+}
+
+#[test]
+fn the_budget_lists_what_it_left_out_near_the_client() {
+    let (mut sender, mut receiver) = (Sender::default(), Receiver::default());
+    let budget = 1024;
+    // The first twenty are near the client.
+    let near: Vec<EntityId> = (0..20).map(EntityId).collect();
+    for round in 1..=10u32 {
+        let tick = 2 * round;
+        let bodies: Vec<BodyState> = (0..300)
+            .map(|i| state(f64::from(i) + 0.01 * f64::from(round), 0.0, false))
+            .collect();
+        let v = view(&bodies);
+        let bytes = sender.write(tick, 0, &v, (budget, &near));
+        assert!(bytes.len() <= budget, "{} bytes", bytes.len());
+        let got = receiver.read(&bytes).expect("a snapshot").clone();
+        sender.ack(tick);
+        for (id, s, _) in &v {
+            let behind = got.states.get(id) != Some(s);
+            let listed = got.stale.contains(id);
+            if near.contains(id) {
+                // Near: listed exactly when the client's state is behind.
+                assert_eq!(behind, listed, "round {round}, {id:?}");
+            } else {
+                assert!(!listed, "round {round}, {id:?} listed though far");
+            }
         }
     }
 }

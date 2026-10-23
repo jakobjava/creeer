@@ -3,7 +3,6 @@
 use crate::lod_bench::{centres, place, walk, world, yards};
 use crate::stress_scenes::{Notes, Scene, abstract_powerhouse, hash};
 use creeer_data::Data;
-use creeer_math::glam::DVec3;
 use creeer_net::message::Command;
 use creeer_server::ServerWorld;
 use creeer_server::world::load_terrain;
@@ -35,7 +34,10 @@ pub fn server() -> Scene {
         .collect();
     let data = Data::base();
     let terrain = load_terrain(&data, "planets/home.ron").expect("home.ron");
-    let w = Arc::new(Mutex::new(ServerWorld::from_save(data, save, terrain)));
+    let mut world = ServerWorld::from_save(data, save, terrain);
+    // A test server: its players drop crates (G1.4d).
+    world.creative = true;
+    let w = Arc::new(Mutex::new(world));
     let (state, seen) = (Arc::clone(&w), Arc::clone(&w));
     Scene {
         tick: Box::new(move |tick| {
@@ -47,13 +49,17 @@ pub fn server() -> Scene {
             let c = centres(&w, &players);
             // Every two seconds one player drops a crate; every ten one digs.
             let who = (tick / 120) as usize % players.len();
+            // East and north at the player (fixed world axes were horizontal only by the pole: at
+            // the spawn moved in G1.3i the crates fell on the players).
+            let (east, north) =
+                creeer_terrain::geology::deposits::tangent_frame(c[who].normalize());
             if tick % 120 == 0 {
-                let at = c[who] + c[who].normalize() * 3.0 + DVec3::X * 2.0;
+                let at = c[who] + c[who].normalize() * 3.0 + east * 2.0;
                 let _ = w.apply(&Command::Crate(at), Some(players[who]));
             }
             if tick % 600 == 300 {
                 let mut edits = Edits::default();
-                let center = w.ground_under(c[who] + DVec3::Z * 6.0);
+                let center = w.ground_under(c[who] + north * 6.0);
                 edits.push(Edit::Dig(Brush::Sphere {
                     center,
                     radius: 1.5,

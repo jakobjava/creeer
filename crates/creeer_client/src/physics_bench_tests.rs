@@ -26,7 +26,10 @@ const CEILINGS: [(PhysicsScene, u64); 10] = [
     // began at nought; the crash's worst tick takes 495, as ADR-0017's profile found.)
     (PhysicsScene::Crash, 545),
     (PhysicsScene::Stacks, 1490),
-    (PhysicsScene::Rocks, 1670),
+    // (Measured 1803 from G1.8 on, tick 40: the turn substeps per group took the pile another
+    // way, through a state that costs 1803 where 90258e4 would spend 1905 on it. Chaotic: eight
+    // runs a nanometre apart spread 1379–2610 before; ADR-0024, second pass.)
+    (PhysicsScene::Rocks, 1985),
     (PhysicsScene::Cooling, 10),
     (PhysicsScene::Radiator, 2),
     (PhysicsScene::Fire, 242),

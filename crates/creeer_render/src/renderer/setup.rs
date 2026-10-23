@@ -10,7 +10,9 @@ async fn request_device(
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: surface,
-            force_fallback_adapter: false,
+            // `CREEER_FALLBACK_ADAPTER=1`: the software adapter, as CI runners without a GPU have
+            // (WARP on Windows), to reproduce their results.
+            force_fallback_adapter: std::env::var_os("CREEER_FALLBACK_ADAPTER").is_some(),
             // Only matters for browsers exposing wgpu to untrusted content.
             apply_limit_buckets: false,
         })
@@ -19,6 +21,8 @@ async fn request_device(
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("creeer device"),
+            // Optional: GPU timestamps per pass (G1.3d, ADR-0026), where the adapter has them.
+            required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
             // Portable WebGPU defaults: anything beyond must be justified in an ADR,
             // since it might not exist on Metal or older GPUs.
             required_limits: wgpu::Limits::default(),
@@ -134,7 +138,14 @@ impl Renderer {
             GLOBALS_WGSL,
             ShadowQuality::default().map_size(),
         );
-        let mesh_pass = MeshPass::new(&device, &globals_layout, &shadows.sample_layout);
+        let ao = ao_pass::AoPass::new(&device, &targets.depth, size);
+        let mesh_pass = MeshPass::new(
+            &device,
+            &queue,
+            &globals_layout,
+            &shadows.sample_layout,
+            &ao.sample_layout,
+        );
         let line_pass = LinePass::new(&device, &globals_layout);
         let sky_pipeline = SkyPass::new(&device, &globals_layout);
         let terrain = TerrainPass::new(
@@ -143,6 +154,7 @@ impl Renderer {
             &shadows.sample_layout,
             sky_pipeline.luts().0,
             &shadows.cascade_layout,
+            &ao.sample_layout,
         );
         let sea = SeaPass::new(&device, &globals_layout, sky_pipeline.luts().0);
         let exposure = ExposurePass::new(&device, &globals_layout, &targets);
@@ -153,6 +165,8 @@ impl Renderer {
             &targets,
             &exposure.exposure,
         );
+        let timer = timing::GpuTimer::new(&device, &queue);
+        let skin = skin_pass::SkinPass::new(&device, &queue);
         let egui = egui_wgpu::Renderer::new(
             &device,
             output_format,
@@ -182,6 +196,9 @@ impl Renderer {
             stats: RenderStats::default(),
             sky_table: None,
             meshes: MeshArena::default(),
+            timer,
+            ao,
+            skin,
         }
     }
 }

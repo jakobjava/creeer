@@ -13,13 +13,17 @@ mod abstraction_tests;
 pub mod aero;
 #[cfg(test)]
 mod aero_tests;
+pub mod ageing;
 pub mod avatar;
+pub mod carry;
+pub mod character;
 pub mod content;
 #[cfg(test)]
 mod content_tests;
 pub mod controls;
 #[cfg(test)]
 mod controls_tests;
+pub mod dig;
 pub mod drive;
 #[cfg(test)]
 mod drive_tests;
@@ -32,23 +36,30 @@ mod heat_tests;
 pub mod hydro;
 #[cfg(test)]
 mod hydro_tests;
+pub mod items;
 #[cfg(test)]
 mod joule_tests;
 pub mod lod;
 #[cfg(test)]
 mod lod_tests;
+pub mod making;
 pub mod mount;
 pub mod planet;
 #[cfg(test)]
 mod planet_tests;
 pub mod powerhouse;
+pub mod reach;
 pub mod save;
+pub mod scatter;
 pub mod sea;
 #[cfg(test)]
 mod station_tests;
+pub mod strike;
 pub mod surroundings;
 #[cfg(test)]
 mod surroundings_tests;
+pub mod tools;
+pub mod trees;
 pub mod universe;
 
 pub use planet::{TerrainGround, planet_gravity};

@@ -1,0 +1,423 @@
+diff --git a/crates/creeer_physics/src/world/detect.rs b/crates/creeer_physics/src/world/detect.rs
+index 01c85e5..67bee00 100644
+--- a/crates/creeer_physics/src/world/detect.rs
++++ b/crates/creeer_physics/src/world/detect.rs
+@@ -94,6 +94,9 @@ impl World {
+                 }
+             }
+         }
++        let margins: std::collections::HashMap<(usize, NodeId), f64> =
++            items.iter().map(|i| ((i.body, i.node), i.margin)).collect();
++        self.revive_crossed(&mut found, |b, n| margins.get(&(b, n)).copied().unwrap_or(0.0));
+         found
+     }
+ }
+diff --git a/crates/creeer_physics/src/world/edges.rs b/crates/creeer_physics/src/world/edges.rs
+new file mode 100644
+index 0000000..189febb
+--- /dev/null
++++ b/crates/creeer_physics/src/world/edges.rs
+@@ -0,0 +1,218 @@
++//! Crossed edges remembered from step to step (P1, ADR-0024).
++//!
++//! Where an edge lies across another body's face, the two touch along a line, its ends where
++//! the edge crosses the face's edges. The separating-axis test names one crossing, the one
++//! deepest when the step starts: a forearm lying across a shank under a crate rocked about
++//! the shank's edge, one end found in a step and the other in the next, each end pressing
++//! unseen through the step the other was found in (1.5 mm and 5 J of it), and it never came
++//! to rest (three quarters of the ragdoll bench's time).
++//!
++//! So a contact manifold persists, as engines keep theirs (Gregorius, "Robust Contact
++//! Creation for Physics Simulations", GDC 2015; Bullet's persistent manifold): each step's
++//! crossed edges are kept in their bodies' frames, and where a pair's contacts are again
++//! crossed edges alone, the edges it crossed in the step before are measured again where the
++//! bodies are now and kept while they still cross (each edge's closest point within it, not
++//! at an end) within the pair's margin. A pair whose contact is a face keeps no other: the
++//! face's patch already holds the line.
++
++use super::shape::{Follows, Pose, RawContact};
++use super::surface::Feature;
++use super::{Body, World, detect::Found};
++use crate::structure::NodeId;
++use creeer_math::glam::DVec3;
++
++/// The most crossed edges a pair keeps.
++const MOST: usize = 4;
++/// Within how much of an edge's ends (as a share of its length) its closest point counts as
++/// at an end.
++const END: f64 = 1e-6;
++/// The same edge, end for end (m in the body's frame).
++const SAME: f64 = 1e-9;
++
++/// A pair's crossed edges, each by its ends in its body's node frame.
++#[derive(Clone, Debug, PartialEq)]
++pub(crate) struct Crossed {
++    pub(crate) a: (usize, NodeId),
++    pub(crate) b: (usize, NodeId),
++    pub(crate) on_a: [DVec3; 2],
++    pub(crate) on_b: [DVec3; 2],
++}
++
++fn pose(body: &Body, node: NodeId) -> Pose {
++    Pose {
++        position: body.structure.position[node],
++        rotation: body.structure.orientation[node],
++    }
++}
++
++fn local(p: Pose, ends: [DVec3; 2]) -> [DVec3; 2] {
++    ends.map(|e| p.rotation.conjugate() * (e - p.position))
++}
++
++fn world(p: Pose, ends: [DVec3; 2]) -> [DVec3; 2] {
++    ends.map(|e| p.position + p.rotation * e)
++}
++
++fn same(x: [DVec3; 2], y: [DVec3; 2]) -> bool {
++    let close = |u: DVec3, v: DVec3| (u - v).length() < SAME;
++    (close(x[0], y[0]) && close(x[1], y[1])) || (close(x[0], y[1]) && close(x[1], y[0]))
++}
++
++/// The closest points' parameters on segments p1–q1 and p2–q2, if neither is at an end and
++/// the segments are not parallel.
++fn crossing(p1: DVec3, q1: DVec3, p2: DVec3, q2: DVec3) -> Option<(f64, f64)> {
++    let (d1, d2, r) = (q1 - p1, q2 - p2, p1 - p2);
++    let (a, b, e) = (d1.dot(d1), d1.dot(d2), d2.dot(d2));
++    let (c, f) = (d1.dot(r), d2.dot(r));
++    let denom = a * e - b * b;
++    if denom <= 1e-12 * a * e {
++        return None;
++    }
++    let s = (b * f - c * e) / denom;
++    let t = (a * f - b * c) / denom;
++    let inside = |u: f64| (END..=1.0 - END).contains(&u);
++    (inside(s) && inside(t)).then_some((s, t))
++}
++
++/// Crossed edges `on_a` and `on_b` (world) as a contact, its normal from B to A (`centres`:
++/// A's and B's), if they cross within `margin`.
++fn contact(
++    on_a: [DVec3; 2],
++    on_b: [DVec3; 2],
++    centres: (DVec3, DVec3),
++    margin: f64,
++) -> Option<RawContact> {
++    let (s, t) = crossing(on_a[0], on_a[1], on_b[0], on_b[1])?;
++    let point_a = on_a[0] + (on_a[1] - on_a[0]) * s;
++    let point_b = on_b[0] + (on_b[1] - on_b[0]) * t;
++    let axis = (on_a[1] - on_a[0]).cross(on_b[1] - on_b[0]).normalize();
++    let normal = if axis.dot(centres.0 - centres.1) < 0.0 {
++        -axis
++    } else {
++        axis
++    };
++    (normal.dot(point_a - point_b) < margin).then_some(RawContact {
++        point_a,
++        point_b,
++        normal,
++        radius_a: 0.0,
++        radius_b: 0.0,
++        features: [Feature::Edge, Feature::Edge],
++        patch: None,
++        bend: None,
++        follows: Follows::Edges(on_a, on_b),
++        inset: 0.0,
++    })
++}
++
++impl World {
++    /// Adds to `found` the crossed edges kept from the last step that still cross, for each
++    /// pair of bodies whose contacts are crossed edges alone (`margin`: each shape's
++    /// detection margin).
++    pub(super) fn revive_crossed(&self, found: &mut Vec<Found>, margin: impl Fn(usize, NodeId) -> f64) {
++        if self.crossed.is_empty() {
++            return;
++        }
++        let mut revived = Vec::new();
++        let mut start = 0;
++        while start < found.len() {
++            // The pair's contacts are consecutive (one call of the narrow phase each).
++            let (a, na, b, _) = &found[start];
++            let (a, na, b) = (*a, *na, *b);
++            let mut end = start + 1;
++            while end < found.len() && (found[end].0, found[end].1, found[end].2) == (a, na, b) {
++                end += 1;
++            }
++            let pair = &found[start..end];
++            start = end;
++            let Some((b, nb)) = b else { continue };
++            let edges: Vec<([DVec3; 2], [DVec3; 2])> = (pair.iter())
++                .filter_map(|f| match f.3.follows {
++                    Follows::Edges(x, y) => Some((x, y)),
++                    _ => None,
++                })
++                .collect();
++            if edges.len() != pair.len() {
++                continue;
++            }
++            let (pa, pb) = (pose(&self.bodies[a], na), pose(&self.bodies[b], nb));
++            let reach = margin(a, na) + margin(b, nb);
++            let mut count = edges.len();
++            for kept in &self.crossed {
++                let (on_a, on_b) = if (kept.a, kept.b) == ((a, na), (b, nb)) {
++                    (kept.on_a, kept.on_b)
++                } else if (kept.a, kept.b) == ((b, nb), (a, na)) {
++                    (kept.on_b, kept.on_a)
++                } else {
++                    continue;
++                };
++                let (on_a, on_b) = (world(pa, on_a), world(pb, on_b));
++                if count >= MOST || edges.iter().any(|e| same(e.0, on_a) && same(e.1, on_b)) {
++                    continue;
++                }
++                if let Some(raw) = contact(on_a, on_b, (pa.position, pb.position), reach) {
++                    revived.push((a, na, Some((b, nb)), raw));
++                    count += 1;
++                }
++            }
++        }
++        found.extend(revived);
++    }
++
++    /// Keeps the crossed edges of `found` (found where the bodies are now) for the next step.
++    pub(super) fn keep_crossed(&mut self, found: &[Found]) {
++        self.crossed = (found.iter())
++            .filter_map(|(a, na, b, raw)| {
++                let ((b, nb), Follows::Edges(x, y)) = (b.as_ref()?, raw.follows) else {
++                    return None;
++                };
++                Some(Crossed {
++                    a: (*a, *na),
++                    b: (*b, *nb),
++                    on_a: local(pose(&self.bodies[*a], *na), x),
++                    on_b: local(pose(&self.bodies[*b], *nb), y),
++                })
++            })
++            .collect();
++    }
++}
++
++impl Crossed {
++    /// The same with its bodies renumbered (`map`: each old index's new one), if both stay.
++    pub(super) fn renumbered(&self, map: &[Option<usize>]) -> Option<Self> {
++        let at = |(b, n): (usize, NodeId)| Some((map.get(b).copied().flatten()?, n));
++        Some(Self {
++            a: at(self.a)?,
++            b: at(self.b)?,
++            ..self.clone()
++        })
++    }
++}
++
++impl creeer_math::codec::Encode for Crossed {
++    fn encode(&self, w: &mut creeer_math::codec::Writer) {
++        for (body, node) in [self.a, self.b] {
++            w.varint(body as u64);
++            w.varint(node as u64);
++        }
++        for e in self.on_a.iter().chain(&self.on_b) {
++            w.put(e);
++        }
++    }
++}
++
++impl creeer_math::codec::Decode for Crossed {
++    fn decode(
++        r: &mut creeer_math::codec::Reader<'_>,
++    ) -> Result<Self, creeer_math::codec::DecodeError> {
++        let mut index = || usize::try_from(r.varint()?).map_err(|_| r.error("an index"));
++        let a = (index()?, index()?);
++        let b = (index()?, index()?);
++        Ok(Self {
++            a,
++            b,
++            on_a: [r.get()?, r.get()?],
++            on_b: [r.get()?, r.get()?],
++        })
++    }
++}
+diff --git a/crates/creeer_physics/src/world/hull_sat.rs b/crates/creeer_physics/src/world/hull_sat.rs
+index c934414..7a57318 100644
+--- a/crates/creeer_physics/src/world/hull_sat.rs
++++ b/crates/creeer_physics/src/world/hull_sat.rs
+@@ -51,7 +51,7 @@ pub fn hull_hull(pose_a: Pose, a: &Hull, pose_b: Pose, b: &Hull, margin: f64) ->
+             features: [Feature::Edge, Feature::Edge],
+             patch: None,
+             bend: None,
+-            follows: Follows::Edges((qa - pa).normalize(), (qb - pb).normalize()),
++            follows: Follows::Edges([pa, qa], [pb, qb]),
+             inset: 0.0,
+         }];
+     }
+diff --git a/crates/creeer_physics/src/world/membership.rs b/crates/creeer_physics/src/world/membership.rs
+index aa98dd7..554c7d5 100644
+--- a/crates/creeer_physics/src/world/membership.rs
++++ b/crates/creeer_physics/src/world/membership.rs
+@@ -57,6 +57,9 @@ impl World {
+             .iter()
+             .filter_map(|a| a.renumbered(map))
+             .collect();
++        self.crossed = (self.crossed.iter())
++            .filter_map(|c| c.renumbered(map))
++            .collect();
+         self.contacts.clear();
+         self.groups.clear();
+     }
+diff --git a/crates/creeer_physics/src/world/mod.rs b/crates/creeer_physics/src/world/mod.rs
+index 9f19179..de66593 100644
+--- a/crates/creeer_physics/src/world/mod.rs
++++ b/crates/creeer_physics/src/world/mod.rs
+@@ -10,6 +10,7 @@ pub mod contact;
+ #[cfg(test)]
+ mod crush_tests;
+ mod detect;
++mod edges;
+ pub mod frame;
+ mod friction;
+ #[cfg(test)]
+@@ -182,6 +183,8 @@ pub struct World {
+     struts: Vec<strut::Strut>,
+     /// Friction anchors of the last step.
+     anchors: Vec<anchor::Anchor>,
++    /// Crossed edges of the last step (`edges.rs`).
++    crossed: Vec<edges::Crossed>,
+     /// The elastic energy each point contact and face held at the end of the last step, by
+     /// the bodies (and nodes) it joined, and the bodies stepped then (the energy guard's,
+     /// `structure/group.rs`).
+@@ -205,6 +208,7 @@ impl World {
+             left: Left::default(),
+             joints: Vec::new(),
+             struts: Vec::new(),
++            crossed: Vec::new(),
+             anchors: Vec::new(),
+             dt,
+         }
+@@ -267,6 +271,7 @@ impl World {
+                 break found;
+             }
+         };
++        self.keep_crossed(&found);
+         timer.stop(Slot::Detect);
+         drop(scope);
+         let timer = profile::start();
+diff --git a/crates/creeer_physics/src/world/pass.rs b/crates/creeer_physics/src/world/pass.rs
+index 1a8928b..f680a76 100644
+--- a/crates/creeer_physics/src/world/pass.rs
++++ b/crates/creeer_physics/src/world/pass.rs
+@@ -301,18 +301,21 @@ impl World {
+         contact.turning = match raw.follows {
+             Follows::A => body((member(a), a, na)),
+             Follows::B => b.map_or(Turning::Frozen, |(b, nb)| body((member(b), b, nb))),
+-            Follows::Edges(ea, eb) => Turning::Edges {
+-                edges: (ea, eb),
+-                from: (
+-                    orientation(a, na),
+-                    b.map_or(DQuat::IDENTITY, |(b, nb)| orientation(b, nb)),
+-                ),
+-                sign: if ea.cross(eb).dot(raw.normal) < 0.0 {
+-                    -1.0
+-                } else {
+-                    1.0
+-                },
+-            },
++            Follows::Edges(sa, sb) => {
++                let (ea, eb) = ((sa[1] - sa[0]).normalize(), (sb[1] - sb[0]).normalize());
++                Turning::Edges {
++                    edges: (ea, eb),
++                    from: (
++                        orientation(a, na),
++                        b.map_or(DQuat::IDENTITY, |(b, nb)| orientation(b, nb)),
++                    ),
++                    sign: if ea.cross(eb).dot(raw.normal) < 0.0 {
++                        -1.0
++                    } else {
++                        1.0
++                    },
++                }
++            }
+             Follows::Neither | Follows::ShapeA | Follows::ShapeB => Turning::Frozen,
+         };
+         contact.radius_a = raw.radius_a;
+diff --git a/crates/creeer_physics/src/world/sat.rs b/crates/creeer_physics/src/world/sat.rs
+index 03a3c41..3785a64 100644
+--- a/crates/creeer_physics/src/world/sat.rs
++++ b/crates/creeer_physics/src/world/sat.rs
+@@ -132,7 +132,7 @@ pub fn box_box(
+                 features: [Feature::Edge, Feature::Edge],
+                 patch: None,
+                 bend: None,
+-                follows: Follows::Edges((qa - pa).normalize(), (qb - pb).normalize()),
++                follows: Follows::Edges([pa, qa], [pb, qb]),
+                 inset: 0.0,
+             }]
+         }
+diff --git a/crates/creeer_physics/src/world/save.rs b/crates/creeer_physics/src/world/save.rs
+index 1daaf89..60527f4 100644
+--- a/crates/creeer_physics/src/world/save.rs
++++ b/crates/creeer_physics/src/world/save.rs
+@@ -1,7 +1,7 @@
+ //! The physics world as a save holds it: its settings, fixed geometry, every body (its
+ //! structure, solver history, shapes, surface and sleep), and what the next step continues
+ //! from: the friction anchors, the energy the contacts held (from version 5) and the joints
+-//! (from version 8, their constraint forces with them). The ground
++//! (from version 8, their constraint forces with them, and the crossed edges kept, `edges.rs`). The ground
+ //! is not in it: it is the terrain's, which a save holds as its edits (`creeer_sim::save`);
+ //! whoever loads a world gives it its ground again.
+ //!
+@@ -233,6 +233,7 @@ impl World {
+         w.put(&self.left.stepped);
+         // (Version 8 on.)
+         w.put(&self.joints);
++        w.put(&self.crossed);
+         w.finish()
+     }
+ 
+@@ -290,6 +291,11 @@ impl World {
+                 return Err(r.error("a joint on a body the world lacks"));
+             }
+             world.joints = joints;
++            let crossed: Vec<super::edges::Crossed> = r.get()?;
++            if !(crossed.iter()).all(|c| fits(c.a) && fits(c.b)) {
++                return Err(r.error("crossed edges of a body the world lacks"));
++            }
++            world.crossed = crossed;
+         }
+         r.end()?;
+         Ok(world)
+diff --git a/crates/creeer_physics/src/world/shape.rs b/crates/creeer_physics/src/world/shape.rs
+index 8dfe037..d08397a 100644
+--- a/crates/creeer_physics/src/world/shape.rs
++++ b/crates/creeer_physics/src/world/shape.rs
+@@ -87,8 +87,8 @@ pub enum Follows {
+     A,
+     /// Side B.
+     B,
+-    /// Crossed edges: their directions on A and on B (world, when found).
+-    Edges(DVec3, DVec3),
++    /// Crossed edges: the edge on A and the edge on B, each by its ends (world, when found).
++    Edges([DVec3; 2], [DVec3; 2]),
+     /// A ball against A's shape: measured to its closest point at every evaluation.
+     ShapeA,
+     /// A ball against B's shape.
+diff --git a/crates/creeer_physics/src/world/turn.rs b/crates/creeer_physics/src/world/turn.rs
+index 80aff79..1d1904f 100644
+--- a/crates/creeer_physics/src/world/turn.rs
++++ b/crates/creeer_physics/src/world/turn.rs
+@@ -56,7 +56,7 @@ impl World {
+         let saved = (!spinning.is_empty() && n < MAX_SUBSTEPS).then(|| {
+             let bodies: Vec<Saved> = self.bodies.iter().map(Saved::of).collect();
+             let multipliers: Vec<_> = self.joints.iter().map(|j| j.multipliers).collect();
+-            (bodies, self.anchors.clone(), self.left.clone(), multipliers)
++            (bodies, (self.anchors.clone(), self.crossed.clone()), self.left.clone(), multipliers)
+         });
+         self.step_in(n);
+         let Some((bodies, anchors, left, multipliers)) = saved else {
+@@ -76,7 +76,7 @@ impl World {
+             for (body, saved) in self.bodies.iter_mut().zip(bodies) {
+                 saved.restore(body);
+             }
+-            self.anchors = anchors;
++            (self.anchors, self.crossed) = anchors;
+             self.left = left;
+             for (j, m) in self.joints.iter_mut().zip(multipliers) {
+                 j.multipliers = m;

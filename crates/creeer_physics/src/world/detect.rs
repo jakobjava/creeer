@@ -1,6 +1,6 @@
 //! Finding contacts: sort and sweep over bounding balls, then exact shape pairs.
 
-use super::shape::{Pose, RawContact, Shape};
+use super::shape::{Pose, RawContact, Shape, StaticShape};
 use super::{World, narrow};
 use crate::structure::NodeId;
 
@@ -23,6 +23,11 @@ impl World {
     fn items(&self) -> Vec<Item> {
         let mut items = Vec::new();
         for (b, body) in self.bodies.iter().enumerate() {
+            // (A step restricted to some bodies meets no others: its groups were found
+            // closed against them at the step's start, `turn.rs`.)
+            if !self.in_step(b) {
+                continue;
+            }
             let s = &body.structure;
             for (node, shape) in &body.shapes {
                 let node = *node;
@@ -60,6 +65,10 @@ impl World {
         let mut found = Vec::new();
         // Sleeping bodies need no contacts among themselves or with fixed geometry.
         let asleep = |body: usize| self.bodies[body].sleep.asleep;
+        // Bodies joined do not collide with each other, unless their joint says so; nor do
+        // bodies let pass.
+        let unjoined = self.unjoined_pairs();
+        let joined = |a: usize, b: usize| unjoined.binary_search(&(a.min(b), a.max(b))).is_ok();
         for (i, a) in items.iter().enumerate() {
             for b in &items[i + 1..] {
                 if b.pose.position.x - b.reach > a.pose.position.x + a.reach {
@@ -67,6 +76,7 @@ impl World {
                 }
                 if a.body == b.body
                     || (asleep(a.body) && asleep(b.body))
+                    || (!unjoined.is_empty() && joined(a.body, b.body))
                     || (a.pose.position - b.pose.position).length() > a.reach + b.reach
                 {
                     continue;
@@ -80,6 +90,13 @@ impl World {
                 continue;
             }
             for fixed in &self.statics {
+                // A box whose ball is apart from the shape's reach meets nothing (G1.7: the
+                // trunks of the trees about the players).
+                if let StaticShape::Box { center, half, .. } = fixed
+                    && (*center - a.pose.position).length() > a.reach + half.length()
+                {
+                    continue;
+                }
                 for raw in narrow::with_static((a.pose, &a.shape), fixed, a.margin) {
                     found.push((a.body, a.node, None, raw));
                 }

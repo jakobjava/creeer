@@ -14,8 +14,8 @@ use creeer_math::glam::DVec3;
 use creeer_net::channel::{Pacer, RELIABLE, UNRELIABLE};
 use creeer_net::entity::EntityId;
 use creeer_net::interest::{Grid, importance};
-use creeer_net::message::{Plastic, ServerMessage, to_bytes};
-use creeer_net::predict::InputQueue;
+use creeer_net::message::{Age, Plastic, ServerMessage, to_bytes};
+use creeer_net::predict::{InputQueue, NEARBY};
 use creeer_net::renet::{ClientId, RenetServer};
 use creeer_net::snapshot::Sender;
 use creeer_terrain::edits::Edits;
@@ -58,6 +58,12 @@ pub struct Session {
     /// What it will be, once the queue lets the spawn out.
     pending: HashSet<EntityId>,
     edits_told: usize,
+    /// How many of the loose things picked up it has been told (G1.6c).
+    taken_told: usize,
+    /// How much of the log of items laid on the ground it has been told (G1.6).
+    laid_told: usize,
+    /// How much of the log of trees changed it has been told (G1.7).
+    trees_told: usize,
     commands: f64,
 }
 
@@ -75,6 +81,9 @@ impl Session {
             spawned: HashSet::new(),
             pending: HashSet::new(),
             edits_told: 0,
+            taken_told: 0,
+            laid_told: 0,
+            trees_told: 0,
             commands: COMMAND_BURST,
         }
     }
@@ -113,8 +122,21 @@ impl Session {
             self.queue(&ServerMessage::Despawn(id));
         }
         self.edits_told = 0;
+        self.taken_told = 0;
+        self.laid_told = 0;
+        self.trees_told = 0;
         self.inputs = InputQueue::default();
     }
+    /// Entity `id` became something else (a character fallen, or up again): if the client
+    /// has it, it is despawned, to be spawned as it is now with the view's next update.
+    pub fn forget(&mut self, id: EntityId) {
+        if self.pending.remove(&id) {
+            self.outbox.retain(|q| q.spawns != Some(id));
+        } else if self.spawned.remove(&id) {
+            self.queue(&ServerMessage::Despawn(id));
+        }
+    }
+
     /// Whether the client has (or is about to have) entity `id`.
     pub fn has(&self, id: EntityId) -> bool {
         self.spawned.contains(&id) || self.pending.contains(&id)
@@ -130,14 +152,21 @@ impl Session {
     }
 
     /// Queues what came into and left the client's view, and the edits it has not had.
-    pub fn update_view(&mut self, world: &ServerWorld, grid: &Grid, shapes: &mut Shapes) {
+    pub fn update_view(
+        &mut self,
+        world: &ServerWorld,
+        grid: &Grid,
+        shapes: &mut Shapes,
+        tick: u32,
+    ) {
         let centre = self.centre(world);
-        let near: HashSet<EntityId> = grid.around(centre, VIEW).into_iter().map(|e| e.0).collect();
-        let kept: HashSet<EntityId> = grid
-            .around(centre, VIEW * LEAVE)
-            .into_iter()
+        // One search for both: what may stay, and of that what is near enough to come.
+        let around = grid.around(centre, VIEW * LEAVE);
+        let near: HashSet<EntityId> = (around.iter())
+            .filter(|(_, p)| (*p - centre).length_squared() <= VIEW * VIEW)
             .map(|e| e.0)
             .collect();
+        let kept: HashSet<EntityId> = around.into_iter().map(|e| e.0).collect();
         // Left: gone from the world, or beyond the view.
         let gone: Vec<EntityId> = self
             .spawned
@@ -160,11 +189,30 @@ impl Session {
         came.sort_unstable();
         for id in came {
             let Some(i) = world.index(id) else { continue };
-            let kind = shapes.kind(id, &world.world.bodies[i], world.player(i), world.tick);
+            // (A joint's side, or a load in someone's hands: not predicted on its own.)
+            let joined = world.in_hands(id)
+                || (world.world.joints().iter())
+                    .any(|j| j.a.0 == i || j.b.is_some_and(|b| b.0 == i));
+            let drawn = world.drawn(i);
+            let kind = shapes.kind(id, &world.world.bodies[i], (&drawn, joined), world.tick);
             self.outbox.push_back(Queued {
                 bytes: to_bytes(&ServerMessage::Spawn(id, kind)),
                 spawns: Some(id),
             });
+            // What an item is, and a made thing's pieces, right after it (G1.6).
+            if let Some(look) = world.item_look(id) {
+                self.outbox.push_back(Queued {
+                    bytes: to_bytes(&ServerMessage::Item(id, look)),
+                    spawns: Some(id),
+                });
+            }
+            // Its age right after it (G1.3c); unsent with it if it leaves first.
+            if let Some(age) = world.age_told(id, tick) {
+                self.outbox.push_back(Queued {
+                    bytes: to_bytes(&ServerMessage::Age(id, age)),
+                    spawns: Some(id),
+                });
+            }
             self.pending.insert(id);
         }
         // Edits not yet had (all of the world's: the terrain is everyone's).
@@ -183,6 +231,24 @@ impl Session {
                 log: part.to_bytes(),
             });
         }
+        // What was laid on the ground, then what was picked up (everyone's, as the terrain is;
+        // in that order, so what was laid and taken at once is gone).
+        let (laid, told) = world.laid_since(self.laid_told);
+        self.laid_told = told;
+        if !laid.is_empty() {
+            self.queue(&ServerMessage::Laid(laid));
+        }
+        let taken = world.taken_since(self.taken_told);
+        if !taken.is_empty() {
+            self.taken_told += taken.len();
+            self.queue(&ServerMessage::Taken(taken.to_vec()));
+        }
+        // Trees cut into or felled (everyone's).
+        let (trees, told) = world.trees_since(self.trees_told);
+        self.trees_told = told;
+        if !trees.is_empty() {
+            self.queue(&ServerMessage::Trees(trees));
+        }
     }
 
     /// Queues a structure's shape change, if the client has it.
@@ -190,6 +256,30 @@ impl Session {
         if self.has(id) {
             self.queue(&ServerMessage::Plastic(id, change.clone()));
         }
+    }
+
+    /// Queues an entity's changed age (G1.3c), if the client has it.
+    pub fn age(&mut self, id: EntityId, age: Age) {
+        if self.has(id) {
+            self.queue(&ServerMessage::Age(id, age));
+        }
+    }
+
+    /// Sends its own character as only the server knows it (G1.2): its jetpack's gas, its
+    /// health, whether it is down. A few bytes a round.
+    pub fn own(&self, renet: &mut RenetServer, world: &ServerWorld) {
+        let Some(avatar) = self.avatar.filter(|a| world.index(*a).is_some()) else {
+            return;
+        };
+        let person = world.person(avatar);
+        let own = to_bytes(&ServerMessage::Own {
+            gas: world.gas(avatar),
+            health: person.map_or(1.0, |p| p.health),
+            hurt: person.map_or([0.0; 4], |p| p.hurt),
+            fallen: person.is_some_and(crate::world::people::Person::fallen),
+            load: world.load(avatar),
+        });
+        renet.send_message(self.client, UNRELIABLE, own);
     }
 
     /// Sends what the budget pays for this round (`seconds` since the last), then the
@@ -227,7 +317,17 @@ impl Session {
         view.sort_by_key(|v| v.0);
         // Less the message's tag.
         let budget = self.pacer.snapshot_budget() - 1;
-        let snapshot = self.sender.write(tick, self.inputs.last(), &view, budget);
+        // The bodies the client may predict, near its avatar (`predict::NEARBY`).
+        let near: Vec<_> = (view.iter())
+            .filter(|(id, ..)| {
+                let at = world
+                    .index(*id)
+                    .map(|i| world.world.bodies[i].structure.position[0]);
+                at.is_some_and(|p| (p - centre).length() < NEARBY)
+            })
+            .map(|v| v.0)
+            .collect();
+        let snapshot = (self.sender).write(tick, self.inputs.last(), &view, (budget, &near));
         let message = to_bytes(&ServerMessage::Snapshot(snapshot));
         self.pacer.snapshot(message.len());
         self.pacer.flush();

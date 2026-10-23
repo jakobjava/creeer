@@ -29,38 +29,56 @@ pub const BUFFER: usize = 2;
 pub const MOST_BUFFER: usize = 6;
 /// Ticks of a buffer never running low before it shrinks (ten seconds).
 pub const SETTLE: u32 = 600;
+/// The bodies a client predicts with its avatar lie within this of it (m; ADR-0025): what it
+/// can walk into within a round trip, and a reach.
+pub const NEARBY: f64 = 6.0;
+/// And at most this many of them, the nearest (each costs the client its re-simulation).
+pub const MOST_NEARBY: usize = 12;
 /// Inputs the server holds for a client at most: a client running ahead of the server's
 /// clock has the excess dropped (and its prediction corrected), so its inputs never wait
 /// longer than this many ticks.
 pub const QUEUED: usize = 10;
 
 impl AvatarInput {
-    /// The input as it arrives at the server: its walk to [`crate::message::WALK_SCALE`].
+    /// The input as it arrives at the server: its walk to [`crate::message::WALK_SCALE`], its
+    /// thrust to [`crate::message::THRUST_SCALE`].
     #[must_use]
     pub fn quantised(self) -> Self {
         Self {
             walk: Quantised::new(self.walk, crate::message::WALK_SCALE)
                 .value(crate::message::WALK_SCALE),
+            thrust: Quantised::new(self.thrust, crate::message::THRUST_SCALE)
+                .value(crate::message::THRUST_SCALE),
             ..self
         }
     }
 }
+
+/// For this many inputs after the last that asked to walk, the avatar is stopping (a second).
+const STOPPING: u32 = 60;
 
 /// The client's inputs not yet known to be applied, oldest first.
 #[derive(Debug, Default)]
 pub struct InputLog {
     inputs: VecDeque<AvatarInput>,
     next: u32,
+    /// The number of the last input that asked to walk.
+    walked: Option<u32>,
 }
 
 impl InputLog {
     /// A new input: walk at `walk` (m/s), jump or not. Numbered, quantised and kept.
-    pub fn push(&mut self, walk: DVec3, jump: bool) -> AvatarInput {
+    pub fn push(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         self.next += 1;
+        if walk != DVec3::ZERO {
+            self.walked = Some(self.next);
+        }
         let input = AvatarInput {
             seq: self.next,
             walk,
             jump,
+            thrust,
+            stopping: walk == DVec3::ZERO && self.walked.is_some_and(|w| self.next - w <= STOPPING),
         }
         .quantised();
         self.inputs.push_back(input);

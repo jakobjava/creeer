@@ -102,6 +102,23 @@ impl Hull {
         Self::new(&corners).expect("a box has volume").0
     }
 
+    /// The same hull about `origin` (in its frame) instead of its centroid: for a body whose
+    /// mass is not spread evenly through its shape, its node at its centre of mass (a felled
+    /// tree, its crown's mass above its stem's hull). Its `inertia` stays about the centroid.
+    pub fn about(mut self, origin: DVec3) -> Self {
+        for v in &mut self.vertices {
+            *v -= origin;
+        }
+        for face in &mut self.faces {
+            face.offset -= face.normal.dot(origin);
+            for c in &mut face.rectangle {
+                *c -= origin;
+            }
+        }
+        self.radius = self.vertices.iter().map(|v| v.length()).fold(0.0, f64::max);
+        self
+    }
+
     /// The corners (m, about the centroid).
     pub fn vertices(&self) -> &[DVec3] {
         &self.vertices

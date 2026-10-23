@@ -4,6 +4,7 @@
 
 use creeer_core::profile::{self, Frame, Want};
 use creeer_net::message::ProfileReport;
+use creeer_render::GpuTime;
 use creeer_server::Connection;
 use creeer_ui::egui;
 use std::collections::VecDeque;
@@ -30,12 +31,26 @@ pub(crate) struct ProfilerWindow {
     /// The server's tick lengths (µs) from its reports, and the last report taken in.
     server_ticks: VecDeque<u32>,
     last_report: Option<ProfileReport>,
+    /// Each GPU pass's time (ms), smoothed over about half a second of frames (G1.3d).
+    gpu: Vec<(&'static str, f32)>,
 }
 
 impl ProfilerWindow {
     /// Opens or closes it.
     pub fn toggle(&mut self) {
         self.open = !self.open;
+    }
+
+    /// Takes in the GPU's pass times of the latest frame it finished.
+    pub fn set_gpu(&mut self, times: &[GpuTime]) {
+        /// Weight of a new frame: about half a second's mean at 60 FPS.
+        const NEW: f32 = 1.0 / 30.0;
+        for time in times {
+            match self.gpu.iter_mut().find(|(name, _)| *name == time.name) {
+                Some((_, ms)) => *ms += NEW * (time.ms - *ms),
+                None => self.gpu.push((time.name, time.ms)),
+            }
+        }
     }
 
     /// Draws it (when open), `connection` the server's if connected.
@@ -127,6 +142,7 @@ impl ProfilerWindow {
         }
         let Some(frame) = frame else {
             ui.label("No ticks profiled yet.");
+            gpu(ui, &self.gpu);
             return;
         };
         ui.label(format!(
@@ -136,7 +152,31 @@ impl ProfilerWindow {
         ));
         flame(ui, &frame);
         totals(ui, &frame);
+        gpu(ui, &self.gpu);
     }
+}
+
+/// The GPU's time per pass (its timestamps), against a 60 FPS frame.
+fn gpu(ui: &mut egui::Ui, passes: &[(&'static str, f32)]) {
+    ui.collapsing("GPU passes", |ui| {
+        if passes.is_empty() {
+            ui.label("This GPU has no timestamp queries.");
+            return;
+        }
+        egui::Grid::new("gpu passes").striped(true).show(ui, |ui| {
+            for (name, ms) in passes {
+                ui.label(*name);
+                ui.label(format!("{ms:.3} ms"));
+                ui.label(format!("{:.1} %", 100.0 * ms / TICK_MS));
+                ui.end_row();
+            }
+            let all: f32 = passes.iter().map(|(_, ms)| ms).sum();
+            ui.strong("all");
+            ui.strong(format!("{all:.3} ms"));
+            ui.strong(format!("{:.1} %", 100.0 * all / TICK_MS));
+            ui.end_row();
+        });
+    });
 }
 
 /// The ticks' lengths as bars against a 60 Hz tick; a click gives the bar's index, a

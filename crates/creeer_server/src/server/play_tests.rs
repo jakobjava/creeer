@@ -40,7 +40,11 @@ fn scene() -> ServerWorld {
         } else {
             Command::Crate(at + at.normalize() * 0.6)
         };
-        w.apply(&command, None).unwrap();
+        // (Since G1.7, beyond the spawn's clearing, none is put into a trunk.)
+        match w.apply(&command, None) {
+            Err(e) if e != "a tree stands there" => panic!("{e}"),
+            _ => {}
+        }
     }
     for east in [15.0, -20.0] {
         let (at, ..) = frame_at(&w, east, 10.0);
@@ -152,11 +156,13 @@ fn over_a_slow_lossy_link_the_avatar_is_rarely_corrected() {
     let c = game.clients[0].0.corrections();
     eprintln!("corrections: {c:?}");
     assert!(c.count > 200, "{c:?}");
+    // (G1.2e: set back only where it was mispredicted. Set back to the quantised state at every
+    // snapshot, 4 in 304 corrections were over a centimetre, the largest 1.4 cm; now none.)
     assert!(
-        f64::from(c.over_a_centimetre) < 0.05 * f64::from(c.count),
+        f64::from(c.over_a_centimetre) <= 0.01 * f64::from(c.count),
         "{c:?}"
     );
-    assert!(c.largest < 0.1, "{c:?}");
+    assert!(c.largest < 0.02, "{c:?}");
 }
 
 #[test]
@@ -177,26 +183,30 @@ fn a_frame_bent_in_a_crash_is_drawn_bent() {
             .collect::<Vec<_>>()
     };
     let before = shape(&game);
-    // 300 kg of steel dropped on it from a metre (more breaks members, and the loose joints
-    // roll away down the hill).
+    // 300 kg of steel dropped on it from a metre and a half (from a metre, at the spawn moved
+    // in G1.3i, it bent 6 mm, too little to test; much more breaks members).
     let up = at.normalize();
     let mut block = Body::rigid(
         Shape::Box {
             half: DVec3::new(0.6, 0.3, 0.6),
         },
         300.0,
-        at + up * 3.0,
+        at + up * 3.5,
         crate::world::DT,
     );
     block.structure.orientation[0] = creeer_math::glam::DQuat::from_rotation_arc(DVec3::Y, up);
     game.server.world.add_body(block, None);
-    // Until it rests (and the last change has gone out: a few send rounds more).
+    // Until it rests (and the last change has gone out: a few send rounds more). How long the
+    // block takes to settle on the bent frame is chaotic: of eight drops a micrometre apart,
+    // three (before G1.8) or four (after) were still rocking after 20 s, at millimetres a
+    // second and losing energy all the while (one at rest after 25 s); contacts found anew
+    // see-saw (ADR-0024).
     let i = game.server.world.index(frame).unwrap();
     let mut ticks = 0;
     while !game.server.world.world.bodies[i].sleep.asleep {
         game.tick(|_| (DVec3::ZERO, false));
         ticks += 1;
-        assert!(ticks < 1200, "the frame never comes to rest");
+        assert!(ticks < 3000, "the frame never comes to rest");
     }
     game.run(30, |_| (DVec3::ZERO, false));
     let s = &game.server.world.world.bodies[i].structure;

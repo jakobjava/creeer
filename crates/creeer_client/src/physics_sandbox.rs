@@ -80,6 +80,8 @@ pub enum Look {
     Canvas,
     /// Sea water.
     Water,
+    /// A material by its colour (sRGB): an item, or a stone (G1.6c).
+    Colour([u8; 3]),
 }
 
 /// What the renderer needs from one tick.
@@ -102,6 +104,11 @@ pub struct PhysicsSnapshot {
     /// Each box's temperature (°C) where heat follows it (else NaN), and how it looks.
     pub box_heat: Vec<f32>,
     pub box_look: Vec<Look>,
+    /// How long each box has weathered (years) and its wear (0–1), where the world keeps ages
+    /// (G1.3c; the planet's server); none: new.
+    pub box_age: Vec<(f32, f32)>,
+    /// The players' characters (G1.3e; the planet's server).
+    pub people: Vec<crate::people::DrawnPerson>,
     /// Each member's temperature (°C) where heat follows it, else NaN.
     pub beam_heat: Vec<f32>,
     /// A fire's bed (centre, half extents) and its gas temperature (°C).
@@ -110,6 +117,10 @@ pub struct PhysicsSnapshot {
     pub heat: Option<String>,
     pub drive: Option<String>,
     pub fluids: Option<String>,
+    /// Coloured rods (G1.7: stems and branches): ends, radius, colour.
+    pub rods: Vec<(DVec3, DVec3, f64, [u8; 3])>,
+    /// Coloured ellipsoids (G1.7: crowns): centre, orientation, half axes, colour.
+    pub blobs: Vec<(DVec3, DQuat, DVec3, [u8; 3])>,
     /// Cost of the last physics step (ms).
     pub step_ms: f64,
 }
@@ -162,6 +173,12 @@ impl PhysicsSandbox {
     #[cfg(test)]
     pub(crate) fn world(&self) -> &World {
         &self.world
+    }
+
+    /// The world, to perturb (for ensembles).
+    #[cfg(test)]
+    pub(crate) fn world_mut(&mut self) -> &mut World {
+        &mut self.world
     }
 
     /// Newton iterations its bodies have taken so far (`physics_bench.rs`).

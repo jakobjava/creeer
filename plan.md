@@ -8,12 +8,13 @@
 - **A realistic physics foundation:** node-beam soft bodies (deformation and fracture from real material properties), rigid bodies, collision, orbital mechanics, electricity, thermodynamics, fluids and gases, aerodynamics, and a physics-based player character.
 - **Realistic manufacturing at chemistry level:** real minerals and ore grades; crushing, grinding, flotation, smelting, refining and alloying; real reactions with stoichiometry, energy balance and kinetics; casting, rolling, machining. Material properties feed into the physics.
 - **Smooth voxel planets** (no blocks), KSP-like scale (radius roughly 300-600 km), procedurally generated, fully interactive (mining, digging, tree felling), with many resources based on real geology.
-- **Free-form, part-based building** with deep customisation: parametric dimensions and materials. Buildings, bases, machines, vehicles and rockets.
-- **No artificial tech tree.** Progress is gated by what you can actually manufacture.
+- **Free-form, part-based building** with deep customisation: parametric dimensions and materials. Buildings, bases, machines, vehicles and rockets. There are few designed parts, in the spirit of Dream Car Builder (rods, tubes, plates and panels of any material and size, joined as built), not a catalogue of finished machines as in Satisfactory or Minecraft.
+- **No artificial tech tree.** Progress is gated by what you can actually manufacture. **Nothing is given** (the user, 2026-10-22): a survival player starts in the clothes they wear and makes everything else, from stone tools on. The game is hard and expects real knowledge of chemistry, mechanics and physics. It explains (the Codex) but does not hand-hold.
+- **Flexible, generic systems with attributes** (the user, 2026-10-22). One system per kind of thing, driven by data: a tool's behaviour comes from the pieces it is made of, and a tree is a species' attributes (form, size, wood, colours) that worldgen's biomes choose from. Tweaking attributes makes content; new content is data, not code.
 - **Light survival:** health, hunger, thirst, oxygen and suit pressure, temperature, fall damage.
 - **PvE and PvP:** fauna, environmental hazards, player-built physical weapons and raids.
 - **Multiplayer:** server-authoritative. Players can host (2-16 players), or run a headless dedicated server.
-- **Art style:** Factorio-like. Stylised, readable, softly textured, strong colours per material. Neither low-poly nor realistic.
+- **Art style:** Factorio-like. Stylised, readable, softly textured, strong colours per material. Real, smooth shapes, never blocky, voxel-like or low-poly (no Minecraft geometry). Grounded and industrial, never futuristic. Stylised in its surfaces and palette, not photographic. The rules, palette and checks that keep it from drifting: `docs/art-style.md`; models are made in Blender (`docs/blender-mcp.md`).
 - **Data-driven and mod-ready:** all content lives in data files.
 - **Tech decision:** a custom engine in Rust instead of Godot. The reasons: full control over performance, threading, the GPU and precision; very little need for an editor because content is procedural or player-built; precedent from Factorio, Teardown and Kitten Space Agency.
 - **Working style:** Claude writes most of the code, and the user understands code at a basic level. That makes the process **iterative**, with heavy testing and documented, double-checked decisions.
@@ -37,10 +38,11 @@ Environment: Windows 11, RTX 4070 SUPER, git installed, **Rust not installed yet
    - **Abstract:** unloaded factories run as rate equations with buffers, so factories keep producing while you're away.
    - **On rails:** distant vessels are propagated with orbital mechanics only.
 7. **SI units internally.** The data loader parses unit strings such as `"7850 kg/m^3"`.
-8. **Every important decision gets an ADR** (Architecture Decision Record in `docs/adr/`), backed by a spike or benchmark wherever possible.
+8. **Every important decision gets an ADR** (Architecture Decision Record in `docs/adr/`, conventions in `docs/adr/README.md`), backed by a survey of prior work (principle 12) and by a spike or benchmark wherever possible.
 9. **Simulation and rendering are decoupled.** The simulation runs on its own threads at a fixed rate. The renderer interpolates between the last two simulation states, so frame rate never depends on simulation load, and a slow tick never causes a stutter.
 10. **Portable by construction.** Only pure-Rust or cross-compiling dependencies are used. `wgpu` translates to Vulkan, DX12 and Metal. Nothing platform-specific lives outside a small `platform` module.
 11. **Realistic and fast at once.** Every sandbox scene runs in real time with room to spare: its worst tick is gated by a test (§6), measured with the physics crate's `profile` feature when it is not. A scene that lags is a bug, fixed before new work starts.
+12. **Research before building.** Before designing a solver, a system, a performance package or a look, survey how others have solved it: published papers (SIGGRAPH, TOG, arXiv), other engines' documentation (PhysX, MuJoCo, Havok, Jolt, Bullet), open-source code and shipped games. The survey goes into the ADR's **Prior work** section (`docs/adr/README.md`) with its sources, and the design starts from what it found; a method is built from first principles only where the survey shows nothing fits. Skipping it cost weeks in P1 (2026-10-18, ADR-0024): the ragdolls' slowness had a known answer (reduced coordinates, RedMax 2019) that ADR-0022 had rejected without looking, and P1's planned method (a group split across cores) was shown by published results not to pay for groups that small.
 
 ## 2. Tech stack (Rust)
 
@@ -239,7 +241,7 @@ creeer/
 - **Benchmarks** (`criterion`) with a performance budget per milestone, tracked for regressions.
 - **Real-time gates:** every sandbox scene's worst tick (not only its typical one) is tested against a budget of a few milliseconds on the development machine. Speed-ups are checked against the physics validation suite, and a change of rounding is proved as such before golden hashes are regenerated.
 - **Headless scenario runner:** scripted scenarios (dropping a car from 10 m, a bridge under load, a rocket to orbit) with checked outcomes.
-- **Process:** an ADR before each major decision, validation reports in `docs/physics/`, and at the end of each milestone a demo for the user plus a review before the next one starts.
+- **Process:** a survey of prior work before each design (§1, principle 12), an ADR before each major decision (with that survey as its Prior work section), validation reports in `docs/physics/`, and at the end of each milestone a demo for the user plus a review before the next one starts.
 
 ## 7. Roadmap
 
@@ -264,19 +266,194 @@ There are no gameplay loops in this phase. Each milestone delivers a **tech sand
 
 ### Phase B: Gameplay (the fun part)
 
-| # | Milestone | Exit criteria |
-|---|---|---|
-| G1 | Player & interaction | Physics character (walk, climb, jetpack, EVA, ragdoll), mining with real composition, tree felling, inventory (bulk + discrete), HUD |
-| G2 | Building system | Parametric part catalog, placement/snapping/symmetry/numeric input, welding/bolting, structure → physics, blueprints, collapsible buildings |
-| G3 | First production chains | Copper & iron → steel: crushing, grinding, flotation, smelting, casting, rolling, machining; conveyors, chutes, arms; production statistics. Knowledge-gated progression |
-| G4 | Power | Gameplay for shafts, gears and belts (Create-style); a steam engine with a real cycle; generators, motors, grids, batteries; Hall-Héroult aluminium |
-| G5 | Chemistry & fluids | Reactors, distillation, petrochemicals, plastics, fertiliser, gases; pipe and tank gameplay |
-| G6 | Vehicles | Pacejka tyres, suspension, combustion engines (fuel chemistry), gearboxes, aero, boats |
-| G7 | Automation & logic | Sensors, gates, Lua microcontrollers, programmable arms, logistics automation |
-| G8 | Rockets & space | Rocket engines (Isp from propellant chemistry), staging, Δv tools, maneuver nodes, re-entry heating, landing on and colonising other planets |
-| G9 | Survival, PvE, PvP | Health, hunger, thirst, O₂, temperature, radiation; food; fauna AI; hazards; ballistics, penetration, explosives; PvP server rules |
-| G10 | Advanced tech | Semiconductor chain (quartz → Si → Siemens → Czochralski → lithography → chips), fission, advanced alloys, composites |
-| G11 | Polish | Art and audio pass, Codex, onboarding, settings, modding docs, final performance pass |
+Revised 2026-10-18, before G1, with the user's answers: the physics' deferred speed work comes **just in time** (in the milestone whose gameplay first makes it matter), gameplay scenes are gated at a **worst tick ≤ 5 ms** on the development machine (aim 2–3 ms), the first loop is **Create-style** (mechanical power before the production chains), and each milestone is planned in sub-milestones here, with a fuller `docs/gN-plan.md` written when it starts.
+
+#### Principles of Phase B
+
+1. **The physics is the game.** No rule is faked where the simulation can answer it. A crusher's throughput comes from its shaft power and the ore's Bond work index, not from a recipe time; a building stands or falls by its members' stresses; a fall hurts by the deceleration the body takes, not by the height fallen.
+2. **Vertical slices.** Each milestone ends playable as one loop, in singleplayer (in-process server) and multiplayer (hosted and dedicated). Saves carry the new state (save version raised, migration tests for the old ones), and everything new replicates within the bandwidth budget (§5: ≤ 256 kbit/s per client).
+3. **Data first.** Every part, machine, tool, creature and process parameter lives in data packs (ADR-0018) and is checked by `creeer_tools validate`. Nothing gameplay-related is hard-coded where a modder would want to change it.
+4. **Play scenes, gated.** Each milestone defines **play scenes**: headless, scripted recordings of what players will actually do, such as felling a forest or collapsing a tower (list per milestone below). Their gates:
+   - **Worst tick ≤ 5 ms** on the development machine (≈ 10 ms projected to min-spec, so a 60 Hz server never falls behind), aiming at 2–3 ms; the p99 ≤ 2 ms.
+   - Their Newton iterations are gated in CI (work) and their times in `cargo xtask perf`, as for the sandbox scenes (ADR-0017).
+   - The reference tick (§5) stays ≤ 10 ms projected, and grows with the game: from G2 it includes a building, from G6 vehicles.
+   
+   A milestone is done only when its play scenes meet their gates. If a scene misses for a reason a later performance package (below) addresses, that package moves earlier; the gate does not move.
+5. **Realism debts are paid when gameplay reaches them.** Each milestone lists the items of `docs/future-improvements.md` its gameplay would expose, and lifts them. One that is not lifted is recorded there again, with the user's decision.
+6. **Playtest at every milestone's end.** The user plays the milestone's demo (and from G4 with others, on a rented server). The feedback is taken in before the next milestone starts.
+7. **Process as in Phase A.** Branch `gN`, small commits per sub-milestone passing `cargo xtask ci`, a squash-merge at the end; ADRs for decisions; a validation report in `docs/physics/` where physics changed.
+8. **Research first, in every milestone and package** (§1, principle 12). Each `gN-plan.md` and each performance package starts with a survey of prior work (papers, engines, games) for what it builds; its findings decide the method, and it is recorded in the ADR's Prior work section. A sub-milestone's design is not started before its survey is written. The survey is focused on what the step builds: enough to choose the method well.
+9. **Nothing given** (the user, 2026-10-22). Survival gives the clothes worn and nothing else: no landing pod, no kit, no free refills, no endless sources. Handouts belong to creative and test servers.
+10. **Fundamentals first, and development time is limited** (the user, 2026-10-22: "basic and fundamental gameplay mechanics and systems and not spend hours on little polish things"; "i DO NOT have unlimited usage and want to get to the fun part of designing production, buildings, vehicles, etc. soon"). Each milestone builds the smallest version of its loop that is real and fast, tested where its physics and gates need it, and the user plays it as soon as it is playable. Story, staging, decoratives, UI themes, golden images of the UI and other polish go to G11 through `docs/future-improvements.md`. Performance is a fundamental, never polish. In the user's words: "good quality but focused and research driven; no faffing about; the game can always be fleshed out later to make it look more flashy".
+11. **Generic systems, few designed parts** (pillars above). A milestone builds the system with its attributes and a few data entries that prove it is generic, not a catalogue of hand-made content.
+. **Foundations now, refinement later** (the user, 2026-10-22: "you (opus 5.5) lay the foundations of the game and make the actual important design and architecture decisions; and then later one can refine it easily because everything is flexible and data driven (so i can use cheaper models for that)"). Each milestone builds the architecture and the generic systems, with a few data entries that prove them. More content, tuning and polish come later and are data work. Every data file says in its header how to add to it, the validator catches bad entries, and the tests check every entry generically.
+
+#### When the physics gets faster: the performance track
+
+The levers within the solvers' present design were measured and taken or rejected in ADR-0017 and ADR-0021. What remains needs different methods (weeks each). Each package is scheduled where gameplay first produces its load, so it is built and measured against real play rather than synthetic scenes:
+
+| Package | What | Lands in | Why then | Target (development machine) |
+|---|---|---|---|---|
+| **P1: piles** | First pass (brought forward after G1.2d) done 2026-10-18: the legs' struts and about 8 % off a ragdoll's step; what follows stays here, starting from its measurements (ADR-0024, "Outcome of the first pass"). Revised after its survey of prior work (ADR-0024, 2026-10-18): jointed bodies (ragdolls) stepped as one articulated body in reduced coordinates within the implicit step, joints in maximal coordinates kept for loops and grabs (RedMax's hybrid); friction updated within Newton's iterations; a large group's contact solve split across cores by consensus ADMM where groups have hundreds of bodies (piles). With it: friction on fresh normal forces (no contact's friction on a normal force more than 5 % off its own), edge contacts and face patches made consistent (no rattling rocks kept awake), per-group turn substeps, cheaper faces over curved ground | **G1** | Felled logs, mined boulders and dropped items pile up on terrain | Rock pile worst 18.2 → ≤ 5 ms, p99 14.2 → ≤ 2; 50 crates on terrain no slower than on a plane ×1.2 |
+| **P2: the structure solve** | SIMD kernels with runtime AVX2/NEON dispatch, fewer passes over the elements, less memory traffic when many structures step at once | **G2** | Buildings put the reference load's 20,000 beams into real play | Reference tick ≤ 8 ms projected (today 9.1–9.7, a thin margin); eight 5,000-beam bridges at once ≤ 1.3× one alone (today 1.6×) |
+| **P3: struck structures** | Subcycling the struck region: its joints in short steps, the rest of the structure in the tick's, energy exact where they meet | **G2** | Collapsing buildings and loads dropped on structures are G2's core | Bridge struck 32.8 → ≤ 5 ms; crash 19.0 → ≤ 5; every crush, crash and impact test within its present tolerance |
+| **P4: networks beside the tick** | A network's ordering, analysis and first factorisation built on worker threads and swapped in at a fixed tick; the same for an edit of an island's topology | **G3** (drivetrains), **G4** (grids, heat) | Players build and edit networks while they run | No tick > 5 ms when a 20,000-node network is built, loaded or edited (today 20.7 ms) |
+| **P5: meshed pipe networks** | Supernodal Cholesky (SIMD kernels from P2), PCG for large meshed thermal and electrical islands | **G5** | Refineries mesh their pipes | A 2,500-junction meshed network at 60 Hz within its share of the tick (today it is stepped at 20/10 Hz) |
+| **P6: many vehicles** | Islands on their own thread groups; impacts of many crashing soft bodies (with P3) | **G6** | Eight players each driving a soft-body vehicle | Ten cars crashing in pairs at 15 m/s: worst tick 91 → ≤ 5 ms |
+| **P7: servers on VMs and real hardware** | Parallel grain chosen from the wake-up cost measured at start; the first measurement on a real min-spec CPU | **G4** (first playtest on a rented Linux server) | Dedicated servers run on VMs, and min-spec is only projected so far | Reference tick in a Linux VM within 1.25× of native (today 28.8 ms projected against 9.2); min-spec projection confirmed or the budgets corrected |
+| **P8: final pass** | PGO, `dist` builds measured, every play scene on real min-spec hardware on all three operating systems and the Steam Deck | **G11** | Headroom; the hardware matrix | Every gate met on real min-spec hardware |
+
+#### Milestones
+
+| # | Milestone | The loop it makes playable | Performance |
+|---|---|---|---|
+| G1 | Player & interaction | Start with nothing but clothes, make stone tools, fell a tree, dig ore, carry it home, with friends | P1 |
+| G2 | Building system | Build a bridge or a tower from parts, load it, watch it hold or collapse | P2, P3 |
+| G3 | Mechanical power & first production chains | Water wheel or windmill → shafts → crusher, mill, furnace → your own steel, made into your own beams | P4 (drivetrains) |
+| G4 | Heat engines & electricity | Coal → boiler → steam engine → generator → grid → lights, motors, aluminium | P4 (grids), P7 |
+| G5 | Chemistry & fluids | Crude oil → fuels and plastics; air → oxygen; ammonia → fertiliser | P5 |
+| G6 | Vehicles | Build a truck, boat or plane from your own parts and fuel; crash it | P6 |
+| G7 | Automation & logic | An ore-to-steel line that runs itself under Lua controllers | — |
+| G8 | Rockets & space | A rocket from your own aluminium and liquid oxygen, to orbit and the moon | — |
+| G9 | Survival, PvE, PvP | Needs, food, fauna, hazards, weapons and raids | P3 rechecked (explosions) |
+| G10 | Advanced tech | Chips from quartz, fission, superalloys, composites | — |
+| G11 | Polish | The game as others will first meet it | P8 |
+
+#### G1: Player & interaction
+
+Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the outline below; it adds joints, a play-scene harness and the art direction with an asset pipeline). **Re-planned 2026-10-22, before G1.5:** there is no landing pod and no kit. The player starts in their clothes, gathers stones and wood, and makes tools with one generic tool system (a head, a haft and a joint, with properties from their materials). Trees are one generic system of species' attributes. Only the fundamentals are built, so that G1 is playable soon.
+
+- **G1.1 The character.** The ball avatar (ADR-0008) becomes a physics character:
+  - real mass (about 80 kg plus suit and load); walking as forces through the feet, so slopes are climbable by friction (μ from the materials underfoot) and the ground is pushed back (a raft moves when walked on);
+  - jumping, crouching, climbing (ladders and handholds as constraints with a grip-force limit), swimming and drowning (lifts *avatars in water*: buoyancy and drag on the body);
+  - a jetpack and EVA thrusters with finite propellant (Δv = Isp·g₀·ln(m₀/m₁));
+  - a ragdoll (articulated rigid bodies with joint limits) on big impacts;
+  - **injury** from the body's peak deceleration and impulse, not from height.
+  
+  Lifts *predicting bumps into things*: the client's prediction world holds the bodies near its player, so walking into a crate is predicted rather than corrected.
+- **G1.2 Interaction.** Tools (hands, pick, shovel, axe, saw; powered drills with G3–G4) used on what the crosshair points at, within 2.5 m of the hands. Carrying and throwing bodies through a grab constraint whose force limit is the character's strength (a 500 kg crate cannot be lifted, only dragged if friction allows). The time a dig takes comes from the tool's power and the rock's strength in the geology data. Lifts *small edits vanish at a distance*: a dug hole stays visible at every level of detail.
+- **G1.3 Mining with real composition.** A dug volume yields its rock's mass and mineral composition at that point (ore grade from the deposit models, ADR-0006) as bulk items. Breaking larger pieces makes boulders (hull bodies). Prospecting: rock colours per material, and an assay tool that reads a sample's composition.
+- **G1.4 Trees.** Procedural trees as beam structures from wood species data (density, stiffness and strength along the grain), placed by biome. Felling by cutting members: the tree falls and breaks under its own physics. It is bucked into logs (structure bodies) and wood items.
+- **G1.5 Inventory.** Bulk items (mass, composition, temperature) and discrete items (a part instance with material, dimensions and quality). Capacity by mass and volume, not slots. Dropped items are physical bodies; containers hold items. Every transfer is a server-authoritative transaction, saved.
+- **G1.6 HUD and first vitals.** Health; suit readouts measured from the surroundings (pressure, temperature, O₂; consumption and needs come in G9); interaction prompts; the inventory window (egui, the game's theme) showing mass and composition.
+- **P1: piles** (performance track).
+- **Play scenes:** *lumberjack* (20 trees felled on a slope, logs rolling and piling); *quarry* (a 10 m pit dug, 200 boulders and dropped bags); *crowd* (8 players walking, jumping and carrying in one place, ≤ 256 kbit/s each).
+- **Demo:** spawn with nothing but clothes, make a stone axe and a pick, fell a tree, dig ore, carry both back, save, load; then the same with a second player.
+
+#### G2: Building system
+
+- **G2.1 Part catalog** (`creeer_building`). Parametric parts from the data packs:
+  - members: I and H sections, channels, angles, tubes, box sections, rods, plates, with profile dimensions from standard tables or free;
+  - materials from the packs (lifts *the sandbox's built-in S235*);
+  - joints: welded (rigid), bolted (bolt count and grade → slip and shear limits), pins and hinges, bearings;
+  - foundations anchored into terrain, with a pull-out strength from the rock.
+  
+  Each part's mass, inertia and section properties are computed, and tested against section tables.
+- **G2.2 Placement.** Build mode with ghost previews, snapping to nodes, members and grids, symmetry (mirror, radial), numeric input (lengths, angles), cut to length, undo. A **"will it hold?" preview** solves the structure quasi-statically before a part is placed, with the stress overlay.
+- **G2.3 Construction costs.** Placing a part takes its item from the inventory; welding and bolting are tool actions that take time. In survival a part is made from the player's own material: logs, stone and lashings at first, their own metal from G3. Creative servers build freely.
+- **G2.4 Structure → physics.** A building is a structure (ADR-0004) anchored to the ground. It is quasi-static at rest and collapses when overloaded (yield, buckling, fracture). Lifts *lateral-torsional buckling* (beams in buildings are bent about their strong axis) and *members colliding with each other* (a collapse must not fold through itself).
+- **G2.5 Blueprints.** A selection is saved as a blueprint (a data file, validated like a pack), placed as ghosts, and shared as a file.
+- **G2.6 Damage and deconstruction.** Cutting members (torch, saw); salvage returns the material less the cut's waste; bent parts keep their plastic deformation.
+- **P2: the structure solve, P3: struck structures** (performance track).
+- **Play scenes:** *tower* (a 20-storey steel frame of about 20,000 beams under wind, at rest); *collapse* (the tower loses a ground-floor column); *drop* (the sandbox's 10 t block on a 40 m bridge); *builders* (8 players building at once).
+- **Demo:** build a bridge across a gorge, load it with crates, watch the stresses, overload it until it collapses.
+
+#### G3: Mechanical power & first production chains
+
+Re-planned 2026-10-22 in outline (the full plan comes at G3's start): the player arrives with stone tools only, so the route to steel is history's, kept short. Machines are built from generic parts wherever their function can be computed from them: a crusher is jaws, a frame and a drive; a mill is a drum, its charge and a drive. A machine is a single designed part only where the physics cannot yet be composed, and that is recorded as a limit.
+
+- **G3.0 From stone to metal.** Fire by friction (a bow drill: heat from the friction's power, ignition from the wood's data); charcoal; clay dug and fired in a pit kiln (ceramics as materials); copper from malachite or native copper in a charcoal-fired pit furnace, cast in clay or stone moulds; bronze with tin from cassiterite. The generic tool (G1.6d) takes metal heads. Each step is one generic process (heating, reduction, casting) from `creeer_thermal` and `creeer_chem`, not a recipe.
+- **G3.1 Power sources.** A hand crank; a windmill (aero panels on its blades, lifts *a wind field*: a height profile and gusts); a water wheel fed from a reservoir through a sluice (pipe network). Rivers are not part of the terrain yet: decided at G3's start whether they come here.
+- **G3.2 Drivetrains as gameplay** (`creeer_mech`, ADR-0012). Shafts, gears (module, tooth count), belts, chains, clutches and flywheels, as parts on structures (reaction torques). Lifts *gear-mesh and belt compliance*, *belt creep*, *Stribeck friction*, *gearboxes' churning losses* and *two machines on one drivetrain coupled within a step*: chained machines expose all of them.
+- **G3.3 First machines and bulk handling.** A jaw crusher and a ball mill (energy from the Bond work index, the product's size distribution), screens, a sawmill (logs → planks and timber members), a trip hammer. Conveyors driven by shafts, chutes, hoppers and bins; material on a belt is a bulk flow, not bodies. A simple arm with taught positions (programmed in G7).
+- **G3.4 Concentration.** Gravity concentration (jigs, shaking tables) and magnetic separation first; froth flotation with a collector from the chemistry (recovery against particle size and reagent).
+- **G3.5 Heat and smelting.** Charcoal from wood (pyrolysis), coal; a bloomery, crucible furnaces and a blast furnace, with temperatures from the thermal network and reactions from `creeer_chem` (carbothermic reduction of iron oxides; roasting and smelting copper sulfides to matte and copper). Lifts *activity models* as far as smelting needs: a slag model (FeO–SiO₂–CaO) for slags and the metal they leave.
+- **G3.6 Shaping.** Casting (solidification time from the heat flow), forging, a rolling mill, wire drawing, a lathe and a mill with tolerances. A part's microstructure (carbon content, grain size, heat treatment) sets its E, yield strength and UTS, so **a beam rolled from your steel has your steel's strength**.
+- **G3.7 Steel.** Pig iron fined to steel with air (Bessemer; oxygen comes in G5), carbon controlled by the chemistry.
+- **G3.8 Progression and statistics.** No tech tree: an engineering notebook records what the player has identified and made (minerals, reactions, alloys), and the Codex opens by observation, not by unlocks. Production statistics per machine and network, from their ledgers. The player's machines go abstract when nobody is near (ADR-0020); lifts *machines sharing stocks*.
+- **P4: networks beside the tick**, for drivetrains (performance track).
+- **Play scenes:** *mill* (a water wheel driving 30 machines through 200 shafts and gears, conveyors carrying ore); *smelter* (a blast furnace and five furnaces, thermal and chemistry); *away* (the factory abstract while its player is away and back, every stock within 1 % of full simulation).
+- **Demo:** from an ore outcrop to a steel I-beam rolled from your own steel, built into a structure, its properties shown in the inspector.
+
+#### G4: Heat engines & electricity
+
+- **G4.1 Steam.** Boilers burning fuel by real combustion chemistry, a steam engine (pistons, a real Rankine cycle, efficiency from the states) and a steam turbine, condensers, safety valves. Lifts *two-phase heat transfer* (boiling and condensing on surfaces) and *two-phase pipe flow* (steam lines). A boiler can burst: pressure in its wall's stresses, so a vessel fails as its structure does.
+- **G4.2 Generators and motors as gameplay.** Dynamos, alternators that synchronise to a grid, induction motors; wires as parts (material and cross-section → resistance and heating; insulation that melts); switches, fuses and breakers.
+- **G4.3 Grids.** AC grids, transformers, transmission lines. Lifts *unbalanced three-phase grids* and *mixed AC/DC* (rectifiers and inverters, as average models: batteries meet grids here).
+- **G4.4 Storage.** Lead-acid batteries from their real chemistry, flywheels, pumped hydro.
+- **G4.5 Electrochemistry.** Hall-Héroult aluminium (bauxite → Bayer alumina → cryolite-bath electrolysis, Faraday's law), copper electrorefining, an electric arc furnace for steel.
+- **P4: networks beside the tick**, for grids and heat; **P7: servers on VMs and real hardware** (performance track).
+- **First multiplayer playtest** on a rented Linux server.
+- **Play scenes:** *powerplant* (three boilers, two engines, a grid of 20,000 nodes lighting a base); *grid edit* (players connecting and cutting parts of a running grid); *potline* (an aluminium smelter's cells).
+- **Demo:** a coal-fired steam plant that lights a base and runs an aluminium smelter.
+
+#### G5: Chemistry & fluids
+
+- **G5.1 Pipes and tanks as gameplay.** Pipes as parts (diameter, material and wall → burst pressure), pumps, valves, tanks, gauges, heat exchangers; leaks and bursts. Lifts *compressors in gas networks* and *heat exchange of pipes with their surroundings*, and *water hammer and cavitation* if pumps and valves show the need.
+- **G5.2 Reactors.** Batch, stirred and plug-flow reactors as parts with real kinetics, heating and cooling jackets; runaway reactions as a hazard (heat and kinetics coupled).
+- **G5.3 Separation.** Distillation columns, absorbers, crystallisers, filters, dryers. Lifts *distillation-grade vapour pressures* and *activity models* for azeotropes (ethanol and water).
+- **G5.4 Chains.** Air separation (oxygen, nitrogen, argon; lifts *cryogenic liquids*, which G8 needs; the jetpack's nitrogen comes from here, or its compressed air from G4's compressors, and nothing refills it for free), Haber-Bosch ammonia → nitric acid → fertiliser, the contact process (sulfuric acid), crude distillation → fuels, cracking → ethylene → polyethylene (plastics as materials with properties), cement and concrete (a structural material for G2's catalog), glass. Oxygen steelmaking replaces Bessemer.
+- **P5: meshed pipe networks** (performance track).
+- **Play scenes:** *refinery* (a meshed network of 2,500 junctions with columns, at 60 Hz); *chemical plant* (100 reactors).
+- **Demo:** crude oil to petrol and plastic; air to liquid oxygen; ammonia to fertiliser.
+
+#### G6: Vehicles
+
+- **G6.1 Wheels.** A tyre model (Pacejka or a brush model fitted to the rubber's properties: load sensitivity, slip, heat); springs and dampers as parts; steering geometry.
+- **G6.2 Engines and drivetrains.** Combustion engines (Otto and Diesel cycles from G5's fuels: torque, consumption, exhaust composition), clutches, gearboxes and differentials; electric drive from G4. Lifts *a drivetrain feeling its body's linear acceleration*.
+- **G6.3 Building and driving vehicles.** Vehicles are free structures built with G2's tools; they deform and tear in crashes. Seats and controls: the character drives.
+- **G6.4 Water.** Boats and propellers. Lifts *waves* (a sea state, roll damping by radiation), *water over the deck*, *sloshing in hulls*, *added mass as a tensor* and *hull drag*.
+- **G6.5 Air.** Aircraft from aero panels, lifts *aero interference* (downwash on tailplanes, panels' pitching moments).
+- **G6.6 Vehicles in multiplayer.** A driver predicts their own vehicle; others are interpolated; plastic deltas of crashed vehicles within the bandwidth budget.
+- **P6: many vehicles** (performance track).
+- **Play scenes:** *crash* (ten cars crashing in pairs at 15 m/s); *convoy* (8 players driving trucks over terrain); *harbour* (five boats in waves); *airfield* (three planes).
+- **Demo:** a truck with a diesel engine built from your own steel hauling ore; a crash test; a boat; a small plane.
+
+#### G7: Automation & logic
+
+- **G7.1 Sensors and actuators.** Position, speed, pressure, temperature, level, composition (a spectrometer) and item sensors; valves, motors, pistons, arms as actuators.
+- **G7.2 Signals.** Gates and wires as parts; lifts *messages between controllers* beyond wires (buses, radio).
+- **G7.3 Lua controllers in the game** (ADR-0015). A code editor window, the instruction budget shown, prints and stepping for debugging. *Saving a script's functions and coroutines* is decided here (lift or keep restarting from source).
+- **G7.4 Logistics.** Programmable arms, sorting by composition, routing items between machines; carts on rails.
+- **Play scenes:** *automated factory* (500 controllers at their budgets, 1,000 sensors).
+- **Demo:** the G3 ore-to-steel line running by itself under Lua control.
+
+#### G8: Rockets & space
+
+- **G8.1 Rocket engines.** Isp from the propellants' chemistry (combustion equilibrium → chamber temperature, γ, molar mass → c*, nozzle expansion), pressure-fed and pump-fed cycles, gimbals; cryogenic tanks that boil off (thermal).
+- **G8.2 Staging.** Decouplers, launch clamps, the Δv and staging calculator.
+- **G8.3 Flight.** Maneuver nodes on the map (lifts *maneuver nodes*); lifts *the transonic gap*; re-entry heating with heat-shield and ablative materials.
+- **G8.4 Other worlds.** Landing on and building on moons and planets: lifts *other bodies' terrain* (more than the nearest body streamed, eclipses) and *the sea in the solar-system view*; *J2* if sun-synchronous orbits are wanted. Life support for bases is basic here, full in G9.
+- **G8.5 Moving bodies.** Engines and mass drivers on asteroids push them (ADR-0007); lifts *spins never change* (pushes torque bodies).
+- **Play scenes:** *launch* (a 2,000-part rocket at lift-off, its structure flexing under thrust and aero); *station* (two players assembling a station in orbit); *landing* (on the moon).
+- **Demo:** a rocket of your own aluminium on liquid oxygen and kerosene, to orbit and down on the moon.
+
+#### G9: Survival, PvE, PvP
+
+- **G9.1 Needs.** Hunger, thirst (water quality from its chemistry), O₂ and CO₂ (a suit and base life support with real gas exchange), body temperature (the body as a thermal node with metabolism), radiation dose. Food: crops that need soil, water, light and G5's fertiliser; cooking.
+- **G9.2 Fauna.** Procedural creatures per planet: articulated physics bodies, behaviour-tree AI, hunting.
+- **G9.3 Hazards.** Storms (the wind field), meteor showers, quakes (ground motion into structures), extreme temperatures, radiation belts. Lifts *terrain edits far from players*: a landslide or crater wakes what stands there first.
+- **G9.4 Weapons.** Ballistics with drag, penetration from the target's material, explosives as blast pressure on structures; weapons are manufactured parts.
+- **G9.5 PvP rules.** A PvP toggle, raid windows, land claims. Lifts *secure connections* (connect tokens) and *signed packs* for public servers.
+- **P3 rechecked** with many struck regions at once (explosions).
+- **Play scenes:** *raid* (8 players with explosives against a fortified base); *storm* (a base in a storm); *herd* (50 creatures).
+- **Demo:** survive a night on a new planet: food, air, a storm, a raid.
+
+#### G10: Advanced tech
+
+- **G10.1 Semiconductors.** Quartz → metallurgical silicon → the Siemens process → Czochralski → wafers → lithography → chips. Lifts *transistors* and electronic components, and chips feed G7's controllers (the optional RISC-V CPU is decided here).
+- **G10.2 Fission.** Uranium deposits (ADR-0006) → enrichment → reactors with kinetics and decay heat, shielding, radiation.
+- **G10.3 Materials.** Stainless steels, superalloys, titanium (Kroll), carbon-fibre composites. Lifts *local buckling of thin walls* (shell elements) if thin aerospace structures need it.
+- **Demo:** a chip made from sand running a controller; a fission plant on the grid.
+
+#### G11: Polish
+
+- **G11.1 Look and sound.** The art pass (the Factorio-like style everywhere), audio (`kira`). With it comes the polish deferred from earlier milestones (principle 10, `docs/future-improvements.md`): decoratives, the UI's theme and font, icons in the inventory, golden images of the UI, a first-person camera, and the ragdoll's off-centre collision boxes.
+- **G11.2 Learning and the start.** The complete Codex with its formulas, and onboarding for the first hour. The arrival's staging and story (a landing pod or another start), which never gives the player more than the clothes they wear.
+- **G11.3 Settings.** Quality presets, the render-scale slider, temporal upscaling, MSAA settings (lifts *MSAA memory*), accessibility, key bindings.
+- **G11.4 Modding.** Modding docs and the Lua scripting API for mods.
+- **G11.5 Shipping.** Packaging for all three operating systems and the Steam Deck (§5).
+- **P8: final pass** (performance track).
 
 ## 8. Immediate next steps (F0, after approval)
 

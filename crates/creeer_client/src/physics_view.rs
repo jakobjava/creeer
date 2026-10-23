@@ -143,6 +143,8 @@ pub fn draw(
         }
         #[allow(clippy::cast_possible_truncation)] // render-space sizes
         let scale = Vec3::new(2.0 * radius as f32, length as f32, 2.0 * radius as f32);
+        // A snapshot without temperatures (the planet's) shows members unheated.
+        let heat = current.beam_heat.get(k).copied().unwrap_or(f32::NAN);
         scene.add(
             meshes.cylinder,
             Instance {
@@ -154,11 +156,9 @@ pub fn draw(
                 material: if broken {
                     BROKEN
                 } else {
-                    incandescent(STEEL, current.beam_heat[k])
+                    incandescent(STEEL, heat)
                 },
-                heat: utilisation
-                    .then_some(usage * 100.0)
-                    .or(shown(current.beam_heat[k])),
+                heat: utilisation.then_some(usage * 100.0).or(shown(heat)),
             },
         );
     }
@@ -171,16 +171,40 @@ pub fn draw(
         } else {
             (c, q)
         };
-        let t = current.box_heat[k];
-        let material = match current.box_look[k] {
+        // A snapshot without looks (the planet's) shows crates, without heat.
+        let t = current.box_heat.get(k).copied().unwrap_or(f32::NAN);
+        let look = current.box_look.get(k).copied().unwrap_or(Look::Crate);
+        let (exposure, wear) = current.box_age.get(k).copied().unwrap_or((0.0, 0.0));
+        let material = match look {
             Look::Crate => CRATE,
             Look::Steel => incandescent(STEEL, t),
             Look::Concrete => CONCRETE,
             Look::Radiator => WHITE_PAINT,
             Look::Canvas => CANVAS,
             Look::Water => WATER,
-        };
-        add_box(scene, meshes, origin, (c, q, half), material, shown(t));
+            Look::Colour([r, g, b]) => Material::dielectric(
+                [
+                    f32::from(r) / 255.0,
+                    f32::from(g) / 255.0,
+                    f32::from(b) / 255.0,
+                ],
+                0.85,
+            ),
+        }
+        .aged(exposure, wear);
+        match meshes.models.crate_box {
+            // The 1 m crate is drawn as its model, from the centre of its base (G1.3b).
+            Some(model) if look == Look::Crate && is_crate(half) => scene.add(
+                model,
+                Instance {
+                    frame: Frame64::new(origin + c - q * DVec3::Y * half.y, q),
+                    scale: Vec3::ONE,
+                    material,
+                    heat: shown(t),
+                },
+            ),
+            _ => add_box(scene, meshes, origin, (c, q, half), material, shown(t)),
+        }
     }
     for (k, &(c, q, index)) in current.hulls.iter().enumerate() {
         let (c, q) = if same {
@@ -214,6 +238,7 @@ pub fn draw(
             },
         );
     }
+    coloured(scene, meshes, origin, current);
     if let Some(fire) = current.fire {
         fire_bed(scene, meshes, origin, fire);
     }
@@ -222,7 +247,58 @@ pub fn draw(
     }
 }
 
-fn add_box(
+/// The snapshot's coloured rods and ellipsoids (G1.7: trees, drawn plainly).
+fn coloured(scene: &mut Scene, meshes: &DemoMeshes, origin: DVec3, current: &PhysicsSnapshot) {
+    let paint = |[r, g, b]: [u8; 3], rough: f32| {
+        Material::dielectric(
+            [
+                f32::from(r) / 255.0,
+                f32::from(g) / 255.0,
+                f32::from(b) / 255.0,
+            ],
+            rough,
+        )
+    };
+    for &(a, b, radius, colour) in &current.rods {
+        let along = b - a;
+        let length = along.length();
+        if length < 1e-9 {
+            continue;
+        }
+        #[allow(clippy::cast_possible_truncation)] // render-space sizes
+        let scale = Vec3::new(2.0 * radius as f32, length as f32, 2.0 * radius as f32);
+        scene.add(
+            meshes.cylinder,
+            Instance {
+                frame: Frame64::new(
+                    origin + (a + b) * 0.5,
+                    DQuat::from_rotation_arc(DVec3::Y, along / length),
+                ),
+                scale,
+                material: paint(colour, 0.9),
+                heat: None,
+            },
+        );
+    }
+    for &(c, q, half, colour) in &current.blobs {
+        scene.add(
+            meshes.sphere,
+            Instance {
+                frame: Frame64::new(origin + c, q),
+                scale: (half * 2.0).as_vec3(),
+                material: paint(colour, 0.85),
+                heat: None,
+            },
+        );
+    }
+}
+
+/// Whether a box of `half` extents is the 1 m crate the crate model draws (to a millimetre).
+fn is_crate(half: DVec3) -> bool {
+    (half - DVec3::splat(0.5)).abs().max_element() < 1e-3
+}
+
+pub(crate) fn add_box(
     scene: &mut Scene,
     meshes: &DemoMeshes,
     origin: DVec3,

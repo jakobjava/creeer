@@ -47,3 +47,35 @@ impl Image {
         writer.finish().map_err(std::io::Error::other)
     }
 }
+
+impl Image {
+    /// Reads an 8-bit RGBA or RGB PNG file (golden images, G1.3h).
+    ///
+    /// # Errors
+    /// If the file cannot be read or is not such a PNG.
+    pub fn load_png(path: &Path) -> std::io::Result<Self> {
+        let decoder = png::Decoder::new(std::io::BufReader::new(File::open(path)?));
+        let mut reader = decoder.read_info().map_err(std::io::Error::other)?;
+        let mut buffer = vec![0; reader.output_buffer_size().unwrap_or(0)];
+        let info = reader
+            .next_frame(&mut buffer)
+            .map_err(std::io::Error::other)?;
+        if info.bit_depth != png::BitDepth::Eight {
+            return Err(std::io::Error::other("not an 8-bit PNG"));
+        }
+        let pixels = &buffer[..info.buffer_size()];
+        let rgba = match info.color_type {
+            png::ColorType::Rgba => pixels.to_vec(),
+            png::ColorType::Rgb => pixels
+                .chunks(3)
+                .flat_map(|p| [p[0], p[1], p[2], 255])
+                .collect(),
+            other => return Err(std::io::Error::other(format!("a PNG of {other:?}"))),
+        };
+        Ok(Self {
+            width: info.width,
+            height: info.height,
+            rgba,
+        })
+    }
+}

@@ -15,6 +15,8 @@ pub(super) struct ExposurePass {
     histogram: wgpu::Buffer,
     /// x: current exposure, y: average luminance, z: target exposure. Read by tonemapping.
     pub(super) exposure: wgpu::Buffer,
+    /// A fixed exposure instead of the automatic one ([`Renderer::fix_exposure`]).
+    fixed: Option<f32>,
 }
 
 impl ExposurePass {
@@ -60,7 +62,9 @@ impl ExposurePass {
         let exposure = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("exposure"),
             size: 16,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let module = shader(device, "exposure", include_str!("../shaders/exposure.wgsl"));
@@ -87,6 +91,7 @@ impl ExposurePass {
             bind_group,
             histogram,
             exposure,
+            fixed: None,
         }
     }
 
@@ -128,16 +133,23 @@ impl ExposurePass {
         );
     }
 
-    /// Measures the resolved HDR image and updates the exposure buffer.
+    /// Measures the resolved HDR image and updates the exposure buffer, or writes the fixed
+    /// exposure into it.
     pub(super) fn encode(
         &self,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         globals: &wgpu::BindGroup,
         (width, height): (u32, u32),
+        timer: Option<&super::timing::GpuTimer>,
     ) {
+        if let Some(e) = self.fixed {
+            queue.write_buffer(&self.exposure, 0, bytemuck::cast_slice(&[e, 0.0, e, 0.0]));
+            return;
+        }
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("exposure"),
-            timestamp_writes: None,
+            timestamp_writes: timer.and_then(|t| t.compute("exposure")),
         });
         pass.set_bind_group(0, globals, &[]);
         pass.set_bind_group(1, &self.bind_group, &[]);
@@ -145,5 +157,14 @@ impl ExposurePass {
         pass.dispatch_workgroups(width.div_ceil(TILE), height.div_ceil(TILE), 1);
         pass.set_pipeline(&self.adapt_pipeline);
         pass.dispatch_workgroups(1, 1, 1);
+    }
+}
+
+impl Renderer {
+    /// Draws at exposure `fixed` from now on instead of adapting to the image, or adapts again
+    /// with `None`: images that must compare by their pixels, such as an icon on two
+    /// backgrounds (`creeer_client` icons), are exposed alike.
+    pub fn fix_exposure(&mut self, fixed: Option<f32>) {
+        self.exposure.fixed = fixed;
     }
 }

@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::entity::{EntityId, Kind};
-use crate::entity::{Frame, Shape};
+use crate::entity::{Frame, Look, Matter, Shape};
+use crate::quant::Quantised;
+use inputs::SAME_WALK;
 
 fn back<T: Encode + Decode + PartialEq + std::fmt::Debug>(m: &T) {
     let bytes = to_bytes(m);
@@ -29,6 +31,9 @@ fn client_messages_read_back() {
         seq,
         walk: DVec3::new(1.5, 0.0, -0.25),
         jump: seq % 2 == 0,
+        // Thrust coming and going (on alternate thirds).
+        thrust: DVec3::new(0.0, if seq % 3 == 0 { 0.5 } else { 0.0 }, -0.25),
+        stopping: false,
     };
     back(&ClientMessage::Hello {
         protocol: crate::PROTOCOL_VERSION,
@@ -39,6 +44,11 @@ fn client_messages_read_back() {
         ack: 77,
         inputs: (5..13).map(input).collect(),
     });
+    let target = Target {
+        body: Some(EntityId(5)),
+        at: DVec3::new(0.25, 1.0, -2.0),
+        seen: 40.5,
+    };
     for command in [
         Command::Crate(DVec3::new(1.0, 2.0, 3.0)),
         Command::Ball(DVec3::new(-1.0, 2.5, 3e5)),
@@ -46,6 +56,60 @@ fn client_messages_read_back() {
         Command::Clear,
         Command::Frame(DVec3::new(0.5, 0.25, 0.125)),
         Command::Powerhouse(DVec3::new(4.0, -2.5, 1e5)),
+        Command::Look { skin: 9, hair: 0 },
+        Command::Wield { tool: Some(3) },
+        Command::Wield { tool: None },
+        Command::Strike {
+            target: Target {
+                body: Some(EntityId(42)),
+                at: DVec3::new(1.0, -2.0, 3e5),
+                seen: 1234.375,
+            },
+            started: 1240.0,
+        },
+        Command::Strike {
+            target: Target {
+                body: None,
+                at: DVec3::new(0.5, 0.0, -7.0),
+                seen: 9.0,
+            },
+            started: 12.5,
+        },
+        Command::Grab(Target {
+            body: Some(EntityId(3)),
+            at: DVec3::new(2.0, 1.0, -0.5),
+            seen: 77.25,
+        }),
+        Command::Drop,
+        Command::Throw(DVec3::new(0.6, 0.8, 0.0)),
+        Command::Box(DVec3::new(3.0, 2.0, -1.0)),
+        Command::Kit {
+            item: 2,
+            at: DVec3::new(1.0, 2.0, 3.0),
+        },
+        Command::Stow(None),
+        Command::Stow(Some(target)),
+        Command::TakeOut {
+            pocket: 4,
+            item: 300,
+        },
+        Command::PutIn(target),
+        Command::TakeFrom {
+            container: target,
+            item: 0,
+        },
+        Command::Open(target),
+        Command::Strip,
+        Command::Bind(target),
+        Command::BindLying(1 << 63),
+        Command::StrikeLoose {
+            loose: 77,
+            started: 1200.5,
+        },
+        Command::Pick {
+            loose: 1 << 50,
+            pocket: true,
+        },
     ] {
         back(&ClientMessage::Command(command));
     }
@@ -66,19 +130,81 @@ fn server_messages_read_back() {
         members: vec![[0, 1], [1, 2]],
         radius: 0.05,
     };
+    let matter = Matter {
+        mass: 80.0,
+        friction: 0.7,
+        restitution: 0.25,
+        surface: [210.0e9, 0.3, 0.002],
+        predicted: true,
+        colour: None,
+    };
+    let still = Matter {
+        predicted: false,
+        ..matter
+    };
     for kind in [
-        Kind::Body(Shape::Box(DVec3::splat(0.5))),
-        Kind::Body(Shape::Sphere(0.4)),
-        Kind::Body(Shape::Hull(vec![DVec3::X, DVec3::Y, DVec3::Z, DVec3::ZERO])),
-        Kind::Avatar {
-            radius: 0.4,
+        Kind::Body(Shape::Box(DVec3::splat(0.5)), matter),
+        Kind::Body(Shape::Sphere(0.4), still),
+        Kind::Body(
+            Shape::Hull(vec![DVec3::X, DVec3::Y, DVec3::Z, DVec3::ZERO]),
+            matter,
+        ),
+        Kind::Character {
             player: "ada".into(),
+            look: Look {
+                colour: 15,
+                skin: 2,
+                hair: 8,
+                outfit: vec!["base_layer".into(), "boots".into()],
+            },
+            fallen: true,
+            wields: None,
+            carries: Some(EntityId(9)),
+        },
+        Kind::Character {
+            player: "bob".into(),
+            look: Look {
+                colour: 0,
+                skin: 0,
+                hair: 0,
+                outfit: vec![],
+            },
+            fallen: false,
+            wields: Some(2),
+            carries: None,
+        },
+        Kind::Segment {
+            person: EntityId(9),
+            index: 14,
+            shape: Shape::Box(DVec3::new(0.06, 0.07, 0.13)),
         },
         Kind::Structure(frame),
     ] {
         back(&ServerMessage::Spawn(EntityId(3), kind));
     }
     back(&ServerMessage::Despawn(EntityId(1 << 30)));
+    back(&ServerMessage::Own {
+        gas: 2.25,
+        health: 0.75,
+        hurt: [0.0, 0.2, 0.05, 0.0],
+        fallen: true,
+        load: 0.71,
+    });
+    let age = crate::message::Age {
+        exposure: 1.5,
+        rate: 1.0 / 21_600.0,
+        at: 1200,
+        wear: 0.25,
+    };
+    back(&ServerMessage::Age(EntityId(42), age));
+    back(&ServerMessage::Swing(EntityId(7), 123_456));
+    back(&ServerMessage::Refusal("fits no pocket".into()));
+    // Six hours of 60 Hz ticks later, a year more.
+    assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
+    assert!(
+        (age.exposure_at(0.0, 60) - 1.5).abs() < 1e-12,
+        "never before it was told"
+    );
     back(&ServerMessage::Edits {
         first: 17,
         log: vec![9; 300],
@@ -137,6 +263,8 @@ fn inputs_cost_a_byte_or_two_each() {
                 seq,
                 walk,
                 jump: seq == 104,
+                thrust: DVec3::ZERO,
+                stopping: false,
             }
             .quantised()
         })

@@ -1,0 +1,21 @@
+// The player colours (docs/art-style.md §3.6), in the order players are given them: each
+// player's `player_accent` (their jacket). A test reads art-style.md's list and fails if this
+// file differs.
+[
+    ("orange", "#e07b39"),
+    ("blue", "#3d7fd9"),
+    ("yellow", "#d9c23d"),
+    ("violet", "#8e5bd6"),
+    ("teal", "#3dbfae"),
+    ("rose", "#d64f6e"),
+    ("lime", "#7fbf3f"),
+    ("white", "#e0e0e0"),
+    ("sienna", "#a0522d"),
+    ("indigo", "#5a6fd6"),
+    ("lilac", "#c9a0dc"),
+    ("green", "#2f8f4f"),
+    ("pink", "#e8a0a0"),
+    ("slate", "#8a8f99"),
+    ("ochre", "#c08a2a"),
+    ("charcoal", "#3a3a3a"),
+]

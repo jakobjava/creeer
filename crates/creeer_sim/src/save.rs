@@ -1,6 +1,22 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 12** (G1.5): as version 11, with an optional section `PITS`: what was dug and not
+//! yet cut from the terrain (`save/pits.rs`).
+//!
+//! **Version 11** (G1.7): as version 10, with an optional section `TREE`: what was done to the
+//! trees: cuts, the felled, felled trees' parts as bodies (`crate::trees`; `save/trees.rs`).
+//!
+//! **Version 10** (G1.6a): as version 9, with an optional section `ITEM`: the bodies that are
+//! items, and avatars' pockets (`crate::items`; `save/items.rs`).
+//!
+//! **Version 9** (G1.3c): as version 8, with an optional section `AGES`: each entity's age (its
+//! weathering and wear, `crate::ageing`; `save/ages.rs`).
+//!
+//! **Version 8** (G1): as version 7, the physics world keeping its joints (`WRLD`; ADR-0022), and
+//! an optional section `PEOP`: players' characters as people, their health and a fallen one's
+//! ragdoll (G1.2d; ADR-0023).
+//!
 //! **Version 7** (F7): as version 6, with an optional section `MACH`: the world's machines,
 //! each as its abstract self keeps it (`save/machines.rs`).
 //!
@@ -43,11 +59,21 @@ use creeer_math::codec::{DecodeError, Reader, Writer};
 use creeer_physics::world::{Body, World};
 use creeer_terrain::edits::Edits;
 
+mod ages;
+mod items;
 mod machines;
+mod park;
+mod people;
+mod pits;
+mod trees;
+pub use items::SavedItems;
 pub use machines::SavedMachine;
+use park::{park_bytes, park_from};
+pub use people::SavedPerson;
+pub use trees::SavedTrees;
 
 /// The version this game writes.
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 12;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).
@@ -76,6 +102,16 @@ pub struct Save {
     pub parked: Vec<Vec<ParkedBody>>,
     /// The world's machines (`crate::abstraction`).
     pub machines: Vec<SavedMachine>,
+    /// Players' characters as people (`crate::character`): health, a fallen one's ragdoll.
+    pub people: Vec<SavedPerson>,
+    /// Each entity's age (`crate::ageing`), in order of their ids.
+    pub ages: Vec<(u32, crate::ageing::Weathering)>,
+    /// The items (`crate::items`): bodies that are items, and avatars' pockets.
+    pub items: SavedItems,
+    /// What was done to the trees (`crate::trees`).
+    pub trees: SavedTrees,
+    /// What was dug and not yet cut from the terrain, by spot: where (m) and how much (m³).
+    pub pits: Vec<(creeer_math::glam::DVec3, f64)>,
 }
 
 /// A body parked far from every player, with what the world keeps of it.
@@ -133,7 +169,12 @@ impl Save {
         let sections = 4
             + u64::from(!self.water.is_empty())
             + u64::from(!self.parked.is_empty())
-            + u64::from(!self.machines.is_empty());
+            + u64::from(!self.machines.is_empty())
+            + u64::from(!self.people.is_empty())
+            + u64::from(!self.ages.is_empty())
+            + u64::from(!self.items.is_empty())
+            + u64::from(!self.trees.is_empty())
+            + u64::from(!self.pits.is_empty());
         w.varint(sections);
         let mut meta = Writer::new();
         meta.put(&self.planet);
@@ -163,6 +204,21 @@ impl Save {
         if !self.machines.is_empty() {
             section(&mut w, b"MACH", &machines::machine_bytes(&self.machines));
         }
+        if !self.people.is_empty() {
+            section(&mut w, b"PEOP", &people::people_bytes(&self.people));
+        }
+        if !self.ages.is_empty() {
+            section(&mut w, b"AGES", &ages::ages_bytes(&self.ages));
+        }
+        if !self.items.is_empty() {
+            section(&mut w, b"ITEM", &items::items_bytes(&self.items));
+        }
+        if !self.trees.is_empty() {
+            section(&mut w, b"TREE", &trees::trees_bytes(&self.trees));
+        }
+        if !self.pits.is_empty() {
+            section(&mut w, b"PITS", &pits::pits_bytes(&self.pits));
+        }
         w.finish()
     }
 
@@ -191,6 +247,11 @@ fn from_v1(bytes: &[u8]) -> Result<Save, SaveError> {
         water: Vec::new(),
         parked: Vec::new(),
         machines: Vec::new(),
+        people: Vec::new(),
+        ages: Vec::new(),
+        items: SavedItems::default(),
+        trees: SavedTrees::default(),
+        pits: Vec::new(),
     })
 }
 
@@ -202,7 +263,8 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         return Err(SaveError::Newer(version));
     }
     let (mut meta, mut edits, mut world, mut ents) = (None, None, None, None);
-    let (mut surr, mut park, mut mach) = (None, None, None);
+    let (mut surr, mut park, mut mach, mut peop) = (None, None, None, None);
+    let (mut ages, mut item, mut tree, mut pit) = (None, None, None, None);
     for _ in 0..r.count(5)? {
         let tag: [u8; 4] = r.raw(4)?.try_into().expect("four bytes");
         let body = r.bytes_with_length()?;
@@ -214,6 +276,11 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
             b"SURR" => surr = Some(body),
             b"PARK" => park = Some(body),
             b"MACH" => mach = Some(body),
+            b"PEOP" => peop = Some(body),
+            b"AGES" => ages = Some(body),
+            b"ITEM" => item = Some(body),
+            b"TREE" => tree = Some(body),
+            b"PITS" => pit = Some(body),
             _ => {} // a later version's: not needed here
         }
     }
@@ -261,6 +328,24 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         Some(bytes) => machines::machines_from(bytes)?,
         None => Vec::new(),
     };
+    let people = match peop {
+        Some(bytes) => people::people_from(bytes)?,
+        None => Vec::new(),
+    };
+    let ages = match ages {
+        Some(bytes) => ages::ages_from(bytes)?,
+        None => Vec::new(),
+    };
+    let items = item.map_or_else(|| Ok(SavedItems::default()), items::items_from)?;
+    let trees = tree.map_or_else(|| Ok(SavedTrees::default()), trees::trees_from)?;
+    let pits = pit.map_or_else(|| Ok(Vec::new()), pits::pits_from)?;
+    // A fallen person's segments are bodies of the world (a ragdoll is never parked).
+    let live = |id: &u32| entities.iter().any(|e| e.0 == *id);
+    if !people.iter().all(|p| p.parts.iter().all(live)) {
+        return Err(SaveError::Damaged(
+            "a fallen person's segments are not in the world".into(),
+        ));
+    }
     Ok(Save {
         planet,
         tick,
@@ -271,65 +356,18 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
         water,
         parked,
         machines,
+        people,
+        ages,
+        items,
+        trees,
+        pits,
     })
 }
 
-/// The parked islands as the `PARK` section holds them (`dt`: the world's step).
-fn park_bytes(parked: &[Vec<ParkedBody>], dt: f64) -> Vec<u8> {
-    let mut world = World::new(dt);
-    world.bodies = parked.iter().flatten().map(|p| p.body.clone()).collect();
-    let mut w = Writer::new();
-    w.bytes_with_length(&world.to_bytes());
-    w.varint(parked.len() as u64);
-    for island in parked {
-        w.varint(island.len() as u64);
-        for p in island {
-            w.u32(p.id);
-            w.put(&p.player);
-            w.varint(p.water.len() as u64);
-            for &m in &p.water {
-                w.f64(m);
-            }
-        }
-    }
-    w.finish()
-}
-
-fn park_from(bytes: &[u8], version: u32) -> Result<Vec<Vec<ParkedBody>>, SaveError> {
-    let mut r = Reader::new(bytes);
-    let mut bodies = World::from_bytes_of(r.bytes_with_length()?, version)?
-        .bodies
-        .into_iter();
-    let mut parked = Vec::new();
-    for _ in 0..r.count(1)? {
-        let mut island = Vec::new();
-        for _ in 0..r.count(5)? {
-            let id = r.u32()?;
-            let player = r.get::<Option<String>>()?;
-            let water = (0..r.count(8)?)
-                .map(|_| r.f64())
-                .collect::<Result<_, _>>()?;
-            let body = bodies
-                .next()
-                .ok_or_else(|| SaveError::Damaged("fewer parked bodies than entities".into()))?;
-            island.push(ParkedBody {
-                id,
-                player,
-                body,
-                water,
-            });
-        }
-        parked.push(island);
-    }
-    r.end()?;
-    if bodies.next().is_some() {
-        return Err(SaveError::Damaged(
-            "more parked bodies than entities".into(),
-        ));
-    }
-    Ok(parked)
-}
-
+#[cfg(test)]
+mod ages_tests;
+#[cfg(test)]
+mod joint_tests;
 #[cfg(test)]
 mod machine_tests;
 #[cfg(test)]

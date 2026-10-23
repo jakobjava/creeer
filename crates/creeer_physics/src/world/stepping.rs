@@ -72,7 +72,10 @@ pub(super) fn step(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
     if deformable && (impact || bodies.iter().any(|b| b.crushing)) {
         crush(bodies, contacts, dt);
     } else {
-        substep(bodies, contacts, impact, false);
+        match joint_substeps(bodies, contacts, dt) {
+            n if n > 1 && !impact => swing(bodies, contacts, dt, n),
+            _ => substep(bodies, contacts, impact, false),
+        }
         for body in bodies.iter_mut() {
             body.crushing = false;
         }
@@ -103,6 +106,15 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
         .sum();
     contacts.set_weight(weight);
     contacts.set_step(bodies[0].solver.time_step());
+    // Turning normals from where this (sub)step starts, before the guard measures them.
+    let states: Vec<MemberState<'_>> = bodies
+        .iter()
+        .map(|b| MemberState {
+            position: &b.structure.position,
+            orientation: &b.structure.orientation,
+        })
+        .collect();
+    contacts.start_turning(&states);
     // The bodies' energy only: contacts found pressed into each other at the step's start hold
     // energy that never existed (a ball found inside a crate held 290 kJ, and the rebound was
     // allowed to give some of it back, F5).
@@ -117,6 +129,7 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
         let mut structures: Vec<_> = bodies.iter_mut().map(|b| &mut b.structure).collect();
         impact::prestop(&mut structures, (&contacts.list, &gaps), h);
     }
+    let held = bodies.iter().any(|b| b.held);
     let mut members: Vec<_> = bodies
         .iter_mut()
         .map(|b| (&mut b.structure, &mut b.solver))
@@ -129,7 +142,13 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
     // bodies keep Newmark.
     let scheme = if impact {
         Some(Scheme::BackwardEuler)
-    } else if contacts.list.is_empty() {
+    } else if contacts.list.is_empty()
+        && !contacts.joints.limited()
+        && !contacts.joints.has_struts()
+        && !held
+    {
+        // (A joint's stops are stepped as contacts are, and struts and bodies held:
+        // `Body::held`.)
         None
     } else {
         Some(Scheme::Bdf2)
@@ -205,6 +224,48 @@ fn crush(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
     for body in bodies.iter_mut() {
         body.solver.set_time_step(&body.structure, dt);
         body.crushing = flowing && fast > FAST_FLOW;
+    }
+}
+
+/// The most a joint's two sides may turn relative to each other in one substep (rad).
+/// Newmark's energy wavers by about (ω·h)²/4 on a joint's nonlinear swing, back and forth;
+/// beyond the energy guard's slack (10⁻³) the guard took each rise back for a gain and redid
+/// it dissipatively, and a double pendulum at 60 Hz lost a third of its energy in three
+/// seconds (G1.1). At 0.05 rad a substep the wavering stays within it, as for boxes turning
+/// (`turn.rs`).
+const JOINT_TURN: f64 = 0.05;
+/// Most substeps of a group whose joints turn fast.
+const JOINT_SUBSTEPS: u32 = 8;
+
+/// The substeps a group needs for its joints' relative turn in a step of `dt`.
+fn joint_substeps(bodies: &[&mut Body], contacts: &Contacts, dt: f64) -> u32 {
+    let spin = |side: Option<(usize, usize)>| {
+        side.map_or(creeer_math::glam::DVec3::ZERO, |(m, n)| {
+            bodies[m].structure.angular_velocity[n]
+        })
+    };
+    let fastest = (contacts.joints.list.iter())
+        .map(|(_, j)| (spin(Some(j.a)) - spin(j.b)).length())
+        .fold(0.0, f64::max);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // small, clamped
+    let n = (fastest * dt / JOINT_TURN).ceil() as u32;
+    n.clamp(1, JOINT_SUBSTEPS)
+}
+
+/// A step in `n` substeps (a group whose joints turn fast: [`JOINT_TURN`]).
+fn swing(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64, n: u32) {
+    let h = dt / f64::from(n);
+    for body in bodies.iter_mut() {
+        body.solver.set_time_step(&body.structure, h);
+    }
+    for k in 0..n {
+        if k > 0 {
+            refresh_approach(bodies, contacts);
+        }
+        substep(bodies, contacts, false, false);
+    }
+    for body in bodies.iter_mut() {
+        body.solver.set_time_step(&body.structure, dt);
     }
 }
 

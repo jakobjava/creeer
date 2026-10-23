@@ -4,6 +4,13 @@
 //! - `cargo xtask perf [--save-baseline]`: runs the performance spikes, the sandbox's scenes
 //!   and the stress scenarios in release mode, checks their budgets, ceilings and hashes, and
 //!   compares against `perf/baseline.txt` (fails on a regression of more than 10 %, plan.md §5).
+//! - `cargo xtask art [--check] [--blend] [name…]`: builds the models from their scripts in
+//!   `art/` with headless Blender ([`art`], `docs/blender-mcp.md`).
+//! - `cargo xtask style-board [--save]`: the style board against its golden images
+//!   ([`style_board`], G1.3h).
+
+mod art;
+mod style_board;
 
 use std::collections::BTreeMap;
 use std::env;
@@ -13,8 +20,12 @@ use std::process::{Command, ExitCode};
 const USAGE: &str = "usage: cargo xtask <task>
 
 tasks:
-  ci                        file length, fmt check, clippy (-D warnings), tests
-  perf [--save-baseline]    spike budgets + regression check against perf/baseline.txt";
+  ci                        file length, fmt check, clippy (-D warnings), tests, style board
+                            (the last on the development machine)
+  perf [--save-baseline]    spike budgets + regression check against perf/baseline.txt
+  art [--check] [--blend] [name...]
+                            build models from art/*.py with Blender 5.2 into data/models/
+  style-board [--save]      render the style board and check it against its golden images";
 
 /// Allowed slowdown before `perf` reports a regression.
 const REGRESSION_TOLERANCE: f64 = 0.10;
@@ -32,6 +43,8 @@ fn main() -> ExitCode {
         ["ci"] => ci(),
         ["perf"] => perf(false),
         ["perf", "--save-baseline"] => perf(true),
+        ["art", rest @ ..] => art::art(rest),
+        ["style-board", rest @ ..] => style_board::style_board(rest),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::FAILURE
@@ -64,6 +77,15 @@ fn ci() -> ExitCode {
         println!("==> {name}: cargo {}", args.join(" "));
         if !cargo(args) {
             eprintln!("xtask ci: step `{name}` failed");
+            return ExitCode::FAILURE;
+        }
+    }
+    // The golden images on the development machine only (G1.3h): shared CI machines (`CI` set)
+    // mostly have no GPU.
+    if env::var_os("CI").is_none() {
+        println!("==> style board: against its golden images");
+        if style_board::style_board(&[]) != ExitCode::SUCCESS {
+            eprintln!("xtask ci: step `style board` failed");
             return ExitCode::FAILURE;
         }
     }
@@ -110,7 +132,21 @@ fn perf(save_baseline: bool) -> ExitCode {
         "--metrics",
         LATEST,
     ]);
-    let budgets_ok = budgets_ok && scenes_ok && stress_ok;
+    println!("==> playing the play scenes (release build)");
+    let play_ok = cargo(&[
+        "run",
+        "--quiet",
+        "--release",
+        "--package",
+        "creeer_tools",
+        "--",
+        "play",
+        "--check",
+        "--gate",
+        "--metrics",
+        LATEST,
+    ]);
+    let budgets_ok = budgets_ok && scenes_ok && stress_ok && play_ok;
     let Some(latest) = read_metrics(Path::new(LATEST)) else {
         eprintln!("xtask perf: no metrics were written to {LATEST}");
         return ExitCode::FAILURE;

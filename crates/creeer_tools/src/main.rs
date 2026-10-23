@@ -11,12 +11,14 @@ mod chem_bench;
 mod electric_bench;
 mod fluids_bench;
 mod image_diff;
+mod joint_bench;
 mod lod_bench;
 mod logic_bench;
 mod mech_bench;
 mod nasa_import;
 mod network_bench;
 mod orbit_bench;
+mod play;
 mod rates_bench;
 mod reference_bench;
 mod solvers;
@@ -39,12 +41,19 @@ commands:
   bench-spikes [--metrics <file>] [--report-only] [--only <section>]
       measure the spikes against their budgets (sections: xpbd, meshing, solvers,
       structures, world, terrain, orbit, networks, electric, thermal, mech, chem,
-      fluids, logic, reference, lod, rates)
+      fluids, logic, reference, lod, rates, joints)
   stress [--short] [--check | --save-golden] [--metrics <file>] [--only <name>]
       the stress scenarios (beams, cars, factory, server, flyover): tick percentiles
       and state hashes (checked against tests/scenarios/stress.txt)
+  play [--short] [--check | --save-golden] [--gate] [--metrics <file>] [--only <name>]
+       [--record <file>] [--replay <file>]
+      the play scenes over the real server path (G1): tick percentiles, work,
+      bandwidth and state hashes (checked against tests/scenarios/play.txt)
   validate [--data <dir>] [--mods <dir>]
       load and check every data pack as the game merges them
+  bones
+      write the ragdoll's segments and joints to art/engineer/bones.json, for the art
+      scripts (G1.3f)
   image-diff <a.png> <b.png>        share of visibly changed pixels between two images
   image-crop <in> <out> <x> <y> <w> <h> <zoom>   cut out and enlarge a region
   import-nasa9 <thermo.inp> <out.ron>   NASA Glenn species data (the CEA program's thermo.inp)
@@ -76,6 +85,20 @@ fn main() -> ExitCode {
         }
         Some("validate") => validate::run(&args[1..]),
         Some("stress") => stress::run(&args[1..]),
+        Some("play") => play::run(&args[1..]),
+        Some("bones") => {
+            use creeer_sim::character::bones;
+            match std::fs::write(bones::PATH, bones::json()) {
+                Ok(()) => {
+                    println!("the ragdoll's bones written to {}", bones::PATH);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("bones: {}: {e}", bones::PATH);
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("image-diff") => match (args.get(1), args.get(2)) {
             (Some(a), Some(b)) => image_diff::run(a.as_ref(), b.as_ref()),
             _ => usage(),

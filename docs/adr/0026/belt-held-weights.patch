@@ -1,0 +1,42 @@
+diff --git a/art/engineer/skinning.py b/art/engineer/skinning.py
+index 1164caf..59db9e8 100644
+--- a/art/engineer/skinning.py
++++ b/art/engineer/skinning.py
+@@ -133,6 +133,29 @@ def transfer(objs, beneath, near=4, by_limb=True):
+         give_weights(obj, out)
+ 
+ 
++def held(belt, cloths, fall=0.015):
++    """The `cloths` under the `belt` weighted as the trunk alone (their pelvis's and torso's
++    shares), easing back to their own over `fall` (m) above and below it: a belt holds what it
++    is buckled over (`detail.cinch`), and turned with the thighs the jacket's hips came out
++    from under it, 12 mm at the hips' limits."""
++    zs = [v.co.z for v in belt.data.vertices]
++    z0, z1 = min(zs), max(zs)
++    arms = [f"{s}.{t}" for s in ("upper_arm", "forearm", "hand") for t in "LR"]
++    for obj in cloths:
++        w = segment_weights(obj)
++        for v in obj.data.vertices:
++            i, z = v.index, v.co.z
++            rise = min(max((z - z0 + fall) / fall, 0.0), 1.0)
++            drop = min(max((z1 + fall - z) / fall, 0.0), 1.0)
++            share = min(rise * rise * (3 - 2 * rise), drop * drop * (3 - 2 * drop)) * max(0.0, 1.0 - sum(w[n][i] for n in arms))
++            trunk = w["pelvis"][i] + w["torso"][i]
++            if share <= 0.0 or trunk <= 1e-6:
++                continue
++            for name, ws in w.items():
++                ws[i] = (1.0 - share) * ws[i] + share * (ws[i] / trunk if name in ("pelvis", "torso") else 0.0)
++        give_weights(obj, w)
++
++
+ # Where the boots bend (m below and above the ankle bone).
+ BEND = (0.01, 0.03)
+ 
+@@ -200,6 +223,7 @@ def complete_weights(pieces, skin):
+             give_weights(obj, {f"thigh.{tag}": half, f"shank.{tag}": half})
+     jacket = next(o for o in pieces["jacket"] if o.name == "jacket")
+     transfer([o for o in pieces["elbow_pads"] if o.name.startswith("elbow pad")], jacket)
++    held(next(o for o in pieces["belt"] if o.name == "belt"), [jacket, coverall])
+     for obj in pieces["boots"]:
+         if obj.name == "boots":
+             stiff(obj)

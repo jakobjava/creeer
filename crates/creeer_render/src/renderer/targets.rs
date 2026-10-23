@@ -49,11 +49,12 @@ impl Targets {
                 1,
                 wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             ),
+            // Read by ambient occlusion between the prepass and the scene pass.
             depth: make(
                 "depth",
                 DEPTH_FORMAT,
                 MSAA_SAMPLES,
-                wgpu::TextureUsages::RENDER_ATTACHMENT,
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             ),
         }
     }
@@ -67,6 +68,53 @@ pub(super) fn scene_depth_state() -> Option<wgpu::DepthStencilState> {
         depth_compare: Some(wgpu::CompareFunction::Greater),
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
+    })
+}
+
+/// What the scene pass's meshes and terrain test against the depth their prepass wrote: the
+/// same depth, from the same vertex shader (`@invariant`), so each pixel is shaded once.
+pub(super) fn after_prepass_depth_state() -> Option<wgpu::DepthStencilState> {
+    Some(wgpu::DepthStencilState {
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::Equal),
+        ..scene_depth_state()?
+    })
+}
+
+/// A depth-only pipeline for the prepass (G1.3d): `entry` of `module`, whose vertex stage reads
+/// the globals (group 0) only.
+pub(super) fn prepass_pipeline(
+    device: &wgpu::Device,
+    label: &str,
+    globals_layout: &wgpu::BindGroupLayout,
+    module: &wgpu::ShaderModule,
+    entry: &str,
+    buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &[Some(globals_layout)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some(entry),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers,
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode,
+            ..Default::default()
+        },
+        depth_stencil: scene_depth_state(),
+        multisample: scene_multisample(),
+        fragment: None,
+        multiview_mask: None,
+        cache: None,
     })
 }
 

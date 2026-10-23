@@ -32,6 +32,10 @@ pub struct Snapshot {
     pub last_input: u32,
     /// The states of everything in view.
     pub states: States,
+    /// Those whose state here is older than its tick: changed, but left out by the budget
+    /// (the client keeps an earlier one). A client predicting bodies takes its own for them
+    /// (ADR-0025). In order.
+    pub stale: Vec<EntityId>,
 }
 
 // Entry flags: which parts follow.
@@ -58,13 +62,14 @@ impl Sender {
 
     /// The snapshot of `tick` for the entities in view, `(id, state, importance)`, the
     /// client's newest input `last_input` included, in at most `budget` bytes (removals and
-    /// the header always fit).
+    /// the header always fit). Of the entities `near` the client's avatar (in order), those
+    /// the budget leaves out are listed as stale ([`Snapshot::stale`]).
     pub fn write(
         &mut self,
         tick: u32,
         last_input: u32,
         view: &[(EntityId, BodyState, f64)],
-        budget: usize,
+        (budget, near): (usize, &[EntityId]),
     ) -> Vec<u8> {
         let base = self.sent.iter().find(|s| s.tick == self.acked).cloned();
         let empty = States::new();
@@ -89,10 +94,18 @@ impl Sender {
             let (pa, pb) = (self.priority[&a.0], self.priority[&b.0]);
             pb.total_cmp(&pa).then(a.0.cmp(&b.0))
         });
-        let mut size = 16 + entries.len() * 6;
+        // The bodies near the client that changed may be listed as stale: their room is kept
+        // (few: `predict::NEARBY`).
+        let is_near = |id: &EntityId| near.binary_search(id).is_ok();
+        let listed = changed.iter().filter(|c| is_near(&c.0)).count();
+        let mut size = 16 + entries.len() * 6 + 3 * listed;
+        let mut stale = Vec::new();
         for &&(id, state, _) in &changed {
             let cost = entry_size(base_states.get(&id), &state);
             if size + cost > budget {
+                if is_near(&id) {
+                    stale.push(id);
+                }
                 continue;
             }
             size += cost;
@@ -102,17 +115,19 @@ impl Sender {
         }
         self.priority.retain(|id, _| seen.contains(id));
         entries.sort_by_key(|e| e.0);
+        stale.sort_unstable();
         let bytes = encode(
             tick,
             base.as_ref().map(|b| b.tick),
             last_input,
             base_states,
-            &entries,
+            (&entries, &stale),
         );
         self.sent.push_back(Snapshot {
             tick,
             last_input,
             states: has,
+            stale: Vec::new(),
         });
         while self.sent.len() > HISTORY {
             self.sent.pop_front();
@@ -168,7 +183,7 @@ fn encode(
     base: Option<u32>,
     last_input: u32,
     base_states: &States,
-    entries: &[(EntityId, Option<BodyState>)],
+    (entries, stale): (&[(EntityId, Option<BodyState>)], &[EntityId]),
 ) -> Vec<u8> {
     let mut w = Writer::new();
     w.varint(u64::from(tick));
@@ -184,6 +199,13 @@ fn encode(
             None => w.u8(REMOVED),
             Some(state) => write_entry(&mut w, base_states.get(id), state),
         }
+    }
+    // (Protocol 6 on.) What the budget left out, as id gaps.
+    w.varint(stale.len() as u64);
+    let mut previous = 0u32;
+    for id in stale {
+        w.varint(u64::from(id.0 - previous));
+        previous = id.0;
     }
     w.finish()
 }
@@ -249,11 +271,21 @@ impl Receiver {
             };
             states.insert(id, state);
         }
+        let count = r.count(1)?;
+        let mut stale = Vec::with_capacity(count);
+        let mut id = 0u32;
+        for _ in 0..count {
+            id = id
+                .checked_add(small(&mut r)?)
+                .ok_or_else(|| r.error("entity id"))?;
+            stale.push(EntityId(id));
+        }
         r.end()?;
         let snapshot = Snapshot {
             tick,
             last_input,
             states,
+            stale,
         };
         let at = self.received.partition_point(|s| s.tick < tick);
         if self.received.get(at).is_some_and(|s| s.tick == tick) {

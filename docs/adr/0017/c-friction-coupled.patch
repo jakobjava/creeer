@@ -1,0 +1,731 @@
+diff --git a/crates/creeer_client/src/physics_profile.rs b/crates/creeer_client/src/physics_profile.rs
+index 6ed2cdd..2ea0f30 100644
+--- a/crates/creeer_client/src/physics_profile.rs
++++ b/crates/creeer_client/src/physics_profile.rs
+@@ -154,3 +154,105 @@ fn profile_rock_turns() {
+ fn profile_crash() {
+     report(PhysicsScene::Crash, 300, 3.0);
+ }
++
++#[test]
++#[ignore = "profile"]
++fn trace_rocks() {
++    let from: usize = std::env::var("TRACE_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(239);
++    let to: usize = std::env::var("TRACE_TO").ok().and_then(|s| s.parse().ok()).unwrap_or(243);
++    let mut sb = PhysicsSandbox::new(PhysicsScene::Rocks, 1.0 / 60.0);
++    for k in 0..to {
++        if k >= from {
++            eprintln!("=== tick {k}");
++        }
++        sb.step(1.0 / 60.0);
++    }
++}
++
++#[test]
++#[ignore = "profile"]
++fn work_scenes() {
++    for scene in [PhysicsScene::Rocks, PhysicsScene::Stacks] {
++        let run = crate::physics_bench::run(scene, 900);
++        let mut ms = run.ms.clone();
++        ms.sort_by(f64::total_cmp);
++        let total: f64 = ms.iter().sum();
++        let work: u64 = run.work.iter().sum();
++        let most = run.work.iter().max().copied().unwrap_or(0);
++        println!(
++            "{scene:?}: total {total:.0} ms, p99 {:.2}, worst {:.2}; iterations {work}, most a tick {most}",
++            ms[ms.len() * 99 / 100],
++            ms[ms.len() - 1]
++        );
++    }
++}
++
++#[test]
++#[ignore = "profile"]
++fn groups_rocks() {
++    let mut sb = PhysicsSandbox::new(PhysicsScene::Rocks, 1.0 / 60.0);
++    for k in 0..900 {
++        eprintln!("=== tick {k}");
++        sb.step(1.0 / 60.0);
++    }
++}
++
++/// ADR-0017's A/B: each tick of a reference run (friction lagged) stepped once more from its
++/// own state with friction lagged and with it followed, the same inputs for both.
++#[test]
++#[ignore = "profile"]
++fn ab_lag() {
++    use creeer_physics::world::World;
++    let scene = match std::env::var("AB_SCENE").as_deref() {
++        Ok("stacks") => PhysicsScene::Stacks,
++        Ok("crash") => PhysicsScene::Crash,
++        _ => PhysicsScene::Rocks,
++    };
++    let ticks: usize = std::env::var("AB_TICKS").ok().and_then(|s| s.parse().ok()).unwrap_or(900);
++    let index = |slot: profile::Slot| NAMES.iter().position(|(s, _)| *s == slot).unwrap();
++    let (it, off, gm) = (
++        index(profile::Slot::Iterations),
++        index(profile::Slot::LagOff),
++        index(profile::Slot::Gmres),
++    );
++    let mut sb = PhysicsSandbox::new(scene, 1.0 / 60.0);
++    // (lagged, followed): iterations, ms, steps off, worst ms, most iterations, gmres.
++    let mut sums = [[0.0f64; 6]; 2];
++    for sb_tick in 0..ticks {
++        let bytes = sb.world().to_bytes();
++        for (k, lagged) in [true, false].into_iter().enumerate() {
++            let mut w = World::from_bytes(&bytes).expect("a world");
++            profile::set_lagged(lagged);
++            let _ = profile::take();
++            let t = std::time::Instant::now();
++            w.step();
++            let ms = t.elapsed().as_secs_f64() * 1e3;
++            let p = profile::take();
++            if std::env::var("AB_AT").ok().and_then(|s| s.parse::<usize>().ok()) == Some(sb_tick) {
++                let parts: Vec<String> = NAMES.iter().zip(p).filter(|(_, v)| *v > 0).map(|((slot, name), v)| if is_count(*slot) { format!("{name} {v}") } else { format!("{name} {:.2}", v as f64 / 1e6) }).collect();
++                println!("{} {ms:.2} ms: {}", if lagged { "lagged" } else { "followed" }, parts.join(", "));
++            }
++            let s = &mut sums[k];
++            s[0] += p[it] as f64;
++            s[1] += ms;
++            s[2] += p[off] as f64;
++            s[3] = s[3].max(ms);
++            s[4] = s[4].max(p[it] as f64);
++            s[5] += p[gm] as f64;
++            if k == 1 && std::env::var_os("AB_SHOW").is_some() {
++                eprintln!("tick {} followed {} ms {ms:.2}", sb.world().bodies.len(), p[it]);
++            }
++            if k == 0 && std::env::var_os("AB_SHOW").is_some() {
++                eprintln!("tick lagged {} ms {ms:.2}", p[it]);
++            }
++        }
++        profile::set_lagged(true);
++        sb.step(1.0 / 60.0);
++    }
++    for (name, s) in ["lagged", "followed"].iter().zip(sums) {
++        println!(
++            "{scene:?} {name}: iterations {:.0}, ms {:.0}, steps off {:.0}, worst {:.2} ms, most iterations {:.0}, gmres {:.0}",
++            s[0], s[1], s[2], s[3], s[4], s[5]
++        );
++    }
++}
+diff --git a/crates/creeer_physics/src/profile.rs b/crates/creeer_physics/src/profile.rs
+index 111c2fa..265e03e 100644
+--- a/crates/creeer_physics/src/profile.rs
++++ b/crates/creeer_physics/src/profile.rs
+@@ -53,10 +53,14 @@ pub enum Slot {
+     Sweeps,
+     Increments,
+     FlowIterations,
++    /// PROBE (ADR-0017): minimisations ending with some contact's friction on a normal force
++    /// more than 5 % off its own, and GMRES iterations.
++    LagOff,
++    Gmres,
+ }
+ 
+ /// How many slots there are.
+-pub const SLOTS: usize = Slot::FlowIterations as usize + 1;
++pub const SLOTS: usize = Slot::Gmres as usize + 1;
+ 
+ #[cfg(feature = "profile")]
+ static TOTALS: [std::sync::atomic::AtomicU64; SLOTS] =
+@@ -145,6 +149,8 @@ pub const NAMES: [(Slot, &str); SLOTS] = [
+     (Slot::Sweeps, "sweeps"),
+     (Slot::Increments, "increments"),
+     (Slot::FlowIterations, "flow iterations"),
++    (Slot::LagOff, "lag off"),
++    (Slot::Gmres, "gmres"),
+ ];
+ 
+ /// Whether a slot holds a count (else nanoseconds).
+@@ -164,5 +170,31 @@ pub fn is_count(slot: Slot) -> bool {
+             | Slot::Sweeps
+             | Slot::Increments
+             | Slot::FlowIterations
++            | Slot::LagOff
++            | Slot::Gmres
+     )
+ }
++
++/// PROBE (ADR-0017's A/B): friction's normal forces lagged as before, not followed.
++#[cfg(feature = "profile")]
++static LAGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++
++/// PROBE: sets whether friction's normal forces are lagged (`profile` only).
++pub fn set_lagged(on: bool) {
++    #[cfg(feature = "profile")]
++    LAGGED.store(on, std::sync::atomic::Ordering::Relaxed);
++    #[cfg(not(feature = "profile"))]
++    let _ = on;
++}
++
++/// PROBE: whether friction's normal forces are lagged (never without `profile`).
++pub fn lagged() -> bool {
++    #[cfg(feature = "profile")]
++    {
++        LAGGED.load(std::sync::atomic::Ordering::Relaxed)
++    }
++    #[cfg(not(feature = "profile"))]
++    {
++        false
++    }
++}
+diff --git a/crates/creeer_physics/src/structure/coupling.rs b/crates/creeer_physics/src/structure/coupling.rs
+index 6dae054..c1639ce 100644
+--- a/crates/creeer_physics/src/structure/coupling.rs
++++ b/crates/creeer_physics/src/structure/coupling.rs
+@@ -34,6 +34,11 @@ pub struct StepInfo<'a> {
+ /// 6×6 block over (translation, rotation), rows of the first.
+ pub type NodeCoupling = ((usize, usize), (usize, usize), [[f64; 6]; 6]);
+ 
++/// A rank-one term u·vᵀ of a coupling's Newton matrix that is not symmetric (friction's force by
++/// its normal force's change): on each of up to two nodes, its (member, node) and the 6-vectors
++/// (translation, rotation) of u and of v there.
++pub type LagTerm = [Option<((usize, usize), [f64; 6], [f64; 6])>; 2];
++
+ /// Energy terms coupling the members of a group.
+ pub trait Coupling: Sync {
+     /// Called before every minimisation.
+@@ -81,6 +86,30 @@ pub trait Coupling: Sync {
+         false
+     }
+ 
++    /// PROBE: how far the lagged normal forces of friction are from those at `states`: the
++    /// total relative difference and the worst of a contact carrying 1 % of the total.
++    fn lag_mismatch(&self, _states: &[MemberState<'_>]) -> (f64, f64) {
++        (0.0, 0.0)
++    }
++
++    /// Whether the lagged quantities can follow every iterate ([`Self::refresh_lag`] and
++    /// [`Self::lag_terms`]) instead of being refreshed once the step has converged.
++    fn consistent(&self) -> bool {
++        false
++    }
++
++    /// Sets the lagged quantities to their values at `states`; returns how much that changed
++    /// the coupling's energy there (J).
++    fn refresh_lag(&mut self, _states: &[MemberState<'_>]) -> f64 {
++        0.0
++    }
++
++    /// The terms the lagged quantities' dependence on the state adds to the Newton matrix at
++    /// `states` (not symmetric).
++    fn lag_terms(&self, _states: &[MemberState<'_>]) -> Vec<LagTerm> {
++        Vec::new()
++    }
++
+     /// Takes the coupling's stiffness at `states` into the rigid bodies' matrices (true Newton);
+     /// returns whether it did (then [`Self::rigid_stiffness`] and [`Self::rigid_coupling`]
+     /// have changed).
+diff --git a/crates/creeer_physics/src/structure/group.rs b/crates/creeer_physics/src/structure/group.rs
+index 20d3c4a..ec49c43 100644
+--- a/crates/creeer_physics/src/structure/group.rs
++++ b/crates/creeer_physics/src/structure/group.rs
+@@ -7,7 +7,7 @@
+ //! coupling's stiffness on that body.
+ 
+ use super::Structure;
+-pub use super::coupling::{Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo};
++pub use super::coupling::{Coupling, LagTerm, MemberState, NoCoupling, NodeCoupling, StepInfo};
+ use super::minimise::minimise;
+ use super::solver::{ImplicitSolver, Scheme, Timings};
+ use creeer_math::glam::{DQuat, DVec3};
+diff --git a/crates/creeer_physics/src/structure/minimise.rs b/crates/creeer_physics/src/structure/minimise.rs
+index cdfe662..b99651c 100644
+--- a/crates/creeer_physics/src/structure/minimise.rs
++++ b/crates/creeer_physics/src/structure/minimise.rs
+@@ -1,7 +1,8 @@
+ //! The joint minimisation of a group's incremental potential (see `group.rs`).
+ 
+ use super::coupled::Coupled;
+-use super::group::{Coupling, Member, states, trial_states};
++use super::gmres;
++use super::group::{Coupling, LagTerm, Member, states, trial_states};
+ use super::lbfgs::Lbfgs;
+ use super::rigid_system::RigidSystem;
+ use super::solver::Refactoring;
+@@ -38,6 +39,64 @@ fn remake(
+     RigidSystem::again(old, members, coupling, rigid)
+ }
+ 
++/// Applies the group's Newton matrix's inverse to `all` in place: each member's own (its
++/// factorisation, or a rigid body's 6×6 `rigid`), the rigid bodies' joint system, and the
++/// joint solve of rigid bodies on structures.
++fn precondition(
++    members: &mut [Member<'_>],
++    (rigid, system, coupled): (&[Option<[[f64; 6]; 6]>], Option<&mut RigidSystem>, Option<&Coupled>),
++    offsets: &[usize],
++    all: &mut [DVec3],
++) {
++    let kept = coupled.map(|c| c.residuals(all, offsets));
++    for (m, ((s, v), matrix)) in members.iter_mut().zip(rigid).enumerate() {
++        if system.as_ref().is_some_and(|j| j.contains(m)) || coupled.is_some_and(|c| c.contains(m))
++        {
++            continue;
++        }
++        let range = offsets[m]..offsets[m] + v.work.direction.len();
++        v.precondition(s, &mut all[range], matrix.as_ref());
++    }
++    if let Some(joint) = system {
++        joint.solve(all, offsets);
++    }
++    if let (Some(c), Some(kept)) = (coupled, kept.as_ref()) {
++        c.solve(all, kept, offsets);
++    }
++}
++
++/// Writes `terms`'s product with `v` (Σ u·(v·x), times β²) to `out`, `mask` zeroing fixed
++/// axes; `offsets` and `nodes` place a member's node in the vectors (translation at
++/// offset + node, rotation at offset + nodes + node).
++fn apply_terms(
++    terms: &[LagTerm],
++    (offsets, nodes, mask): (&[usize], &[usize], &[DVec3]),
++    b2: f64,
++    v: &[DVec3],
++    out: &mut [DVec3],
++) {
++    out.fill(DVec3::ZERO);
++    let at = |(m, n): (usize, usize)| (offsets[m] + n, offsets[m] + nodes[m] + n);
++    for term in terms {
++        let along: f64 = term
++            .iter()
++            .flatten()
++            .map(|&(node, _, psi)| {
++                let (t, r) = at(node);
++                DVec3::from_slice(&psi[..3]).dot(v[t]) + DVec3::from_slice(&psi[3..]).dot(v[r])
++            })
++            .sum();
++        for &(node, phi, _) in term.iter().flatten() {
++            let (t, r) = at(node);
++            out[t] += DVec3::from_slice(&phi[..3]) * (b2 * along);
++            out[r] += DVec3::from_slice(&phi[3..]) * (b2 * along);
++        }
++    }
++    for (o, m) in out.iter_mut().zip(mask) {
++        *o *= *m;
++    }
++}
++
+ /// How far `direction` goes down the objective: the residual (the negative gradient) along it.
+ fn downhill(residual: &[DVec3], direction: &[DVec3]) -> f64 {
+     residual.iter().zip(direction).map(|(r, d)| r.dot(*d)).sum()
+@@ -51,6 +110,14 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+         .iter()
+         .map(|(_, v)| vec![DVec3::ZERO; v.work.direction.len()])
+         .collect();
++    // Groups of rigid bodies alone: once converged with friction's normal forces lagged, they
++    // follow every iterate, Newton's matrix taking how friction follows them (ADR-0017,
++    // `contact/lag.rs`).
++    let consistent = coupling.consistent()
++        && members
++            .iter()
++            .all(|(s, _)| s.elements.is_empty() && s.node_count() == 1)
++        && !crate::profile::lagged();
+     let mut objective = coupling.energy(&states(members));
+     for (s, v) in members.iter_mut() {
+         let (g, elastic) = v.work.evaluate(s, false, true);
+@@ -123,17 +190,29 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+     // turns with the slip (`Coupling::relinearise`), and frozen at the step's start it left
+     // piles of sliding rocks creeping, 50–400 iterations a step (F6).
+     let relinear = coupled.is_none() && rigid.iter().all(Option::is_some);
++    debug_assert!(!consistent || relinear);
++    let (mut following, mut stalled, mut gave_up) = (false, 0, !consistent);
++    let mut terms: Vec<LagTerm> = Vec::new();
++    let nodes: Vec<usize> = members.iter().map(|(s, _)| s.node_count()).collect();
++    let mask: Vec<DVec3> = members
++        .iter()
++        .flat_map(|(s, v)| (0..v.work.direction.len()).map(|b| s.block_mask(b)))
++        .collect();
++    let b2 = members[0].1.work.beta * members[0].1.work.beta;
+     let mut refactored = false;
+     for iteration in 0..max_iterations {
+         // (Not at the very end: within ten tolerances the last iterate's matrix serves as well,
+         // and making it again cost a stack of crates a tenth of its step.)
+         if relinear
+             && iteration > 0
+-            && previous_move > 10.0 * tolerance
++            && (previous_move > 10.0 * tolerance || following)
+             && coupling.relinearise(&states(members))
+         {
+             let timer = crate::profile::start();
+             system = remake(system.take(), members, coupling, &mut rigid);
++            if following {
++                terms = coupling.lag_terms(&states(members));
++            }
+             timer.stop(crate::profile::Slot::Relinearise);
+             #[cfg(feature = "profile")]
+             if std::env::var_os("CREEER_CHECK_HESSIAN").is_some() {
+@@ -155,25 +234,28 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+                 lbfgs.clear();
+             }
+         }
+-        direction.copy_from_slice(&residual);
+-        lbfgs.direction(&mut direction, |all| {
+-            let kept = coupled.as_ref().map(|c| c.residuals(all, &offsets));
+-            for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
+-                if system.as_ref().is_some_and(|j| j.contains(m))
+-                    || coupled.as_ref().is_some_and(|c| c.contains(m))
+-                {
+-                    continue;
+-                }
+-                let range = offsets[m]..offsets[m] + v.work.direction.len();
+-                v.precondition(s, &mut all[range], matrix.as_ref());
+-            }
+-            if let Some(joint) = system.as_mut() {
+-                joint.solve(all, &offsets);
+-            }
+-            if let (Some(c), Some(kept)) = (coupled.as_ref(), kept.as_ref()) {
+-                c.solve(all, kept, &offsets);
++        if following {
++            // Not symmetric: GMRES on the factorised matrix plus friction's terms. (L-BFGS's
++            // pairs mix objectives once λ moves every iteration: twice the iterations.)
++            let (d, _inner) = gmres::solve(
++                &residual,
++                |all| precondition(members, (&rigid, system.as_mut(), coupled.as_ref()), &offsets, all),
++                |v, out| apply_terms(&terms, (&offsets, &nodes, &mask), b2, v, out),
++                1e-3,
++                20,
++            );
++            direction = d;
++            crate::profile::add(crate::profile::Slot::Gmres, _inner as u64);
++            #[cfg(feature = "profile")]
++            if std::env::var_os("CREEER_TRACE").is_some() && members.len() >= 4 {
++                eprintln!("GMRES {_inner} terms {}", terms.len());
+             }
+-        });
++        } else {
++            direction.copy_from_slice(&residual);
++            lbfgs.direction(&mut direction, |all| {
++                precondition(members, (&rigid, system.as_mut(), coupled.as_ref()), &offsets, all);
++            });
++        }
+         // A direction uphill would fail every line search, and a failed search reads as
+         // convergence (the joint solve of rigid bodies on structures gave such directions while
+         // its correction for the contacts was scaled wrong: a frame froze 3 mm above its piers
+@@ -246,7 +328,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             // G is at its minimum to machine precision: converged, so the lagged quantities
+             // are refreshed as below. (Stopping here without the refresh left a box starting
+             // exactly on a ramp without friction for its first step, found in F5.)
+-            if lag_updates == 3 || !coupling.update_lag(&states(members)) {
++            if following || lag_updates >= lag_cap() || !coupling.update_lag(&states(members)) {
+                 break;
+             }
+             lag_updates += 1;
+@@ -275,6 +357,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             std::mem::swap(&mut s.position, &mut v.work.trial_x);
+             std::mem::swap(&mut s.orientation, &mut v.work.trial_q);
+         }
++        if following {
++            objective += coupling.refresh_lag(&states(members));
++        }
+         // Remaining error: with convergence at rate ρ (measured from the last two steps)
+         // about step·ρ/(1 − ρ); before a rate is known, the step itself. A rate after one
+         // that showed no convergence (ρ ≥ 0.5) is not trusted: one sudden small step after
+@@ -291,10 +376,32 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             _ => moved,
+         };
+         (previous_move, previous_rate) = (moved, rate);
++        #[cfg(feature = "profile")]
++        if std::env::var_os("CREEER_TRACE").is_some() && members.len() >= 4 {
++            eprintln!(
++                "TRACE n {} it {iteration} first {first_alpha:.3} alpha {alpha:.3} moved {moved:.2e} remaining {remaining:.2e} tol {tolerance:.1e} following {following}",
++                members.len()
++            );
++        }
++        // A direction friction's coupling has tilted nearly flat (the search cut it to a tenth):
++        // λ stays where it is from here, and the step ends as a lagged one.
++        // So too where it stops converging: a contact pressed in one iterate and apart in the
++        // next can flip λ between them for good (a group of eight rocks moved 0.1 mm back and
++        // forth for 500 iterations).
++        #[allow(clippy::float_cmp)] // the full step, exactly
++        let full = alpha == 1.0;
++        stalled = if full && rate.is_some_and(|r| r > 0.9) { stalled + 1 } else { 0 };
++        if following && (alpha < 0.1 * first_alpha || stalled >= 3) {
++            (following, gave_up) = (false, true);
++            lbfgs.clear();
++        }
+         if remaining < tolerance {
+             // Converged with the lagged quantities: refresh them (at most 3 times) and go on
+             // if they moved (IPC's lagged friction iterations).
+-            if lag_updates == 3 || !coupling.update_lag(&states(members)) {
++            if following
++                || (lag_updates >= lag_cap() && gave_up)
++                || !coupling.update_lag(&states(members))
++            {
+                 break;
+             }
+             crate::profile::add(crate::profile::Slot::LagUpdates, 1);
+@@ -303,6 +410,11 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             lag_changed = true;
+             (previous_move, previous_rate) = (f64::INFINITY, None);
+             lbfgs.clear();
++            // From here λ follows every iterate: the refreshes' fixed point found by Newton.
++            if !gave_up && lag_updates >= follow_after() {
++                following = true;
++                terms = coupling.lag_terms(&states(members));
++            }
+         }
+         // (Backtracking, not a step stopped where a contact closes, says the matrix is off.)
+         if alpha < 0.25 * first_alpha && !refactored {
+@@ -337,9 +449,29 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             .map(|(old, new)| *old - *new)
+             .collect();
+         residual = new;
+-        if !lag_changed {
++        if !lag_changed && !following {
+             lbfgs.push(step, change);
+         }
+         members[0].1.timings.residual += t.elapsed();
+     }
++    #[cfg(feature = "profile")]
++    if std::env::var_os("CREEER_MEASURE_LAG").is_some() && coupling.lag_mismatch(&states(members)).1 > 0.05 {
++        crate::profile::add(crate::profile::Slot::LagOff, 1);
++    }
++}
++
++/// PROBE: how many refreshes of the lagged quantities a step may take (`CREEER_LAG_CAP`, 3).
++fn lag_cap() -> usize {
++    std::env::var("CREEER_LAG_CAP")
++        .ok()
++        .and_then(|s| s.parse().ok())
++        .unwrap_or(3)
++}
++
++/// PROBE: after how many lagged refreshes λ follows (`CREEER_FOLLOW_AFTER`, 1).
++fn follow_after() -> usize {
++    std::env::var("CREEER_FOLLOW_AFTER")
++        .ok()
++        .and_then(|s| s.parse().ok())
++        .unwrap_or(1)
+ }
+diff --git a/crates/creeer_physics/src/structure/mod.rs b/crates/creeer_physics/src/structure/mod.rs
+index 62f9f7e..dcac585 100644
+--- a/crates/creeer_physics/src/structure/mod.rs
++++ b/crates/creeer_physics/src/structure/mod.rs
+@@ -26,6 +26,7 @@ mod element;
+ mod element_tests;
+ mod factor;
+ mod flow;
++mod gmres;
+ pub mod group;
+ #[cfg(test)]
+ mod hardening_tests;
+@@ -34,6 +35,8 @@ mod heat;
+ mod heat_tests;
+ #[cfg(feature = "profile")]
+ mod hessian_check;
++#[cfg(feature = "profile")]
++mod hessian_oracle;
+ pub mod history;
+ mod lbfgs;
+ mod minimise;
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index bbfb757..e1a0d27 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -2,7 +2,8 @@
+ //! energy, its gradient, and the lagged normal forces of friction (see `mod.rs`).
+ 
+ use super::{CONVERGED, Carried, Contacts, Law, Memo, STICK_DISTANCE, Side, point};
+-use crate::structure::group::{Coupling, MemberState, NodeCoupling, StepInfo};
++
++use crate::structure::group::{Coupling, LagTerm, MemberState, NodeCoupling, StepInfo};
+ use creeer_math::glam::{DMat3, DVec3};
+ 
+ impl Coupling for Contacts {
+@@ -226,6 +227,29 @@ impl Coupling for Contacts {
+         changed
+     }
+ 
++    fn lag_mismatch(&self, states: &[MemberState<'_>]) -> (f64, f64) {
++        let geometry = self.geometry(states);
++        let (_, forces, _) = self.normal_forces(&geometry.gaps(), &geometry.measured, false);
++        let pairs: Vec<(f64, f64)> = self
++            .list
++            .iter()
++            .zip(&forces)
++            .filter(|(c, _)| c.friction > 0.0)
++            .map(|(c, &f)| (c.lambda, f))
++            .collect();
++        let total: f64 = pairs.iter().map(|p| p.1).sum();
++        if total <= 0.0 {
++            return (0.0, 0.0);
++        }
++        let off: f64 = pairs.iter().map(|p| (p.0 - p.1).abs()).sum();
++        let worst = pairs
++            .iter()
++            .filter(|p| p.1.max(p.0) > 0.01 * total)
++            .map(|p| (p.0 - p.1).abs() / p.1.max(p.0))
++            .fold(0.0, f64::max);
++        (off / total, worst)
++    }
++
+     /// Each contact's stiffness at the iteration's state: friction's exact Hessian at its slip
+     /// (a sliding contact's Coulomb force is constant along its slip: no stiffness there, only
+     /// across it; the secant μλ/slip in every direction made the matrix far too stiff along
+@@ -292,6 +316,18 @@ impl Coupling for Contacts {
+     fn carried(&mut self) -> Option<f64> {
+         self.left.take()
+     }
++
++    fn consistent(&self) -> bool {
++        true
++    }
++
++    fn refresh_lag(&mut self, states: &[MemberState<'_>]) -> f64 {
++        self.refresh(states)
++    }
++
++    fn lag_terms(&self, states: &[MemberState<'_>]) -> Vec<LagTerm> {
++        self.terms(states)
++    }
+ }
+ 
+ impl Contacts {
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 87409d0..255e884 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -33,6 +33,7 @@ mod dashpot;
+ mod geometry;
+ mod integrals;
+ pub mod law;
++mod lag;
+ mod layer;
+ mod matrix;
+ mod measure;
+diff --git a/crates/creeer_physics/src/world/contact/patch/stiffness.rs b/crates/creeer_physics/src/world/contact/patch/stiffness.rs
+index b799961..db01992 100644
+--- a/crates/creeer_physics/src/world/contact/patch/stiffness.rs
++++ b/crates/creeer_physics/src/world/contact/patch/stiffness.rs
+@@ -32,17 +32,7 @@ impl Patch {
+     /// (when capped), seen through the face's rigid motions.
+     fn in_series(&self, k: [[f64; 4]; 4], layer: DMat3) -> [[f64; 4]; 4] {
+         let b = |c: usize| DVec3::from(self.rigid[c]);
+-        // Kᵦ = K·B (4 × 3), Bᵀ·K·B (3 × 3).
+-        let kb: [DVec3; 4] = std::array::from_fn(|r| (0..4).map(|c| b(c) * k[r][c]).sum());
+-        let btkb = (0..4).fold(DMat3::ZERO, |m, r| {
+-            m + DMat3::from_cols(b(r) * kb[r].x, b(r) * kb[r].y, b(r) * kb[r].z)
+-        });
+-        let series: [[f64; 4]; 4] = if self.capped() {
+-            let inverse = (layer + btkb).inverse();
+-            std::array::from_fn(|r| std::array::from_fn(|c| k[r][c] - kb[r].dot(inverse * kb[c])))
+-        } else {
+-            k
+-        };
++        let series = self.series(k, layer);
+         // P = B·(Bᵀ·B)⁻¹·Bᵀ.
+         let btb = (0..4).fold(DMat3::ZERO, |m, r| {
+             m + DMat3::from_cols(b(r) * b(r).x, b(r) * b(r).y, b(r) * b(r).z)
+@@ -56,6 +46,48 @@ impl Patch {
+         std::array::from_fn(|r| std::array::from_fn(|c| (0..4).map(|m| ps[r][m] * p[m][c]).sum()))
+     }
+ 
++    /// The material's stiffness `k` between the corners in series with the limit `layer`
++    /// (when capped): K − K·B·(L + Bᵀ·K·B)⁻¹·Bᵀ·K.
++    fn series(&self, k: [[f64; 4]; 4], layer: DMat3) -> [[f64; 4]; 4] {
++        if !self.capped() {
++            return k;
++        }
++        let b = |c: usize| DVec3::from(self.rigid[c]);
++        // Kᵦ = K·B (4 × 3), Bᵀ·K·B (3 × 3).
++        let kb: [DVec3; 4] = std::array::from_fn(|r| (0..4).map(|c| b(c) * k[r][c]).sum());
++        let btkb = (0..4).fold(DMat3::ZERO, |m, r| {
++            m + DMat3::from_cols(b(r) * kb[r].x, b(r) * kb[r].y, b(r) * kb[r].z)
++        });
++        let inverse = (layer + btkb).inverse();
++        std::array::from_fn(|r| std::array::from_fn(|c| k[r][c] - kb[r].dot(inverse * kb[c])))
++    }
++
++    /// How the corners' forces change with their depths at `depths` (`measured`, `sigma` as
++    /// in [`Self::tangent`]): ∂F_k/∂δ_l itself, not seen through the face's rigid motions.
++    /// A face pressed along part of it shifts its load between its corners as it tilts, and
++    /// the forces' share outside its rigid motions is part of that (friction's normal forces
++    /// follow it, `contact/lag.rs`).
++    pub fn force_tangent(
++        &self,
++        depths: [f64; 4],
++        measured: &[f64],
++        (sigma, found): (DVec3, bool),
++    ) -> [[f64; 4]; 4] {
++        let offsets = self.offsets(depths, measured);
++        if !self.capped() {
++            return self.material(depths, &offsets).2;
++        }
++        let sigma = if found {
++            sigma
++        } else {
++            self.minimise(depths, &offsets, sigma).2
++        };
++        let layer = self.layer.at(sigma).2;
++        let shifted: [f64; 4] =
++            std::array::from_fn(|k| depths[k] - DVec3::from(self.rigid[k]).dot(sigma));
++        self.series(self.material(shifted, &offsets).2, layer)
++    }
++
+     /// The patch energy's stiffness between the corners at corner depths `depths` (and the
+     /// depths `measured` over curved ground): the material pressed there, in series with the
+     /// limit as loaded there. Where `effective` takes the whole face as pressed, this is the
+diff --git a/crates/creeer_physics/src/world/friction.rs b/crates/creeer_physics/src/world/friction.rs
+index e12b0b0..b5becb5 100644
+--- a/crates/creeer_physics/src/world/friction.rs
++++ b/crates/creeer_physics/src/world/friction.rs
+@@ -92,6 +92,17 @@ impl Carried {
+         force: DVec3,
+         gradient: &mut [Vec<DVec3>],
+     ) {
++        if let Self::Node { member, node, .. } = *self {
++            let g = self.gradient_at(states, force);
++            let half = gradient[member].len() / 2;
++            gradient[member][node] += DVec3::new(g[0], g[1], g[2]);
++            gradient[member][half + node] += DVec3::new(g[3], g[4], g[5]);
++        }
++    }
++
++    /// The gradient [`Self::add_gradient`] adds, on the node's translation and rotation
++    /// (zero for a fixed point).
++    pub fn gradient_at(&self, states: &[MemberState<'_>], force: DVec3) -> [f64; 6] {
+         if let Self::Node {
+             member,
+             node,
+@@ -100,10 +111,10 @@ impl Carried {
+         } = *self
+         {
+             let phi = so3::log(states[member].orientation[node] * q0.conjugate());
+-            let half = gradient[member].len() / 2;
+-            gradient[member][node] += force;
+-            gradient[member][half + node] +=
+-                so3::inverse_left_jacobian(phi).transpose() * arm0.cross(force);
++            let t = so3::inverse_left_jacobian(phi).transpose() * arm0.cross(force);
++            [force.x, force.y, force.z, t.x, t.y, t.z]
++        } else {
++            [0.0; 6]
+         }
+     }
+ }
+diff --git a/crates/creeer_physics/src/world/pass.rs b/crates/creeer_physics/src/world/pass.rs
+index c3130ba..16448ef 100644
+--- a/crates/creeer_physics/src/world/pass.rs
++++ b/crates/creeer_physics/src/world/pass.rs
+@@ -149,9 +149,22 @@ impl World {
+         work.par_iter_mut()
+             .for_each(|(bodies, contacts, anchors, group)| {
+                 let timer = crate::profile::start();
++                let t0 = std::time::Instant::now();
++                let before: u64 = bodies.iter().map(|b| b.solver.iterations_total).sum();
+                 stepping::step(bodies, contacts, dt);
+                 *anchors = anchor::after_step(bodies, group, contacts);
+                 timer.stop(crate::profile::Slot::GroupWorld);
++                #[cfg(feature = "profile")]
++                if std::env::var_os("CREEER_GROUPS").is_some() && bodies.len() > 1 {
++                    let after: u64 = bodies.iter().map(|b| b.solver.iterations_total).sum();
++                    eprintln!(
++                        "GROUP bodies {} contacts {} iterations {} ms {:.2}",
++                        bodies.len(),
++                        contacts.list.len(),
++                        after - before,
++                        t0.elapsed().as_secs_f64() * 1e3
++                    );
++                }
+             });
+         work.into_iter()
+             .map(|(_, contacts, anchors, g)| (g.clone(), contacts, anchors))

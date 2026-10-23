@@ -1,6 +1,5 @@
-//! The server: the world, the sessions of the clients connected to it, and their
-//! connections (renet's, carried in process for a singleplayer game and over UDP for a
-//! dedicated server).
+//! The server: the world, the sessions of the clients connected to it, and their connections
+//! (renet's, carried in process for a singleplayer game and over UDP for a dedicated server).
 //!
 //! A tick: what came from every client is taken in (a player joining, commands, inputs);
 //! every avatar is steered by its player's input for the tick; the world steps; and every
@@ -265,12 +264,12 @@ impl Server {
                             continue;
                         };
                         let result = if session.may_command() {
-                            self.world.apply(&command, Some(avatar))
+                            self.command(&command, avatar)
                         } else {
                             Err("too many commands".into())
                         };
                         if let Err(why) = result {
-                            self.events.push(Event::CommandRefused(player, why));
+                            self.refuse(id, player, why);
                         }
                     }
                     Ok(ClientMessage::Profile(on)) => {
@@ -342,6 +341,10 @@ impl Server {
     }
 
     fn send(&mut self) {
+        self.tell_swings();
+        self.tell_inventories();
+        let changed = self.world.take_changed();
+        let aged = self.world.take_aged();
         let world = &self.world;
         let at = world
             .ids()
@@ -353,17 +356,31 @@ impl Server {
         let changes = self.shapes.changes(bodies, world.tick);
         let seconds = f64::from(SEND_EVERY) * DT;
         for session in self.sessions.values_mut().filter(|s| s.player.is_some()) {
-            session.update_view(world, &grid, &mut self.shapes);
+            for id in &changed {
+                session.forget(*id);
+            }
+            session.update_view(world, &grid, &mut self.shapes, self.net_tick);
             for (id, change) in &changes {
                 session.plastic(*id, change);
             }
+            for (id, _) in &aged {
+                if let Some(age) = world.age_told(*id, self.net_tick) {
+                    session.age(*id, age);
+                }
+            }
             session.send(&mut self.renet, world, seconds, self.net_tick);
+            session.own(&mut self.renet, world);
         }
     }
 }
 
 #[cfg(test)]
+mod people_tests;
+#[cfg(test)]
 mod play_tests;
+mod reach;
+#[cfg(test)]
+mod reach_tests;
 #[cfg(test)]
 pub(crate) mod tests;
 

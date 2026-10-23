@@ -53,7 +53,10 @@ struct GpuChunk {
 
 /// Terrain chunks and the pipelines that draw them.
 pub(super) struct TerrainPass {
-    pipeline: wgpu::RenderPipeline,
+    /// Drawn alone, and after the depth prepass (ambient occlusion on).
+    pipeline: [wgpu::RenderPipeline; 2],
+    /// Depth only, for the prepass.
+    prepass: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     chunks: HashMap<u64, GpuChunk>,
     instances: wgpu::Buffer,
@@ -72,8 +75,11 @@ impl TerrainPass {
         shadow_sample_layout: &wgpu::BindGroupLayout,
         luts_layout: &wgpu::BindGroupLayout,
         cascade_layout: &wgpu::BindGroupLayout,
+        ao_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let source = concat!(
+            include_str!("../shaders/ao_sample.wgsl"),
+            "\n",
             include_str!("../shaders/atmosphere.wgsl"),
             "\n",
             include_str!("../shaders/lighting.wgsl"),
@@ -87,33 +93,36 @@ impl TerrainPass {
                 Some(globals_layout),
                 Some(shadow_sample_layout),
                 Some(luts_layout),
+                Some(ao_layout),
             ],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("terrain"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &vertex_layouts(),
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: scene_depth_state(),
-            multisample: scene_multisample(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(HDR_FORMAT.into())],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = |depth_stencil| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("terrain"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &vertex_layouts(),
+                },
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil,
+                multisample: scene_multisample(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(HDR_FORMAT.into())],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
         let shadow_module = shader(
             device,
             "terrain shadow",
@@ -143,8 +152,18 @@ impl TerrainPass {
             multiview_mask: None,
             cache: None,
         });
+        let prepass = prepass_pipeline(
+            device,
+            "terrain prepass",
+            globals_layout,
+            &module,
+            "vs_main",
+            &vertex_layouts(),
+            Some(wgpu::Face::Back),
+        );
         Self {
-            pipeline,
+            pipeline: [scene_depth_state(), after_prepass_depth_state()].map(pipeline),
+            prepass,
             shadow_pipeline,
             chunks: HashMap::new(),
             instances: instance_buffer(device, 256),
@@ -297,14 +316,25 @@ impl TerrainPass {
         pass: &mut wgpu::RenderPass<'_>,
         shadow_sampling: &wgpu::BindGroup,
         luts: &wgpu::BindGroup,
+        ao: &wgpu::BindGroup,
+        prepassed: bool,
     ) {
         if self.draws.is_empty() {
             return;
         }
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(&self.pipeline[usize::from(prepassed)]);
         pass.set_bind_group(1, shadow_sampling, &[]);
         pass.set_bind_group(2, luts, &[]);
+        pass.set_bind_group(3, ao, &[]);
         self.issue(pass, &self.draws);
+    }
+
+    /// Draws the camera's chunks into the depth prepass (globals bound by the caller).
+    pub(super) fn draw_prepass(&self, pass: &mut wgpu::RenderPass<'_>) {
+        if !self.draws.is_empty() {
+            pass.set_pipeline(&self.prepass);
+            self.issue(pass, &self.draws);
+        }
     }
 
     /// Draws the shadow casters of one cascade (globals and cascade bound by the caller).

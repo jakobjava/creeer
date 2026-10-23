@@ -1,12 +1,15 @@
 [package]
 name = "xtask"
-description = "Project automation: `cargo xtask ci`, `cargo xtask perf`."
+description = "Project automation: `cargo xtask ci`, `cargo xtask perf`, `cargo xtask art`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+# `art --check` compares models as geometry (G1.3b).
+creeer_art.workspace = true
+creeer_data.workspace = true
 
 [lints]
 workspace = true

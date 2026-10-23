@@ -47,6 +47,12 @@ impl Renderer {
             .map_or(0.0, |last| (now - last).as_secs_f32().min(0.25));
         let snap_exposure = snap_exposure || self.last_frame.is_none();
         self.last_frame = Some(now);
+        if let Some(timer) = &mut self.timer {
+            // Takes in the timestamps of frames the GPU has finished, without waiting.
+            let _ = self.device.poll(wgpu::PollType::Poll);
+            timer.collect();
+            timer.begin();
+        }
 
         // Upload meshes registered since the last frame.
         if let Some((vertices, indices)) = self.meshes.take_upload() {
@@ -57,6 +63,9 @@ impl Renderer {
         #[allow(clippy::cast_precision_loss)] // window sizes are far below 2^24
         let aspect = self.size.0 as f32 / self.size.1 as f32;
         let view_proj = frame.camera.view_projection(aspect);
+        // A length l at distance d spans l·focal/d pixels.
+        #[allow(clippy::cast_precision_loss)]
+        let focal = self.size.1 as f32 / (2.0 * (0.5 * frame.camera.fov_y).tan());
         let lighting = frame.lighting;
         let shadows_on = lighting.shadow_distance > 0.0;
         let basis = LightBasis::new(lighting.sun_direction);
@@ -114,8 +123,22 @@ impl Renderer {
             frame.scene,
             frame.camera,
             view_proj,
+            focal,
             shadows_on.then_some((&cascades, &basis)),
         );
+        self.skin.prepare(
+            &self.device,
+            &self.queue,
+            &frame.scene.characters,
+            frame.camera.position,
+            &Frustum::from_view_projection(view_proj),
+            shadows_on.then_some((&cascades, &basis)),
+            focal,
+            self.mesh_pass.palette().slot_base(),
+        );
+        for (slot, colours) in &self.skin.colours {
+            (self.mesh_pass.palette()).write_colours(&self.queue, *slot, colours);
+        }
         self.terrain.prepare(
             &self.device,
             &self.queue,
@@ -155,6 +178,10 @@ impl Renderer {
             );
         }
 
+        // The characters skinned, for every pass that draws them.
+        self.skin
+            .encode(&self.device, &mut encoder, self.timer.as_ref());
+
         // Pass 0: sun shadow cascades (cleared even when disabled, so sampling stays valid).
         self.shadows.encode(
             &mut encoder,
@@ -163,12 +190,17 @@ impl Renderer {
             &self.meshes,
             &self.mesh_pass.shadow_draws,
             &self.terrain,
+            &self.skin,
+            self.timer.as_ref(),
         );
 
-        // Pass 1: 3D scene into the multisampled HDR target, resolved to a single sample.
+        let prepassed = self.encode_occlusion(&mut encoder, frame.camera, aspect);
+
+        // Pass 1c: 3D scene into the multisampled HDR target, resolved to a single sample.
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene"),
+                timestamp_writes: self.timer.as_ref().and_then(|t| t.render("scene")),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.targets.hdr_msaa,
                     depth_slice: None,
@@ -182,7 +214,11 @@ impl Renderer {
                     view: &self.targets.depth,
                     depth_ops: Some(wgpu::Operations {
                         // Reversed-Z: 0 is infinitely far away.
-                        load: wgpu::LoadOp::Clear(0.0),
+                        load: if prepassed {
+                            wgpu::LoadOp::Load
+                        } else {
+                            wgpu::LoadOp::Clear(0.0)
+                        },
                         store: wgpu::StoreOp::Discard,
                     }),
                     stencil_ops: None,
@@ -190,12 +226,20 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            self.mesh_pass
-                .draw(&mut pass, &self.meshes, &self.shadows.sample_bind_group);
+            self.mesh_pass.draw(
+                &mut pass,
+                &self.meshes,
+                &self.shadows.sample_bind_group,
+                &self.ao.sample_bind_group,
+                prepassed,
+                &self.skin,
+            );
             self.terrain.draw(
                 &mut pass,
                 &self.shadows.sample_bind_group,
                 self.sky_pipeline.luts().1,
+                &self.ao.sample_bind_group,
+                prepassed,
             );
             if frame.sky.is_some_and(|s| s.sea.is_some()) {
                 self.sea.draw(&mut pass, self.sky_pipeline.luts().1);
@@ -207,13 +251,19 @@ impl Renderer {
         }
 
         // Measure the image and adapt the exposure (compute), then tonemap with it.
-        self.exposure
-            .encode(&mut encoder, &self.globals_bind_group, self.size);
+        self.exposure.encode(
+            &self.queue,
+            &mut encoder,
+            &self.globals_bind_group,
+            self.size,
+            self.timer.as_ref(),
+        );
 
         // Pass 2: tonemap HDR → output.
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("tonemap"),
+                timestamp_writes: self.timer.as_ref().and_then(|t| t.render("tonemap")),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output,
                     depth_slice: None,
@@ -234,6 +284,7 @@ impl Renderer {
             let mut pass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("ui"),
+                    timestamp_writes: self.timer.as_ref().and_then(|t| t.render("ui")),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: output,
                         depth_slice: None,
@@ -251,6 +302,9 @@ impl Renderer {
 
         if let Some(after) = after {
             after(&mut encoder);
+        }
+        if let Some(timer) = &mut self.timer {
+            timer.resolve(&mut encoder);
         }
         commands.push(encoder.finish());
         commands

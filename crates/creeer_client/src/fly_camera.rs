@@ -101,6 +101,11 @@ impl FlyCamera {
         self.up
     }
 
+    /// Whether the down key (Ctrl: the jetpack, walking) is held.
+    pub fn thrusting(&self) -> bool {
+        self.down
+    }
+
     /// Whether the fast key (Shift: run) is held.
     pub fn running(&self) -> bool {
         self.fast

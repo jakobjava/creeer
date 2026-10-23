@@ -7,16 +7,22 @@
 //! - camera-relative precision (move the scene 500 km from the origin; nothing jitters),
 //! - the F1 instancing budget (10,000 parts at 60 FPS).
 //!
+//! The planet sandbox is a survival game (G1.6b: the clothes worn and nothing else); started
+//! with `--creative`, it has the sandbox's tools, the jetpack and the creative kit.
+//!
 //! `creeer_client --screenshot <file.png> [--view <name>] [--far] [--no-factory] [--sun <deg>]
 //! [--time <s>] [--overlay <off|temperature|stress|utilisation>] [--physics <bridge|crash|stacking|rock>
 //! [--physics-time <s>]]` renders
 //! one frame headless (no window) and saves it, for reviewing rendering changes.
-//! `creeer_client --bench <frames> [--view <name>] [--no-factory]` renders frames headless
+//! `creeer_client --bench <frames> [--view <name>] [--no-factory] [--players <glb> <n>]` renders frames headless
 //! and reports frame-time percentiles (CPU scene build + GPU, no vsync).
+//! `creeer_client --style-board <file.png>` and `creeer_client --shimmer [--frames <n>]` judge
+//! the look (G1.3): the crate at its ages, and how much of the image flickers in slow motion.
+//! `creeer_client --icon <model> [--out <dir>]` renders an item's icons (G1.3h).
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
-//! `creeer_client --planet <orbit|high|low|coast|surface|tunnel|night> <file.png> [--sun <deg>]`, and
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night> <file.png> [--sun <deg>]`, and
 //! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
 //!
 //! The F4 solar-system sandbox (button in the Sandbox window): a generated solar system with
@@ -28,6 +34,7 @@
 //! `creeer_client --connect <address:port> [--name <player>]` of a dedicated server
 //! (`creeer_server`), joined at once, walking.
 
+mod animate;
 mod app;
 mod circuit_bench;
 mod content;
@@ -36,14 +43,24 @@ mod control_rigs;
 mod demo;
 mod drive_bench;
 mod fly_camera;
+mod golden;
+mod gpu_passes;
 mod headless;
+mod held;
 mod hulls;
+mod icon_image;
+mod icons;
+mod inventory_ui;
 mod lab;
 mod lab_ellingham;
 mod lab_plots;
 mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
+mod loose_view;
+mod models;
+mod people;
+mod people_ground;
 mod physics_bench;
 mod physics_drive;
 mod physics_fluids;
@@ -53,16 +70,26 @@ mod physics_profile;
 mod physics_rocks;
 mod physics_sandbox;
 mod physics_scenes;
+#[cfg(test)]
+mod physics_states;
 mod physics_view;
+#[cfg(test)]
+mod physics_view_tests;
+mod planet_aim;
+mod planet_camera;
 mod planet_net;
 mod planet_shot;
 mod planet_ui;
 mod planet_view;
+mod players_bench;
 mod powerhouse_panel;
 mod profiler_ui;
 #[cfg(test)]
 mod profiler_ui_tests;
 mod sandbox;
+mod shimmer;
+mod style_board;
+mod style_people;
 mod system_bench;
 mod system_cmd;
 mod system_frame;
@@ -71,6 +98,7 @@ mod system_shot;
 mod system_sim;
 mod system_ui;
 mod system_view;
+mod tree_view;
 mod water_bench;
 
 use app::App;
@@ -119,7 +147,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|i| args.get(i + 1))
             .map_or("overview", String::as_str);
         let factory = !args.iter().any(|a| a == "--no-factory");
-        return bench(frames, view, factory);
+        // Stand-in players (G1.3f): `--players <glb> <count>`.
+        let players = (args.iter().position(|a| a == "--players"))
+            .map(|i| {
+                let path = args.get(i + 1).ok_or("--players needs a model")?;
+                let count = (args.get(i + 2))
+                    .and_then(|n| n.parse().ok())
+                    .ok_or("--players needs a count")?;
+                Ok::<_, &str>((path.as_str(), count))
+            })
+            .transpose()?;
+        // Skinned engineers (G1.3e): `--people <count>`.
+        let people = (args.iter().position(|a| a == "--people"))
+            .and_then(|i| args.get(i + 1))
+            .map_or(Ok(0), |n| n.parse().map_err(|_| "--people needs a count"))?;
+        return bench(
+            frames,
+            view,
+            factory,
+            players,
+            (headless::ao_quality(&args)?, people),
+        );
     }
     if args.iter().any(|a| a == "--physics-bench") {
         return physics_bench::bench(&args).map_err(Into::into);
@@ -129,6 +177,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--planet") {
         return planet_shot::run(&args);
+    }
+    if args.iter().any(|a| a == "--style-board") {
+        return style_board::run(&args);
+    }
+    if args.iter().any(|a| a == "--icon") {
+        return icons::run(&args);
+    }
+    if args.iter().any(|a| a == "--shimmer") {
+        return shimmer::run(&args);
     }
     if args.iter().any(|a| a == "--system-bench") {
         return system_bench::run();

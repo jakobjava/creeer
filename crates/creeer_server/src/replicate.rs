@@ -8,8 +8,9 @@
 //! while a frame swaying by a millimetre is drawn rigid. Every client is told the same
 //! shape (the one [`Shapes`] keeps), so the changes fit what each has.
 
+use crate::world::looks::Drawn;
 use creeer_math::glam::DVec3;
-use creeer_net::entity::{EntityId, Frame, Kind, Shape as NetShape};
+use creeer_net::entity::{EntityId, Frame, Kind, Matter, Shape as NetShape};
 use creeer_net::message::Plastic;
 use creeer_net::quant::{BodyState, POSITION_SCALE, Quantised};
 use creeer_physics::structure::Structure;
@@ -23,25 +24,69 @@ pub const SHAPE_TOLERANCE: f64 = 0.01;
 /// Ticks between two shape changes of one structure at least.
 pub const SHAPE_EVERY: u64 = 6;
 
-/// What a client draws a body as (`player` whose avatar it is).
-pub fn kind(body: &Body, player: Option<&str>) -> Kind {
-    if let Some(player) = player {
-        let radius = match body.shapes.first() {
-            Some((_, Shape::Sphere { radius })) => *radius,
-            _ => creeer_sim::avatar::RADIUS,
-        };
-        return Kind::Avatar {
-            radius,
-            player: player.to_owned(),
-        };
+/// What a client draws a body as (as `drawn`; `joined`: a joint's side).
+pub fn kind(body: &Body, drawn: &Drawn, joined: bool) -> Kind {
+    match drawn {
+        Drawn::Person {
+            player,
+            look,
+            fallen,
+            wields,
+            carries,
+        } => {
+            return Kind::Character {
+                player: player.clone(),
+                look: look.clone(),
+                fallen: *fallen,
+                wields: *wields,
+                carries: *carries,
+            };
+        }
+        Drawn::Segment { person, index } => {
+            if let [(0, shape)] = body.shapes.as_slice() {
+                return Kind::Segment {
+                    person: *person,
+                    index: *index,
+                    shape: net_shape(shape),
+                };
+            }
+        }
+        Drawn::Tree(part) => return Kind::Tree(part.clone()),
+        Drawn::Thing | Drawn::Item { .. } => {}
     }
+    let colour = match drawn {
+        Drawn::Item { colour } => Some(*colour),
+        _ => None,
+    };
     match body.shapes.as_slice() {
-        [(0, shape)] if body.structure.element_count() == 0 => Kind::Body(match shape {
-            Shape::Box { half } => NetShape::Box(*half),
-            Shape::Sphere { radius } => NetShape::Sphere(*radius),
-            Shape::Hull(hull) => NetShape::Hull(hull.vertices().to_vec()),
-        }),
+        [(0, shape)] if body.structure.element_count() == 0 => {
+            Kind::Body(net_shape(shape), matter(body, joined, colour))
+        }
         _ => Kind::Structure(frame(&body.structure, &offsets(&body.structure))),
+    }
+}
+
+/// A shape as clients are told it.
+fn net_shape(shape: &Shape) -> NetShape {
+    match shape {
+        Shape::Box { half } => NetShape::Box(*half),
+        Shape::Sphere { radius } => NetShape::Sphere(*radius),
+        Shape::Hull(hull) => NetShape::Hull(hull.vertices().to_vec()),
+    }
+}
+
+/// What a rigid body is made of, for a client's prediction (ADR-0025): a lone rigid body may
+/// be predicted; a joint's side (a ragdoll's) or a held one (a character's) is the server's
+/// alone.
+fn matter(body: &Body, joined: bool, colour: Option<[u8; 3]>) -> Matter {
+    let s = body.surface;
+    Matter {
+        mass: body.structure.total_mass(),
+        friction: body.friction,
+        restitution: body.restitution,
+        surface: [s.youngs_modulus, s.poisson_ratio, s.rounding],
+        predicted: !joined && !body.held,
+        colour,
     }
 }
 
@@ -100,10 +145,16 @@ pub struct Shapes {
 impl Shapes {
     /// What a client is told when structure `id` (`body`) comes into view: its shape as
     /// every client was told it (the changes since come to all alike).
-    pub fn kind(&mut self, id: EntityId, body: &Body, player: Option<&str>, tick: u64) -> Kind {
+    pub fn kind(
+        &mut self,
+        id: EntityId,
+        body: &Body,
+        (drawn, joined): (&Drawn, bool),
+        tick: u64,
+    ) -> Kind {
         let s = &body.structure;
-        if player.is_some() || s.element_count() == 0 {
-            return kind(body, player);
+        if *drawn != Drawn::Thing || s.element_count() == 0 {
+            return kind(body, drawn, joined);
         }
         let told = self.told.entry(id).or_insert_with(|| {
             let (members, broken, _) = members(s);

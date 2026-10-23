@@ -30,9 +30,18 @@ fn the_base_pack_validates_with_only_nasas_two_known_steps() {
     assert!(report.warnings.iter().any(|w| w.contains("ALN(L)")));
     let count = |kind| report.counts.iter().find(|(k, _)| *k == kind).map(|c| c.1);
     assert_eq!(count("species"), Some(1798));
-    assert_eq!(count("materials"), Some(9));
+    assert_eq!(count("materials"), Some(13));
+    assert_eq!(count("tree species"), Some(3));
     assert_eq!(count("planets"), Some(4));
     assert_eq!(count("systems"), Some(1));
+    // The palette (G1.3a; the eyes' and the worn coverall's tokens since, G1.3f), with no
+    // style warnings beyond its approved exceptions.
+    assert_eq!(count("palette tokens"), Some(49));
+    // The models (G1.3b): the crate, the engineer (G1.3f), its skeleton the ragdoll's and its
+    // wearables its pieces (no errors above), and the four tools (G1.4c), each in the tools'
+    // table.
+    assert_eq!(count("models"), Some(6));
+    assert_eq!(count("tools"), Some(4));
 }
 
 #[test]
@@ -55,12 +64,13 @@ fn the_example_mod_replaces_adds_and_validates() {
     assert!(report.ok(), "{:#?}", report.errors);
     assert_ne!(data.hash(), Data::base().hash());
     let materials = MaterialTable::from_data(&data).unwrap();
-    assert_eq!(materials.all().len(), 10);
+    assert_eq!(materials.all().len(), 15);
     // Replaced in place (same position), new ones after.
     let granite = materials.get("granite").unwrap();
     assert!((granite.youngs_modulus.at(20.0) - 60e9).abs() < 1.0);
     assert_eq!(materials.all()[8].id, "granite");
-    assert_eq!(materials.all()[9].id, "basalt");
+    assert_eq!(materials.all()[13].id, "oak_green");
+    assert_eq!(materials.all()[14].id, "basalt");
     // A new rock goes after the base's, so the base's rocks keep their terrain ids.
     let base_rocks = RockTable::from_data(&Data::base()).unwrap();
     let rocks = RockTable::from_data(&data).unwrap();
@@ -147,5 +157,57 @@ fn the_validator_catches_each_kind_of_broken_data() {
     one_error(
         &broken("system", &[("systems/default.ron", &system)]),
         &["system: systems/default.ron", "planets/missing.ron"],
+    );
+    // A palette token with a malformed colour (G1.3a).
+    let token = r##"[(name: "steel", group: Material, colour: Hex("#8a8d9"), metalness: 1.0)]"##;
+    one_error(
+        &broken("palette", &[("art/palette.ron", token)]),
+        &["palette: art/palette.ron", "steel", "bad colour"],
+    );
+    // A model whose file is no glTF, and one whose file is not there (G1.3b).
+    let manifest = r#"[(name: "junk", file: "models/junk.glb", class: Item, bounds: ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)))]"#;
+    one_error(
+        &broken(
+            "junk",
+            &[("models/models.ron", manifest), ("models/junk.glb", "text")],
+        ),
+        &["junk: models/junk.glb", "not a glTF"],
+    );
+    one_error(
+        &broken("lost", &[("models/models.ron", manifest)]),
+        &["models/junk.glb", "no pack has this file"],
+    );
+}
+
+#[test]
+fn a_mods_look_is_checked_against_the_style_as_warnings() {
+    // Steel recoloured a saturated green: it loads, and the style's checks say why it is off.
+    let mods = std::env::temp_dir().join(format!("creeer_validate_{}_look", std::process::id()));
+    let _ = std::fs::remove_dir_all(&mods);
+    let root = mods.join("look");
+    std::fs::create_dir_all(root.join("art")).unwrap();
+    std::fs::write(
+        root.join("pack.ron"),
+        "Pack(name: \"look\", version: \"1\", requires: [\"base\"])",
+    )
+    .unwrap();
+    let token = r##"[(name: "steel", group: Material, colour: Hex("#40e040"), metalness: 1.0)]"##;
+    std::fs::write(root.join("art/palette.ron"), token).unwrap();
+    let data = Data::open(&repository("data"), std::slice::from_ref(&mods)).unwrap();
+    let report = validate(&data);
+    let _ = std::fs::remove_dir_all(&mods);
+    assert!(report.ok(), "{:#?}", report.errors);
+    let style: Vec<&String> = (report.warnings.iter())
+        .filter(|w| w.starts_with("art style: steel"))
+        .collect();
+    assert!(style.iter().any(|w| w.contains("chroma")), "{style:#?}");
+    // Base steel's exception against gravel is not needed by the green: it says so.
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("no longer needed")),
+        "{:#?}",
+        report.warnings
     );
 }

@@ -4,7 +4,7 @@ A realistic-physics building and engineering sandbox: smooth procedural planets,
 
 The game runs on a custom engine written in Rust. See [`plan.md`](plan.md) for the full design and roadmap, and [`docs/adr/`](docs/adr) for the decision records.
 
-**Status:** Phase A. F0 (engine skeleton), F1 (renderer core), F2 (physics core), F3 (planets & terrain), F4 (orbital mechanics & solar system: n-body orbits, a generated solar system, time warp, the map) and F5 (networking & persistence: an authoritative server, in process for singleplayer or dedicated over UDP; versioned saves) and F6 (simulation domains: heat, electricity, drivetrains, chemistry, fluids, logic) complete. Performance and maximum realism, together, are paramount: every scene must run in real time without simplifying its physics.
+**Status:** Phase A. F0 (engine skeleton), F1 (renderer core), F2 (physics core), F3 (planets & terrain), F4 (orbital mechanics & solar system: n-body orbits, a generated solar system, time warp, the map) and F5 (networking & persistence: an authoritative server, in process for singleplayer or dedicated over UDP; versioned saves) and F6 (simulation domains: heat, electricity, drivetrains, chemistry, fluids, logic) complete. Performance and maximum realism, together, are paramount: every scene must run in real time without simplifying its physics. Research comes before building: every design starts from a survey of how others have solved it (papers, engines, games), recorded in its ADR (`docs/adr/README.md`).
 
 ## Building
 
@@ -30,3 +30,4 @@ cargo run -p creeer_client --release -- --connect 127.0.0.1:27015 --name ada   #
 - `xtask/`: project automation.
 - `data/`: game content (materials, reactions, parts, planets, solar systems) as RON files.
 - `docs/adr/`: architecture decision records. `docs/physics/`: derivations and validation reports.
+- `docs/art-style.md`: how the game looks (the authority). `docs/blender-mcp.md`: making models in Blender, driven by Claude through the MCP.

@@ -154,6 +154,33 @@ fn the_hash_follows_content_not_line_ends_or_listing() {
 }
 
 #[test]
+fn binary_files_come_from_the_last_pack_and_count_in_the_hash() {
+    let root = scratch("binary");
+    let base = pack(&root, "base", "", &[("models/m.glb", "base bytes")]);
+    std::fs::write(base.join("models/skipped.png"), [1, 2, 3]).unwrap();
+    let alone = Data::open(&base, &[]).unwrap();
+    assert_eq!(alone.binary("models/m.glb").unwrap(), b"base bytes");
+    // Only the listed binary kinds are read: an image is not content.
+    assert!(alone.binary("models/skipped.png").is_err());
+    assert!(alone.file("models/m.glb").is_err());
+    let mods = root.join("mods");
+    pack(&mods, "m", "", &[("models/m.glb", "mod bytes")]);
+    let both = Data::open(&base, &[mods]).unwrap();
+    assert_eq!(both.binary("models/m.glb").unwrap(), b"mod bytes");
+    assert_eq!(both.origin("models/m.glb"), Some("m"));
+    assert_ne!(alone.hash(), both.hash());
+    // Bytes are kept as they are: a CR LF in a binary is not a line end.
+    let crlf = pack(
+        &root.join("crlf"),
+        "base",
+        "",
+        &[("models/m.glb", "a\r\nb")],
+    );
+    let data = Data::open(&crlf, &[]).unwrap();
+    assert_eq!(data.binary("models/m.glb").unwrap(), b"a\r\nb");
+}
+
+#[test]
 fn the_watcher_sees_a_changed_file() {
     let root = scratch("watch");
     let base = pack(&root, "base", "", &[("x.ron", "1")]);

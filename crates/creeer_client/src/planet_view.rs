@@ -35,6 +35,8 @@ pub enum Tool {
     Tunnel,
     /// Drop a crate.
     Crate,
+    /// Drop a box light enough to carry (G1.4f).
+    Box,
     /// Drop a ball.
     Ball,
     /// Put down a steel frame.
@@ -45,11 +47,12 @@ pub enum Tool {
 
 impl Tool {
     /// All tools with their names.
-    pub const ALL: [(Self, &'static str); 7] = [
+    pub const ALL: [(Self, &'static str); 8] = [
         (Self::Dig, "dig"),
         (Self::Fill, "fill"),
         (Self::Tunnel, "tunnel"),
         (Self::Crate, "crate"),
+        (Self::Box, "box"),
         (Self::Ball, "ball"),
         (Self::Frame, "frame"),
         (Self::Powerhouse, "powerhouse"),
@@ -64,6 +67,13 @@ pub struct PlanetView {
     pub session: PlanetSession,
     /// Whether the player walks their avatar (else the camera flies free).
     pub walking: bool,
+    /// The tool the player asked to hold (G1.4c), by its index in the tools' table.
+    pub wielding: Option<u8>,
+    /// Whether the inventory window is shown (G1.6a), and what lies loose about (G1.6c).
+    pub inventory: bool,
+    pub loose: Option<crate::loose_view::LooseView>,
+    /// The trees about (G1.7).
+    pub trees: Option<crate::tree_view::TreeView>,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -119,12 +129,13 @@ pub fn render_mesh(terrain: &Terrain, key: ChunkKey) -> Option<TerrainMeshData> 
 }
 
 impl PlanetView {
-    /// A singleplayer game on the reference planet (its server hosted in this process).
+    /// A singleplayer game on the reference planet (its server hosted in this process),
+    /// creative or survival (G1.6b).
     ///
     /// # Errors
     /// If the planet cannot be loaded.
-    pub fn singleplayer() -> Result<Self, String> {
-        let (session, terrain) = PlanetSession::singleplayer()?;
+    pub fn singleplayer(creative: bool) -> Result<Self, String> {
+        let (session, terrain) = PlanetSession::singleplayer(creative)?;
         Ok(Self::new(session, terrain))
     }
 
@@ -143,6 +154,10 @@ impl PlanetView {
         Self {
             session,
             walking: false,
+            wielding: None,
+            inventory: false,
+            loose: crate::loose_view::LooseView::new(&terrain),
+            trees: crate::tree_view::TreeView::new(&terrain),
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),
@@ -161,7 +176,16 @@ impl PlanetView {
 
     /// What there is to draw now.
     pub fn snapshot(&self) -> PhysicsSnapshot {
-        self.session.snapshot()
+        let mut out = self.session.snapshot();
+        // What lies loose, as boxes in its colours (G1.6c).
+        if let Some(loose) = &self.loose {
+            let rocks = &self.terrain.planet().geology.rocks;
+            loose.draw(&mut out, &self.session.connection, rocks);
+        }
+        if let Some(trees) = &self.trees {
+            trees.draw(&mut out, &self.session.connection);
+        }
+        out
     }
 
     /// Chunks in memory, and still to come (queued or being built).
@@ -173,6 +197,11 @@ impl PlanetView {
     /// chunks the simulation's edits touched, and chooses the chunks to draw.
     pub fn update_terrain(&mut self, renderer: &mut Renderer, camera: DVec3) {
         let generation = self.session.connection.edits_generation;
+        if let Some(loose) = &mut self.loose {
+            let edits = (generation, self.session.connection.edits.log().len());
+            loose.update(&self.terrain, camera, edits);
+        }
+        self.update_trees(camera);
         if generation != self.seen_edits.0 {
             // All edits were replaced: rebuild everything that is cached.
             self.streamer
@@ -215,6 +244,15 @@ impl PlanetView {
         let flat = |v: DVec3| (v - up * v.dot(up)).normalize_or_zero();
         (flat(camera.forward()) * forward + flat(camera.right()) * right).normalize_or_zero()
             * speed
+    }
+
+    /// The jetpack's thrust asked for (a fraction of its most): up, leaning the way `walk` goes,
+    /// while `on`.
+    pub fn thrust(&self, walk: DVec3, on: bool) -> DVec3 {
+        let Some(avatar) = self.session.connection.avatar().filter(|_| on) else {
+            return DVec3::ZERO;
+        };
+        (avatar.position.normalize() + walk.normalize_or_zero() * 0.4).clamp_length_max(1.0)
     }
 
     /// Puts the camera behind and above the avatar, looking the way it looks, never in the
@@ -290,8 +328,25 @@ impl PlanetView {
         None
     }
 
-    /// Applies the active tool where the camera looks.
+    /// Applies the active tool where the camera looks; walking with a tool or anything in the
+    /// hands (G1.6d: a stone, a made axe), strikes what the crosshair is on within reach (G1.4e);
+    /// with bare hands, digs the ground within reach (G1.5).
     pub fn use_tool(&mut self, camera: &Camera) {
+        let armed = self.wielding.is_some() || self.carrying();
+        let target = (self
+            .walking
+            .then(|| crate::planet_aim::target(self, camera)))
+        .flatten()
+        .filter(|t| t.in_reach && (armed || t.aimed.body.is_none() && t.loose.is_none()));
+        if self.walking && (armed || target.as_ref().is_some_and(|t| t.tree.is_none())) {
+            match target.map(|t| (t.loose, t.tree, t.aimed)) {
+                Some((Some(loose), ..)) => self.session.connection.strike_loose(loose),
+                Some((_, Some((tree, z)), _)) => self.session.connection.strike_tree(tree, z),
+                Some((.., aimed)) => self.session.connection.strike(aimed),
+                None => {}
+            }
+            return;
+        }
         let dir = camera.forward();
         let Some(hit) = self.raycast(camera.position, dir, TOOL_REACH) else {
             return;
@@ -316,6 +371,7 @@ impl PlanetView {
                 radius: 2.5,
             }),
             Tool::Crate => return self.send(Command::Crate(hit + up * 2.0)),
+            Tool::Box => return self.send(Command::Box(hit + up * 0.5)),
             Tool::Ball => return self.send(Command::Ball(hit + up * 2.0)),
             // The server lifts it clear of the ground (on a slope, of its corners too).
             Tool::Frame => return self.send(Command::Frame(hit)),
@@ -341,20 +397,4 @@ impl PlanetView {
         place(ground + up * height, heading * c - up * s)
     }
 }
-
-/// A camera at `position` looking along `forward`, level with the local horizon.
-pub fn place(position: DVec3, forward: DVec3) -> Camera {
-    place_up(position, forward, position.normalize())
-}
-
-/// A camera at `position` looking along `forward`, level with the horizon of `up` (for
-/// frames not centred on a planet).
-pub fn place_up(position: DVec3, forward: DVec3, up: DVec3) -> Camera {
-    let mut camera = Camera::new(position);
-    camera.level_to(up);
-    // Yaw and pitch of `forward` in the horizon frame.
-    let local = camera.frame.inverse() * forward.normalize();
-    camera.yaw = det::atan2(-local.x, -local.z);
-    camera.pitch = det::asin(local.y.clamp(-0.995, 0.995));
-    camera
-}
+pub use crate::planet_camera::{place, place_up};

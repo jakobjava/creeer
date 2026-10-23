@@ -5,3 +5,6 @@
 
 # Terrain edits saved by the planet sandbox
 planet_edits.bin
+
+# Python bytecode from the Blender scripts in art/
+__pycache__/

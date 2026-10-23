@@ -1,0 +1,10 @@
+Measured and rejected (G1.4a): Bollo's clamp dropped, so an offset's velocity away from zero
+is kept. On the probe (`animate/probe_tests.rs`) the worst spikes were unchanged to 0.1 rad/s,
+before and after the takeoff was fixed by carrying the feet with the body; the clamp, tested and
+never overshooting, stays.
+
+--- a/crates/creeer_client/src/animate/inertial.rs
++++ b/crates/creeer_client/src/animate/inertial.rs
+@@ fn new(direction: DVec3, x0: f64, v0: f64, length: f64) -> Self {
+-        let v0 = v0.min(0.0);
++        // let v0 = v0.min(0.0);

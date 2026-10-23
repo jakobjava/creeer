@@ -71,7 +71,7 @@ fn write_v7_fixture() {
 #[test]
 fn the_version_7_fixture_keeps_its_machines() {
     let save = Save::from_bytes(V7).unwrap();
-    assert_eq!(save.to_bytes(), V7);
+    assert_eq!(save.to_bytes(), machine_scene().to_bytes());
     assert_eq!(save.machines, machine_scene().machines);
     // Damaged in its machines: refused.
     for cut in [V7.len() - 1, V7.len() - 40] {

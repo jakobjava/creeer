@@ -145,8 +145,15 @@ impl Contacts {
             .flat_map(|c| [on_rigid(c.a), on_rigid(c.b)])
             .flatten()
             .max()
-            .map_or(0, |m| m + 1);
+            .map_or(0, |m| m + 1)
+            .max(self.joints.rigid.len());
         let mut h6 = vec![[[0.0; 6]; 6]; members];
+        // The joints' own blocks (`world/joint/group.rs`).
+        for (m6, add) in h6.iter_mut().zip(&self.joints.rigid) {
+            for (row, add) in m6.iter_mut().zip(add) {
+                row.iter_mut().zip(add).for_each(|(x, y)| *x += y);
+            }
+        }
         for (i, c) in self.list.iter().enumerate() {
             for (arm_a, arm_b, h) in self.arms_and_blocks(i) {
                 for (side, arm) in [(c.a, arm_a), (c.b, arm_b)] {

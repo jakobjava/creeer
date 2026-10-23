@@ -160,7 +160,7 @@ pub fn step_group_with(
                 })
             });
             let surplus = left.map_or(0.0, |left| {
-                (coupling.elastic_energy(&states(members)) - left).max(0.0)
+                (coupling.found_energy(&states(members)) - left).max(0.0)
             });
             for (s, v) in members.iter_mut() {
                 v.save(s);
@@ -174,7 +174,7 @@ pub fn step_group_with(
                     || s.load != v.previous_load
                     || !s.dashpots.is_empty()
                     || !s.added_mass.is_empty()
-            });
+            }) || coupling.driven();
             let start: Vec<Start> = if acting {
                 members
                     .iter()
@@ -189,10 +189,11 @@ pub fn step_group_with(
             } else {
                 Vec::new()
             };
-            // The energy after a substep by `scheme`, less the work the loads' potential misses.
-            let net = |members: &[Member<'_>], energy: f64, scheme: Scheme| {
+            // The energy after a substep by `scheme`, less the work the loads' potential misses
+            // and the work of the coupling's moved points (`driven`).
+            let net = |members: &[Member<'_>], energy: f64, scheme: Scheme, driven: f64| {
                 if acting {
-                    energy - unbooked_work(members, &start, scheme == Scheme::Newmark)
+                    energy - unbooked_work(members, &start, scheme == Scheme::Newmark) - driven
                 } else {
                     energy
                 }
@@ -201,13 +202,13 @@ pub fn step_group_with(
             substep(members, coupling, scheme);
             let t = Instant::now();
             let (after, active_after) = group_energy(members, coupling, true);
-            let after = net(members, after, scheme);
+            let after = net(members, after, scheme, coupling.driven_work());
             members[0].1.timings.guard += t.elapsed();
             // The slack scales with the energy in motion before or after the step, whichever
             // is larger: a body starting from rest in a varying field (planet gravity) makes
             // a genuine second-order energy error that the 1 nJ floor alone would reject.
             let limit = before + ENERGY_SLACK * active.max(active_after) + 1e-9;
-            let mut after = after;
+            let (mut after, mut removed) = (after, false);
             if after > limit {
                 // Fall back to ever more dissipative schemes; in non-convex contact situations
                 // even BDF2 can gain a little. As a last resort the excess is taken from the
@@ -223,18 +224,25 @@ pub fn step_group_with(
                         v.fallbacks += 1;
                     }
                     substep(members, coupling, fallback);
-                    after = net(members, group_energy(members, coupling, true).0, fallback);
+                    let energy = group_energy(members, coupling, true).0;
+                    after = net(members, energy, fallback, coupling.driven_work());
                     if after <= limit {
                         break;
                     }
                 }
                 if after > limit {
                     remove_kinetic(members, after - before);
-                    after = before;
+                    (after, removed) = (before, true);
                 }
             }
             if after > limit - surplus {
                 remove_kinetic(members, after - (before - surplus));
+                removed = true;
+            }
+            // Velocities scaled down leave a joint whose points are moved out of step with
+            // them (its load stopped, its point going on): projected again (G1.4f).
+            if removed && coupling.driven() {
+                coupling.project(members);
             }
             for (s, v) in members.iter_mut() {
                 v.snapshot.end_x.clone_from(&s.position);
@@ -338,6 +346,7 @@ fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Sche
     for (s, v) in members.iter_mut() {
         v.finish_substep(s);
     }
+    coupling.project(members);
 }
 
 /// Scales all velocities of the group so that its kinetic energy drops by `excess`.

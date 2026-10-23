@@ -7,6 +7,7 @@ use creeer_math::glam::{DMat3, DVec3};
 
 impl Coupling for Contacts {
     fn begin(&mut self, info: &StepInfo<'_>) {
+        self.joints.begin(info);
         self.kept.clear();
         self.beta = info.beta;
         self.smoothing = STICK_DISTANCE;
@@ -134,16 +135,24 @@ impl Coupling for Contacts {
             .sum();
         let twist = self.twist_energy(states);
         timer.stop(Slot::ContactRest);
-        elastic + damping + friction + twist
+        elastic + damping + friction + twist + self.joints.energy(states)
     }
 
     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
         let geometry = self.geometry(states);
         self.normal_forces(&geometry.gaps(), &geometry.measured, false)
             .0
+            + self.joints.elastic_energy(states)
+    }
+
+    fn found_energy(&self, states: &[MemberState<'_>]) -> f64 {
+        let geometry = self.geometry(states);
+        self.normal_forces(&geometry.gaps(), &geometry.measured, false)
+            .0
     }
 
     fn add_gradient(&self, states: &[MemberState<'_>], gradient: &mut [Vec<DVec3>]) {
+        self.joints.add_gradient(states, gradient);
         let geometry = self.geometry(states);
         let (at, measured, gaps) = (&geometry.at, &geometry.measured, geometry.gaps());
         let (_, forces, points) = self.normal_forces(&gaps, measured, true);
@@ -213,9 +222,13 @@ impl Coupling for Contacts {
     }
 
     fn update_lag(&mut self, states: &[MemberState<'_>]) -> bool {
+        // The joints' multipliers (their augmented Lagrangian) with friction's normal forces.
+        let mut changed = self.joints.update_lag(states);
+        if changed {
+            self.rigid = self.rigid_blocks();
+        }
         let geometry = self.geometry(states);
         let (_, forces, _) = self.normal_forces(&geometry.gaps(), &geometry.measured, false);
-        let mut changed = false;
         for (c, &force) in self.list.iter_mut().zip(&forces) {
             // Only friction uses λ: contacts without friction never need a refresh.
             if c.friction > 0.0 && (force - c.lambda).abs() > 0.05 * force.max(c.lambda) {
@@ -233,6 +246,7 @@ impl Coupling for Contacts {
     /// contact's at its depth now, a face's as it presses now. The rigid bodies' matrices are
     /// made again from them.
     fn relinearise(&mut self, states: &[MemberState<'_>]) -> bool {
+        self.joints.make_blocks(states);
         let e = self.smoothing;
         let geometry = self.geometry(states);
         let gaps = geometry.gaps();
@@ -278,11 +292,25 @@ impl Coupling for Contacts {
     }
 
     fn rigid_coupling(&self) -> Vec<NodeCoupling> {
-        self.coupling_blocks()
+        let mut blocks = self.coupling_blocks();
+        // The joints' blocks, added to the contacts' between the same nodes.
+        for (a, b, m6) in &self.joints.cross {
+            match blocks.iter_mut().find(|c| (c.0, c.1) == (*a, *b)) {
+                Some(c) => {
+                    for (row, add) in c.2.iter_mut().zip(m6) {
+                        row.iter_mut().zip(add).for_each(|(x, y)| *x += y);
+                    }
+                }
+                None => blocks.push((*a, *b, *m6)),
+            }
+        }
+        blocks
     }
 
     fn node_stiffness(&self, member: usize) -> Vec<(usize, DMat3)> {
-        self.node_blocks(member)
+        let mut blocks = self.node_blocks(member);
+        blocks.extend(self.joints.node_blocks(member));
+        blocks
     }
 
     fn rigid_stiffness(&self, member: usize) -> [[f64; 6]; 6] {
@@ -291,6 +319,18 @@ impl Coupling for Contacts {
 
     fn carried(&mut self) -> Option<f64> {
         self.left.take()
+    }
+
+    fn project(&mut self, members: &mut [crate::structure::group::Member<'_>]) {
+        self.joints.project(members);
+    }
+
+    fn driven(&self) -> bool {
+        self.joints.driven()
+    }
+
+    fn driven_work(&self) -> f64 {
+        self.joints.driven_work()
     }
 }
 

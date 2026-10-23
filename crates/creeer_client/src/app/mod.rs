@@ -37,17 +37,16 @@ struct Running {
     egui_state: egui_winit::State,
     sim: SimThread<OrbitSandbox>,
     physics: physics_view::PhysicsView,
-    /// The circuit bench (F6.3) and the drivetrain bench (F6.4).
+    /// F6's benches: circuits (F6.3), drivetrains (F6.4), the chemistry lab (F6.5), pipes
+    /// (F6.6), the control panel (F6.7) and the powerhouse (F6.8).
     circuit: crate::circuit_bench::CircuitBench,
     drive: crate::drive_bench::DriveBench,
-    /// The chemistry lab (F6.5).
     lab: crate::lab::Lab,
-    /// The pipe bench (F6.6).
     water: crate::water_bench::WaterBench,
-    /// The control panel (F6.7).
     controls: crate::control_panel::ControlPanel,
-    /// The powerhouse (F6.8).
     powerhouse: crate::powerhouse_panel::PowerhousePanel,
+    /// The players' characters (G1.3e), where the packs have the engineer.
+    people: Option<crate::people::People>,
     /// The profiler window (F9).
     profiler: crate::profiler_ui::ProfilerWindow,
     /// The planet sandbox, when it is open (instead of the tech demo).
@@ -201,7 +200,11 @@ impl Running {
         .map_err(|e| e.to_string())?;
         let info = renderer.adapter_info();
         let adapter_label = format!("{} ({:?})", info.name, info.backend);
-        let meshes = DemoMeshes::register(&mut renderer.meshes);
+        let meshes = DemoMeshes::register_for(&mut renderer);
+        let people = crate::people::People::register(&mut renderer);
+        let people = people
+            .inspect_err(|e| eprintln!("no people drawn: {e}"))
+            .ok();
 
         let egui_ctx = egui::Context::default();
         #[allow(clippy::cast_possible_truncation)] // DPI scale factors are small (1.0–4.0)
@@ -232,6 +235,7 @@ impl Running {
             profiler: crate::profiler_ui::ProfilerWindow::default(),
             planet: None,
             system: None,
+            people,
             meshes,
             scene: Scene::default(),
             lines: DebugLines::default(),
@@ -250,14 +254,6 @@ impl Running {
             watcher: crate::content::watcher(),
             content: content_reload::ContentStatus::default(),
         })
-    }
-
-    fn scene_origin(&self) -> DVec3 {
-        if self.settings.far_origin {
-            FAR_ORIGIN
-        } else {
-            DVec3::ZERO
-        }
     }
 
     /// Recomputes object lighting from the atmosphere when the camera height or the sun has
@@ -368,6 +364,7 @@ impl Running {
             self.water.window(ui.ctx());
             self.controls.window(ui.ctx());
             self.powerhouse.window(ui.ctx());
+            self.profiler.set_gpu(self.renderer.gpu_times());
             self.profiler.window(ui.ctx(), None);
             if let Some(heatmap) = self.settings.overlay.heatmap() {
                 let (title, unit) = self.settings.overlay.label();

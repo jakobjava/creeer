@@ -1,0 +1,158 @@
+diff --git a/crates/creeer_physics/src/structure/rigid_system.rs b/crates/creeer_physics/src/structure/rigid_system.rs
+index cd88231..b50e9ee 100644
+--- a/crates/creeer_physics/src/structure/rigid_system.rs
++++ b/crates/creeer_physics/src/structure/rigid_system.rs
+@@ -19,6 +19,20 @@ fn block(m: &[[f64; 6]; 6], bi: usize, bj: usize) -> DMat3 {
+     }))
+ }
+ 
++/// The buffers a joint matrix is built in, kept for the next (nine allocations a Newton
++/// iteration of a ragdoll, found by a sampled profile's heap stacks).
++#[derive(Default)]
++struct Scratch {
++    index: Vec<usize>,
++    list: Vec<usize>,
++    crosses: Vec<(usize, usize, [[f64; 6]; 6])>,
++    edges: Vec<(usize, usize)>,
++    off: Vec<DMat3>,
++    diag: Vec<DMat3>,
++    positions: Vec<DVec3>,
++    masks: Vec<[DMat3; 2]>,
++}
++
+ /// The rigid bodies of a group, solved together.
+ pub(super) struct RigidSystem {
+     /// Group member index of each rigid body in the system.
+@@ -26,6 +40,7 @@ pub(super) struct RigidSystem {
+     /// The blocks the matrix couples (its pattern).
+     edges: Vec<(usize, usize)>,
+     chol: Cholesky,
++    scratch: Scratch,
+ }
+ 
+ impl RigidSystem {
+@@ -42,49 +57,52 @@ impl RigidSystem {
+ 
+     /// As [`Self::new`], factorising with `old`'s analysis where the matrix couples the same
+     /// blocks (each Newton iteration of a pile analysed its pattern anew, a fifth of the
+-    /// iteration's cost, F6).
++    /// iteration's cost, F6), and in its buffers.
+     pub(super) fn again(
+         old: Option<Self>,
+         members: &[Member<'_>],
+         coupling: &dyn Coupling,
+         rigid: &[Option<[[f64; 6]; 6]>],
+     ) -> Option<Self> {
+-        let mut index = vec![usize::MAX; members.len()];
+-        let mut list = Vec::new();
++        let (mut s, old) = match old {
++            Some(o) => (o.scratch, Some((o.members, o.edges, o.chol))),
++            None => (Scratch::default(), None),
++        };
++        s.index.clear();
++        s.index.resize(members.len(), usize::MAX);
++        s.list.clear();
+         for (m, matrix) in rigid.iter().enumerate() {
+             if matrix.is_some() {
+-                index[m] = list.len();
+-                list.push(m);
++                s.index[m] = s.list.len();
++                s.list.push(m);
+             }
+         }
+-        let crosses: Vec<(usize, usize, [[f64; 6]; 6])> = coupling
+-            .rigid_coupling()
+-            .into_iter()
+-            .filter(|&((a, na), (b, nb), _)| {
+-                a != b && na == 0 && nb == 0 && index[a] != usize::MAX && index[b] != usize::MAX
+-            })
+-            .map(|((a, _), (b, _), m)| (index[a], index[b], m))
+-            .collect();
+-        if crosses.is_empty() {
++        let index = &s.index;
++        s.crosses.clear();
++        s.crosses.extend(
++            (coupling.rigid_coupling().into_iter())
++                .filter(|&((a, na), (b, nb), _)| {
++                    a != b && na == 0 && nb == 0 && index[a] != usize::MAX && index[b] != usize::MAX
++                })
++                .map(|((a, _), (b, _), m)| (index[a], index[b], m)),
++        );
++        if s.crosses.is_empty() {
+             return None;
+         }
+         let b2 = members[0].1.work.beta * members[0].1.work.beta;
+-        let mut edges = Vec::with_capacity(list.len() + 4 * crosses.len());
+-        let mut off = Vec::with_capacity(edges.capacity());
+-        let mut diag = Vec::with_capacity(2 * list.len());
+-        let mut positions = Vec::with_capacity(2 * list.len());
++        let (edges, off, diag, positions) =
++            (&mut s.edges, &mut s.off, &mut s.diag, &mut s.positions);
++        (edges.clear(), off.clear(), diag.clear(), positions.clear());
+         // Fixed axes (rows and columns of identity in the own matrices) must not couple.
+-        let masks: Vec<[DMat3; 2]> = list
+-            .iter()
+-            .map(|&m| {
+-                let s = &members[m].0;
+-                [
+-                    DMat3::from_diagonal(s.free_translation[0]),
+-                    DMat3::from_diagonal(s.free_rotation[0]),
+-                ]
+-            })
+-            .collect();
+-        for (r, &m) in list.iter().enumerate() {
++        s.masks.clear();
++        s.masks.extend(s.list.iter().map(|&m| {
++            let st = &members[m].0;
++            [
++                DMat3::from_diagonal(st.free_translation[0]),
++                DMat3::from_diagonal(st.free_rotation[0]),
++            ]
++        }));
++        for (r, &m) in s.list.iter().enumerate() {
+             let own = rigid[m].as_ref().expect("rigid");
+             diag.push(block(own, 0, 0));
+             diag.push(block(own, 1, 1));
+@@ -93,21 +111,34 @@ impl RigidSystem {
+             let p = members[m].0.position[0];
+             positions.extend([p, p]);
+         }
+-        for (a, b, cross) in &crosses {
++        for (a, b, cross) in &s.crosses {
+             for (bi, bj) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                 edges.push((2 * a + bi, 2 * b + bj));
+-                off.push(masks[*a][bi] * block(cross, bi, bj) * masks[*b][bj] * b2);
++                off.push(s.masks[*a][bi] * block(cross, bi, bj) * s.masks[*b][bj] * b2);
+             }
+         }
+-        let mut chol = match old {
+-            Some(old) if old.members == list && old.edges == edges => old.chol,
+-            _ => Cholesky::new(SymbolicCholesky::new(&positions, &edges)),
++        let (mut chol, old_members, old_edges) = match old {
++            Some((m, e, chol)) if m == s.list && e == s.edges => (chol, m, e),
++            Some((m, e, _)) => (
++                Cholesky::new(SymbolicCholesky::new(&s.positions, &s.edges)),
++                m,
++                e,
++            ),
++            None => (
++                Cholesky::new(SymbolicCholesky::new(&s.positions, &s.edges)),
++                Vec::new(),
++                Vec::new(),
++            ),
+         };
+-        chol.factor(&diag, &off).ok()?;
++        chol.factor(&s.diag, &s.off).ok()?;
++        // This matrix's members and pattern kept; the last's buffers to build the next in.
++        let members_now = std::mem::replace(&mut s.list, old_members);
++        let edges_now = std::mem::replace(&mut s.edges, old_edges);
+         Some(Self {
+-            members: list,
+-            edges,
++            members: members_now,
++            edges: edges_now,
+             chol,
++            scratch: s,
+         })
+     }
+ 

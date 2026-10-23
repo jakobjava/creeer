@@ -1,0 +1,216 @@
+//! The multipliers' refresh by Newton's method (P1): the change that makes every joint hold
+//! at once, to first order, by the step's own matrix.
+//!
+//! The augmented Lagrangian's refresh adds k·c to each multiplier. Its error then shrinks
+//! by K/(k + K) a refresh, K being what else holds the joint's bodies along it: against stiff
+//! contacts (a ragdoll on the ground) K is far beyond k, and each refresh gained a third,
+//! every refresh the step allows taken. The minimum after a change Δλ moves the joints'
+//! values by −S·Δλ to first order, S = J·H⁻¹·Jᵀ (H the step's matrix, the penalties in it):
+//! Δλ = S⁻¹·c makes them hold. In one dimension that is λ += (k + K)·c, the plain refresh
+//! with K added.
+//!
+//! The rows taken are those of the constraints that act: the points', a hinge's axes', and
+//! the limits pressed (λ + k·g > 0). Rows the others leave without effect of their own (a
+//! hinge's axes' misalignment along the axis itself: no turn moves it) are found as the
+//! Cholesky factorisation's vanishing pivots and keep the plain refresh.
+
+use super::group::Joints;
+use super::rows::{At, Scalar};
+use crate::structure::group::{LagResponses, LagRow, MemberState};
+use crate::world::joint::Multipliers;
+use creeer_math::glam::DVec3;
+
+/// A constraint whose multiplier a refresh updates: its joint's point gap's component, a
+/// hinge's misalignment along one of the directions across its axis, or its limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Which {
+    Point(usize),
+    Across(usize),
+    Limit(usize),
+}
+
+/// The constraints of a joint measured as `at` that act, with their scalars. A hinge's
+/// misalignment is taken along its two directions across the axis: its three components by
+/// world axis have two directions between them (their rows dependent), and the third, nearly
+/// vanishing, took changes of 10⁵ N·m from a gap of micro-radians.
+pub(super) fn acting<'a>(
+    at: &'a At,
+    m: &'a Multipliers,
+    kr: f64,
+) -> impl Iterator<Item = (Which, Scalar)> + 'a {
+    let points = (at.point.iter().enumerate()).map(|(k, s)| (Which::Point(k), *s));
+    let across = (at.axis.iter().zip(at.across.iter())).flat_map(|(axis, dirs)| {
+        dirs.iter().enumerate().map(move |(i, d)| {
+            let mut s = Scalar::default();
+            for (k, component) in axis.iter().enumerate() {
+                s.value += d[k] * component.value;
+                for r in 0..6 {
+                    s.a[r] += d[k] * component.a[r];
+                    s.b[r] += d[k] * component.b[r];
+                }
+            }
+            (Which::Across(i), s)
+        })
+    });
+    let limits = (at.limits.iter().enumerate())
+        .filter_map(move |(k, s)| s.map(|s| (k, s)))
+        .filter(move |(k, s)| m.limits[*k] + kr * s.value > 0.0)
+        .map(|(k, s)| (Which::Limit(k), s));
+    points.chain(across).chain(limits)
+}
+
+/// A pivot below this share of what a unit row gets from its penalty alone (1/k) is taken
+/// as vanishing: the row has no effect of its own (a point's still has against contacts 10⁴
+/// times stiffer than its penalty).
+const VANISHING: f64 = 1e-4;
+
+impl Joints {
+    /// The rows of the constraints that act, joint by joint, as [`acting`] lists them.
+    pub(crate) fn lag_rows(&self, states: &[MemberState<'_>]) -> Vec<LagRow> {
+        let mut rows = Vec::new();
+        for (j, (_, joint)) in self.list.iter().enumerate() {
+            let at = joint.measured(states, true);
+            for (_, s) in acting(&at, &joint.multipliers, self.stiffness_of(j).1) {
+                rows.push([Some((joint.a, s.a)), joint.b.map(|b| (b, s.b))]);
+            }
+        }
+        rows
+    }
+
+    /// Each acting constraint's change of multiplier by Newton's method, in [`acting`]'s
+    /// order joint by joint (`at`: the joints measured with their rows); none where its row
+    /// has no effect of its own.
+    pub(super) fn newton_changes(
+        &self,
+        at: &[At],
+        lag: LagResponses<'_>,
+    ) -> Vec<Option<f64>> {
+        let mut rows: Vec<(LagRow, f64, f64)> = Vec::new();
+        for (j, (_, joint)) in self.list.iter().enumerate() {
+            let (kt, kr) = self.stiffness_of(j);
+            for (w, s) in acting(&at[j], &joint.multipliers, kr) {
+                let k = if matches!(w, Which::Point(_)) { kt } else { kr };
+                rows.push(([Some((joint.a, s.a)), joint.b.map(|b| (b, s.b))], s.value, k));
+            }
+        }
+        let n = rows.len();
+        if n != lag.responses.len() {
+            return vec![None; n];
+        }
+        // S = J·H⁻¹·Jᵀ, row a's dot with the response to row b.
+        let dot = |row: &LagRow, x: &[DVec3]| -> f64 {
+            row.iter()
+                .flatten()
+                .map(|&((m, node), r)| {
+                    let at = lag.offsets[m];
+                    let half = (lag.offsets.get(m + 1).copied().unwrap_or(x.len()) - at) / 2;
+                    let (t, w) = (x[at + node], x[at + half + node]);
+                    r[0] * t.x + r[1] * t.y + r[2] * t.z + r[3] * w.x + r[4] * w.y + r[5] * w.z
+                })
+                .sum()
+        };
+        let mut s = vec![0.0; n * n];
+        for a in 0..n {
+            for b in 0..=a {
+                let v = 0.5 * (dot(&rows[a].0, &lag.responses[b]) + dot(&rows[b].0, &lag.responses[a]));
+                s[a * n + b] = v;
+                s[b * n + a] = v;
+            }
+        }
+        let c: Vec<f64> = rows.iter().map(|r| r.1).collect();
+        if std::env::var_os("TRACE_LAG").is_some() {
+            let k = self.stiffness_of(0);
+            for a in 0..n.min(6) {
+                eprintln!("    row {a}: c {:.2e} S_rr {:.3e} S_rr*kt {:.3}", c[a], s[a * n + a], s[a * n + a] * k.0);
+            }
+        }
+        let floor: Vec<f64> = rows.iter().map(|r| VANISHING / r.2).collect();
+        let out = solve_dependent(&mut s, n, &c, &floor);
+        if std::env::var_os("TRACE_LAG").is_some() {
+            let k = self.stiffness_of(0);
+            for a in 0..n.min(3) {
+                eprintln!("    change {a}: exact {:?} plain {:.3e}", out[a], k.0 * c[a]);
+            }
+            let big = out.iter().flatten().fold(0.0f64, |m, x| m.max(x.abs()));
+            eprintln!("    n {n}, largest change {big:.3e}, kept {}", out.iter().flatten().count());
+            let mut list = Vec::new();
+            for (j, (_, joint)) in self.list.iter().enumerate() {
+                for (w, _) in acting(&at[j], &joint.multipliers, self.stiffness_of(j).1) {
+                    list.push((j, w));
+                }
+            }
+            for (i, x) in out.iter().enumerate() {
+                if let Some(x) = x && x.abs() > 1e4 {
+                    eprintln!("      big: joint {} {:?} change {x:.3e} c {:.2e} plain {:.2e}", list[i].0, list[i].1, c[i], rows[i].2 * c[i]);
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Solves `s`·x = `c` (`s` symmetric positive semi-definite, n×n, overwritten) by Cholesky,
+/// a row whose pivot is below its `floor` dropped (its x none).
+fn solve_dependent(s: &mut [f64], n: usize, c: &[f64], floor: &[f64]) -> Vec<Option<f64>> {
+    let mut kept = vec![true; n];
+    for i in 0..n {
+        for k in 0..i {
+            if kept[k] {
+                let l = s[i * n + k];
+                s[i * n + i] -= l * l;
+            }
+        }
+        let pivot = s[i * n + i];
+        if !(pivot > floor[i]) {
+            kept[i] = false;
+            for r in i + 1..n {
+                s[r * n + i] = 0.0;
+            }
+            continue;
+        }
+        let root = pivot.sqrt();
+        s[i * n + i] = root;
+        for r in i + 1..n {
+            let mut v = s[r * n + i];
+            for k in 0..i {
+                if kept[k] {
+                    v -= s[r * n + k] * s[i * n + k];
+                }
+            }
+            s[r * n + i] = v / root;
+        }
+    }
+    // L·y = c, then Lᵀ·x = y, over the rows kept.
+    let mut y = vec![0.0; n];
+    for i in (0..n).filter(|&i| kept[i]) {
+        let mut v = c[i];
+        for k in (0..i).filter(|&k| kept[k]) {
+            v -= s[i * n + k] * y[k];
+        }
+        y[i] = v / s[i * n + i];
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev().filter(|&i| kept[i]) {
+        let mut v = y[i];
+        for r in (i + 1..n).filter(|&r| kept[r]) {
+            v -= s[r * n + i] * x[r];
+        }
+        x[i] = v / s[i * n + i];
+    }
+    (0..n).map(|i| kept[i].then_some(x[i])).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::solve_dependent;
+
+    #[test]
+    fn a_dependent_row_is_dropped_and_the_rest_solved() {
+        // Rows 0 and 2 the same constraint twice: the second dropped.
+        let mut s = vec![4.0, 1.0, 4.0, 1.0, 3.0, 1.0, 4.0, 1.0, 4.0];
+        let x = solve_dependent(&mut s, 3, &[5.0, 4.0, 5.0], &[1e-9; 3]);
+        assert_eq!(x[2], None);
+        let (a, b) = (x[0].unwrap(), x[1].unwrap());
+        assert!((4.0 * a + b - 5.0).abs() < 1e-12 && (a + 3.0 * b - 4.0).abs() < 1e-12);
+    }
+}

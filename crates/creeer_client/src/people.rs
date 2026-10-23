@@ -1,0 +1,268 @@
+//! The players' characters as the client draws them (G1.3e, ADR-0026 decisions 6–8): the
+//! engineer skinned on his ragdoll's fifteen bones and his fingers' thirty (G1.4b), in his look's
+//! outfit and colours. Standing,
+//! every bone is the body's frame (G1.3g animates the limbs); fallen, each bone is its segment.
+
+use crate::animate::feet::Ground;
+use crate::animate::hands::{Hands, Hold};
+use crate::animate::{Animator, Body};
+use creeer_art::Palette;
+use creeer_art::model::{Entry, Model};
+use creeer_art::wearable::{Wearable, visible};
+use creeer_math::Frame64;
+use creeer_math::glam::{DQuat, DVec3};
+use creeer_net::entity::Look;
+use creeer_render::skin::{OutfitId, SkinnedId, SkinnedMeshData};
+use creeer_render::{Character, Material, Renderer, Scene};
+use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT, finger_bones};
+use std::collections::HashMap;
+
+/// The catalogue's axe (`tools.ron`), whose swing a made tool's is drawn with.
+const AXE: u8 = 2;
+
+/// The grey the player's colour is laid on at half strength (`art-style.md` §3.3, FFF-218;
+/// `art/engineer/outfit.py`).
+const JACKET_BASE: [u8; 3] = [0x5c, 0x5a, 0x57];
+const JACKET_STRENGTH: f64 = 0.5;
+
+/// A person to draw: who (a key the animation knows them by), how they look, and their body.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrawnPerson {
+    pub key: u32,
+    pub look: Look,
+    pub body: Body,
+    /// The tool in its right hand (G1.4c: an index into the tools' table), if any.
+    pub wields: Option<u8>,
+    /// How long ago it began the swing it is in (G1.4e; s), if any.
+    pub swing: Option<f64>,
+    /// Whether it carries a load in both hands (G1.4f).
+    pub carrying: bool,
+    /// A made tool in its right hand (G1.10): its pieces about its centre, and where the hand
+    /// holds it there.
+    pub made: Option<(Vec<creeer_net::message::Part>, DVec3)>,
+}
+
+/// Where a bone of the model is drawn from: a segment of the ragdoll, or a finger bone
+/// (`bones::finger_bones`' order).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Source {
+    Segment(usize),
+    Finger(usize),
+}
+
+/// The engineer, registered with a renderer, and his outfits.
+pub struct People {
+    palette: Palette,
+    model: Model,
+    wearables: Vec<Wearable>,
+    id: SkinnedId,
+    /// For each of the model's bones, the ragdoll segment it is or the finger bone (G1.4b).
+    bone_of: Vec<Source>,
+    /// The fingers at rest, if the model has them.
+    hands: Option<Hands>,
+    /// The tools a hand may hold (G1.4c).
+    held: crate::held::Held,
+    outfits: HashMap<Vec<String>, OutfitId>,
+    /// Their animation (G1.3g).
+    animator: Animator,
+}
+
+impl std::fmt::Debug for People {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("People")
+            .field("outfits", &self.outfits.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl People {
+    /// Loads the engineer from the packs into `renderer`, with the outfits worn so far: the
+    /// starting outfit and the base layer alone ("naked").
+    ///
+    /// # Errors
+    /// If the packs have no engineer, or his bones are not the ragdoll's segments.
+    pub fn register(renderer: &mut Renderer) -> Result<Self, String> {
+        let data = crate::content::data();
+        let palette = Palette::from_data(&data)?;
+        let entry = (Entry::all(&data)?.into_iter())
+            .find(|e| e.name == "engineer")
+            .ok_or("the packs have no engineer")?;
+        let bytes = data.binary(&entry.file).map_err(|e| e.to_string())?;
+        let model = Model::read(bytes, &palette)?;
+        let fingers = finger_bones();
+        let bone_of = (model.bones.iter())
+            .map(|b| {
+                (SEGMENT_NAMES
+                    .iter()
+                    .position(|s| *s == b.name)
+                    .map(Source::Segment))
+                .or_else(|| {
+                    fingers
+                        .iter()
+                        .position(|f| *f == b.name)
+                        .map(Source::Finger)
+                })
+            })
+            .collect::<Option<Vec<Source>>>()
+            .filter(|v| v.iter().filter(|s| matches!(s, Source::Segment(_))).count() == 15)
+            .ok_or("the engineer's bones are not the ragdoll's segments and the fingers")?;
+        let hands = Hands::new(&model.bones);
+        let held = crate::held::Held::register(&mut renderer.meshes);
+        let levels = entry.levels.ok_or("the engineer's levels have no errors")?;
+        let id = renderer.add_skinned(&SkinnedMeshData::new(&model, levels));
+        let mut people = Self {
+            palette,
+            wearables: Wearable::all(&data)?,
+            model,
+            id,
+            bone_of,
+            hands,
+            held,
+            outfits: HashMap::new(),
+            animator: Animator::default(),
+        };
+        for worn in [&STARTING_OUTFIT[..], &["base_layer"]] {
+            people.add_outfit(renderer, worn);
+        }
+        Ok(people)
+    }
+
+    /// Makes the outfit `worn` (wearables by name) drawable: its visible parts merged into one
+    /// index list a level (`wearable::visible`). Once per outfit.
+    pub fn add_outfit(&mut self, renderer: &mut Renderer, worn: &[&str]) {
+        let names: Vec<String> = worn.iter().map(|&w| w.to_owned()).collect();
+        if !self.outfits.contains_key(&names) {
+            let parts = visible(&self.model, &self.wearables, worn);
+            let outfit = renderer.add_outfit(self.id, &parts);
+            self.outfits.insert(names, outfit);
+        }
+    }
+
+    /// The people into `scene` as the renderer draws them this frame, `dt` seconds after the
+    /// last, animated on `ground`, with the tools they hold (those no longer drawn are
+    /// forgotten). Returns the pieces of the made tools in their hands (G1.10), as boxes (centre,
+    /// turn, half extents, colour) for the caller to draw with the world's.
+    pub fn draw(
+        &mut self,
+        people: &[DrawnPerson],
+        dt: f64,
+        ground: &dyn Ground,
+        scene: &mut Scene,
+    ) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
+        let mut in_hands = Vec::new();
+        let keys: Vec<u32> = people.iter().map(|p| p.key).collect();
+        self.animator.retain(&keys);
+        for p in people {
+            // A tool carried in the right hand: the fingers closed on its handle at its balance.
+            let tool =
+                (p.wields).and_then(|t| self.held.tool(t).map(|tool| (t, tool.carry_radius)));
+            // A made tool swung as the catalogue's axe is timed (its own swing is the server's).
+            let swung = p.wields.or(p.made.as_ref().map(|_| AXE));
+            let swing = (swung.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
+            self.animator.swing(p.key, swing);
+            self.animator.carrying(p.key, p.carrying);
+            let bones = self.animator.bones(p.key, &p.body, dt, ground);
+            let made = p
+                .made
+                .as_ref()
+                .map(|(parts, grip)| (parts, *grip, haft(parts)));
+            let right = match (tool, &made) {
+                (Some((_, radius)), _) => Hold::Grip(radius),
+                (None, Some((.., radius))) => Hold::Grip(*radius),
+                _ => Hold::Relaxed,
+            };
+            if let (Some((parts, grip, radius)), Some(hands)) = (made, &self.hands) {
+                let frame = bones[5] * hands.grip(0, radius);
+                in_hands.extend(in_hand(parts, grip, frame));
+            }
+            scene
+                .characters
+                .push(self.holding(&p.look, &bones, [right, Hold::Relaxed]));
+            if let (Some((t, _)), Some(hands)) = (tool, &self.hands)
+                && let Some((mesh, instance)) = self.held.instance(t, hands, bones[5])
+            {
+                scene.add(mesh, instance);
+            }
+        }
+        in_hands
+    }
+
+    /// Someone looking `look` with `bones` (the ragdoll's order) as the renderer draws them. An
+    /// outfit not registered is drawn as the starting one (outfits change from G1.6 on, when
+    /// wearables are items).
+    pub fn character(&self, look: &Look, bones: &[Frame64]) -> Character {
+        self.holding(look, bones, [Hold::Relaxed; 2])
+    }
+
+    /// Someone looking `look` with `bones` (the ragdoll's order), the hands held `hold` (right,
+    /// left), as the renderer draws them.
+    pub fn holding(&self, look: &Look, bones: &[Frame64], hold: [Hold; 2]) -> Character {
+        let start: Vec<String> = STARTING_OUTFIT.iter().map(|&w| w.to_owned()).collect();
+        let outfit = (self.outfits.get(&look.outfit))
+            .or_else(|| self.outfits.get(&start))
+            .copied()
+            .expect("the starting outfit is registered");
+        let fingers = (self.hands.as_ref()).map_or_else(Vec::new, |h| h.pose(bones, hold));
+        Character {
+            outfit,
+            bones: (self.bone_of.iter())
+                .map(|source| match *source {
+                    Source::Segment(s) => bones.get(s),
+                    Source::Finger(f) => fingers.get(f),
+                })
+                .map(|b| b.copied().unwrap_or(Frame64::IDENTITY))
+                .collect(),
+            colours: self.colours(look),
+            material: Material::dielectric([1.0; 3], 0.8),
+        }
+    }
+
+    /// The linear colours of `look`'s jacket, skin and hair: the player's colour laid on the
+    /// jacket's grey at half strength, as the preview does; an index past a list its last.
+    pub fn colours(&self, look: &Look) -> [[f32; 3]; 3] {
+        let pick = |list: &[(String, creeer_art::colour::Srgb)], k: u8| {
+            list.get(usize::from(k))
+                .or(list.last())
+                .map_or([0.5; 3], |(_, c)| c.linear())
+        };
+        let grey = creeer_art::colour::Srgb(JACKET_BASE).linear();
+        let player = pick(&self.palette.players, look.colour);
+        let jacket = std::array::from_fn(|i| grey[i] + (player[i] - grey[i]) * JACKET_STRENGTH);
+        #[allow(clippy::cast_possible_truncation)] // colours to the GPU's f32
+        let narrow = |c: [f64; 3]| c.map(|x| x as f32);
+        [
+            narrow(jacket),
+            narrow(pick(&self.palette.skin, look.skin)),
+            narrow(pick(&self.palette.hair, look.hair)),
+        ]
+    }
+}
+
+/// A made tool's haft's radius (m): its longest piece's thinnest half extent (a hand's grip
+/// closes on it), 16 mm if it has none.
+fn haft(parts: &[creeer_net::message::Part]) -> f64 {
+    (parts.iter())
+        .max_by(|a, b| a.half.max_element().total_cmp(&b.half.max_element()))
+        .map_or(0.016, |p| p.half.min_element())
+}
+
+/// A made tool's pieces (about its centre, `grip` where the hand holds it) placed in a hand's
+/// grip `frame` (`Hands::grip`: +y along the handle, +z towards the working end): its haft (its
+/// x) along the handle, its head (its +y) the working end.
+fn in_hand(
+    parts: &[creeer_net::message::Part],
+    grip: DVec3,
+    frame: Frame64,
+) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
+    let r = DQuat::from_mat3(&creeer_math::glam::DMat3::from_cols(
+        DVec3::Y,
+        DVec3::Z,
+        DVec3::X,
+    ));
+    (parts.iter())
+        .map(|p| {
+            let at = frame.transform_point(r * (p.at - grip));
+            (at, frame.rotation * r * p.turn, p.half, p.colour)
+        })
+        .collect()
+}

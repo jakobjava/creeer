@@ -1,0 +1,1453 @@
+diff --git a/crates/creeer_physics/src/structure/coupling.rs b/crates/creeer_physics/src/structure/coupling.rs
+index 27e95c7..33a58a6 100644
+--- a/crates/creeer_physics/src/structure/coupling.rs
++++ b/crates/creeer_physics/src/structure/coupling.rs
+@@ -34,6 +34,28 @@ pub struct StepInfo<'a> {
+ /// 6×6 block over (translation, rotation), rows of the first.
+ pub type NodeCoupling = ((usize, usize), (usize, usize), [[f64; 6]; 6]);
+ 
++/// What a tree joint lets its child turn by, in the child's node frame.
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub enum TreeTurn {
++    /// About one axis (a hinge's): in the child's node frame, and in the parent's (in the
++    /// world for the world).
++    Axis(DVec3, DVec3),
++    /// Every way (a ball's).
++    Free,
++}
++
++/// A joint of a group's joint tree (`tree.rs`): its child member, its parent member (none:
++/// the world), where it joins in the parent's node frame (in the world for the world) and in
++/// the child's, and what it lets the child turn by.
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub struct TreeLink {
++    pub child: usize,
++    pub parent: Option<usize>,
++    pub at_parent: DVec3,
++    pub at_child: DVec3,
++    pub turn: TreeTurn,
++}
++
+ /// Energy terms coupling the members of a group.
+ pub trait Coupling: Sync {
+     /// Called before every minimisation.
+@@ -86,6 +108,21 @@ pub trait Coupling: Sync {
+         false
+     }
+ 
++    /// The group's joint tree, parents before children, if its joints make one among rigid
++    /// members (`tree.rs`); asked only where the minimisation steps in it, so its joints then
++    /// hold by the step's own coordinates and their terms leave the coupling's.
++    fn tree(&mut self, _states: &[MemberState<'_>]) -> Vec<TreeLink> {
++        Vec::new()
++    }
++
++    /// Takes each tree joint's force and torque (about its point) from its parent on its child
++    /// at the end of the minimisation, in [`Self::tree`]'s order (N, N·m), as its force over
++    /// the step: the mean of the one it had and these if `mean` (the trapezoid's), else these.
++    /// Returns what it took.
++    fn tree_forces(&mut self, end: &[(DVec3, DVec3)], _mean: bool) -> Vec<(DVec3, DVec3)> {
++        end.to_vec()
++    }
++
+     /// Takes the coupling's stiffness at `states` into the rigid bodies' matrices (true Newton);
+     /// returns whether it did (then [`Self::rigid_stiffness`] and [`Self::rigid_coupling`]
+     /// have changed).
+diff --git a/crates/creeer_physics/src/structure/group.rs b/crates/creeer_physics/src/structure/group.rs
+index 7db0781..72b4e37 100644
+--- a/crates/creeer_physics/src/structure/group.rs
++++ b/crates/creeer_physics/src/structure/group.rs
+@@ -7,10 +7,12 @@
+ //! coupling's stiffness on that body.
+ 
+ use super::Structure;
+-pub use super::coupling::{Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo};
++pub use super::coupling::{
++    Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo, TreeLink, TreeTurn,
++};
+ use super::minimise::minimise;
+ use super::solver::{ImplicitSolver, Scheme, Timings};
+-use creeer_math::glam::{DQuat, DVec3};
++use creeer_math::glam::{DMat3, DQuat, DVec3};
+ use std::time::Instant;
+ 
+ /// One structure and its solver.
+@@ -233,6 +235,7 @@ pub fn step_group_with(
+                     after = before;
+                 }
+             }
++
+             if after > limit - surplus {
+                 remove_kinetic(members, after - (before - surplus));
+             }
+@@ -334,10 +337,27 @@ fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Sche
+         tau: members[0].1.work.tau,
+     });
+     members[0].1.timings.predict += t.elapsed();
+-    minimise(members, coupling);
++    let change = minimise(members, coupling);
+     for (s, v) in members.iter_mut() {
+         v.finish_substep(s);
+     }
++    // A joint tree's force rang under the trapezoid, twice its mean and none on alternate
++    // steps, undamped (the trapezoid on exact constraints: Cardona and Géradin 1989), and a
++    // tumbling pair's velocities with it: the acceleration it carries to the next step held
++    // the end's force, and the next end made up the rest of the mean. It carries the mean of
++    // the two ends instead (one force a step, as the energy–momentum methods take a
++    // constraint's: Gonzalez 1999), each joint's turned into its bodies' force and torque
++    // where the step ends, and the ringing dies in one step. (Carried as the bodies' own
++    // forces' means, or not at all, the forces and the torques came from different poses,
++    // and the pair's angular momentum drifted 1.5 % in 2 s.)
++    if let (Some(change), Scheme::Newmark) = (change, scheme) {
++        for ((s, v), (force, torque)) in members.iter_mut().zip(change) {
++            v.acceleration[0] += force / s.mass[0];
++            // (As momentum the next step carries it at the inertia it ends with.)
++            let r = DMat3::from_quat(s.orientation[0]);
++            v.angular_acceleration[0] += r * (s.inertia[0].inverse() * (r.transpose() * torque));
++        }
++    }
+     coupling.project(members);
+ }
+ 
+diff --git a/crates/creeer_physics/src/structure/minimise.rs b/crates/creeer_physics/src/structure/minimise.rs
+index cdfe662..5d53bb1 100644
+--- a/crates/creeer_physics/src/structure/minimise.rs
++++ b/crates/creeer_physics/src/structure/minimise.rs
+@@ -5,6 +5,7 @@ use super::group::{Coupling, Member, states, trial_states};
+ use super::lbfgs::Lbfgs;
+ use super::rigid_system::RigidSystem;
+ use super::solver::Refactoring;
++use super::tree::Tree;
+ use creeer_math::glam::DVec3;
+ use std::time::Instant;
+ 
+@@ -23,19 +24,20 @@ fn residuals(members: &mut [Member<'_>], coupling: &dyn Coupling, gradient: &mut
+ }
+ 
+ /// The rigid bodies' matrices made again with the coupling's stiffness, and their joint system
+-/// (`old` its last).
++/// if `joint` (`old` its last).
+ fn remake(
+     old: Option<RigidSystem>,
+     members: &[Member<'_>],
+     coupling: &dyn Coupling,
+     rigid: &mut [Option<[[f64; 6]; 6]>],
++    joint: bool,
+ ) -> Option<RigidSystem> {
+     for (m, slot) in rigid.iter_mut().enumerate() {
+         *slot = members[m]
+             .1
+             .rigid_matrix(members[m].0, coupling.rigid_stiffness(m));
+     }
+-    RigidSystem::again(old, members, coupling, rigid)
++    joint.then(|| RigidSystem::again(old, members, coupling, rigid)).flatten()
+ }
+ 
+ /// How far `direction` goes down the objective: the residual (the negative gradient) along it.
+@@ -44,9 +46,17 @@ fn downhill(residual: &[DVec3], direction: &[DVec3]) -> f64 {
+ }
+ 
+ /// Newton/L-BFGS iterations with line search on the group's incremental potential, until
+-/// the estimated remaining error is below the tolerance.
+-pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) {
++/// the estimated remaining error is below the tolerance. With a joint tree, what each member's
++/// force and torque the trapezoid carries should change by (`group.rs`).
++pub(super) fn minimise(
++    members: &mut [Member<'_>],
++    coupling: &mut dyn Coupling,
++) -> Option<Vec<(DVec3, DVec3)>> {
+     let t = Instant::now();
++    // A group of rigid bodies alone with a joint tree steps in its coordinates and holds its
++    // joints exactly (`tree.rs`; ADR-0024: the penalties' refreshes were most of a ragdoll's
++    // iterations). Its joints close first: the objective is measured where they hold.
++    let tree = Tree::begin(members, coupling);
+     let mut gradient: Vec<Vec<DVec3>> = members
+         .iter()
+         .map(|(_, v)| vec![DVec3::ZERO; v.work.direction.len()])
+@@ -72,7 +82,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+                 .rigid_matrix(members[m].0, coupling.rigid_stiffness(m))
+         })
+         .collect();
+-    let mut system = RigidSystem::new(members, coupling, &rigid);
++    let mut system = (tree.is_none())
++        .then(|| RigidSystem::new(members, coupling, &rigid))
++        .flatten();
+     // Structures take the contacts' stiffness into their matrix (refactorising only when
+     // it changed materially, judged without the joints a joint solve takes exactly).
+     let joints = Coupled::joints(members, coupling, &rigid, system.as_ref());
+@@ -123,6 +135,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+     // turns with the slip (`Coupling::relinearise`), and frozen at the step's start it left
+     // piles of sliding rocks creeping, 50–400 iterations a step (F6).
+     let relinear = coupled.is_none() && rigid.iter().all(Option::is_some);
++    let (mut tree, b2) = (tree, members[0].1.work.beta * members[0].1.work.beta);
++    // (Whether `residual` is at the present iterate: the joints' forces are found from it.)
++    let mut fresh = true;
+     let mut refactored = false;
+     for iteration in 0..max_iterations {
+         // (Not at the very end: within ten tolerances the last iterate's matrix serves as well,
+@@ -133,7 +148,8 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             && coupling.relinearise(&states(members))
+         {
+             let timer = crate::profile::start();
+-            system = remake(system.take(), members, coupling, &mut rigid);
++            let joint = tree.is_none();
++            system = remake(system.take(), members, coupling, &mut rigid, joint);
+             timer.stop(crate::profile::Slot::Relinearise);
+             #[cfg(feature = "profile")]
+             if std::env::var_os("CREEER_CHECK_HESSIAN").is_some() {
+@@ -156,7 +172,13 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             }
+         }
+         direction.copy_from_slice(&residual);
+-        lbfgs.direction(&mut direction, |all| {
++        // (Newton's own direction in the tree's coordinates: L-BFGS's history lies in the
++        // bodies' own, across the tree's joints.)
++        if let Some(t) = tree.as_mut() {
++            let cross = coupling.rigid_coupling();
++            t.solve(&mut direction, members, (&rigid, &cross, b2), &offsets);
++        } else {
++            lbfgs.direction(&mut direction, |all| {
+             let kept = coupled.as_ref().map(|c| c.residuals(all, &offsets));
+             for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
+                 if system.as_ref().is_some_and(|j| j.contains(m))
+@@ -173,13 +195,15 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             if let (Some(c), Some(kept)) = (coupled.as_ref(), kept.as_ref()) {
+                 c.solve(all, kept, &offsets);
+             }
+-        });
++            });
++        }
+         // A direction uphill would fail every line search, and a failed search reads as
+         // convergence (the joint solve of rigid bodies on structures gave such directions while
+         // its correction for the contacts was scaled wrong: a frame froze 3 mm above its piers
+         // under a block, a bridge stopped ringing at once, F6). Should one occur again, each
+         // member's own matrix, positive definite, gives the direction, and L-BFGS restarts.
+-        if downhill(&residual, &direction) <= 0.0 {
++        // (The tree's direction is downhill by its matrix, positive definite.)
++        if tree.is_none() && downhill(&residual, &direction) <= 0.0 {
+             direction.copy_from_slice(&residual);
+             for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
+                 let range = offsets[m]..offsets[m] + v.work.direction.len();
+@@ -216,6 +240,11 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             let mut elastic = Vec::with_capacity(members.len());
+             for (s, v) in members.iter_mut() {
+                 v.work.set_trial(s, alpha);
++            }
++            if let Some(t) = &tree {
++                t.place(members, alpha);
++            }
++            for (s, v) in members.iter_mut() {
+                 let (g, e) = v.work.evaluate(s, true, halving == 0);
+                 members_value += g;
+                 elastic.push(e);
+@@ -265,6 +294,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+                 .collect();
+             (previous_move, previous_rate) = (f64::INFINITY, None);
+             lbfgs.clear();
++            if let Some(t) = tree.as_mut() {
++                t.forget();
++            }
+             continue;
+         };
+         objective = value;
+@@ -275,6 +307,7 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             std::mem::swap(&mut s.position, &mut v.work.trial_x);
+             std::mem::swap(&mut s.orientation, &mut v.work.trial_q);
+         }
++        fresh = false;
+         // Remaining error: with convergence at rate ρ (measured from the last two steps)
+         // about step·ρ/(1 − ρ); before a rate is known, the step itself. A rate after one
+         // that showed no convergence (ρ ≥ 0.5) is not trusted: one sudden small step after
+@@ -336,10 +369,35 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             .zip(&new)
+             .map(|(old, new)| *old - *new)
+             .collect();
+-        residual = new;
+-        if !lag_changed {
+-            lbfgs.push(step, change);
++        (residual, fresh) = (new, true);
++        match tree.as_mut() {
++            Some(t) if lag_changed => t.forget(),
++            Some(t) => t.accepted(alpha),
++            None if !lag_changed => lbfgs.push(step, change),
++            None => {}
+         }
+         members[0].1.timings.residual += t.elapsed();
+     }
++    // The tree's joints' forces, from the residual where the step ends: each member's
++    // unbalanced force and torque (−β²·∇G over β²) is what they hold it with, negated.
++    let t = tree.as_ref()?;
++    if !fresh {
++        for (s, v) in members.iter_mut() {
++            v.work.residual(s);
++        }
++        residuals(members, coupling, &mut gradient);
++        residual = (members.iter())
++            .flat_map(|(_, v)| v.work.direction.iter().copied())
++            .collect();
++    }
++    // The trapezoid carries a force from each step into the next: the joints' over the step,
++    // the mean of their two ends (`group.rs`), and what that changes of each member's.
++    #[allow(clippy::float_cmp)] // Newmark's own τ = β
++    let newmark = members[0].1.work.tau == members[0].1.work.beta;
++    let end = t.forces(members, &residual, &offsets, b2);
++    let over = coupling.tree_forces(&end, newmark);
++    let change: Vec<(DVec3, DVec3)> = (over.iter().zip(&end))
++        .map(|(o, e)| (o.0 - e.0, o.1 - e.1))
++        .collect();
++    Some(t.spread(members, &change))
+ }
+diff --git a/crates/creeer_physics/src/structure/mod.rs b/crates/creeer_physics/src/structure/mod.rs
+index 06ed445..6f3de22 100644
+--- a/crates/creeer_physics/src/structure/mod.rs
++++ b/crates/creeer_physics/src/structure/mod.rs
+@@ -55,6 +55,8 @@ mod split_tests;
+ pub mod statics;
+ mod step;
+ mod step_flows;
++mod tree;
++mod work;
+ #[cfg(test)]
+ mod validation_tests;
+ 
+@@ -155,6 +157,14 @@ impl Structure {
+         self.position.len()
+     }
+ 
++    /// Whether it is a rigid body free in every axis: a joint tree's member (`tree.rs`).
++    pub(crate) fn free_rigid(&self) -> bool {
++        self.elements.is_empty()
++            && self.node_count() == 1
++            && self.free_translation[0] == DVec3::ONE
++            && self.free_rotation[0] == DVec3::ONE
++    }
++
+     /// Number of beam elements.
+     pub fn element_count(&self) -> usize {
+         self.elements.len()
+diff --git a/crates/creeer_physics/src/structure/solver.rs b/crates/creeer_physics/src/structure/solver.rs
+index 1f52f28..86a895d 100644
+--- a/crates/creeer_physics/src/structure/solver.rs
++++ b/crates/creeer_physics/src/structure/solver.rs
+@@ -17,6 +17,7 @@
+ use super::Structure;
+ use super::element::MEASURES;
+ use super::step::Snapshot;
++pub(super) use super::work::Work;
+ use crate::sparse::Cholesky;
+ use creeer_math::glam::{DMat3, DQuat, DVec3};
+ use std::time::Duration;
+@@ -136,73 +137,6 @@ pub struct ImplicitSolver {
+     pub(super) work: Work,
+ }
+ 
+-/// Per-substep targets and scratch space.
+-#[derive(Clone, Debug, Default)]
+-pub(super) struct Work {
+-    pub beta: f64,
+-    /// The substep (s).
+-    pub h: f64,
+-    /// How far ahead of the start the velocity reference x̂ lies (s): 0 for backward Euler,
+-    /// h/3 for BDF2, h/2 for Newmark. The plastic offsets are extrapolated as far.
+-    pub tau: f64,
+-    pub x_hat: Vec<DVec3>,
+-    pub q_hat: Vec<DQuat>,
+-    /// Predicted positions x* and orientations q*.
+-    pub x_star: Vec<DVec3>,
+-    pub q_star: Vec<DQuat>,
+-    /// World-frame nodal inertia at q*.
+-    pub inertia_star: Vec<DMat3>,
+-    /// The angular momentum the prediction carries to the step's end (world frame); the
+-    /// minimum adds the step's torques' share, I*·turn/β, and the end velocity is the
+-    /// momentum's (`finish_substep`).
+-    pub momentum_star: Vec<DVec3>,
+-    /// Drag dashpot per node for this step: drag·|v| at its start (N·s/m).
+-    pub drag_rate: Vec<f64>,
+-    /// Where each dashpot's node would end at its reference motion (`dashpot.rs`).
+-    pub dashpot_ref: Vec<(DVec3, DQuat)>,
+-    /// What the dashpots are taken times this substep (`dashpot.rs`: h/β for Newmark).
+-    pub dashpot_scale: f64,
+-    /// Whether the dashpots and added masses were referred to this substep's prediction.
+-    pub referred: bool,
+-    /// Coriolis force per node for this step (N).
+-    pub coriolis: Vec<DVec3>,
+-    /// The rotating frame's fictitious torque per node for this step (N·m).
+-    pub frame_torque: Vec<DVec3>,
+-    /// Element measures at (x̂, q̂), for damping.
+-    pub s_hat: Vec<[f64; MEASURES]>,
+-    /// What each element's measures carry before they flow in this step: its capacities over
+-    /// 1 + γ, as the member's series damper sees them (`Element::limits`). Below them a member
+-    /// is elastic, and its evaluation reads nothing else of its flows.
+-    pub limits: Vec<[f64; MEASURES]>,
+-    /// How each element flows plastically during this step (`flow.rs`), and the same with
+-    /// their work divided by 1 + γ: built when a measure first passes its limit in the step
+-    /// (`StepFlows`), where `built` says so. Built for every member at every step, 1.2 kB a
+-    /// member, they were most of what a bridge's step moved through memory, and with several
+-    /// structures stepping at once memory is what a step waits for.
+-    pub flows: Vec<[[super::flow::Flow; MEASURES]; 2]>,
+-    pub built: Vec<bool>,
+-    /// The step and β the limits were found with, to build the flows with.
+-    pub flow_step: (f64, f64),
+-    /// Each element's rate-lifted flows as its last evaluation in this step found them (w per
+-    /// measure, `Flow::increment_from`): where the next one's Newton starts. Emptied as each
+-    /// substep begins, so a step does not depend on the steps before it (a loaded world goes on
+-    /// bit for bit).
+-    pub flow_guess: Vec<super::plastic::Guess>,
+-    pub rotations: Vec<DMat3>,
+-    /// Newton direction (translation blocks, then rotation blocks).
+-    pub direction: Vec<DVec3>,
+-    pub trial_x: Vec<DVec3>,
+-    pub trial_q: Vec<DQuat>,
+-    /// Elastic energy of the structure's current state (kept up to date by the minimisation).
+-    pub current_elastic: f64,
+-    /// Per-element results, summed per node afterwards in a fixed order.
+-    pub element_energy: Vec<[f64; 2]>,
+-    pub element_force: Vec<[DVec3; 4]>,
+-    /// For each block (CSR): the (element, dof group) pairs that act on it, by element.
+-    pub incidence_ptr: Vec<usize>,
+-    pub incidence: Vec<(u32, u8)>,
+-}
+-
+ impl ImplicitSolver {
+     /// Prepares stepping `structure` by `dt` seconds per [`Self::step`], split into
+     /// `substeps`, and factorises its matrix.
+diff --git a/crates/creeer_physics/src/structure/tree.rs b/crates/creeer_physics/src/structure/tree.rs
+new file mode 100644
+index 0000000..a308968
+--- /dev/null
++++ b/crates/creeer_physics/src/structure/tree.rs
+@@ -0,0 +1,233 @@
++//! A group's joint tree stepped in its own coordinates (P1, ADR-0024; RedMax's hybrid,
++//! adapted): its root's translation and turn, and each tree joint's turn (a hinge's one, a
++//! ball's three, in the child's node frame). The bodies stay rigid bodies with their own
++//! poses; the tree only chooses how the minimisation moves them.
++//!
++//! - **The direction** is L-BFGS's on (Jᵀ·H·J)·δq = Jᵀ·r (`tree/solve.rs`): H the group's
++//!   matrix as the rigid bodies' joint solve has it (their own 6×6 blocks, their couplings),
++//!   r the residual, J the tree's Jacobian (each body's twist from its own coordinates and
++//!   its ancestors'). Members not in the tree keep their six.
++//! - **A trial** places the tree's bodies by forward kinematics, parents first: a child's
++//!   orientation is its parent's times the joint's relative orientation turned by the child's
++//!   coordinates; its centre hangs from the joint's point on the parent. The tree's joints
++//!   hold exactly at every trial, so their constraints' terms vanish.
++//! - **The joints' forces**, which no multiplier carries now, come from the converged
++//!   residual: each body's unbalanced force and torque is what its joints hold it with,
++//!   summed from the leaves in.
++//!
++//! The twist convention is the solver's: a node's turn is world-frame, q' = exp(θ)·q.
++
++mod forces;
++mod solve;
++
++use super::coupling::{Coupling, TreeLink, TreeTurn};
++use super::lbfgs::Lbfgs;
++use super::group::{Member, states};
++use crate::so3;
++use creeer_math::glam::{DQuat, DVec3};
++
++/// The tree of a group, for one minimisation.
++#[derive(Debug)]
++pub(super) struct Tree {
++    /// Each member's link to its parent, if it is a tree joint's child.
++    link: Vec<Option<TreeLink>>,
++    /// The members, parents before children (the roots and free members first, then the
++    /// links' children in the coupling's order).
++    order: Vec<usize>,
++    /// Each member's own coordinates: their first index and count.
++    own: Vec<(usize, usize)>,
++    /// The coordinates in all.
++    n: usize,
++    /// The last direction, in the tree's coordinates.
++    dq: Vec<f64>,
++    /// The members of each part rooted at a free body (not the world).
++    parts: Vec<Vec<usize>>,
++    /// L-BFGS in the tree's coordinates (`tree/solve.rs`), the last step taken and the
++    /// reduced residual where it began.
++    lbfgs: Lbfgs,
++    step: Option<Vec<f64>>,
++    last: Option<Vec<f64>>,
++}
++
++/// A member's twist's response to each coordinate it depends on: (coordinate, translation,
++/// turn).
++type Columns = Vec<(usize, DVec3, DVec3)>;
++
++impl Tree {
++    /// The tree of a group of rigid bodies alone, every axis free, if its coupling finds one
++    /// (`Coupling::tree`); its joints closed exactly where the minimisation starts (they held
++    /// within the augmented Lagrangian's micrometre, or rounding, before).
++    pub(super) fn begin(members: &mut [Member<'_>], coupling: &mut dyn Coupling) -> Option<Self> {
++        if !members.iter().all(|(s, _)| s.free_rigid()) || std::env::var_os("CREEER_NO_TREE").is_some() {
++            return None;
++        }
++        let links = coupling.tree(&states(members));
++        let tree = Self::new(&links, members.len())?;
++        tree.close(members);
++        Some(tree)
++    }
++
++    /// The tree of `links` (parents before children) among `members` (`None` if there is none).
++    fn new(links: &[TreeLink], members: usize) -> Option<Self> {
++        if links.is_empty() {
++            return None;
++        }
++        let mut link = vec![None; members];
++        for l in links {
++            link[l.child] = Some(*l);
++        }
++        let mut order: Vec<usize> = (0..members).filter(|&m| link[m].is_none()).collect();
++        order.extend(links.iter().map(|l| l.child));
++        let mut own = vec![(0, 0); members];
++        let mut n = 0;
++        for &m in &order {
++            let count = match link[m].map(|l| l.turn) {
++                None => 6,
++                Some(TreeTurn::Axis(..)) => 1,
++                Some(TreeTurn::Free) => 3,
++            };
++            own[m] = (n, count);
++            n += count;
++        }
++        // Each member's root: itself, its parent's, or none (the world).
++        let mut root: Vec<Option<usize>> = (0..members).map(Some).collect();
++        for l in links {
++            root[l.child] = l.parent.and_then(|p| root[p]);
++        }
++        let parts = (0..members)
++            .filter(|&r| link[r].is_none())
++            .map(|r| (0..members).filter(|&k| root[k] == Some(r)).collect::<Vec<_>>())
++            .filter(|part| part.len() > 1)
++            .collect();
++        Some(Self {
++            link,
++            order,
++            own,
++            n,
++            dq: vec![0.0; n],
++            parts,
++            lbfgs: Lbfgs::default(),
++            step: None,
++            last: None,
++        })
++    }
++
++    /// The parent's pose, or the world's.
++    fn parent(members: &[Member<'_>], l: &TreeLink) -> (DVec3, DQuat) {
++        l.parent.map_or((DVec3::ZERO, DQuat::IDENTITY), |p| {
++            (members[p].0.position[0], members[p].0.orientation[0])
++        })
++    }
++
++    /// Moves each child, parents first, so that its joint holds exactly: its axis turned onto
++    /// its parent's (a hinge), its point onto its parent's.
++    fn close(&self, members: &mut [Member<'_>]) {
++        for &m in &self.order {
++            let Some(l) = self.link[m] else { continue };
++            let (xp, qp) = Self::parent(members, &l);
++            let mut q = members[m].0.orientation[0];
++            if let TreeTurn::Axis(child, parent) = l.turn {
++                let arc = DQuat::from_rotation_arc(q * child, qp * parent);
++                q = (arc * q).normalize();
++            }
++            members[m].0.orientation[0] = q;
++            members[m].0.position[0] = xp + qp * l.at_parent - q * l.at_child;
++        }
++    }
++
++    /// Each member's columns at its present pose.
++    fn columns(&self, members: &[Member<'_>]) -> Vec<Columns> {
++        let mut cols: Vec<Columns> = vec![Vec::new(); members.len()];
++        for &m in &self.order {
++            let (x, q) = (members[m].0.position[0], members[m].0.orientation[0]);
++            let (first, count) = self.own[m];
++            let Some(l) = self.link[m] else {
++                // Free: its own translation and turn.
++                cols[m] = (0..6)
++                    .map(|k| {
++                        let e = DVec3::AXES[k % 3];
++                        if k < 3 {
++                            (first + k, e, DVec3::ZERO)
++                        } else {
++                            (first + k, DVec3::ZERO, e)
++                        }
++                    })
++                    .collect();
++                continue;
++            };
++            // The joint's point, and the parent's columns carried to it.
++            let (xp, qp) = Self::parent(members, &l);
++            let point = xp + qp * l.at_parent;
++            let mut c: Columns = match l.parent {
++                Some(p) => (cols[p].iter())
++                    .map(|&(k, t, w)| (k, t + w.cross(point - xp), w))
++                    .collect(),
++                None => Vec::new(),
++            };
++            // Its own turns, and every column's turn swinging its centre about the point.
++            let axes: Vec<DVec3> = match l.turn {
++                TreeTurn::Axis(a, _) => vec![q * a],
++                // (A ball's about the world's axes: about the child's own, which turn with it, the
++                // gradients L-BFGS compares were in different bases from one iteration to the next,
++                // and under an impact's torques it asked a hand to turn 40 rad.)
++                TreeTurn::Free => DVec3::AXES.to_vec(),
++            };
++            debug_assert_eq!(axes.len(), count);
++            c.extend(axes.iter().enumerate().map(|(i, &a)| (first + i, DVec3::ZERO, a)));
++            let lever = x - point;
++            for col in &mut c {
++                col.1 += col.2.cross(lever);
++            }
++            cols[m] = c;
++        }
++        cols
++    }
++
++    /// Places the tree's children at the trial `alpha` along the last direction, parents
++    /// first, by forward kinematics (the free members keep the trial `set_trial` gave them).
++    pub(super) fn place(&self, members: &mut [Member<'_>], alpha: f64) {
++        for &m in &self.order {
++            let Some(l) = self.link[m] else { continue };
++            let (first, _) = self.own[m];
++            // Its own turn, in the world (as its columns have it).
++            let q = members[m].0.orientation[0];
++            let turn = match l.turn {
++                TreeTurn::Axis(a, _) => q * a * (alpha * self.dq[first]),
++                TreeTurn::Free => {
++                    let d = &self.dq[first..first + 3];
++                    DVec3::new(d[0], d[1], d[2]) * alpha
++                }
++            };
++            // Now (the iterate) and at the trial, the parent's pose.
++            let (parent_now, parent_trial) = match l.parent {
++                Some(p) => (
++                    members[p].0.orientation[0],
++                    (members[p].1.work.trial_x[0], members[p].1.work.trial_q[0]),
++                ),
++                None => (DQuat::IDENTITY, (DVec3::ZERO, DQuat::IDENTITY)),
++            };
++            let q_trial = (parent_trial.1 * parent_now.conjugate() * so3::exp(turn) * q).normalize();
++            let x_trial = parent_trial.0 + parent_trial.1 * l.at_parent - q_trial * l.at_child;
++            let w = &mut members[m].1.work;
++            (w.trial_x[0], w.trial_q[0]) = (x_trial, q_trial);
++        }
++        // A free part's centre of mass moves as the direction has it, linearly (a centroidal
++        // floating base): its momentum then balances as the bodies' own coordinates balance it,
++        // exactly, where the curves of the forward kinematics put it off by their second order
++        // (3·10⁻⁹ of a tumbling pair's momentum over 2 s).
++        for part in &self.parts {
++            let (mut mass, mut off) = (0.0, DVec3::ZERO);
++            for &k in part {
++                let (s, v) = &members[k];
++                let linear = s.position[0] + v.work.direction[0] * alpha;
++                mass += s.mass[0];
++                off += (linear - v.work.trial_x[0]) * s.mass[0];
++            }
++            for &k in part {
++                members[k].1.work.trial_x[0] += off / mass;
++            }
++        }
++    }
++
++}
++
+diff --git a/crates/creeer_physics/src/structure/tree/forces.rs b/crates/creeer_physics/src/structure/tree/forces.rs
+new file mode 100644
+index 0000000..d001bd4
+--- /dev/null
++++ b/crates/creeer_physics/src/structure/tree/forces.rs
+@@ -0,0 +1,74 @@
++//! A joint tree's joints' forces, from the residual where the minimisation ends (`tree.rs`).
++
++use super::super::group::Member;
++use super::super::coupling::TreeTurn;
++use super::Tree;
++use creeer_math::glam::DVec3;
++
++impl Tree {
++    /// Each tree joint's force and torque from its parent on its child, about its point and
++    /// across its free turns, in the links' order: what holds each body against its residual
++    /// `all` (−β²·∇G, `b2` = β²) and its children's joints, the leaves first.
++    pub(in crate::structure) fn forces(
++        &self,
++        members: &[Member<'_>],
++        all: &[DVec3],
++        offsets: &[usize],
++        b2: f64,
++    ) -> Vec<(DVec3, DVec3)> {
++        // What each body's children hold it with (force, torque about its centre), and
++        // each child's joint's force and torque.
++        let mut from_children = vec![(DVec3::ZERO, DVec3::ZERO); members.len()];
++        let mut joint = vec![(DVec3::ZERO, DVec3::ZERO); members.len()];
++        for &m in self.order.iter().rev() {
++            let Some(l) = self.link[m] else { continue };
++            let (x, q) = (members[m].0.position[0], members[m].0.orientation[0]);
++            let (xp, qp) = Self::parent(members, &l);
++            let point = xp + qp * l.at_parent;
++            // The body balanced: its own unbalanced force, its children's, its joint's.
++            let (force, torque) = (all[offsets[m]] / b2, all[offsets[m] + 1] / b2);
++            let f = -(force + from_children[m].0);
++            let tau = -(torque + from_children[m].1) - (point - x).cross(f);
++            if let Some(p) = l.parent {
++                from_children[p].0 -= f;
++                from_children[p].1 -= tau + (point - xp).cross(f);
++            }
++            // (Along its free turns the converged residual leaves only rounding.)
++            joint[m] = match l.turn {
++                TreeTurn::Axis(a, _) => {
++                    let u = (q * a).normalize();
++                    (f, tau - u * u.dot(tau))
++                }
++                TreeTurn::Free => (f, DVec3::ZERO),
++            };
++        }
++        (self.order.iter())
++            .filter(|&&m| self.link[m].is_some())
++            .map(|&m| joint[m])
++            .collect()
++    }
++
++    /// Each member's force and torque (about its centre) from `per_link`, each tree joint's
++    /// force and torque (about its point) from its parent on its child, in the links' order.
++    pub(in crate::structure) fn spread(
++        &self,
++        members: &[Member<'_>],
++        per_link: &[(DVec3, DVec3)],
++    ) -> Vec<(DVec3, DVec3)> {
++        let mut on = vec![(DVec3::ZERO, DVec3::ZERO); members.len()];
++        let children = self.order.iter().filter(|&&m| self.link[m].is_some());
++        for (&m, &(f, tau)) in children.zip(per_link) {
++            let Some(l) = self.link[m] else { continue };
++            let (xp, qp) = Self::parent(members, &l);
++            let point = xp + qp * l.at_parent;
++            let x = members[m].0.position[0];
++            on[m].0 += f;
++            on[m].1 += tau + (point - x).cross(f);
++            if let Some(p) = l.parent {
++                on[p].0 -= f;
++                on[p].1 -= tau + (point - xp).cross(f);
++            }
++        }
++        on
++    }
++}
+diff --git a/crates/creeer_physics/src/structure/tree/solve.rs b/crates/creeer_physics/src/structure/tree/solve.rs
+new file mode 100644
+index 0000000..28b2245
+--- /dev/null
++++ b/crates/creeer_physics/src/structure/tree/solve.rs
+@@ -0,0 +1,166 @@
++//! A joint tree's Newton direction (`tree.rs`): its reduced matrix Jᵀ·H·J, factorised, as the
++//! base of L-BFGS in the tree's coordinates (as the bodies' own coordinates take the joint
++//! solve, `lbfgs.rs`).
++//!
++//! The reduced matrix is Gauss–Newton's: it leaves out the curvature of the forward kinematics,
++//! the joints' turns swinging their children's points, under the forces the step balances
++//! (RedMax's geometric stiffness). Under a ragdoll's weight and its contacts that curvature
++//! was most of the objective's: Newton with the matrix alone took 500 iterations of steps cut
++//! to a three-hundredth, in a step the bodies' own coordinates took in 30. L-BFGS learns it
++//! from the steps it takes, in the tree's coordinates (their gradients Jᵀ·r, each at its pose).
++
++use super::super::coupling::NodeCoupling;
++use super::super::group::Member;
++use super::Tree;
++use creeer_math::glam::DVec3;
++
++/// v·M for a 6×6 block over (translation, turn), as two vectors.
++fn apply(m6: &[[f64; 6]; 6], t: DVec3, w: DVec3) -> (DVec3, DVec3) {
++    let v = [t.x, t.y, t.z, w.x, w.y, w.z];
++    let row = |r: usize| (0..6).map(|c| m6[r][c] * v[c]).sum::<f64>();
++    (
++        DVec3::new(row(0), row(1), row(2)),
++        DVec3::new(row(3), row(4), row(5)),
++    )
++}
++
++/// The tree's coordinates as vectors of three (the last padded), for L-BFGS.
++fn pack(v: &[f64]) -> Vec<DVec3> {
++    v.chunks(3)
++        .map(|c| DVec3::new(c[0], *c.get(1).unwrap_or(&0.0), *c.get(2).unwrap_or(&0.0)))
++        .collect()
++}
++
++fn unpack(v: &[DVec3], n: usize) -> Vec<f64> {
++    v.iter().flat_map(|d| d.to_array()).take(n).collect()
++}
++
++impl Tree {
++    /// The direction for the residual `all` (member m's translation at `offsets[m]`, its turn
++    /// after), solved in the tree's coordinates with the rigid members' own matrices `rigid`
++    /// and their couplings `cross` (scaled by `b2`, as the joint solve scales them); written
++    /// back into `all`. Should the couplings leave the reduced matrix not positive definite,
++    /// the members' own matrices alone give it (they are: inertia and Gauss–Newton terms).
++    pub(in crate::structure) fn solve(
++        &mut self,
++        all: &mut [DVec3],
++        members: &[Member<'_>],
++        (rigid, cross, b2): (&[Option<[[f64; 6]; 6]>], &[NodeCoupling], f64),
++        offsets: &[usize],
++    ) {
++        let cols = self.columns(members);
++        let n = self.n;
++        let mut g = vec![0.0; n];
++        let mut h = vec![0.0; n * n];
++        for (m, c) in cols.iter().enumerate() {
++            let (rt, rw) = (all[offsets[m]], all[offsets[m] + 1]);
++            for &(k, t, w) in c {
++                g[k] += t.dot(rt) + w.dot(rw);
++            }
++            let own = rigid[m].as_ref().expect("a tree's members are rigid bodies");
++            for &(l, tl, wl) in c {
++                let (ht, hw) = apply(own, tl, wl);
++                for &(k, tk, wk) in c {
++                    h[k * n + l] += tk.dot(ht) + wk.dot(hw);
++                }
++            }
++        }
++        let mut own = h.clone();
++        for &((a, na), (b, nb), m6) in cross {
++            if a == b || na != 0 || nb != 0 {
++                continue;
++            }
++            for &(l, tl, wl) in &cols[b] {
++                let (ht, hw) = apply(&m6, tl, wl);
++                for &(k, tk, wk) in &cols[a] {
++                    let v = (tk.dot(ht) + wk.dot(hw)) * b2;
++                    h[k * n + l] += v;
++                    h[l * n + k] += v;
++                }
++            }
++        }
++        let factor = if cholesky(&mut h, n) {
++            h
++        } else {
++            let factored = cholesky(&mut own, n);
++            debug_assert!(factored, "a tree's own matrix is positive definite");
++            own
++        };
++        // The last step's pair: its step, and how the gradient changed over it.
++        if let (Some(step), Some(last)) = (self.step.take(), self.last.take()) {
++            let change: Vec<f64> = last.iter().zip(&g).map(|(a, b)| a - b).collect();
++            self.lbfgs.push(pack(&step), pack(&change));
++        }
++        let mut packed = pack(&g);
++        self.last = Some(g);
++        self.lbfgs.direction(&mut packed, |v| {
++            let mut x = unpack(v, n);
++            substitute(&factor, n, &mut x);
++            v.copy_from_slice(&pack(&x));
++        });
++        let dq = unpack(&packed, n);
++        for (m, c) in cols.iter().enumerate() {
++            let (mut t, mut w) = (DVec3::ZERO, DVec3::ZERO);
++            for &(k, tk, wk) in c {
++                t += tk * dq[k];
++                w += wk * dq[k];
++            }
++            all[offsets[m]] = t;
++            all[offsets[m] + 1] = w;
++        }
++        self.dq = dq;
++    }
++
++    /// The line search took `alpha` of the last direction.
++    pub(in crate::structure) fn accepted(&mut self, alpha: f64) {
++        self.step = Some(self.dq.iter().map(|d| d * alpha).collect());
++    }
++
++    /// Forgets the steps taken (the objective changed under them: lagged quantities refreshed).
++    pub(in crate::structure) fn forget(&mut self) {
++        self.lbfgs.clear();
++        (self.step, self.last) = (None, None);
++    }
++}
++
++/// Factorises `h` (n×n, symmetric positive definite) in place as L·Lᵀ, L in its lower
++/// triangle. False if a pivot is not positive.
++fn cholesky(h: &mut [f64], n: usize) -> bool {
++    for j in 0..n {
++        let mut d = h[j * n + j];
++        for k in 0..j {
++            d -= h[j * n + k] * h[j * n + k];
++        }
++        if !(d > 0.0) {
++            return false;
++        }
++        let d = d.sqrt();
++        h[j * n + j] = d;
++        for i in j + 1..n {
++            let mut v = h[i * n + j];
++            for k in 0..j {
++                v -= h[i * n + k] * h[j * n + k];
++            }
++            h[i * n + j] = v / d;
++        }
++    }
++    true
++}
++
++/// Solves L·Lᵀ·x = g in place with the factor of [`cholesky`].
++fn substitute(l: &[f64], n: usize, g: &mut [f64]) {
++    for i in 0..n {
++        let mut v = g[i];
++        for k in 0..i {
++            v -= l[i * n + k] * g[k];
++        }
++        g[i] = v / l[i * n + i];
++    }
++    for i in (0..n).rev() {
++        let mut v = g[i];
++        for k in i + 1..n {
++            v -= l[k * n + i] * g[k];
++        }
++        g[i] = v / l[i * n + i];
++    }
++}
+diff --git a/crates/creeer_physics/src/structure/work.rs b/crates/creeer_physics/src/structure/work.rs
+new file mode 100644
+index 0000000..ca20d5e
+--- /dev/null
++++ b/crates/creeer_physics/src/structure/work.rs
+@@ -0,0 +1,71 @@
++//! A solver's targets and scratch space for one substep (`solver.rs`).
++
++use super::element::MEASURES;
++use creeer_math::glam::{DMat3, DQuat, DVec3};
++
++/// Per-substep targets and scratch space.
++#[derive(Clone, Debug, Default)]
++pub(super) struct Work {
++    pub beta: f64,
++    /// The substep (s).
++    pub h: f64,
++    /// How far ahead of the start the velocity reference x̂ lies (s): 0 for backward Euler,
++    /// h/3 for BDF2, h/2 for Newmark. The plastic offsets are extrapolated as far.
++    pub tau: f64,
++    pub x_hat: Vec<DVec3>,
++    pub q_hat: Vec<DQuat>,
++    /// Predicted positions x* and orientations q*.
++    pub x_star: Vec<DVec3>,
++    pub q_star: Vec<DQuat>,
++    /// World-frame nodal inertia at q*.
++    pub inertia_star: Vec<DMat3>,
++    /// The angular momentum the prediction carries to the step's end (world frame); the
++    /// minimum adds the step's torques' share, I*·turn/β, and the end velocity is the
++    /// momentum's (`finish_substep`).
++    pub momentum_star: Vec<DVec3>,
++    /// Drag dashpot per node for this step: drag·|v| at its start (N·s/m).
++    pub drag_rate: Vec<f64>,
++    /// Where each dashpot's node would end at its reference motion (`dashpot.rs`).
++    pub dashpot_ref: Vec<(DVec3, DQuat)>,
++    /// What the dashpots are taken times this substep (`dashpot.rs`: h/β for Newmark).
++    pub dashpot_scale: f64,
++    /// Whether the dashpots and added masses were referred to this substep's prediction.
++    pub referred: bool,
++    /// Coriolis force per node for this step (N).
++    pub coriolis: Vec<DVec3>,
++    /// The rotating frame's fictitious torque per node for this step (N·m).
++    pub frame_torque: Vec<DVec3>,
++    /// Element measures at (x̂, q̂), for damping.
++    pub s_hat: Vec<[f64; MEASURES]>,
++    /// What each element's measures carry before they flow in this step: its capacities over
++    /// 1 + γ, as the member's series damper sees them (`Element::limits`). Below them a member
++    /// is elastic, and its evaluation reads nothing else of its flows.
++    pub limits: Vec<[f64; MEASURES]>,
++    /// How each element flows plastically during this step (`flow.rs`), and the same with
++    /// their work divided by 1 + γ: built when a measure first passes its limit in the step
++    /// (`StepFlows`), where `built` says so. Built for every member at every step, 1.2 kB a
++    /// member, they were most of what a bridge's step moved through memory, and with several
++    /// structures stepping at once memory is what a step waits for.
++    pub flows: Vec<[[super::flow::Flow; MEASURES]; 2]>,
++    pub built: Vec<bool>,
++    /// The step and β the limits were found with, to build the flows with.
++    pub flow_step: (f64, f64),
++    /// Each element's rate-lifted flows as its last evaluation in this step found them (w per
++    /// measure, `Flow::increment_from`): where the next one's Newton starts. Emptied as each
++    /// substep begins, so a step does not depend on the steps before it (a loaded world goes on
++    /// bit for bit).
++    pub flow_guess: Vec<super::plastic::Guess>,
++    pub rotations: Vec<DMat3>,
++    /// Newton direction (translation blocks, then rotation blocks).
++    pub direction: Vec<DVec3>,
++    pub trial_x: Vec<DVec3>,
++    pub trial_q: Vec<DQuat>,
++    /// Elastic energy of the structure's current state (kept up to date by the minimisation).
++    pub current_elastic: f64,
++    /// Per-element results, summed per node afterwards in a fixed order.
++    pub element_energy: Vec<[f64; 2]>,
++    pub element_force: Vec<[DVec3; 4]>,
++    /// For each block (CSR): the (element, dof group) pairs that act on it, by element.
++    pub incidence_ptr: Vec<usize>,
++    pub incidence: Vec<(u32, u8)>,
++}
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index 8b889d0..40e466c 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -317,6 +317,19 @@ impl Coupling for Contacts {
+         self.rigid.get(member).copied().unwrap_or([[0.0; 6]; 6])
+     }
+ 
++    fn tree(&mut self, states: &[MemberState<'_>]) -> Vec<crate::structure::group::TreeLink> {
++        let links = self.joints.tree_links(states);
++        if !links.is_empty() {
++            // The held joints' blocks gone from the bodies' own.
++            self.rigid = self.rigid_blocks();
++        }
++        links
++    }
++
++    fn tree_forces(&mut self, end: &[(DVec3, DVec3)], mean: bool) -> Vec<(DVec3, DVec3)> {
++        self.joints.tree_forces(end, mean)
++    }
++
+     fn carried(&mut self) -> Option<f64> {
+         self.left.take()
+     }
+diff --git a/crates/creeer_physics/src/world/joint.rs b/crates/creeer_physics/src/world/joint.rs
+index 252b223..0debaf0 100644
+--- a/crates/creeer_physics/src/world/joint.rs
++++ b/crates/creeer_physics/src/world/joint.rs
+@@ -14,7 +14,9 @@
+ //! Bodies joined are stepped in one group, sleep and wake together, and do not collide with
+ //! each other unless the joint says so.
+ 
++mod energy;
+ mod group;
++mod tree;
+ mod project;
+ mod rows;
+ mod save;
+@@ -78,6 +80,10 @@ pub struct Multipliers {
+     /// Its limits' torques (N·m): a hinge's low and high stop, or a ball's cone, low and high
+     /// twist.
+     pub limits: [f64; 3],
++    /// Held by a joint tree (`joint/tree.rs`): the force and torque, as `point` and `axis`
++    /// are, that Newmark's accelerations carry into the next step (`None` where they carry the
++    /// last end's, as the multipliers').
++    pub carried: Option<(DVec3, DVec3)>,
+ }
+ 
+ impl Joint {
+diff --git a/crates/creeer_physics/src/world/joint/energy.rs b/crates/creeer_physics/src/world/joint/energy.rs
+new file mode 100644
+index 0000000..611b91c
+--- /dev/null
++++ b/crates/creeer_physics/src/world/joint/energy.rs
+@@ -0,0 +1,75 @@
++//! The shapes of the joints' energy terms (`group.rs`): friction's smoothing, a one-sided
++//! constraint's augmented Lagrangian, a drive's Huber springs, and the Gauss–Newton outer
++//! products.
++
++use super::ARM;
++use super::group::STICK;
++use super::rows::{Row, Scalar};
++use creeer_math::glam::{DMat3, DVec3};
++
++/// f₀ and f₀'/x of the friction's smoothing (the contacts' cubic).
++pub(super) fn smooth(x: f64) -> (f64, f64) {
++    let e = STICK;
++    if x >= e {
++        (x, 1.0 / x)
++    } else {
++        (
++            -x * x * x / (3.0 * e * e) + x * x / e + e / 3.0,
++            2.0 / e - x / (e * e),
++        )
++    }
++}
++
++/// The energy of a one-sided constraint `g ≤ 0` with multiplier `lambda` and penalty `k`
++/// (augmented Lagrangian), and its derivative.
++pub(super) fn one_sided(g: f64, lambda: f64, k: f64) -> (f64, f64) {
++    let f = (lambda + k * g).max(0.0);
++    ((f * f - lambda * lambda) / (2.0 * k), f)
++}
++
++/// A drive's energy: a Huber spring on each arm (k·r up to the strength's share, constant
++/// beyond), telling `each` every scalar's coefficient and weight.
++pub(super) fn drive_energy(
++    drive: super::Drive,
++    arms: &[[Scalar; 3]; 3],
++    mut each: impl FnMut(&Scalar, (f64, f64)),
++) -> f64 {
++    let k = drive.stiffness / (2.0 * ARM * ARM);
++    let most = drive.strength / (2.0 * ARM);
++    let mut total = 0.0;
++    for arm in arms {
++        let r = arm.iter().map(|s| s.value * s.value).sum::<f64>().sqrt();
++        let (energy, per) = if k * r <= most {
++            (0.5 * k * r * r, k)
++        } else {
++            (most * r - 0.5 * most * most / k, most / r)
++        };
++        total += energy;
++        for s in arm {
++            each(s, (per * s.value, per));
++        }
++    }
++    total
++}
++
++/// Adds w·u·vᵀ, skipping the rows' zeros (a gap's row is three of six: its axis, and its
++/// turn across the axis).
++pub(super) fn outer(m6: &mut [[f64; 6]; 6], u: &Row, v: &Row, w: f64) {
++    for (row, &ur) in m6.iter_mut().zip(u) {
++        if ur == 0.0 {
++            continue;
++        }
++        let wu = w * ur;
++        for (x, &vc) in row.iter_mut().zip(v) {
++            if vc != 0.0 {
++                *x += wu * vc;
++            }
++        }
++    }
++}
++
++pub(super) fn translation(u: &Row, w: f64) -> DMat3 {
++    let t = DVec3::new(u[0], u[1], u[2]);
++    DMat3::from_cols(t * t.x, t * t.y, t * t.z) * w
++}
++
+diff --git a/crates/creeer_physics/src/world/joint/group.rs b/crates/creeer_physics/src/world/joint/group.rs
+index 2e84279..4d532b3 100644
+--- a/crates/creeer_physics/src/world/joint/group.rs
++++ b/crates/creeer_physics/src/world/joint/group.rs
+@@ -3,6 +3,7 @@
+ //! scalars and rows (`rows.rs`). Each joint is measured where its terms are taken, one at a
+ //! time (measured all at once into a list, a ragdoll's terms cost three times as much).
+ 
++use super::energy::{drive_energy, one_sided, outer, smooth, translation};
+ use super::rows::{At, Row, Scalar};
+ use super::{ARM, HOLDS, Joint, SETTLED, STIFFER};
+ use crate::structure::group::{MemberState, NodeCoupling, StepInfo};
+@@ -18,7 +19,7 @@ pub(crate) struct Joints {
+     pub(crate) list: Vec<(usize, Joint)>,
+     /// Each joint's sides: mass and inertia (kg, kg·m²; infinite for the world), and whether
+     /// it is a rigid body (its blocks then go in its 6×6 matrix, else in its structure's).
+-    sides: Vec<[(f64, f64, bool); 2]>,
++    pub(super) sides: Vec<[(f64, f64, bool); 2]>,
+     /// Each joint's penalties for the step: points, turns (N/m, N·m/rad).
+     stiffness: Vec<(f64, f64)>,
+     beta: f64,
+@@ -31,72 +32,11 @@ pub(crate) struct Joints {
+     nodes: Vec<(usize, usize, DMat3)>,
+     /// The group's struts (`strut.rs`): their terms ride with the joints'.
+     pub(crate) struts: Vec<super::strut::GroupStrut>,
+-}
+-
+-/// f₀ and f₀'/x of the friction's smoothing (the contacts' cubic).
+-fn smooth(x: f64) -> (f64, f64) {
+-    let e = STICK;
+-    if x >= e {
+-        (x, 1.0 / x)
+-    } else {
+-        (
+-            -x * x * x / (3.0 * e * e) + x * x / e + e / 3.0,
+-            2.0 / e - x / (e * e),
+-        )
+-    }
+-}
+-
+-/// The energy of a one-sided constraint `g ≤ 0` with multiplier `lambda` and penalty `k`
+-/// (augmented Lagrangian), and its derivative.
+-fn one_sided(g: f64, lambda: f64, k: f64) -> (f64, f64) {
+-    let f = (lambda + k * g).max(0.0);
+-    ((f * f - lambda * lambda) / (2.0 * k), f)
+-}
+-
+-/// A drive's energy: a Huber spring on each arm (k·r up to the strength's share, constant
+-/// beyond), telling `each` every scalar's coefficient and weight.
+-fn drive_energy(
+-    drive: super::Drive,
+-    arms: &[[Scalar; 3]; 3],
+-    mut each: impl FnMut(&Scalar, (f64, f64)),
+-) -> f64 {
+-    let k = drive.stiffness / (2.0 * ARM * ARM);
+-    let most = drive.strength / (2.0 * ARM);
+-    let mut total = 0.0;
+-    for arm in arms {
+-        let r = arm.iter().map(|s| s.value * s.value).sum::<f64>().sqrt();
+-        let (energy, per) = if k * r <= most {
+-            (0.5 * k * r * r, k)
+-        } else {
+-            (most * r - 0.5 * most * most / k, most / r)
+-        };
+-        total += energy;
+-        for s in arm {
+-            each(s, (per * s.value, per));
+-        }
+-    }
+-    total
+-}
+-
+-/// Adds w·u·vᵀ, skipping the rows' zeros (a gap's row is three of six: its axis, and its
+-/// turn across the axis).
+-fn outer(m6: &mut [[f64; 6]; 6], u: &Row, v: &Row, w: f64) {
+-    for (row, &ur) in m6.iter_mut().zip(u) {
+-        if ur == 0.0 {
+-            continue;
+-        }
+-        let wu = w * ur;
+-        for (x, &vc) in row.iter_mut().zip(v) {
+-            if vc != 0.0 {
+-                *x += wu * vc;
+-            }
+-        }
+-    }
+-}
+-
+-fn translation(u: &Row, w: f64) -> DMat3 {
+-    let t = DVec3::new(u[0], u[1], u[2]);
+-    DMat3::from_cols(t * t.x, t * t.y, t * t.z) * w
++    /// Each joint held exactly by its group's joint tree this step (`tree.rs`): its points'
++    /// and axes' terms then vanish, and its multipliers are found from the step's forces.
++    pub(super) held: Vec<bool>,
++    /// The tree's joints in its order, and whether A is the child.
++    pub(super) tree: Vec<(usize, bool)>,
+ }
+ 
+ impl Joints {
+@@ -120,6 +60,8 @@ impl Joints {
+     /// Sets the step up: the penalties, the arms' references, the blocks.
+     pub(crate) fn begin(&mut self, info: &StepInfo<'_>) {
+         self.beta = info.beta;
++        self.held.clear();
++        self.tree.clear();
+         let reduced = |a: f64, b: f64| if b.is_finite() { a * b / (a + b) } else { a };
+         let b2 = info.beta * info.beta;
+         self.stiffness = (self.sides.iter())
+@@ -192,12 +134,13 @@ impl Joints {
+     ) -> f64 {
+         let mut total = 0.0;
+         let m = joint.multipliers;
+-        for (k, s) in at.point.iter().enumerate() {
++        let held = self.held.get(j).copied().unwrap_or(false);
++        for (k, s) in at.point.iter().enumerate().filter(|_| !held) {
+             let (lambda, g) = (m.point[k], s.value);
+             total += lambda * g + 0.5 * kt * g * g;
+             each(j, s, lambda + kt * g, kt);
+         }
+-        for (k, s) in at.axis.iter().flatten().enumerate() {
++        for (k, s) in at.axis.iter().flatten().enumerate().filter(|_| !held) {
+             let (lambda, g) = (m.axis[k], s.value);
+             total += lambda * g + 0.5 * kr * g * g;
+             each(j, s, lambda + kr * g, kr);
+@@ -298,11 +241,12 @@ impl Joints {
+             let (kt, kr) = self.stiffness[j];
+             let m = &mut joint.multipliers;
+             let (point, axis) = (m.point.length(), m.axis.length());
+-            for (k, s) in at.point.iter().enumerate() {
++            let held = self.held.get(j).copied().unwrap_or(false);
++            for (k, s) in at.point.iter().enumerate().filter(|_| !held) {
+                 m.point[k] += kt * s.value;
+                 moved |= open(s.value, kt * s.value, point);
+             }
+-            for (k, s) in at.axis.iter().flatten().enumerate() {
++            for (k, s) in at.axis.iter().flatten().enumerate().filter(|_| !held) {
+                 m.axis[k] += kr * s.value;
+                 moved |= open(s.value, kr * s.value, axis);
+             }
+diff --git a/crates/creeer_physics/src/world/joint/project.rs b/crates/creeer_physics/src/world/joint/project.rs
+index 3f4e456..5973054 100644
+--- a/crates/creeer_physics/src/world/joint/project.rs
++++ b/crates/creeer_physics/src/world/joint/project.rs
+@@ -107,6 +107,7 @@ impl Joints {
+     /// Makes the members' velocities consistent with the joints (module docs), and moves
+     /// friction's anchors that slipped.
+     pub(crate) fn project(&mut self, members: &mut [Member<'_>]) {
++        self.forget_carried();
+         if self.list.is_empty() {
+             return;
+         }
+diff --git a/crates/creeer_physics/src/world/joint/save.rs b/crates/creeer_physics/src/world/joint/save.rs
+index 22eebd7..cfde3bc 100644
+--- a/crates/creeer_physics/src/world/joint/save.rs
++++ b/crates/creeer_physics/src/world/joint/save.rs
+@@ -1,9 +1,10 @@
+ //! Joints as a save holds them (from the save format's version 7): everything a joint is,
+-//! and the multipliers it carries into the next step, so a loaded world goes on as the
+-//! saved one would have.
++//! and the multipliers it carries into the next step (with what a joint tree carries, P1), so
++//! a loaded world goes on as the saved one would have.
+ 
+ use super::{Drive, Joint, Kind, Multipliers};
+ use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
++use creeer_math::glam::DVec3;
+ 
+ fn put_range(w: &mut Writer, range: Option<(f64, f64)>) {
+     w.put(&range.map(|r| r.0));
+@@ -55,6 +56,8 @@ impl Encode for Joint {
+         for l in m.limits {
+             w.f64(l);
+         }
++        w.put(&m.carried.map(|c| c.0));
++        w.put(&m.carried.map(|c| c.1));
+     }
+ }
+ 
+@@ -101,6 +104,11 @@ impl Decode for Joint {
+             point: r.get()?,
+             axis: r.get()?,
+             limits: [r.finite()?, r.finite()?, r.finite()?],
++            carried: match (r.get::<Option<DVec3>>()?, r.get::<Option<DVec3>>()?) {
++                (Some(force), Some(torque)) => Some((force, torque)),
++                (None, None) => None,
++                _ => return Err(r.error("half a joint's carried force")),
++            },
+         };
+         if damping < 0.0 || friction < 0.0 || drive.is_some_and(|d| d.stiffness < 0.0) {
+             return Err(r.error("a joint's damping, friction or drive below nought"));
+diff --git a/crates/creeer_physics/src/world/joint/tree.rs b/crates/creeer_physics/src/world/joint/tree.rs
+new file mode 100644
+index 0000000..7ed0737
+--- /dev/null
++++ b/crates/creeer_physics/src/world/joint/tree.rs
+@@ -0,0 +1,147 @@
++//! A group's joints as a tree (P1, ADR-0024; `structure/tree.rs` steps in it): a spanning
++//! forest of the joints between rigid bodies, rooted at the world where a joint holds a body
++//! to it, else at each part's heaviest body. Its joints are held exactly by the step's own
++//! coordinates; the joints that would close a loop stay augmented Lagrangian, as all joints
++//! were (RedMax's hybrid). Limits, damping, friction and drives stay energy terms of every
++//! joint.
++
++use super::Kind;
++use super::group::Joints;
++use crate::structure::group::{MemberState, TreeLink, TreeTurn};
++use creeer_math::glam::DVec3;
++use std::collections::VecDeque;
++
++/// Grows the tree from `root` over the joints not yet `seen`: (child, joint) of each joint
++/// taken, parents before children.
++fn grow(root: usize, edges: &[Vec<(usize, usize)>], seen: &mut [bool], out: &mut Vec<(usize, usize)>) {
++    seen[root] = true;
++    let mut queue = VecDeque::from([root]);
++    while let Some(node) = queue.pop_front() {
++        for &(next, j) in &edges[node] {
++            if !seen[next] {
++                seen[next] = true;
++                out.push((next, j));
++                queue.push_back(next);
++            }
++        }
++    }
++}
++
++impl Joints {
++    /// The tree of the group's joints among `states.len()` members, parents before children;
++    /// its joints held from now until the step's next [`Joints::begin`].
++    pub(crate) fn tree_links(&mut self, states: &[MemberState<'_>]) -> Vec<TreeLink> {
++        let members = states.len();
++        let world = members;
++        // Each node's joints to others (the world the last node): rigid bodies' alone.
++        let mut edges: Vec<Vec<(usize, usize)>> = vec![Vec::new(); members + 1];
++        let mut mass = vec![0.0_f64; members];
++        for (j, (_, joint)) in self.list.iter().enumerate() {
++            let [(ma, _, rigid_a), (mb, _, rigid_b)] = self.sides[j];
++            let (a, b) = (joint.a.0, joint.b.map_or(world, |b| b.0));
++            if !rigid_a || (joint.b.is_some() && !rigid_b) || a == b {
++                continue;
++            }
++            mass[a] = ma;
++            if b < members {
++                mass[b] = mb;
++            }
++            edges[a].push((b, j));
++            edges[b].push((a, j));
++        }
++        // From the world first, then each part left from its heaviest body (the root's six
++        // coordinates on the body most of the part's inertia is in).
++        let mut seen = vec![false; members + 1];
++        let mut taken = Vec::new();
++        if !edges[world].is_empty() {
++            grow(world, &edges, &mut seen, &mut taken);
++        }
++        for m in 0..members {
++            if seen[m] || edges[m].is_empty() {
++                continue;
++            }
++            let mut part = Vec::new();
++            grow(m, &edges, &mut seen.clone(), &mut part);
++            let root = (part.iter().map(|p| p.0))
++                .fold(m, |best, n| if mass[n] > mass[best] { n } else { best });
++            grow(root, &edges, &mut seen, &mut taken);
++        }
++        self.held = vec![false; self.list.len()];
++        self.tree = Vec::with_capacity(taken.len());
++        let links: Vec<TreeLink> = (taken.iter())
++            .map(|&(child, j)| {
++                let joint = &self.list[j].1;
++                self.held[j] = true;
++                let child_a = joint.a.0 == child;
++                self.tree.push((j, child_a));
++                let (at_child, at_parent, frame_child, frame_parent, parent) = if child_a {
++                    let parent = joint.b.map(|b| b.0);
++                    (joint.at_a, joint.at_b, joint.frame_a, joint.frame_b, parent)
++                } else {
++                    let parent = Some(joint.a.0);
++                    (joint.at_b, joint.at_a, joint.frame_b, joint.frame_a, parent)
++                };
++                let turn = match joint.kind {
++                    Kind::Hinge { .. } => {
++                        TreeTurn::Axis(frame_child * DVec3::X, frame_parent * DVec3::X)
++                    }
++                    Kind::Ball { .. } => TreeTurn::Free,
++                };
++                TreeLink {
++                    child,
++                    parent,
++                    at_parent,
++                    at_child,
++                    turn,
++                }
++            })
++            .collect();
++        if !links.is_empty() {
++            self.make_blocks(states);
++        }
++        links
++    }
++
++    /// Forgets what the joints not held this substep carried in a tree: their accelerations
++    /// carry their end's force (called after every substep).
++    pub(super) fn forget_carried(&mut self) {
++        for (j, (_, joint)) in self.list.iter_mut().enumerate() {
++            if !self.held.get(j).copied().unwrap_or(false) {
++                joint.multipliers.carried = None;
++            }
++        }
++    }
++
++    /// The tree joints' constraint forces (`Coupling::tree_forces`): over the step, kept as
++    /// their multipliers (as a joint not held keeps them), and what the trapezoid carries into
++    /// the next, which it returns. A trapezoid's step holds the mean of what it carried in and
++    /// its end; carrying the end on, that mean's error rang, twice and none on alternate
++    /// steps, undamped (the trapezoid on exact constraints, Cardona and Géradin 1989).
++    /// Carried is the force at the step's end as the means find it, the last one taken on
++    /// half a step: (3·mₙ − mₙ₋₁)/2, second order like the trapezoid, and not ringing. (The
++    /// mean itself, carried, was half a step late: a double pendulum's angles fell behind.)
++    pub(crate) fn tree_forces(&mut self, end: &[(DVec3, DVec3)], mean: bool) -> Vec<(DVec3, DVec3)> {
++        let mut taken = Vec::with_capacity(end.len());
++        for (&(j, child_a), &(force, torque)) in self.tree.iter().zip(end) {
++            // The multipliers are B's pull on A, negated (`Joint::force`), and the torque B
++            // holds A's axis with: the parent's on the child, signed by which side it is.
++            let m = &mut self.list[j].1.multipliers;
++            let sign = if child_a { -1.0 } else { 1.0 };
++            let ours = |(f, t): (DVec3, DVec3)| (f * sign, t * -sign);
++            let last = ours((m.point, m.axis));
++            // (Before a tree held it, its accelerations carried its last end's force.)
++            let carried = m.carried.map_or(last, ours);
++            let (over, on) = if mean {
++                let over = ((carried.0 + force) * 0.5, (carried.1 + torque) * 0.5);
++                let on = ((over.0 * 3.0 - last.0) * 0.5, (over.1 * 3.0 - last.1) * 0.5);
++                (over, on)
++            } else {
++                ((force, torque), (force, torque))
++            };
++            (m.point, m.axis) = ours(over);
++            m.carried = Some(ours(on));
++            taken.push(on);
++        }
++        taken
++    }
++}

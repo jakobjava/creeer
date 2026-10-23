@@ -12,6 +12,7 @@ mod chunk_tests;
 mod clip;
 pub mod cube;
 pub mod datum;
+pub mod dug;
 pub mod edits;
 #[cfg(test)]
 mod edits_tests;
@@ -24,6 +25,8 @@ pub mod monotone;
 pub mod noise;
 pub mod occlusion;
 pub mod planet;
+#[cfg(test)]
+mod rounds_tests;
 mod sea;
 pub mod spike;
 pub mod stream;

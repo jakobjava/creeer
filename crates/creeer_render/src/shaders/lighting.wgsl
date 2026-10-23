@@ -2,6 +2,9 @@
 // maps, Cook-Torrance/Lambert direct light and hemispheric ambient light ("PBR-lite",
 // ADR-0003). The including shader declares `shadow_map` and `shadow_sampler`.
 
+// A non-metal's reflectance at normal incidence (index about 1.5); skin's is lower (surface.wgsl).
+const DIELECTRIC_F0: f32 = 0.04;
+
 // Fraction of each cascade (at its far end) that blends into the next one.
 const CASCADE_BLEND: f32 = 0.15;
 
@@ -58,10 +61,11 @@ fn sun_visibility(world: vec3<f32>, normal: vec3<f32>) -> f32 {
 
 /// Sunlight reflected towards the viewer: Cook-Torrance specular (GGX distribution,
 /// Smith-Schlick geometry, Schlick Fresnel) plus Lambert diffuse, for sun irradiance
-/// `irradiance` (on a surface facing the sun) and shadowing `visibility`.
+/// `irradiance` (on a surface facing the sun) and shadowing `visibility`; `dielectric` is the
+/// non-metal's reflectance at normal incidence.
 fn direct_light(
     n: vec3<f32>, v: vec3<f32>, l: vec3<f32>,
-    base: vec3<f32>, metal: f32, roughness: f32,
+    base: vec3<f32>, metal: f32, dielectric: f32, roughness: f32,
     irradiance: vec3<f32>, visibility: f32,
 ) -> vec3<f32> {
     let h = normalize(l + v);
@@ -69,7 +73,7 @@ fn direct_light(
     let ndv = max(dot(n, v), 1e-4);
     let ndh = max(dot(n, h), 0.0);
     let vdh = max(dot(v, h), 0.0);
-    let f0 = mix(vec3<f32>(0.04), base, metal);
+    let f0 = mix(vec3<f32>(dielectric), base, metal);
     let fresnel = f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
     let a = roughness * roughness;
     let a2 = a * a;
@@ -86,11 +90,11 @@ fn direct_light(
 /// ray, between the ground's radiance `ground` and the sky's `sky` about `up`.
 fn ambient_light(
     n: vec3<f32>, v: vec3<f32>, up: vec3<f32>,
-    base: vec3<f32>, metal: f32, roughness: f32,
+    base: vec3<f32>, metal: f32, dielectric: f32, roughness: f32,
     sky: vec3<f32>, ground: vec3<f32>,
 ) -> vec3<f32> {
     let ndv = max(dot(n, v), 1e-4);
-    let f0 = mix(vec3<f32>(0.04), base, metal);
+    let f0 = mix(vec3<f32>(dielectric), base, metal);
     let sky_amount = dot(n, up) * 0.5 + 0.5;
     let ambient_diffuse = mix(ground, sky, sky_amount);
     let r = reflect(-v, n);

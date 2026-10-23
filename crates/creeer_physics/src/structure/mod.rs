@@ -36,6 +36,7 @@ mod heat_tests;
 mod hessian_check;
 pub mod history;
 mod lbfgs;
+mod mass;
 mod minimise;
 mod objective;
 mod plastic;
@@ -167,6 +168,11 @@ impl Structure {
     /// Mass of each node (kg).
     pub fn masses(&self) -> &[f64] {
         &self.mass
+    }
+
+    /// Rotational inertia of node `node` in its rest frame (kg·m²).
+    pub fn inertia_of(&self, node: NodeId) -> DMat3 {
+        self.inertia[node]
     }
 
     /// Displacement of `node` from its rest position (m).

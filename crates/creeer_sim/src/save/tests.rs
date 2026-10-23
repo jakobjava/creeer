@@ -31,7 +31,7 @@ const DT: f64 = 1.0 / 60.0;
 
 /// A crate, a ball, a player's avatar and a steel frame on level ground, half a second in,
 /// with a hole dug.
-fn scene() -> Save {
+pub(super) fn scene() -> Save {
     let mut world = World::new(DT);
     world.statics.push(StaticShape::Plane {
         normal: DVec3::Y,
@@ -84,6 +84,11 @@ fn scene() -> Save {
         water: Vec::new(),
         parked: Vec::new(),
         machines: Vec::new(),
+        people: Vec::new(),
+        ages: Vec::new(),
+        items: crate::save::SavedItems::default(),
+        trees: crate::save::SavedTrees::default(),
+        pits: Vec::new(),
     }
 }
 
@@ -121,8 +126,6 @@ fn write_v6_fixture() {
 #[test]
 fn the_version_6_fixture_keeps_parked_islands() {
     let save = Save::from_bytes(V6).unwrap();
-    // Written as version 7 (no machines): the same bytes but the version's.
-    assert_eq!(save.to_bytes()[12..], V6[12..]);
     assert_eq!(save.to_bytes(), parked_scene().to_bytes());
     let sizes: Vec<usize> = save.parked.iter().map(Vec::len).collect();
     assert_eq!(sizes, [2, 1]);
@@ -169,6 +172,21 @@ fn a_save_reads_back_as_written() {
     assert_eq!(read.to_bytes(), bytes);
     assert_eq!(read.entities, save.entities);
     assert_eq!(read.edits.log(), save.edits.log());
+}
+
+#[test]
+fn what_was_dug_and_not_cut_reads_back() {
+    let mut save = scene();
+    save.pits = vec![(DVec3::new(10.0, 0.0, 12.0), 0.004)];
+    let read = Save::from_bytes(&save.to_bytes()).unwrap();
+    assert_eq!(read.pits, save.pits);
+    // Without the section (earlier versions), nothing is owed.
+    assert!(
+        Save::from_bytes(&scene().to_bytes())
+            .unwrap()
+            .pits
+            .is_empty()
+    );
 }
 
 #[test]
@@ -236,10 +254,13 @@ fn the_version_4_fixture_reads_as_it_was_saved() {
 fn the_version_5_fixture_reads_as_it_was_saved() {
     let save = Save::from_bytes(V5).unwrap();
     assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
-    // Written as this version (nothing parked, no machines): the same bytes but the version's.
+    // Written as this version, it reads back as itself (with the version's additions:
+    // version 8's empty joints).
     let again = save.to_bytes();
-    assert_eq!(again[12..], V5[12..]);
     assert_eq!(again[8..12], VERSION.to_le_bytes());
+    let read = Save::from_bytes(&again).unwrap();
+    assert_eq!(read.to_bytes(), again);
+    assert_eq!(read.world.to_bytes(), scene().world.to_bytes());
 }
 
 #[test]

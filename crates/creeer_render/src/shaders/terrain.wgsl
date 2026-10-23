@@ -30,7 +30,8 @@ struct InstanceIn {
 };
 
 struct VertexOut {
-    @builtin(position) clip: vec4<f32>,
+    // Invariant: the prepass computes the same depth (`after_prepass_depth_state`).
+    @builtin(position) @invariant clip: vec4<f32>,
     @location(0) world: vec3<f32>,
     @location(1) normal: vec3<f32>,
     // Chunk-local position: the detail texture repeats every 32 m, and every chunk origin
@@ -149,10 +150,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     if dot(n, l) > 0.0 {
         visibility = sun_visibility(in.world, n);
     }
-    let direct = direct_light(n, v, l, base, 0.0, roughness, sun, visibility);
+    let direct = direct_light(n, v, l, base, 0.0, DIELECTRIC_F0, roughness, sun, visibility);
     // Light bounced from the surroundings: the planet's albedo under sun and sky.
     let bounce = globals.ground_albedo.rgb / PI * (sun * max(dot(up, l), 0.0) + sky * PI);
-    let ambient = ambient_light(n, v, up, base, 0.0, roughness, sky, bounce) * openness;
+    let occlusion = ambient_occlusion(in.clip.xy, base, 1.0);
+    let ambient = ambient_light(n, v, up, base, 0.0, DIELECTRIC_F0, roughness, sky, bounce) * openness * occlusion;
     var color = direct + ambient;
 
     if sky_on {

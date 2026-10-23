@@ -8,12 +8,16 @@ const C: f64 = 273.15;
 #[test]
 fn the_shipped_materials_load() {
     let table = MaterialTable::reference();
-    assert_eq!(table.all().len(), 9);
+    assert_eq!(table.all().len(), 13);
     for id in [
         "steel_s235",
         "aluminium_6061_t6",
         "copper_c11000",
         "spruce_c24",
+        "spruce_bast",
+        "spruce_green",
+        "pine_green",
+        "birch_green",
         "concrete_c30",
         "ice",
     ] {

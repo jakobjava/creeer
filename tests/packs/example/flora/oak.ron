@@ -1,0 +1,19 @@
+// The example mod adds a species as data only (G1.7, ADR-0031): an oak, its wood in this pack's
+// materials (oak.ron), its colours the base palette's. Its form is an estimate for the example.
+[
+    (
+        name: "oak",
+        wood: "oak_green",
+        grows: (latitude: (20.0, 60.0), elevation: (5.0, 1200.0), slope: 30.0, grounds: ["soil"]),
+        per_m2: 0.01, dbh: (0.08, 0.8), sizes: 2.0,
+        height: (2.0, 0.19, 2.0),
+        taper: 0.8,
+        crown: (ratio: 0.6, outline: Ellipsoid, radius: (1.0, 10.0)),
+        branches: (spacing: 0.6, per_node: (1, 2), angle: (40.0, 75.0)),
+        // Birch's biomass functions (Repola 2008) stand in for an oak's.
+        branch_mass: (b0: -4.152, b1: 15.874, k1: 16.0, b2: -4.407, k2: 10.0, stump: false),
+        foliage_mass: (b0: -29.566, b1: 33.372, k1: 2.0, stump: true),
+        fresh: 1.8,
+        bark: "bark_oak", leaves: "leaves_oak",
+    ),
+]

@@ -1,0 +1,431 @@
+diff --git a/crates/creeer_physics/src/profile.rs b/crates/creeer_physics/src/profile.rs
+index 195d923..eeaecb5 100644
+--- a/crates/creeer_physics/src/profile.rs
++++ b/crates/creeer_physics/src/profile.rs
+@@ -179,3 +179,4 @@ pub fn is_count(slot: Slot) -> bool {
+             | Slot::FaceIntegrations
+     )
+ }
++pub static PLAIN_LAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+diff --git a/crates/creeer_physics/src/structure/coupling.rs b/crates/creeer_physics/src/structure/coupling.rs
+index 27e95c7..35060d6 100644
+--- a/crates/creeer_physics/src/structure/coupling.rs
++++ b/crates/creeer_physics/src/structure/coupling.rs
+@@ -34,6 +34,19 @@ pub struct StepInfo<'a> {
+ /// 6×6 block over (translation, rotation), rows of the first.
+ pub type NodeCoupling = ((usize, usize), (usize, usize), [[f64; 6]; 6]);
+ 
++/// A lagged constraint's row: on each side it has, (member, node) and the derivative of its
++/// value by that node's translation and (world-frame) turn.
++pub type LagRow = [Option<((usize, usize), [f64; 6])>; 2];
++
++/// The step's Newton matrix's answer to each of a coupling's lag rows (`Coupling::lag_rows`):
++/// H⁻¹·rowᵀ, the displacement a unit force along the row would make, flat over the members
++/// (member m's translations, then its turns, from `offsets[m]`).
++#[derive(Clone, Copy, Debug)]
++pub struct LagResponses<'a> {
++    pub responses: &'a [Vec<DVec3>],
++    pub offsets: &'a [usize],
++}
++
+ /// Energy terms coupling the members of a group.
+ pub trait Coupling: Sync {
+     /// Called before every minimisation.
+@@ -81,11 +94,19 @@ pub trait Coupling: Sync {
+         Vec::new()
+     }
+     /// Updates lagged quantities (friction's normal force) to `states`; returns whether any
+-    /// changed enough that the minimisation should continue with the new values.
+-    fn update_lag(&mut self, _states: &[MemberState<'_>]) -> bool {
++    /// changed enough that the minimisation should continue with the new values. With the
++    /// step's matrix's `responses` to [`Self::lag_rows`], multipliers are updated by Newton's
++    /// method on their own (exact for a quadratic minimum) rather than by their penalty.
++    fn update_lag(&mut self, _states: &[MemberState<'_>], _: Option<LagResponses<'_>>) -> bool {
+         false
+     }
+ 
++    /// The rows of the lagged constraints whose multipliers [`Self::update_lag`] would update
++    /// with the step's matrix, at `states` (none: it updates none so).
++    fn lag_rows(&self, _states: &[MemberState<'_>]) -> Vec<LagRow> {
++        Vec::new()
++    }
++
+     /// Takes the coupling's stiffness at `states` into the rigid bodies' matrices (true Newton);
+     /// returns whether it did (then [`Self::rigid_stiffness`] and [`Self::rigid_coupling`]
+     /// have changed).
+diff --git a/crates/creeer_physics/src/structure/group.rs b/crates/creeer_physics/src/structure/group.rs
+index 7db0781..8e76a3b 100644
+--- a/crates/creeer_physics/src/structure/group.rs
++++ b/crates/creeer_physics/src/structure/group.rs
+@@ -7,7 +7,9 @@
+ //! coupling's stiffness on that body.
+ 
+ use super::Structure;
+-pub use super::coupling::{Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo};
++pub use super::coupling::{
++    Coupling, LagResponses, LagRow, MemberState, NoCoupling, NodeCoupling, StepInfo,
++};
+ use super::minimise::minimise;
+ use super::solver::{ImplicitSolver, Scheme, Timings};
+ use creeer_math::glam::{DQuat, DVec3};
+diff --git a/crates/creeer_physics/src/structure/minimise.rs b/crates/creeer_physics/src/structure/minimise.rs
+index cdfe662..644c9aa 100644
+--- a/crates/creeer_physics/src/structure/minimise.rs
++++ b/crates/creeer_physics/src/structure/minimise.rs
+@@ -1,7 +1,7 @@
+ //! The joint minimisation of a group's incremental potential (see `group.rs`).
+ 
+ use super::coupled::Coupled;
+-use super::group::{Coupling, Member, states, trial_states};
++use super::group::{Coupling, LagResponses, Member, states, trial_states};
+ use super::lbfgs::Lbfgs;
+ use super::rigid_system::RigidSystem;
+ use super::solver::Refactoring;
+@@ -38,6 +38,45 @@ fn remake(
+     RigidSystem::again(old, members, coupling, rigid)
+ }
+ 
++/// The step's matrix's answers to the coupling's lag rows (`Coupling::lag_rows`): H⁻¹·rowᵀ
++/// each, by the members' own matrices and the rigid bodies' joint system (Newton's matrix
++/// itself in a group of rigid bodies alone, where this is asked for). The matrices solve
++/// β²·H: a row is scaled by β² before it is solved.
++fn lag_responses(
++    members: &mut [Member<'_>],
++    coupling: &dyn Coupling,
++    rigid: &[Option<[[f64; 6]; 6]>],
++    system: &mut Option<RigidSystem>,
++    offsets: &[usize],
++    len: usize,
++) -> Vec<Vec<DVec3>> {
++    let rows = coupling.lag_rows(&states(members));
++    let b2 = members[0].1.work.beta * members[0].1.work.beta;
++    rows.iter()
++        .map(|row| {
++            let mut x = vec![DVec3::ZERO; len];
++            for &((m, node), r) in row.iter().flatten() {
++                let half = members[m].1.work.direction.len() / 2;
++                x[offsets[m] + node] += DVec3::new(r[0], r[1], r[2]) * b2;
++                x[offsets[m] + half + node] += DVec3::new(r[3], r[4], r[5]) * b2;
++            }
++            for (m, ((s, v), matrix)) in members.iter_mut().zip(rigid).enumerate() {
++                let range = offsets[m]..offsets[m] + v.work.direction.len();
++                for (block, d) in x[range.clone()].iter_mut().enumerate() {
++                    *d *= s.block_mask(block);
++                }
++                if !system.as_ref().is_some_and(|j| j.contains(m)) {
++                    v.precondition(s, &mut x[range], matrix.as_ref());
++                }
++            }
++            if let Some(joint) = system.as_mut() {
++                joint.solve(&mut x, offsets);
++            }
++            x
++        })
++        .collect()
++}
++
+ /// How far `direction` goes down the objective: the residual (the negative gradient) along it.
+ fn downhill(residual: &[DVec3], direction: &[DVec3]) -> f64 {
+     residual.iter().zip(direction).map(|(r, d)| r.dot(*d)).sum()
+@@ -246,7 +285,10 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             // G is at its minimum to machine precision: converged, so the lagged quantities
+             // are refreshed as below. (Stopping here without the refresh left a box starting
+             // exactly on a ramp without friction for its first step, found in F5.)
+-            if lag_updates == 3 || !coupling.update_lag(&states(members)) {
++            // (By their penalty: a line search can fail short of the minimum too, where the
++            // step's matrix says nothing of the multipliers' effect; Newton's changes there
++            // were a thousand times too large and threw a ragdoll apart.)
++            if lag_updates == 3 || !coupling.update_lag(&states(members), None) {
+                 break;
+             }
+             lag_updates += 1;
+@@ -291,10 +333,25 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             _ => moved,
+         };
+         (previous_move, previous_rate) = (moved, rate);
++        if std::env::var_os("TRACE_MIN").is_some() && members.len() > 5 {
++            eprintln!("  it {iteration} alpha {alpha:.3} first {first_alpha:.3} moved {moved:.2e} remaining {remaining:.2e} lag {lag_updates}");
++        }
+         if remaining < tolerance {
+             // Converged with the lagged quantities: refresh them (at most 3 times) and go on
+             // if they moved (IPC's lagged friction iterations).
+-            if lag_updates == 3 || !coupling.update_lag(&states(members)) {
++            if lag_updates == 3 {
++                break;
++            }
++            let responses = if relinear && !crate::profile::PLAIN_LAG.load(std::sync::atomic::Ordering::Relaxed) {
++                lag_responses(members, coupling, &rigid, &mut system, &offsets, residual.len())
++            } else {
++                Vec::new()
++            };
++            let lag = (!responses.is_empty()).then_some(LagResponses {
++                responses: &responses,
++                offsets: &offsets,
++            });
++            if !coupling.update_lag(&states(members), lag) {
+                 break;
+             }
+             crate::profile::add(crate::profile::Slot::LagUpdates, 1);
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index 8b889d0..475913e 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -2,7 +2,9 @@
+ //! energy, its gradient, and the lagged normal forces of friction (see `mod.rs`).
+ 
+ use super::{CONVERGED, Carried, Contacts, Law, Memo, STICK_DISTANCE, Side, point};
+-use crate::structure::group::{Coupling, MemberState, NodeCoupling, StepInfo};
++use crate::structure::group::{
++    Coupling, LagResponses, LagRow, MemberState, NodeCoupling, StepInfo,
++};
+ use creeer_math::glam::{DMat3, DVec3};
+ 
+ impl Coupling for Contacts {
+@@ -221,9 +223,15 @@ impl Coupling for Contacts {
+         }
+     }
+ 
+-    fn update_lag(&mut self, states: &[MemberState<'_>]) -> bool {
++    fn lag_rows(&self, states: &[MemberState<'_>]) -> Vec<LagRow> {
++        self.joints.lag_rows(states)
++    }
++
++    fn update_lag(&mut self, states: &[MemberState<'_>], lag: Option<LagResponses<'_>>) -> bool {
+         // The joints' multipliers (their augmented Lagrangian) with friction's normal forces.
+-        let mut changed = self.joints.update_lag(states);
++        let mut changed = self.joints.update_lag(states, lag);
++        let joints = changed;
++        let mut friction = false;
+         if changed {
+             self.rigid = self.rigid_blocks();
+         }
+@@ -233,9 +241,13 @@ impl Coupling for Contacts {
+             // Only friction uses λ: contacts without friction never need a refresh.
+             if c.friction > 0.0 && (force - c.lambda).abs() > 0.05 * force.max(c.lambda) {
+                 changed = true;
++                friction = true;
+             }
+             c.lambda = force;
+         }
++        if std::env::var_os("TRACE_WHY").is_some() {
++            eprintln!("    refresh: joints {joints} friction {}", friction);
++        }
+         changed
+     }
+ 
+diff --git a/crates/creeer_physics/src/world/joint.rs b/crates/creeer_physics/src/world/joint.rs
+index 915df38..3fa4e3c 100644
+--- a/crates/creeer_physics/src/world/joint.rs
++++ b/crates/creeer_physics/src/world/joint.rs
+@@ -14,6 +14,7 @@
+ //! Bodies joined are stepped in one group, sleep and wake together, and do not collide with
+ //! each other unless the joint says so.
+ 
++mod exact;
+ mod group;
+ mod project;
+ mod rows;
+diff --git a/crates/creeer_physics/src/world/joint/group.rs b/crates/creeer_physics/src/world/joint/group.rs
+index ef0acf7..8757069 100644
+--- a/crates/creeer_physics/src/world/joint/group.rs
++++ b/crates/creeer_physics/src/world/joint/group.rs
+@@ -3,9 +3,10 @@
+ //! scalars and rows (`rows.rs`). Each joint is measured where its terms are taken, one at a
+ //! time (measured all at once into a list, a ragdoll's terms cost three times as much).
+ 
++use super::exact::{Which, acting};
+ use super::rows::{At, Row, Scalar};
+ use super::{ARM, HOLDS, Joint, SETTLED, STIFFER};
+-use crate::structure::group::{MemberState, NodeCoupling, StepInfo};
++use crate::structure::group::{LagResponses, MemberState, NodeCoupling, StepInfo};
+ use creeer_math::glam::{DMat3, DVec3};
+ 
+ /// The friction's smoothing: the arms' gap within which it sticks (m; 10⁻⁴ rad of turn).
+@@ -269,27 +270,62 @@ impl Joints {
+     /// whether a joint did not yet hold: its gap over [`HOLDS`] and the refresh changing its
+     /// force by more than [`SETTLED`] of it (a joint carrying a body's weight between stiff
+     /// contacts gains little by each refresh, and refreshing it for micrometres that move its
+-    /// force by less took a ragdoll lying on the ground every refresh its steps allow).
+-    pub(crate) fn update_lag(&mut self, states: &[MemberState<'_>]) -> bool {
++    /// force by less took a ragdoll lying on the ground every refresh its steps allow). With
++    /// the step's matrix's responses to [`Self::lag_rows`], by Newton's method (`exact.rs`).
++    pub(crate) fn update_lag(
++        &mut self,
++        states: &[MemberState<'_>],
++        lag: Option<LagResponses<'_>>,
++    ) -> bool {
+         let mut moved = false;
+         let open = |gap: f64, change: f64, force: f64| {
+             gap.abs() > HOLDS && change.abs() > SETTLED * force.abs()
+         };
++        let at: Vec<At> = (self.list.iter())
++            .map(|(_, joint)| joint.measured(states, lag.is_some()))
++            .collect();
++        let mut newton = lag.map(|lag| self.newton_changes(&at, lag).into_iter());
+         for (j, (_, joint)) in self.list.iter_mut().enumerate() {
+-            let at = joint.measured(states, false);
++            let at = &at[j];
+             let (kt, kr) = self.stiffness[j];
++            // Each acting constraint's change by Newton's method, where it has one.
++            let changes: Vec<(Which, f64)> = match newton.as_mut() {
++                Some(next) => (acting(at, &joint.multipliers, kr).map(|(w, _)| w))
++                    .zip(next.by_ref())
++                    .filter_map(|(w, change)| change.map(|c| (w, c)))
++                    .collect(),
++                None => Vec::new(),
++            };
++            let change = |w: Which, plain: f64| {
++                (changes.iter().find(|c| c.0 == w)).map_or(plain, |c| c.1)
++            };
+             let m = &mut joint.multipliers;
+             let (point, axis) = (m.point.length(), m.axis.length());
+             for (k, s) in at.point.iter().enumerate() {
+-                m.point[k] += kt * s.value;
+-                moved |= open(s.value, kt * s.value, point);
++                let d = change(Which::Point(k), kt * s.value);
++                m.point[k] += d;
++                moved |= open(s.value, d, point);
+             }
+-            for (k, s) in at.axis.iter().flatten().enumerate() {
+-                m.axis[k] += kr * s.value;
+-                moved |= open(s.value, kr * s.value, axis);
++            let newton_across = changes.iter().any(|c| matches!(c.0, Which::Across(_)));
++            if let (Some(axes), Some(across), true) = (&at.axis, at.across, newton_across) {
++                // Along the directions across the axis (`exact::acting`).
++                let c = DVec3::new(axes[0].value, axes[1].value, axes[2].value);
++                let mut d = DVec3::ZERO;
++                for (i, dir) in across.iter().enumerate() {
++                    d += *dir * change(Which::Across(i), kr * dir.dot(c));
++                }
++                m.axis += d;
++                moved |= open(c.length(), d.length(), axis);
++            } else {
++                for (k, s) in at.axis.iter().flatten().enumerate() {
++                    m.axis[k] += kr * s.value;
++                    moved |= open(s.value, kr * s.value, axis);
++                }
+             }
+             for (k, s) in at.limits.iter().enumerate() {
+-                let new = s.map_or(0.0, |s| (m.limits[k] + kr * s.value).max(0.0));
++                let new = s.map_or(0.0, |s| {
++                    (m.limits[k] + change(Which::Limit(k), kr * s.value)).max(0.0)
++                });
+                 moved |= open((new - m.limits[k]) / kr, new - m.limits[k], m.limits[k]);
+                 m.limits[k] = new;
+             }
+@@ -300,6 +336,11 @@ impl Joints {
+         moved
+     }
+ 
++    /// Joint `j`'s penalties for the step: its points', its turns' (N/m, N·m/rad).
++    pub(super) fn stiffness_of(&self, j: usize) -> (f64, f64) {
++        self.stiffness[j]
++    }
++
+     /// The Gauss–Newton blocks at `states`.
+     pub(crate) fn make_blocks(&mut self, states: &[MemberState<'_>]) {
+         let timer = crate::profile::start();
+diff --git a/crates/creeer_physics/src/world/joint/rows.rs b/crates/creeer_physics/src/world/joint/rows.rs
+index d7823b1..6407890 100644
+--- a/crates/creeer_physics/src/world/joint/rows.rs
++++ b/crates/creeer_physics/src/world/joint/rows.rs
+@@ -39,6 +39,9 @@ pub(crate) struct At {
+     pub point: [Scalar; 3],
+     /// A hinge's axes' misalignment, A's axis × B's (by world axis).
+     pub axis: Option<[Scalar; 3]>,
++    /// Two directions across a hinge's axis (A's), square to it and each other: its
++    /// misalignment lies in their plane (none along the axis, and no turn moves it there).
++    pub across: Option<[DVec3; 2]>,
+     /// Its limits' reach (≤ 0 within them; rad, about), as `Multipliers::limits`.
+     pub limits: [Option<Scalar>; 3],
+     /// Each arm's gap (A's point less B's, by world axis; m): the two sides' relative turn
+@@ -161,6 +164,8 @@ impl Joint {
+         match self.kind {
+             Kind::Hinge { range } => {
+                 let c = axis_a.cross(axis_b);
++                let u = axis_a.any_orthonormal_vector();
++                at.across = Some([u, axis_a.cross(u)]);
+                 at.axis = Some(std::array::from_fn(|j| {
+                     let e = AXES[j];
+                     Scalar {
+diff --git a/crates/creeer_sim/src/character/ragdoll_tests.rs b/crates/creeer_sim/src/character/ragdoll_tests.rs
+index b354ce4..3decf43 100644
+--- a/crates/creeer_sim/src/character/ragdoll_tests.rs
++++ b/crates/creeer_sim/src/character/ragdoll_tests.rs
+@@ -94,3 +94,76 @@ fn a_fallen_ragdoll_comes_to_rest_with_its_joints_held() {
+         .sum();
+     assert!((up.structure.masses()[0] - mass).abs() < 1e-9);
+ }
++
++#[test]
++#[ignore = "A/B: the multipliers' refresh on identical states"]
++fn ab_lag() {
++    let mut world = World::new(DT);
++    world.statics.push(StaticShape::Plane {
++        normal: DVec3::Y,
++        offset: 0.0,
++    });
++    let mut b = character::body(DVec3::new(0.0, 0.02, 0.0), DVec3::Y, DT);
++    b.structure.angular_velocity[0] = DVec3::new(1.5, 0.0, 0.3);
++    let c = world.add(b);
++    fall(&mut world, c);
++    creeer_physics::profile::PLAIN_LAG.store(true, std::sync::atomic::Ordering::Relaxed);
++    let mut snapshots = Vec::new();
++    for _ in 0..240 {
++        snapshots.push(world.to_bytes());
++        world.step();
++    }
++    let gap = |w: &World| {
++        (w.joints().iter())
++            .map(|j| {
++                let p = |(b, n): (usize, usize), l: DVec3| {
++                    let s = &w.bodies[b].structure;
++                    s.position[n] + s.orientation[n] * l
++                };
++                (p(j.a, j.at_a) - p(j.b.unwrap(), j.at_b)).length()
++            })
++            .fold(0.0, f64::max)
++    };
++    eprintln!("reference end gap {:.2e}", gap(&world));
++    let back = World::from_bytes(&snapshots[100]).unwrap();
++    eprintln!("read back: gap {:.2e}, bodies {}, joints {}, statics {}", gap(&back), back.bodies.len(), back.joints().len(), back.statics.len());
++    let mut ends: Vec<Vec<Vec<DVec3>>> = Vec::new();
++    for plain in [true, false] {
++        creeer_physics::profile::PLAIN_LAG.store(plain, std::sync::atomic::Ordering::Relaxed);
++        let (mut its, mut total, mut worst, mut worst_gap) = (0u64, 0.0, 0.0f64, 0.0f64);
++        let mut end = Vec::new();
++        let _ = creeer_physics::profile::take();
++        for (index, bytes) in snapshots.iter().enumerate() {
++            if let Some(only) = std::env::var("ONLY").ok().and_then(|s| s.parse::<usize>().ok()) {
++                if index != only {
++                    end.push(Vec::new());
++                    continue;
++                }
++            }
++            let mut w = World::from_bytes(bytes).unwrap();
++            let before: u64 = w.bodies.iter().map(|b| b.solver.iterations_total).sum();
++            let t = std::time::Instant::now();
++            w.step();
++            let ms = t.elapsed().as_secs_f64() * 1e3;
++            its += w.bodies.iter().map(|b| b.solver.iterations_total).sum::<u64>() - before;
++            total += ms;
++            worst = worst.max(ms);
++            worst_gap = worst_gap.max(gap(&w));
++            if !plain && gap(&w) > 1e-2 && std::env::var_os("FIRST_BAD").is_some() {
++                eprintln!("first bad snapshot: {}", end.len());
++                std::process::exit(0);
++            }
++            end.push(w.bodies.iter().map(|b| b.structure.position[0]).collect());
++        }
++        let spent = creeer_physics::profile::take();
++        let names = creeer_physics::profile::NAMES;
++        let slot = |name: &str| names.iter().find(|n| n.1 == name).map_or(0, |n| spent[n.0 as usize]);
++        eprintln!("  group steps {} iterations {} lag updates {} lag iterations {} trials {}", slot("group steps"), slot("iterations"), slot("lag updates"), slot("lag iterations"), slot("trials"));
++        eprintln!("plain {plain}: {:.1} ms total, worst {worst:.2} ms, {} its/body, worst gap {worst_gap:.2e} m", total, its / 15);
++        ends.push(end);
++    }
++    let off = (ends[0].iter().zip(&ends[1]))
++        .flat_map(|(a, b)| a.iter().zip(b).map(|(p, q)| (*p - *q).length()))
++        .fold(0.0, f64::max);
++    eprintln!("largest difference of a segment's end position: {off:.2e} m");
++}

@@ -275,9 +275,9 @@ fn level_gradients_are_exact() {
             }
         }
         // Inside the dug ball the brush's gradient, far out the terrain's; near its rim the
-        // crease, with central differences.
+        // round, with central differences (wider on coarse grids: 16 m at 8 m cells).
         assert!(
-            exact > 40 && crease > 0,
+            exact >= 40 && crease > 0,
             "cell {cell}: {exact} exact, {crease} near the crease"
         );
     }

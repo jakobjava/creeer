@@ -3,6 +3,7 @@
 //! (drawn a little in the past, between snapshots), the terrain's edits, and its own avatar
 //! (predicted, `predicted.rs`). The game's window draws from it; tests play with it.
 
+use crate::play::record::Act;
 use crate::predicted::Predicted;
 use creeer_math::glam::DVec3;
 use creeer_net::channel::{RELIABLE, TICK_RATE, UNRELIABLE, config};
@@ -66,12 +67,38 @@ pub struct Connection {
     pub welcome: Option<Welcome>,
     /// What each entity in view is.
     pub kinds: BTreeMap<EntityId, Kind>,
+    /// Each entity's age, as the server last told it (G1.3c).
+    pub ages: BTreeMap<EntityId, creeer_net::message::Age>,
+    /// When each character last began a swing (G1.4e: the network tick).
+    pub swings: BTreeMap<EntityId, u32>,
     /// The members of structures that are broken.
     pub broken: BTreeMap<EntityId, BTreeSet<u32>>,
     /// The world's machines as the server last told them (F7.4).
     pub machines: Vec<creeer_net::message::MachineView>,
     /// The server's profile, as its last report gave it (while asked for: `watch_profile`).
     pub profile: Option<creeer_net::message::ProfileReport>,
+    /// The jetpack's gas, as the server last told it (kg).
+    pub gas: f64,
+    /// Its health (a share of a whole one), and whether it is down (its ragdoll, drawn as the
+    /// server has it: not predicted), as the server last told them.
+    pub health: f64,
+    pub fallen: bool,
+    /// What each of the body's parts has taken (head, torso, arms, legs; G1.9).
+    pub hurt: [f64; 4],
+    /// What the player carries, as the server last told it (G1.6a), and the loose things
+    /// picked up from the ground (G1.6c: not drawn).
+    pub inventory: creeer_net::message::Inventory,
+    pub taken: BTreeSet<u64>,
+    /// The items laid at rest on the ground, by id (G1.6: drawn, not bodies).
+    pub laid: BTreeMap<u64, creeer_net::message::Laid>,
+    /// Standing trees cut into or felled, by id (G1.7).
+    pub trees: BTreeMap<u64, creeer_net::message::TreeCut>,
+    /// Why the last command was refused, and when it was told (G1.6).
+    pub refused: Option<(String, std::time::Instant)>,
+    /// What came of the last thing done, and when it was told (G1.6).
+    pub noted: Option<(String, std::time::Instant)>,
+    /// What item bodies are (G1.6), by entity: a word, and a made thing's pieces.
+    pub items: BTreeMap<EntityId, creeer_net::message::ItemLook>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -80,10 +107,13 @@ pub struct Connection {
     playback: Playback,
     drawn_at: f64,
     terrain: Option<Arc<Terrain>>,
-    predicted: Option<Predicted>,
+    pub(crate) predicted: Option<Predicted>,
     /// Whether this tick is a send round (every [`INPUT_EVERY`]: the inputs, and renet's
     /// acknowledgements with them, go out together).
     due: bool,
+    /// What it sent, act by act, while recording (`record`), and the commands since the
+    /// last input.
+    recording: Option<(Vec<Act>, Vec<Command>)>,
 }
 
 impl std::fmt::Debug for Connection {
@@ -107,8 +137,21 @@ impl Connection {
             welcome: None,
             kinds: BTreeMap::new(),
             broken: BTreeMap::new(),
+            ages: BTreeMap::new(),
+            swings: BTreeMap::new(),
             machines: Vec::new(),
             profile: None,
+            gas: creeer_sim::character::TANK,
+            health: 1.0,
+            hurt: [0.0; 4],
+            fallen: false,
+            inventory: creeer_net::message::Inventory::default(),
+            taken: BTreeSet::new(),
+            laid: BTreeMap::new(),
+            trees: BTreeMap::new(),
+            refused: None,
+            noted: None,
+            items: BTreeMap::new(),
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),
@@ -117,7 +160,22 @@ impl Connection {
             terrain: None,
             predicted: None,
             due: true,
+            recording: None,
         }
+    }
+
+    /// Records from now on every input and command it sends (a play scene's track, or a
+    /// live player's: `play::record`).
+    pub fn record(&mut self) {
+        self.recording = Some((Vec::new(), Vec::new()));
+    }
+
+    /// What it recorded since `record` (and goes on recording).
+    pub fn take_recording(&mut self) -> Vec<Act> {
+        self.recording
+            .as_mut()
+            .map(|(acts, _)| std::mem::take(acts))
+            .unwrap_or_default()
     }
 
     /// Joins as `name` (data of hash `content`) through `end` (`Server::connect_memory`).
@@ -149,9 +207,15 @@ impl Connection {
 
     /// Gives it the terrain of the planet it plays on (the one the welcome names): the edits
     /// so far are applied to it, and the avatar is predicted on it from now on.
-    pub fn attach_terrain(&mut self, terrain: Arc<Terrain>) {
+    pub fn attach_terrain(&mut self, terrain: Arc<Terrain>, data: &creeer_data::Data) {
         terrain.set_edits(self.edits.clone());
-        self.predicted = Some(Predicted::new(Arc::clone(&terrain)));
+        // The planet's air and sea, as the server's world has them (its packs are this one's).
+        let around = creeer_materials::species::SpeciesTable::from_data(data)
+            .ok()
+            .and_then(|species| {
+                creeer_sim::surroundings::Surroundings::of(terrain.planet(), &species).ok()
+            });
+        self.predicted = Some(Predicted::new(Arc::clone(&terrain), around));
         self.terrain = Some(terrain);
     }
 
@@ -195,8 +259,11 @@ impl Connection {
             }
         }
         while let Some(bytes) = self.renet.receive_message(UNRELIABLE) {
-            if let Ok(ServerMessage::Snapshot(snapshot)) = from_bytes::<ServerMessage>(&bytes) {
-                self.snapshot(&snapshot);
+            // (Its own character's state comes this way too, with every round.)
+            if let Ok(m @ (ServerMessage::Snapshot(_) | ServerMessage::Own { .. })) =
+                from_bytes::<ServerMessage>(&bytes)
+            {
+                self.handle(m);
             }
         }
         let newest = self.receiver.newest().map(|s| s.tick);
@@ -214,58 +281,20 @@ impl Connection {
         }
     }
 
-    fn handle(&mut self, message: ServerMessage) {
-        match message {
-            ServerMessage::Welcome {
-                client,
-                avatar,
-                planet,
-                ..
-            } => {
-                self.status = Status::Joined;
-                self.welcome = Some(Welcome {
-                    client,
-                    avatar,
-                    planet,
-                });
-            }
-            ServerMessage::Refused(why) => self.status = Status::Refused(why),
-            ServerMessage::Spawn(id, kind) => {
-                self.broken.remove(&id);
-                self.kinds.insert(id, kind);
-            }
-            ServerMessage::Despawn(id) => {
-                self.kinds.remove(&id);
-                self.broken.remove(&id);
-            }
-            ServerMessage::Edits { first, log } => self.edited(first, &log),
-            ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),
-            ServerMessage::Snapshot(snapshot) => self.snapshot(&snapshot),
-            ServerMessage::Machines(list) => self.machines = list,
-            ServerMessage::Profile(report) => self.profile = Some(report),
-        }
-    }
-
-    fn snapshot(&mut self, bytes: &[u8]) {
-        let Ok(snapshot) = self.receiver.read(bytes) else {
-            return;
-        };
-        let (tick, last_input) = (snapshot.tick, snapshot.last_input);
-        let mine = self
-            .welcome
-            .as_ref()
-            .and_then(|w| snapshot.states.get(&w.avatar))
-            .copied();
-        if let (Some(state), Some(p)) = (mine, &mut self.predicted) {
-            p.reconcile(tick, &state, last_input);
-        }
-    }
-
-    /// One client tick of input: walk at `walk` (m/s, along the ground), jump or not. It
-    /// moves the predicted avatar at once and goes to the server (with the last few).
-    pub fn input(&mut self, walk: DVec3, jump: bool) {
+    /// One client tick of input: walk at `walk` (m/s, along the ground), jump or not, the
+    /// jetpack's `thrust` (a fraction of its most). It moves the predicted avatar at once and
+    /// goes to the server (with the last few).
+    pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) {
         let Some(p) = &mut self.predicted else { return };
-        let input = p.input(walk, jump);
+        if let Some((acts, commands)) = &mut self.recording {
+            acts.push(Act {
+                walk,
+                jump,
+                thrust,
+                commands: std::mem::take(commands),
+            });
+        }
+        let input = p.input(walk, jump, thrust);
         if input.seq % INPUT_EVERY != 0 {
             return;
         }
@@ -279,6 +308,9 @@ impl Connection {
 
     /// Asks the world for something.
     pub fn command(&mut self, command: Command) {
+        if let Some((_, commands)) = &mut self.recording {
+            commands.push(command.clone());
+        }
         self.renet
             .send_message(RELIABLE, to_bytes(&ClientMessage::Command(command)));
         self.due = true;
@@ -314,19 +346,6 @@ impl Connection {
         }
     }
 
-    /// Every entity's pose to draw it at now (the player's own avatar where it is predicted).
-    pub fn poses(&self) -> BTreeMap<EntityId, Pose> {
-        let mut poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
-        poses.retain(|id, _| self.kinds.contains_key(id));
-        if let (Some(w), Some(pose)) = (
-            &self.welcome,
-            self.predicted.as_ref().and_then(Predicted::pose),
-        ) {
-            poses.insert(w.avatar, pose);
-        }
-        poses
-    }
-
     /// How far the prediction of the player's avatar was corrected.
     pub fn corrections(&self) -> crate::predicted::Corrections {
         self.predicted
@@ -337,6 +356,12 @@ impl Connection {
 
     /// The player's own avatar as drawn, once it has come.
     pub fn avatar(&self) -> Option<Pose> {
+        if self.fallen {
+            // Down: its pelvis as the server has it.
+            let pelvis = self.welcome.as_ref()?.avatar;
+            let poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
+            return poses.get(&pelvis).copied();
+        }
         self.predicted.as_ref()?.pose()
     }
 
@@ -361,4 +386,8 @@ impl Connection {
     }
 }
 
+mod aim;
+pub use aim::Aimed;
 mod apply;
+mod draw;
+mod receive;

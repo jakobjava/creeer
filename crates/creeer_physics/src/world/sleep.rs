@@ -44,6 +44,18 @@ impl Body {
         }
     }
 
+    /// Puts the body to sleep where it is, at rest under its present loads: a body mirrored
+    /// asleep from another world (a client's prediction of what the server has asleep,
+    /// ADR-0025). It wakes as any sleeping body does.
+    pub fn sleep_now(&mut self) {
+        let s = &mut self.structure;
+        s.velocity.fill(DVec3::ZERO);
+        s.angular_velocity.fill(DVec3::ZERO);
+        self.sleep.load.clone_from(&s.load);
+        self.sleep.asleep = true;
+        self.solver.reset_history(&self.structure);
+    }
+
     fn is_still(&self) -> bool {
         let s = &self.structure;
         s.velocity.iter().all(|v| v.length() < STILL_SPEED)
@@ -87,7 +99,11 @@ impl World {
     /// once all their bodies have been still long enough (one body falling asleep alone
     /// would be woken again at once by its still-awake neighbour).
     pub(super) fn update_sleep(&mut self, groups: &[Vec<usize>]) {
-        for body in self.bodies.iter_mut().filter(|b| !b.sleep.asleep) {
+        let only = self.only.as_deref();
+        let stepped = |b: usize| only.is_none_or(|only| only[b]);
+        for (_, body) in
+            (self.bodies.iter_mut().enumerate()).filter(|(i, b)| !b.sleep.asleep && stepped(*i))
+        {
             if body.is_still() {
                 body.sleep.still += 1;
             } else {

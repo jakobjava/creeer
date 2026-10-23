@@ -1,0 +1,471 @@
+# P1 second pass (G1.8, 2026-10-23): friction experiments, measured and rejected (ADR-0024,
+# "Second pass"). Against 90258e4. Env switches: NOLBFGS (pure Newton for rigid groups), REVERSE
+# (sliding contacts turned back through their anchors stiffened, `contact/reversal.rs`), LAMX (lambda
+# extrapolated from the last two states), SELREF (refresh only for sliding or near-cone contacts),
+# EARLY=<k> (refresh at k tolerances), NOFRIC (friction off: the bound), PROBE (the energy parts
+# along rejected Newton steps). Bench: crates/creeer_client/src/physics_states.rs.
+
+diff --git a/crates/creeer_physics/src/structure/coupling.rs b/crates/creeer_physics/src/structure/coupling.rs
+index fa5e879..01681e0 100644
+--- a/crates/creeer_physics/src/structure/coupling.rs
++++ b/crates/creeer_physics/src/structure/coupling.rs
+@@ -47,6 +47,14 @@ pub trait Coupling: Sync {
+     fn energy(&self, states: &[MemberState<'_>]) -> f64;
+     /// Stored elastic energy only (for the energy guard).
+     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64;
++    /// PROBE (temporary): [`Self::energy`] by part.
++    fn parts(&self, states: &[MemberState<'_>]) -> [f64; 5] {
++        [self.energy(states), 0.0, 0.0, 0.0, 0.0]
++    }
++    /// PROBE (temporary): each friction contact's slip and μλ, and the smoothing.
++    fn slips(&self, _states: &[MemberState<'_>]) -> (Vec<(DVec3, f64)>, f64) {
++        (Vec::new(), 0.0)
++    }
+     /// The part of [`Self::elastic_energy`] found anew each step (contacts), against which
+     /// [`Self::carried`] is compared: joints' drives are not found anew.
+     fn found_energy(&self, states: &[MemberState<'_>]) -> f64 {
+@@ -93,6 +101,18 @@ pub trait Coupling: Sync {
+         false
+     }
+ 
++    /// After [`Self::relinearise`]: stiffens the coupling's matrix where `direction` would
++    /// take its laws past what the matrix describes (sliding contacts turned back through
++    /// their anchors, `contact/reversal.rs`); whether it changed.
++    fn stiffen(
++        &mut self,
++        _states: &[MemberState<'_>],
++        _direction: &[DVec3],
++        _offsets: &[usize],
++    ) -> bool {
++        false
++    }
++
+     /// The elastic energy the coupling held at the end of the last step, where it was found
+     /// anew for this one (J), if known; given once.
+     fn carried(&mut self) -> Option<f64> {
+diff --git a/crates/creeer_physics/src/structure/minimise.rs b/crates/creeer_physics/src/structure/minimise.rs
+index cdfe662..4f7d28f 100644
+--- a/crates/creeer_physics/src/structure/minimise.rs
++++ b/crates/creeer_physics/src/structure/minimise.rs
+@@ -38,6 +38,33 @@ fn remake(
+     RigidSystem::again(old, members, coupling, rigid)
+ }
+ 
++/// Newton's direction for the residuals `all`, in place: each member's own matrix, the rigid
++/// bodies' joint system, and the rigid bodies resting on structures (`coupled.rs`).
++fn newton(
++    members: &mut [Member<'_>],
++    rigid: &[Option<[[f64; 6]; 6]>],
++    system: &mut Option<RigidSystem>,
++    coupled: Option<&Coupled>,
++    offsets: &[usize],
++    all: &mut [DVec3],
++) {
++    let kept = coupled.map(|c| c.residuals(all, offsets));
++    for (m, ((s, v), matrix)) in members.iter_mut().zip(rigid).enumerate() {
++        if system.as_ref().is_some_and(|j| j.contains(m)) || coupled.is_some_and(|c| c.contains(m))
++        {
++            continue;
++        }
++        let range = offsets[m]..offsets[m] + v.work.direction.len();
++        v.precondition(s, &mut all[range], matrix.as_ref());
++    }
++    if let Some(joint) = system.as_mut() {
++        joint.solve(all, offsets);
++    }
++    if let (Some(c), Some(kept)) = (coupled, kept.as_ref()) {
++        c.solve(all, kept, offsets);
++    }
++}
++
+ /// How far `direction` goes down the objective: the residual (the negative gradient) along it.
+ fn downhill(residual: &[DVec3], direction: &[DVec3]) -> f64 {
+     residual.iter().zip(direction).map(|(r, d)| r.dot(*d)).sum()
+@@ -124,6 +151,10 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+     // piles of sliding rocks creeping, 50–400 iterations a step (F6).
+     let relinear = coupled.is_none() && rigid.iter().all(Option::is_some);
+     let mut refactored = false;
++    let nolbfgs = std::env::var_os("NOLBFGS").is_some();
++    let stiffening = std::env::var_os("REVERSE").is_some();
++    let early: f64 = std::env::var("EARLY").ok().and_then(|s| s.parse().ok()).unwrap_or(0.0);
++    let mut early_updates = 0;
+     for iteration in 0..max_iterations {
+         // (Not at the very end: within ten tolerances the last iterate's matrix serves as well,
+         // and making it again cost a stack of crates a tenth of its step.)
+@@ -157,23 +188,22 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+         }
+         direction.copy_from_slice(&residual);
+         lbfgs.direction(&mut direction, |all| {
+-            let kept = coupled.as_ref().map(|c| c.residuals(all, &offsets));
+-            for (m, ((s, v), matrix)) in members.iter_mut().zip(&rigid).enumerate() {
+-                if system.as_ref().is_some_and(|j| j.contains(m))
+-                    || coupled.as_ref().is_some_and(|c| c.contains(m))
+-                {
+-                    continue;
++            newton(members, &rigid, &mut system, coupled.as_ref(), &offsets, all);
++        });
++        // Where the direction takes a law past what its matrix describes (a sliding contact
++        // back through its anchor), the matrix is stiffened there and the direction solved
++        // again, as Newton's alone (`Coupling::stiffen`).
++        if relinear && stiffening {
++            for _ in 0..2 {
++                if !coupling.stiffen(&states(members), &direction, &offsets) {
++                    break;
+                 }
+-                let range = offsets[m]..offsets[m] + v.work.direction.len();
+-                v.precondition(s, &mut all[range], matrix.as_ref());
+-            }
+-            if let Some(joint) = system.as_mut() {
+-                joint.solve(all, &offsets);
+-            }
+-            if let (Some(c), Some(kept)) = (coupled.as_ref(), kept.as_ref()) {
+-                c.solve(all, kept, &offsets);
++                system = remake(system.take(), members, coupling, &mut rigid);
++                direction.copy_from_slice(&residual);
++                newton(members, &rigid, &mut system, coupled.as_ref(), &offsets, &mut direction);
++                lbfgs.clear();
+             }
+-        });
++        }
+         // A direction uphill would fail every line search, and a failed search reads as
+         // convergence (the joint solve of rigid bodies on structures gave such directions while
+         // its correction for the contacts was scaled wrong: a frame froze 3 mm above its piers
+@@ -242,6 +272,90 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             }
+         }
+         members[0].1.timings.objective += t.elapsed();
++        #[allow(clippy::float_cmp)]
++        if std::env::var_os("PROBE").is_some()
++            && iteration >= 4
++            && first_alpha == 1.0
++            && accepted.as_ref().is_some_and(|a| !a.3)
++        {
++            // The objective's parts along the direction at 0, ¼, ½ and 1, and how far each
++            // lies at 1 from the parabola through the first three.
++            let mut rows: Vec<[f64; 6]> = Vec::new();
++            let mut slips = Vec::new();
++            for a in [0.0, 0.25, 0.5, 1.0] {
++                let mut own = 0.0;
++                for (s, v) in members.iter_mut() {
++                    v.work.set_trial(s, a);
++                    own += v.work.evaluate(s, true, false).0;
++                }
++                let p = coupling.parts(&trial_states(members));
++                rows.push([own, p[0], p[1], p[2], p[3], p[4]]);
++                slips.push(coupling.slips(&trial_states(members)));
++            }
++            let e = slips[0].1;
++            let f0 = |r: f64| {
++                if r >= e {
++                    r
++                } else {
++                    -r * r * r / (3.0 * e * e) + r * r / e + e / 3.0
++                }
++            };
++            // Per contact: (class, excess at 1 over its own local quadratic model).
++            let mut classes = [(0usize, 0.0f64); 5];
++            let names_c = ["stick>stick", "stick>slip", "slip>stick", "slip>slip turned", "slip>slip"];
++            for i in 0..slips[0].0.len() {
++                let (u0, ml) = slips[0].0[i];
++                if ml <= 0.0 {
++                    continue;
++                }
++                let u1 = slips[3].0[i].0;
++                let du = (slips[1].0[i].0 - u0) * 4.0;
++                let r = u0.length();
++                let (d1, d2) = if r >= e {
++                    (1.0, 0.0)
++                } else {
++                    (2.0 * r / e - r * r / (e * e), 2.0 / e - 2.0 * r / (e * e))
++                };
++                let along = if r > 0.0 { u0 / r } else { DVec3::ZERO };
++                let (a, p) = (du.dot(along), du - along * du.dot(along));
++                let f1 = if r > 0.0 { d1 / r } else { 2.0 / e };
++                let model = ml * (f0(r) + d1 * a + 0.5 * (d2 * a * a + f1 * p.length_squared()));
++                let excess = ml * f0(u1.length()) - model;
++                let turned = u0.length() > 0.0
++                    && u1.length() > 0.0
++                    && u0.normalize().dot(u1.normalize()) < 0.5;
++                let k = match (r < e, u1.length() < e) {
++                    (true, true) => 0,
++                    (true, false) => 1,
++                    (false, true) => 2,
++                    (false, false) if turned => 3,
++                    _ => 4,
++                };
++                classes[k].0 += 1;
++                classes[k].1 += excess;
++            }
++            let summary: Vec<String> = (0..5)
++                .map(|k| format!("{} {}:{:+.2e}", names_c[k], classes[k].0, classes[k].1))
++                .collect();
++            eprintln!("  CLASSES e {e:.1e}: {}", summary.join(", "));
++            let names = ["own", "elastic", "damping", "friction", "twist", "joints"];
++            let excess: Vec<String> = (0..6)
++                .map(|k| {
++                    let curve = 16.0 * (rows[2][k] - 2.0 * rows[1][k] + rows[0][k]);
++                    let late = 4.0 * (rows[3][k] - 2.0 * rows[2][k] + rows[0][k]) / 1.0;
++                    format!("{} {:+.2e}/{:+.2e}", names[k], curve, late)
++                })
++                .collect();
++            let total = |r: &[f64; 6]| r.iter().sum::<f64>();
++            eprintln!(
++                "PROBE it {iteration} alpha {alpha:.3} drop(1) {:+.3e} slope {slope:+.3e} | {}",
++                total(&rows[3]) - total(&rows[0]),
++                excess.join(", ")
++            );
++            for (s, v) in members.iter_mut() {
++                v.work.set_trial(s, alpha);
++            }
++        }
+         let Some((value, members_value, elastic, first_trial)) = accepted else {
+             // G is at its minimum to machine precision: converged, so the lagged quantities
+             // are refreshed as below. (Stopping here without the refresh left a box starting
+@@ -291,7 +405,16 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             _ => moved,
+         };
+         (previous_move, previous_rate) = (moved, rate);
+-        if remaining < tolerance {
++        if early > 0.0 && early_updates < 2 && remaining >= tolerance && remaining < early * tolerance {
++            early_updates += 1;
++            if coupling.update_lag(&states(members)) {
++                crate::profile::add(crate::profile::Slot::LagUpdates, 1);
++            }
++            objective = own + coupling.energy(&states(members));
++            lag_changed = true;
++            (previous_move, previous_rate) = (f64::INFINITY, None);
++            lbfgs.clear();
++        } else if remaining < tolerance {
+             // Converged with the lagged quantities: refresh them (at most 3 times) and go on
+             // if they moved (IPC's lagged friction iterations).
+             if lag_updates == 3 || !coupling.update_lag(&states(members)) {
+@@ -338,7 +461,9 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling)
+             .collect();
+         residual = new;
+         if !lag_changed {
+-            lbfgs.push(step, change);
++            if !nolbfgs || !relinear {
++                lbfgs.push(step, change);
++            }
+         }
+         members[0].1.timings.residual += t.elapsed();
+     }
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index 31c6552..4f629e1 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -9,6 +9,11 @@ impl Coupling for Contacts {
+     fn begin(&mut self, info: &StepInfo<'_>) {
+         self.joints.begin(info);
+         self.kept.clear();
++        if std::env::var_os("NOFRIC").is_some() {
++            for c in &mut self.list {
++                c.friction = 0.0;
++            }
++        }
+         self.beta = info.beta;
+         self.smoothing = STICK_DISTANCE;
+         self.carried.clear();
+@@ -46,6 +51,13 @@ impl Coupling for Contacts {
+             })
+             .collect();
+         let (_, forces, _) = self.normal_forces(&gaps_start, &measured_start, false);
++        let mut lambdas = forces.clone();
++        if std::env::var_os("LAMX").is_some() {
++            let (_, before, _) = self.normal_forces(&gaps_previous, &measured_previous, false);
++            for ((f, b), now) in lambdas.iter_mut().zip(&before).zip(&forces) {
++                *f = (*now + ahead * (*now - *b)).max(0.0);
++            }
++        }
+         for i in 0..self.list.len() {
+             let c = self.list[i];
+             let ((pa, arm_a), (_, arm_b)) = (point(c.a, info.start), point(c.b, info.start));
+@@ -73,7 +85,7 @@ impl Coupling for Contacts {
+             // pressed together by their weight, and without their contacts the first step
+             // of a stack took 51 iterations.
+             c.touching = gaps_start[i] <= 0.0 || c.gap_hat + c.approach.min(0.0) * self.beta < 0.0;
+-            c.lambda = forces[i];
++            c.lambda = lambdas[i];
+             let k = self.matrix_stiffness(i, gaps_start[i], info.h);
+             let c = &mut self.list[i];
+             c.stiffness = k;
+@@ -138,6 +150,28 @@ impl Coupling for Contacts {
+         elastic + damping + friction + twist + self.joints.energy(states)
+     }
+ 
++    fn parts(&self, states: &[MemberState<'_>]) -> [f64; 5] {
++        let geometry = self.geometry(states);
++        let (at, measured, gaps) = (&geometry.at, &geometry.measured, geometry.gaps());
++        let (elastic, _, _) = self.normal_forces(&gaps, measured, false);
++        let (damping, _, _) = self.dashpots(&gaps, measured);
++        let friction: f64 = (self.list.iter())
++            .zip(at.iter())
++            .map(|(c, &(_, _, _, slip, _, _))| c.friction * c.lambda * self.smooth(slip.length()).0)
++            .sum();
++        let twist = self.twist_energy(states);
++        [elastic, damping, friction, twist, self.joints.energy(states)]
++    }
++
++    fn slips(&self, states: &[MemberState<'_>]) -> (Vec<(DVec3, f64)>, f64) {
++        let geometry = self.geometry(states);
++        let slips = (self.list.iter())
++            .zip(geometry.at.iter())
++            .map(|(c, &(_, _, _, slip, _, _))| (slip, c.friction * c.lambda))
++            .collect();
++        (slips, self.smoothing)
++    }
++
+     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
+         let geometry = self.geometry(states);
+         self.normal_forces(&geometry.gaps(), &geometry.measured, false)
+@@ -229,12 +263,23 @@ impl Coupling for Contacts {
+         }
+         let geometry = self.geometry(states);
+         let (_, forces, _) = self.normal_forces(&geometry.gaps(), &geometry.measured, false);
+-        for (c, &force) in self.list.iter_mut().zip(&forces) {
++        let selective = std::env::var_os("SELREF").is_some();
++        let e = self.smoothing;
++        for i in 0..self.list.len() {
++            let (c, force) = (self.list[i], forces[i]);
+             // Only friction uses λ: contacts without friction never need a refresh.
+             if c.friction > 0.0 && (force - c.lambda).abs() > 0.05 * force.max(c.lambda) {
+-                changed = true;
++                let r = geometry.at[i].3.length();
++                let held = if r >= e {
++                    c.lambda
++                } else {
++                    c.lambda * (2.0 * r / e - r * r / (e * e))
++                };
++                if !selective || Contacts::carried(self, i).is_some() || r >= e || held > 0.95 * force {
++                    changed = true;
++                }
+             }
+-            c.lambda = force;
++            self.list[i].lambda = force;
+         }
+         changed
+     }
+@@ -247,6 +292,7 @@ impl Coupling for Contacts {
+     /// made again from them.
+     fn relinearise(&mut self, states: &[MemberState<'_>]) -> bool {
+         self.joints.make_blocks(states);
++        self.reversed.clear();
+         let e = self.smoothing;
+         let geometry = self.geometry(states);
+         let gaps = geometry.gaps();
+@@ -291,6 +337,15 @@ impl Coupling for Contacts {
+         true
+     }
+ 
++    fn stiffen(
++        &mut self,
++        states: &[MemberState<'_>],
++        direction: &[DVec3],
++        offsets: &[usize],
++    ) -> bool {
++        self.stiffen_reversals(states, direction, offsets)
++    }
++
+     fn rigid_coupling(&self) -> Vec<NodeCoupling> {
+         let mut blocks = self.coupling_blocks();
+         // The joints' blocks, added to the contacts' between the same nodes.
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 8bdbff5..70ddc57 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -38,6 +38,7 @@ mod matrix;
+ mod measure;
+ mod normal;
+ pub mod patch;
++mod reversal;
+ #[cfg(test)]
+ mod patch_tests;
+ pub mod turning;
+@@ -270,6 +271,9 @@ pub struct Contacts {
+     twist_smoothing: f64,
+     /// The group's joints (`world/joint.rs`): terms of the same minimisation.
+     pub(crate) joints: crate::world::joint::Joints,
++    /// Which sliding contacts' matrices took stiffness along their slip at this iteration
++    /// (`Contacts::stiffen_reversals`).
++    reversed: Vec<bool>,
+ }
+ 
+ impl Contacts {
+@@ -302,6 +306,7 @@ impl Contacts {
+             left: None,
+             twist_smoothing: 1.0,
+             joints: crate::world::joint::Joints::default(),
++            reversed: Vec::new(),
+         }
+     }
+ 
+diff --git a/crates/creeer_physics/src/world/contact/reversal.rs b/crates/creeer_physics/src/world/contact/reversal.rs
+new file mode 100644
+index 0000000..cdad2d9
+--- /dev/null
++++ b/crates/creeer_physics/src/world/contact/reversal.rs
+@@ -0,0 +1,64 @@
++//! Sliding contacts that a Newton direction turns back through their anchor (`mod.rs`).
++//!
++//! A sliding contact's friction is Coulomb's μλ along its slip: its exact Hessian has no
++//! stiffness along the slip, so Newton's model takes its force as constant however far the
++//! direction moves it, back past its anchor too, where the true friction turns about and
++//! rises again. A pile's full Newton steps were rejected for this and its line searches cut
++//! them to a tenth, iteration after iteration (G1.8, P1). Where the direction brings a sliding
++//! contact closest to its anchor within the step, its matrix takes the secant μλ/|u| along
++//! the slip: the friction's model along the slip then has its least at the anchor, where the
++//! true one has. Elsewhere the exact Hessian stays (a secant everywhere made a sliding rock's
++//! steps creep, F6).
++
++use super::{Contacts, Side};
++use crate::structure::group::MemberState;
++use creeer_math::glam::{DMat3, DVec3};
++
++impl Contacts {
++    /// Stiffens the matrices of the sliding contacts `direction` takes closest to their
++    /// anchors within the step (`offsets`: each member's start in it); whether any was.
++    pub(super) fn stiffen_reversals(
++        &mut self,
++        states: &[MemberState<'_>],
++        direction: &[DVec3],
++        offsets: &[usize],
++    ) -> bool {
++        let moved = |side: Side, arm: DVec3| match side {
++            Side::Node { member, node, .. } => {
++                let n = states[member].position.len();
++                let at = offsets[member];
++                direction[at + node] + direction[at + n + node].cross(arm)
++            }
++            Side::Fixed(_) => DVec3::ZERO,
++        };
++        let geometry = self.geometry(states);
++        self.reversed.resize(self.list.len(), false);
++        let mut any = false;
++        for i in 0..self.list.len() {
++            let c = self.list[i];
++            let Some(tangent) = c.tangent else { continue };
++            if self.reversed[i] || c.friction * c.lambda <= 0.0 || self.carried(i).is_some() {
++                continue;
++            }
++            let (_, _, _, slip, arm_a, arm_b) = geometry.at[i];
++            let r = slip.length();
++            if r < self.smoothing {
++                continue;
++            }
++            let relative = moved(c.a, arm_a) - moved(c.b, arm_b);
++            let change = relative - c.normal * c.normal.dot(relative);
++            // Back along the slip past the anchor: there the constant force is wrong.
++            if -slip.dot(change) > r * r {
++                let along = slip / r;
++                let outer = DMat3::from_cols(along * along.x, along * along.y, along * along.z);
++                self.list[i].tangent = Some(tangent + outer * (c.friction * c.lambda / r));
++                self.reversed[i] = true;
++                any = true;
++            }
++        }
++        if any {
++            self.rigid = self.rigid_blocks();
++        }
++        any
++    }
++}

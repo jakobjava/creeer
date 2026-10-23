@@ -140,6 +140,7 @@ impl Running {
                 },
             );
             request = system_ui::window(ui.ctx(), view, &s, &built.camera);
+            self.profiler.set_gpu(self.renderer.gpu_times());
             self.profiler.window(ui.ctx(), None);
             if view.map {
                 system_ui::paint_labels(ui.ctx(), &built.camera, &built.labels);

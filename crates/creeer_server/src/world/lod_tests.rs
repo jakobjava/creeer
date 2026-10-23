@@ -73,9 +73,10 @@ fn a_resting_stack_far_away_is_parked_and_comes_back_bit_for_bit() {
     run(&mut plain, ticks + 200, None);
     run(&mut parking, 200, Some(centre));
     assert_eq!(bytes_of(&parking, &[ada]), bytes_of(&plain, &[ada]));
-    // A player comes near: back, bit for bit as the stack that never left.
+    // A player comes near: back, bit for bit as the stack that never left. (Ada, far from
+    // them and asleep, is parked in turn.)
     let near = position(&plain, ids[0]);
-    while parking.parked().1 > 0 {
+    while ids.iter().any(|&id| parking.is_parked(id)) {
         parking.regions(&[near]);
         parking.step();
         plain.step();
@@ -144,7 +145,7 @@ fn parked_islands_are_saved_and_loaded() {
     assert_eq!(loaded.to_save().to_bytes(), bytes);
     let near = above(&w, FAR, 1.0);
     for world in [&mut w, &mut loaded] {
-        while world.parked().1 > 0 {
+        while ids.iter().any(|&id| world.is_parked(id)) {
             world.regions(&[near]);
             world.step();
         }
@@ -158,8 +159,9 @@ fn an_offline_players_avatar_is_parked_and_back_when_they_return() {
     let ada = w.avatar_of("ada");
     // Bob walked far east before he left.
     let east = FAR;
-    let at = above(&w, east, creeer_sim::avatar::RADIUS + 0.02);
-    let bob = w.add_body(creeer_sim::avatar::body(at, DT), Some("bob".into()));
+    let feet = above(&w, east, 0.02);
+    let body = creeer_sim::character::body(feet, feet.normalize(), DT);
+    let bob = w.add_body(body, Some("bob".into()));
     let centre = position(&w, ada);
     let mut ticks = 0;
     while !w.is_parked(bob) {

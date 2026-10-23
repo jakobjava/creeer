@@ -1,6 +1,7 @@
 //! The tech demo's Sandbox window.
 
 use super::*;
+use creeer_render::renderer::AoQuality;
 
 impl Running {
     /// A key pressed: the profiler's (F9), the solar system's or the planet's. Returns
@@ -56,6 +57,20 @@ impl Running {
                         self.renderer.set_shadow_quality(self.settings.shadows);
                     }
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Ambient occlusion:");
+                    let mut ao = self.renderer.ao_settings();
+                    for (quality, name) in [
+                        (AoQuality::Off, "off"),
+                        (AoQuality::Low, "low"),
+                        (AoQuality::Medium, "medium"),
+                        (AoQuality::High, "high"),
+                    ] {
+                        ui.radio_value(&mut ao.quality, quality, name);
+                    }
+                    // Only a change makes new textures.
+                    self.renderer.set_ao(ao);
+                });
                 ui.add(
                     egui::Slider::new(&mut self.settings.sun_elevation, -12.0..=90.0)
                         .text("sun elevation (°)"),
@@ -107,5 +122,16 @@ impl Running {
                 ui.label("Right mouse: look · WASD: move · Space/Ctrl: up/down");
                 ui.label("Shift: ×10 speed · Mouse wheel: change speed");
             });
+    }
+}
+
+impl Running {
+    /// Where the sandbox sits: at the origin, or far from it (the precision switch).
+    pub(super) fn scene_origin(&self) -> DVec3 {
+        if self.settings.far_origin {
+            FAR_ORIGIN
+        } else {
+            DVec3::ZERO
+        }
     }
 }

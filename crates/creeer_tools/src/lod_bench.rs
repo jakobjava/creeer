@@ -51,12 +51,17 @@ pub(crate) fn world() -> (ServerWorld, Vec<EntityId>) {
     let mut players = Vec::new();
     for k in 0..8 {
         let east = 300.0 * f64::from(k);
-        let at = place(&w, east, 0.0, creeer_sim::avatar::RADIUS + 0.02);
-        players.push(w.add_body(creeer_sim::avatar::body(at, DT), Some(format!("p{k}"))));
+        let feet = place(&w, east, 0.0, 0.02);
+        let body = creeer_sim::character::body(feet, feet.normalize(), DT);
+        players.push(w.add_body(body, Some(format!("p{k}"))));
         for c in 0..50 {
             let (x, y) = (f64::from(c % 10) * 1.5, f64::from(c / 10) * 1.5);
             let at = place(&w, east + 5.0 + x, 5.0 + y, 0.6);
-            w.apply(&Command::Crate(at), None).expect("a crate");
+            // (Since G1.7 the yards are in the forest: none is put into a trunk.)
+            match w.apply(&Command::Crate(at), None) {
+                Err(e) if e != "a tree stands there" => panic!("a crate: {e}"),
+                _ => {}
+            }
         }
     }
     (w, players)

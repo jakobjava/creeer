@@ -320,7 +320,7 @@ impl Patch {
         let shifted = |sigma: DVec3| -> [f64; 4] {
             std::array::from_fn(|k| depths[k] - DVec3::from(self.rigid[k]).dot(sigma))
         };
-        let total = |sigma: DVec3, material: f64| self.layer.at(sigma).0 + material;
+        let total = |sigma: DVec3, material: f64| self.layer.energy(sigma) + material;
         // Newton on the convex Φ(σ).
         let mut sigma = start;
         let mut at = self.material(shifted(sigma), offsets);

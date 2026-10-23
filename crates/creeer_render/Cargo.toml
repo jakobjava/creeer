@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_art.workspace = true
 creeer_math.workspace = true
 wgpu.workspace = true
 egui.workspace = true
@@ -15,6 +16,7 @@ bytemuck.workspace = true
 png.workspace = true
 
 [dev-dependencies]
+creeer_data.workspace = true
 approx.workspace = true
 pollster.workspace = true
 

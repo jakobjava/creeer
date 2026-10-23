@@ -1,5 +1,5 @@
 // Added to the base pack's rocks: a chromite ore (layered intrusions, Bushveld-like).
 [
-    (name: "chromitite", color: "#2d2a33", porosity: 0.01, minerals: [
+    (name: "chromitite", color: "#2d2a33", porosity: 0.01, strength: Some("180 MPa"), minerals: [
         ("chromite", 0.60), ("olivine", 0.25), ("plagioclase", 0.15)]),
 ]

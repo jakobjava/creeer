@@ -39,18 +39,31 @@ impl Grid {
             cell(centre - DVec3::splat(radius)),
             cell(centre + DVec3::splat(radius)),
         );
+        let within = |found: &Vec<(EntityId, DVec3)>, out: &mut Vec<(EntityId, DVec3)>| {
+            out.extend(
+                found
+                    .iter()
+                    .filter(|(_, p)| (*p - centre).length_squared() <= radius * radius),
+            );
+        };
         let mut out = Vec::new();
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    let Some(found) = self.cells.get(&[x, y, z]) else {
-                        continue;
-                    };
-                    out.extend(
-                        found
-                            .iter()
-                            .filter(|(_, p)| (*p - centre).length_squared() <= radius * radius),
-                    );
+        // A view's box spans (2·600/32)³ ≈ 55,000 cells, most of them empty: when fewer are
+        // occupied, those are visited instead (the same entities: sorted below).
+        let span = (0..3).fold(1u128, |n, k| n * (hi[k] - lo[k] + 1).unsigned_abs() as u128);
+        if span > self.cells.len() as u128 {
+            for (key, found) in &self.cells {
+                if (0..3).all(|k| (lo[k]..=hi[k]).contains(&key[k])) {
+                    within(found, &mut out);
+                }
+            }
+        } else {
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        if let Some(found) = self.cells.get(&[x, y, z]) {
+                            within(found, &mut out);
+                        }
+                    }
                 }
             }
         }
@@ -89,6 +102,9 @@ mod tests {
             (DVec3::ZERO, 60.0),
             (DVec3::new(130.0, 10.0, -70.0), 25.0),
             (DVec3::splat(1e4), 5.0),
+            // Boxes of more cells than are occupied (visited by cell instead).
+            (DVec3::new(-90.0, 20.0, 40.0), 160.0),
+            (DVec3::new(50.0, 0.0, 0.0), 600.0),
         ] {
             let mut want: Vec<EntityId> = at
                 .iter()

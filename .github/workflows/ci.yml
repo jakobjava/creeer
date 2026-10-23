@@ -64,3 +64,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Stress scenarios
         run: cargo run --release -p creeer_tools -- stress --short --check
+      - name: Play scenes
+        # G1.0: the play scenes over the real server path; their hashes, on every OS.
+        run: cargo run --release -p creeer_tools -- play --short --check

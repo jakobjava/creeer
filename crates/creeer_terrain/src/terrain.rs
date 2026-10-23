@@ -38,6 +38,16 @@ impl Terrain {
         }
     }
 
+    /// Another terrain of the same planet, with its own edits (another machine's: a game's
+    /// clients each have their own).
+    pub fn sibling(&self) -> Self {
+        Self {
+            planet: Arc::clone(&self.planet),
+            heights: HeightCache::new(Arc::clone(&self.planet.elevation), HEIGHT_TILES),
+            edits: RwLock::new(Edits::default()),
+        }
+    }
+
     /// The planet.
     pub fn planet(&self) -> &Planet {
         &self.planet
@@ -81,6 +91,11 @@ impl Terrain {
     pub fn density(&self, p: DVec3) -> f64 {
         let generated = generated(&self.planet.datum, &mut self.heights.sampler(1.0), p);
         self.edits().density(p, generated)
+    }
+
+    /// Density (m) at `p` as generated, before any edit.
+    pub fn generated_density(&self, p: DVec3) -> f64 {
+        generated(&self.planet.datum, &mut self.heights.sampler(1.0), p)
     }
 
     /// The density and its gradient at `p` (the gradient points into the air). The distance to
@@ -175,17 +190,18 @@ impl Terrain {
             }
             // A vertex lies up to a cell off the surface it approximates, and a coarse cell is
             // far thicker than the soil: the natural surface shows the rock *at* the surface,
-            // the same at every level of detail. Only walls dug into the ground show the rock
-            // at their depth.
+            // the same at every level of detail. Only what lies below the natural surface (a
+            // wall dug into the ground) shows the rock at its depth, so the layers appear on it
+            // as level bands. (Whether a vertex lay within half a cell of a dig brush decided
+            // it before: on a dug rim, neighbours flipped between soil and rock, a sawtooth of
+            // colour; G1.3c.)
             let up = p.normalize();
             let height = sampler.height(p);
-            let dug = chunk_edits
-                .iter()
-                .any(|e| matches!(e, Edit::Dig(_)) && e.brush().distance(p).abs() <= tolerance);
-            let at = if dug {
+            let surface = up * (datum.radius(up) + height);
+            let at = if surface.length() - p.length() > tolerance {
                 p
             } else {
-                up * (datum.radius(up) + height)
+                surface
             };
             let slope = f64::from(normal.angle_between(up.as_vec3()));
             let cover = Geology::cover_on_slope(slope);
@@ -207,9 +223,10 @@ impl Terrain {
         let edits = self.edits().affecting(lo - reach, hi + reach, 0.0);
         let datum = self.planet.datum;
         let mut sampler = self.heights.sampler(1.0);
+        let round = crate::edits::round(crate::edits::FINEST_CELL);
         let mut density = |q: DVec3| {
             let generated = generated(&datum, &mut sampler, q);
-            edits.iter().fold(generated, |d, e| e.apply(q, d))
+            edits.iter().fold(generated, |d, e| e.apply(q, d, round))
         };
         let mut blocked = |p: DVec3, ray: DVec3| {
             let mut s = SKY_VIEW_START;

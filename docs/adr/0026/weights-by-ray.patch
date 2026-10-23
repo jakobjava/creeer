@@ -1,0 +1,92 @@
+diff --git a/art/engineer/skinning.py b/art/engineer/skinning.py
+index 1164caf..38cdb0c 100644
+--- a/art/engineer/skinning.py
++++ b/art/engineer/skinning.py
+@@ -11,6 +11,7 @@ import pathlib
+ import body as B
+ import bpy
+ from mathutils import Vector
++from mathutils.bvhtree import BVHTree
+ from mathutils.kdtree import KDTree
+ 
+ HERE = pathlib.Path(__file__).resolve().parent
+@@ -96,43 +97,48 @@ def limb(segment):
+     return ("arm." if part in ("upper_arm", "forearm", "hand") else "leg.") + side
+ 
+ 
+-def transfer(objs, beneath, near=4, by_limb=True):
+-    """The garments `objs` weighted as what lies `beneath` them is (the skin, or the garment they
+-    are worn over): each point as its `near` nearest points of it (by inverse distance), given
+-    `by_limb` on the limb the point weighs most on (a hanging sleeve's inside by the arm, not
+-    the torso beside it; a layer next to the skin by the skin beneath it, which at the groin
+-    and the armpit is another limb's: by its own limb, the shorts came 9 mm short of the body
+-    at the hips' limits).
+-    Skinned with dual quaternions, a point moves as one beneath it with the same weights,
+-    whatever the distance between them, and the layers keep their order. Carried from the skin
+-    they were offset from, the weights had stayed behind where the cloth was spanned, smoothed
+-    and hung: the neckline took a shoulder's, and a raised arm drew it 12 mm into the neck.
+-    Each layer from the one beneath it: the jacket and the coverall from the skin each, where
+-    they hang apart they found it in different places, the coverall 12 mm through the jacket at
+-    the hips' limits; and from the skin where a ray in along its normal met it, worse still."""
+-    source = segment_weights(beneath)
++def transfer(objs, skin, near=4, reach=0.12):
++    """The garments `objs` weighted as the skin beneath them is: each point as the skin where a
++    ray in along its normal meets it (within `reach` m; its face's corners by inverse distance),
++    on the limb the point weighs most on or the trunk; else as its `near` nearest skin points on
++    that limb. Skinned with dual quaternions, a point moves as one beneath it with the same
++    weights, whatever the distance between them, and the layers keep their order. Carried from
++    the skin they were offset from, the weights had stayed behind where the cloth was spanned,
++    smoothed and hung: the neckline took a shoulder's, and a raised arm drew it 12 mm into the
++    neck. By the nearest skin on its own limb alone, a vest's point leaning to the torso took
++    the torso's side's weights over the arm beneath it in the armpit, 7 mm through it."""
++    source = segment_weights(skin)
+     names = list(source)
++    chains = [limb(max(names, key=lambda n: source[n][v.index])) for v in skin.data.vertices]
+     points = {}
+-    for v in beneath.data.vertices:
+-        points.setdefault(limb(max(names, key=lambda n: source[n][v.index])) if by_limb else "all", []).append(v)
++    for v in skin.data.vertices:
++        points.setdefault(chains[v.index], []).append(v)
+     trees = {}
+     for chain, vs in points.items():
+         trees[chain] = KDTree(len(vs))
+         for v in vs:
+             trees[chain].insert(v.co, v.index)
+         trees[chain].balance()
++    polys = [tuple(p.vertices) for p in skin.data.polygons]
++    surface = BVHTree.FromPolygons([v.co.copy() for v in skin.data.vertices], polys)
+     for obj in objs:
+         own = segment_weights(obj)
+         out = {n: [0.0] * len(obj.data.vertices) for n in names}
+         for v in obj.data.vertices:
+-            found = trees[limb(max(own, key=lambda n: own[n][v.index])) if by_limb else "all"].find_n(v.co, near)
+-            shares = [(i, 1.0 / max(d, 1e-5)) for _, i, d in found]
++            chain = limb(max(own, key=lambda n: own[n][v.index]))
++            hit, _, face, _ = surface.ray_cast(v.co - v.normal * 1e-4, -v.normal, reach)
++            corners = polys[face] if hit is not None else ()
++            if corners and all(chains[i] in (chain, "trunk") for i in corners):
++                shares = [(i, 1.0 / max((skin.data.vertices[i].co - hit).length, 1e-5)) for i in corners]
++            else:
++                shares = [(i, 1.0 / max(d, 1e-5)) for _, i, d in trees[chain].find_n(v.co, near)]
+             total = sum(w for _, w in shares)
+             for n in names:
+                 out[n][v.index] = sum(source[n][i] * w for i, w in shares) / total
+         give_weights(obj, out)
+ 
+ 
++
+ # Where the boots bend (m below and above the ankle bone).
+ BEND = (0.01, 0.03)
+ 
+@@ -186,10 +192,8 @@ def complete_weights(pieces, skin):
+         if obj.name.startswith("sole"):
+             side = "L" if sum(v.co.x for v in obj.data.vertices) > 0 else "R"
+             weigh_rigidly(obj, f"foot.{side}")
+-    transfer([o for piece in ("base_layer", "gloves") for o in pieces[piece] if "s.pelvis" in o.data.attributes], skin, by_limb=False)
+-    transfer([o for o in pieces["coverall"] if "s.pelvis" in o.data.attributes], skin)
++    transfer([o for piece in ("base_layer", "coverall", "jacket", "gloves") for o in pieces[piece] if "s.pelvis" in o.data.attributes], skin)
+     coverall = next(o for o in pieces["coverall"] if o.name == "coverall")
+-    transfer([o for o in pieces["jacket"] if "s.pelvis" in o.data.attributes], coverall)
+     # The knee pads rigid on the kneecaps, which turn half as far as the shins: as the coverall
+     # beneath, they folded with the knee to its limit and came apart over it. The elbows'
+     # patches as the jacket they are sewn on.

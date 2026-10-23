@@ -1,0 +1,261 @@
+//! PROBE (feature `profile`, `CREEER_ORACLE=1`): Newton's direction for a group of rigid
+//! bodies from the exact Jacobian of the residual with friction's normal forces consistent
+//! (λ = λ(x)), by central differences, solved densely. An upper bound for what a coupled
+//! Newton could converge in.
+#![allow(clippy::needless_range_loop)]
+
+use super::coupling::{Coupling, MemberState};
+use super::group::Member;
+use crate::so3;
+use creeer_math::glam::{DQuat, DVec3};
+
+type Owned = Vec<(Vec<DVec3>, Vec<DQuat>)>;
+
+fn view(o: &Owned) -> Vec<MemberState<'_>> {
+    o.iter()
+        .map(|(x, q)| MemberState {
+            position: x,
+            orientation: q,
+        })
+        .collect()
+}
+
+fn moved(base: &Owned, m: usize, k: usize, e: f64) -> Owned {
+    let mut o = base.clone();
+    let mut d = DVec3::ZERO;
+    d[k % 3] = e;
+    if k < 3 {
+        o[m].0[0] += d;
+    } else {
+        o[m].1[0] = (so3::exp(d) * o[m].1[0]).normalize();
+    }
+    o
+}
+
+/// The coupling's gradient at `o` with λ refreshed there (flat, 6 per member).
+fn consistent(coupling: &mut dyn Coupling, o: &Owned, lag: bool) -> Vec<f64> {
+    let states = view(o);
+    if lag {
+        coupling.update_lag(&states);
+    }
+    let mut g: Vec<Vec<DVec3>> = o.iter().map(|_| vec![DVec3::ZERO; 2]).collect();
+    coupling.add_gradient(&states, &mut g);
+    g.iter()
+        .flat_map(|g| [g[0].x, g[0].y, g[0].z, g[1].x, g[1].y, g[1].z])
+        .collect()
+}
+
+/// Solves `a·x = b` densely (partial pivoting); `None` if singular.
+fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+    let n = b.len();
+    for k in 0..n {
+        let p = (k..n).max_by(|&i, &j| a[i][k].abs().total_cmp(&a[j][k].abs()))?;
+        if a[p][k] == 0.0 {
+            return None;
+        }
+        a.swap(k, p);
+        b.swap(k, p);
+        for i in k + 1..n {
+            let f = a[i][k] / a[k][k];
+            if f != 0.0 {
+                for j in k..n {
+                    a[i][j] -= f * a[k][j];
+                }
+                b[i] -= f * b[k];
+            }
+        }
+    }
+    for k in (0..n).rev() {
+        let s: f64 = (k + 1..n).map(|j| a[k][j] * b[j]).sum();
+        b[k] = (b[k] - s) / a[k][k];
+    }
+    Some(b)
+}
+
+/// The oracle's direction for `residual` (−β²·∇G at the current state, λ consistent there),
+/// or `None` when the group is not rigid bodies alone. Leaves λ refreshed at the state.
+pub(super) fn direction(
+    members: &[Member<'_>],
+    coupling: &mut dyn Coupling,
+    residual: &[DVec3],
+    lag: bool,
+) -> Option<Vec<DVec3>> {
+    MATRIX.with(|m| *m.borrow_mut() = None);
+    if members
+        .iter()
+        .any(|(s, _)| !(s.elements.is_empty() && s.node_count() == 1))
+    {
+        return None;
+    }
+    let base: Owned = members
+        .iter()
+        .map(|(s, _)| (s.position.clone(), s.orientation.clone()))
+        .collect();
+    let n = 6 * members.len();
+    let e = 1e-7;
+    let mut a = vec![vec![0.0; n]; n];
+    for m in 0..members.len() {
+        for k in 0..6 {
+            let plus = consistent(coupling, &moved(&base, m, k, e), lag);
+            let minus = consistent(coupling, &moved(&base, m, k, -e), lag);
+            for r in 0..n {
+                a[r][6 * m + k] = (plus[r] - minus[r]) / (2.0 * e);
+            }
+        }
+    }
+    if lag {
+        coupling.update_lag(&view(&base));
+    }
+    if std::env::var_os("CREEER_ORACLE_TERM").is_some() {
+        // Only the term λ's dependence adds (consistent less lagged), on the matrix the solver
+        // uses itself: each body's own and the contacts' cross blocks.
+        for m in 0..members.len() {
+            for k in 0..6 {
+                let plus = consistent(coupling, &moved(&base, m, k, e), false);
+                let minus = consistent(coupling, &moved(&base, m, k, -e), false);
+                for r in 0..n {
+                    a[r][6 * m + k] -= (plus[r] - minus[r]) / (2.0 * e);
+                }
+            }
+        }
+        let b2 = members[0].1.work.beta * members[0].1.work.beta;
+        for row in &mut a {
+            for x in row.iter_mut() {
+                *x *= b2;
+            }
+        }
+        for (m, (s, v)) in members.iter().enumerate() {
+            let used = v.rigid_matrix(s, coupling.rigid_stiffness(m))?;
+            for r in 0..6 {
+                for c in 0..6 {
+                    a[6 * m + r][6 * m + c] += used[r][c];
+                }
+            }
+        }
+        for ((p, _), (q, _), cross) in coupling.rigid_coupling() {
+            if p == q {
+                continue;
+            }
+            for r in 0..6 {
+                for c in 0..6 {
+                    a[6 * p + r][6 * q + c] += b2 * cross[r][c];
+                    a[6 * q + c][6 * p + r] += b2 * cross[r][c];
+                }
+            }
+        }
+        if std::env::var_os("CREEER_ORACLE_LBFGS").is_some() {
+            MATRIX.with(|m| *m.borrow_mut() = Some(a));
+            return None;
+        }
+        let b: Vec<f64> = residual.iter().flat_map(|v| [v.x, v.y, v.z]).collect();
+        let x = solve(a, b)?;
+        return Some(x.chunks(3).map(|c| DVec3::new(c[0], c[1], c[2])).collect());
+    }
+    for (m, (s, v)) in members.iter().enumerate() {
+        let own = coupling.rigid_stiffness(m);
+        let used = v.rigid_matrix(s, own)?;
+        let b2 = v.work.beta * v.work.beta;
+        for r in 0..n {
+            for c in 0..6 {
+                a[r][6 * m + c] *= b2;
+            }
+        }
+        for r in 0..6 {
+            for c in 0..6 {
+                a[6 * m + r][6 * m + c] += used[r][c] - b2 * own[r][c];
+            }
+        }
+    }
+    let b: Vec<f64> = residual.iter().flat_map(|v| [v.x, v.y, v.z]).collect();
+    let x = solve(a, b)?;
+    Some(
+        x.chunks(3)
+            .map(|c| DVec3::new(c[0], c[1], c[2]))
+            .collect(),
+    )
+}
+
+/// The term oracle's matrix, kept for L-BFGS to precondition with (`CREEER_ORACLE_LBFGS`).
+thread_local! {
+    pub(super) static MATRIX: std::cell::RefCell<Option<Vec<Vec<f64>>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Applies the kept matrix's inverse to `all`; false if none is kept.
+pub(super) fn precondition(all: &mut [DVec3]) -> bool {
+    let Some(a) = MATRIX.with(|m| m.borrow().clone()) else {
+        return false;
+    };
+    let b: Vec<f64> = all.iter().flat_map(|v| [v.x, v.y, v.z]).collect();
+    let Some(x) = solve(a, b) else {
+        return false;
+    };
+    for (v, c) in all.iter_mut().zip(x.chunks(3)) {
+        *v = DVec3::new(c[0], c[1], c[2]);
+    }
+    true
+}
+
+/// Compares the coupling's analytic lag terms with differences of its gradient with λ
+/// consistent less with λ lagged, at the members' states; prints the worst relative error.
+pub(super) fn check_terms(members: &[Member<'_>], coupling: &mut dyn Coupling) {
+    if members
+        .iter()
+        .any(|(s, _)| !(s.elements.is_empty() && s.node_count() == 1))
+    {
+        return;
+    }
+    let base: Owned = members
+        .iter()
+        .map(|(s, _)| (s.position.clone(), s.orientation.clone()))
+        .collect();
+    let n = 6 * members.len();
+    let e: f64 = std::env::var("CREEER_LAG_STEP").ok().and_then(|s| s.parse().ok()).unwrap_or(1e-7);
+    coupling.update_lag(&view(&base));
+    let mut fd = vec![vec![0.0; n]; n];
+    let mut whole: f64 = 1e-30;
+    for m in 0..members.len() {
+        for k in 0..6 {
+            let p = consistent(coupling, &moved(&base, m, k, e), true);
+            let q = consistent(coupling, &moved(&base, m, k, -e), true);
+            coupling.update_lag(&view(&base));
+            let pl = consistent(coupling, &moved(&base, m, k, e), false);
+            let ql = consistent(coupling, &moved(&base, m, k, -e), false);
+            for r in 0..n {
+                fd[r][6 * m + k] = ((p[r] - q[r]) - (pl[r] - ql[r])) / (2.0 * e);
+                whole = whole.max(((pl[r] - ql[r]) / (2.0 * e)).abs());
+            }
+        }
+    }
+    let mut analytic = vec![vec![0.0; n]; n];
+    for term in coupling.lag_terms(&view(&base)) {
+        for (row, u, _) in term.iter().flatten() {
+            for (col, _, v) in term.iter().flatten() {
+                for r in 0..6 {
+                    for c in 0..6 {
+                        analytic[6 * row.0 + r][6 * col.0 + c] += u[r] * v[c];
+                    }
+                }
+            }
+        }
+    }
+    let scale = fd.iter().flatten().fold(1e-30f64, |a, x| a.max(x.abs())).max(1e-3 * whole);
+    let worst = fd
+        .iter()
+        .flatten()
+        .zip(analytic.iter().flatten())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f64::max);
+    if std::env::var_os("CREEER_LAGCHECK_DETAIL").is_some() {
+        for r in 0..n {
+            let f: Vec<String> = fd[r].iter().map(|x| format!("{x:10.3e}")).collect();
+            let a: Vec<String> = analytic[r].iter().map(|x| format!("{x:10.3e}")).collect();
+            eprintln!("fd  {}
+an  {}", f.join(" "), a.join(" "));
+        }
+    }
+    eprintln!(
+        "LAGCHECK {} members, largest {scale:.3e}, off by {:.2e}",
+        members.len(),
+        worst / scale
+    );
+}

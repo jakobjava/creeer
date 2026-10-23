@@ -35,6 +35,7 @@ mod hull_sat;
 #[cfg(test)]
 mod hull_tests;
 mod impact;
+pub mod joint;
 mod left;
 #[cfg(test)]
 mod load_tests;
@@ -48,21 +49,28 @@ mod pile_tests;
 #[cfg(test)]
 mod planet_tests;
 mod query;
+pub mod ray;
 mod sat;
 mod save;
 pub mod shape;
 mod sleep;
 mod stepping;
+pub mod strut;
+#[cfg(test)]
+mod strut_tests;
 pub mod surface;
 #[cfg(test)]
 mod tests;
 mod turn;
+#[cfg(test)]
+mod turn_tests;
 
 use crate::gravity::PlanetGravity;
 use crate::profile::{self, Slot};
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
 use contact::{Contact, Contacts};
-use creeer_math::glam::{DQuat, DVec3};
+use creeer_math::glam::{DMat3, DQuat, DVec3};
+use detect::Found;
 use ground::Ground;
 use left::Left;
 pub use query::{Support, Touch};
@@ -90,6 +98,11 @@ pub struct Body {
     pub sleep: sleep::Sleep,
     /// Whether its last step was an impact in which members still flowed plastically.
     crushing: bool,
+    /// Stepped as a body in contact is (BDF2), even touching nothing: a character standing on
+    /// its legs, and what its legs push in a step. Their loads are equal and opposite, and keep
+    /// momentum only under one scheme (Newmark averages a load over the step's two ends,
+    /// BDF2 takes the end's: a character walking on a crate on ice gave the pair 2.8 kg·m/s).
+    pub held: bool,
 }
 
 impl Body {
@@ -102,6 +115,14 @@ impl Body {
     /// A rigid body of the given shape and mass at `position`.
     pub fn rigid(shape: Shape, mass: f64, position: DVec3, dt: f64) -> Self {
         let structure = StructureBuilder::rigid_body(position, mass, shape.inertia(mass));
+        Self::new(structure, vec![(0, shape)], dt)
+    }
+
+    /// A rigid body of the given shape, mass and rotational inertia (kg·m², about its node,
+    /// in its own frame) at `position`: a body whose mass is not spread evenly through its
+    /// shape (a felled tree: its crown's mass hangs on its stem).
+    pub fn rigid_with(shape: Shape, mass: f64, inertia: DMat3, position: DVec3, dt: f64) -> Self {
+        let structure = StructureBuilder::rigid_body(position, mass, inertia);
         Self::new(structure, vec![(0, shape)], dt)
     }
 
@@ -139,6 +160,7 @@ impl Body {
             surface: Surface::STEEL,
             sleep: sleep::Sleep::default(),
             crushing: false,
+            held: false,
         }
     }
 }
@@ -165,12 +187,23 @@ pub struct World {
     /// The groups of the last step: their bodies and contacts (member indices refer to the
     /// bodies listed).
     groups: Vec<(Vec<usize>, Contacts)>,
+    /// Joints between bodies, or bodies and the world (`joint.rs`).
+    joints: Vec<joint::Joint>,
+    /// Pairs of bodies that pass through each other, beyond those a joint keeps from colliding
+    /// (`joint.rs`): a ragdoll's limbs, for one. Not saved: whoever loads a world gives them
+    /// again, as its ground.
+    passing: Vec<(usize, usize)>,
+    /// Struts for the next step (`strut.rs`).
+    struts: Vec<strut::Strut>,
     /// Friction anchors of the last step.
     anchors: Vec<anchor::Anchor>,
     /// The elastic energy each point contact and face held at the end of the last step, by
     /// the bodies (and nodes) it joined, and the bodies stepped then (the energy guard's,
     /// `structure/group.rs`).
     left: Left,
+    /// The bodies a (sub)step is restricted to while groups turning fast are substepped apart
+    /// from the rest (`turn.rs`); none: every body. Not saved: set only within a step.
+    only: Option<Vec<bool>>,
     dt: f64,
 }
 
@@ -188,7 +221,11 @@ impl World {
             contacts: Vec::new(),
             groups: Vec::new(),
             left: Left::default(),
+            joints: Vec::new(),
+            passing: Vec::new(),
+            struts: Vec::new(),
             anchors: Vec::new(),
+            only: None,
             dt,
         }
     }
@@ -224,16 +261,23 @@ impl World {
 
     /// One (sub)step of `self.dt`.
     fn step_once(&mut self) {
-        profile::add(Slot::WorldSteps, 1);
+        let found = self.detect_awake();
+        self.step_found(&found);
+    }
+
+    /// The contacts at the start of a (sub)step of `self.dt`, every body they reach woken.
+    fn detect_awake(&mut self) -> Vec<Found> {
         let timer = profile::start();
-        let scope = creeer_core::profile::scope("physics: detect");
+        let _scope = creeer_core::profile::scope("physics: detect");
         self.wake_disturbed();
         // Contacts between an awake and a sleeping body wake the sleeper, which may touch
         // further sleepers: detect until nothing new wakes (a hit at the top of a sleeping
         // stack wakes the whole stack).
         let found = loop {
+            // Bodies joined to awake ones wake with them (one group).
+            let mut woke = self.wake_joined();
+            woke |= self.wake_strutted();
             let found = self.detect();
-            let mut woke = false;
             for (a, _, b, _) in &found {
                 if let Some((b, _)) = b {
                     let (a, b) = (*a, *b);
@@ -249,28 +293,56 @@ impl World {
             }
         };
         timer.stop(Slot::Detect);
-        drop(scope);
+        found
+    }
+
+    /// One (sub)step of `self.dt` from the contacts `found` at its start ([`Self::detect_awake`]).
+    fn step_found(&mut self, found: &[Found]) {
+        profile::add(Slot::WorldSteps, 1);
         let timer = profile::start();
         let scope = creeer_core::profile::scope("physics: groups");
-        let anchors = std::mem::take(&mut self.anchors);
-        let stepped = self.pass(&found, &anchors);
+        // A step restricted to some bodies (`only`) keeps the rest's anchors, groups and what
+        // their contacts held, as their own step left them.
+        let (anchors, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.anchors)
+            .into_iter()
+            .partition(|a| self.in_step(a.a.0));
+        let stepped = self.pass(found, &anchors);
         timer.stop(Slot::Pass);
         drop(scope);
         let timer = profile::start();
         let _scope = creeer_core::profile::scope("physics: after");
-        self.contacts.clear();
-        self.groups.clear();
-        self.left = Left::default();
+        self.anchors = kept;
+        match self.only.take() {
+            None => {
+                self.groups.clear();
+                self.left = Left::default();
+            }
+            Some(only) => {
+                let outside = |side: Option<(usize, NodeId)>| side.is_none_or(|(b, _)| !only[b]);
+                self.groups.retain(|(group, _)| !only[group[0]]);
+                (self.left.energies).retain(|((a, b), _)| outside(*a) && outside(*b));
+                self.left.stepped.retain(|&b| !only[b]);
+                self.only = Some(only);
+            }
+        }
         let mut groups = Vec::with_capacity(stepped.len());
         for (group, contacts, anchors) in stepped {
             self.leave(&group, &contacts);
             self.anchors.extend(anchors);
-            self.contacts.extend(contacts.list.iter().copied());
             groups.push(group.clone());
             self.groups.push((group, contacts));
         }
+        self.contacts.clear();
+        for (_, contacts) in &self.groups {
+            self.contacts.extend(contacts.list.iter().copied());
+        }
         self.update_sleep(&groups);
         timer.stop(Slot::After);
+    }
+
+    /// Whether body `b` is stepped in this (sub)step (`only`).
+    fn in_step(&self, b: usize) -> bool {
+        self.only.as_ref().is_none_or(|only| only[b])
     }
 
     /// The groups of the last step: bodies (indices) joined by contacts, stepped together.

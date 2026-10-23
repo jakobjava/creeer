@@ -268,6 +268,8 @@ pub struct Contacts {
     left: Option<f64>,
     /// The twist (rad) within which drilling friction sticks in this step (`twist.rs`).
     twist_smoothing: f64,
+    /// The group's joints (`world/joint.rs`): terms of the same minimisation.
+    pub(crate) joints: crate::world::joint::Joints,
 }
 
 impl Contacts {
@@ -299,6 +301,7 @@ impl Contacts {
             weight: 0.0,
             left: None,
             twist_smoothing: 1.0,
+            joints: crate::world::joint::Joints::default(),
         }
     }
 

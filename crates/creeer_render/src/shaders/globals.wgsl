@@ -53,6 +53,21 @@ fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
     return v + q.w * t + cross(q.xyz, t);
 }
 
+// The token of a vertex drawn in its instance's own material (vertex.rs).
+const NO_TOKEN: u32 = 0xffffu;
+// A bevel's radius: a share of a part's smallest side, and at most (m) (primitives.rs).
+const BEVEL_SHARE: f32 = 0.08;
+const BEVEL_MAX: f32 = 0.025;
+
+/// Where a mesh vertex is drawn in its instance's space: scaled, and if it is a bevelled
+/// primitive's, at its corner of the inner shape plus its normal times the bevel radius, so
+/// bevels keep their size in metres (primitives.rs, `shaped`).
+fn shaped(position: vec3<f32>, normal: vec3<f32>, material: u32, scale: vec3<f32>) -> vec3<f32> {
+    let bevelled = (material & 0xffffu) == NO_TOKEN && (material >> 24u) != 0u;
+    let radius = min(BEVEL_SHARE * min(scale.x, min(scale.y, scale.z)), BEVEL_MAX);
+    return position * scale + (normal - 2.0 * position) * select(0.0, radius, bevelled);
+}
+
 /// How far a terrain vertex at `position` (chunk-local) blends towards the next coarser level
 /// of detail (0..1): from 4.25 to 5 chunk sizes (`origin.w`) from the camera, where a coarser
 /// neighbour may begin (geomorphing, creeer_terrain::levels and stream_tests).

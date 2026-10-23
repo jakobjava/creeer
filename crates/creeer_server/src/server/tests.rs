@@ -39,7 +39,7 @@ impl Game {
             None => (end, None),
         };
         let mut client = Connection::memory(end, name, creeer_data::Data::base().hash());
-        client.attach_terrain(terrain());
+        client.attach_terrain(terrain(), &creeer_data::Data::base());
         self.clients.push((client, relay));
         self.clients.len() - 1
     }
@@ -52,7 +52,7 @@ impl Game {
             }
             client.update(STEP);
             let (walk, jump) = input(k);
-            client.input(walk, jump);
+            client.input(walk, jump, DVec3::ZERO);
             client.flush();
             if let Some(relay) = relay {
                 relay.pump(self.now);
@@ -81,7 +81,7 @@ impl Game {
     }
 }
 
-fn still(_: usize) -> (DVec3, bool) {
+pub(crate) fn still(_: usize) -> (DVec3, bool) {
     (DVec3::ZERO, false)
 }
 
@@ -110,11 +110,11 @@ fn a_player_joins_sees_the_world_and_walks_in_it() {
     let client = &game.clients[0].0;
     assert_eq!(client.status(), &Status::Joined);
     let avatar = client.welcome.as_ref().unwrap().avatar;
-    assert!(matches!(&client.kinds[&avatar], Kind::Avatar { player, .. } if player == "ada"));
+    assert!(matches!(&client.kinds[&avatar], Kind::Character { player, .. } if player == "ada"));
     let boxes = client
         .kinds
         .values()
-        .filter(|k| matches!(k, Kind::Body(_)))
+        .filter(|k| matches!(k, Kind::Body(..)))
         .count();
     assert_eq!(boxes, 6);
     // Each crate drawn where the server has it (they rest: to the quantisation).
@@ -168,7 +168,7 @@ fn what_one_player_does_the_other_sees() {
         let boxes = client
             .kinds
             .values()
-            .filter(|k| matches!(k, Kind::Body(_)))
+            .filter(|k| matches!(k, Kind::Body(..)))
             .count();
         assert_eq!(boxes, 1);
         assert_eq!(client.edits.len(), 1);
@@ -176,7 +176,7 @@ fn what_one_player_does_the_other_sees() {
         let avatars = client
             .kinds
             .values()
-            .filter(|k| matches!(k, Kind::Avatar { .. }))
+            .filter(|k| matches!(k, Kind::Character { .. }))
             .count();
         assert_eq!(avatars, 2);
     }
@@ -208,7 +208,7 @@ fn a_client_with_other_data_is_refused_and_told_the_servers_packs() {
     let mut game = Game::new(world());
     let end = game.server.connect_memory();
     let mut other = Connection::memory(end, "bea", creeer_data::Data::base().hash() ^ 1);
-    other.attach_terrain(terrain());
+    other.attach_terrain(terrain(), &creeer_data::Data::base());
     game.clients.push((other, None));
     game.run(20, still);
     let Status::Refused(why) = game.clients[0].0.status() else {
@@ -256,7 +256,7 @@ fn a_saved_world_loaded_again_is_told_to_every_player() {
             .0
             .kinds
             .values()
-            .filter(|k| matches!(k, Kind::Body(_)))
+            .filter(|k| matches!(k, Kind::Body(..)))
             .count()
     };
     assert_eq!(count(&game), 8);
@@ -271,7 +271,7 @@ fn a_player_joins_over_udp() {
     let mut server = Server::new(world());
     let at = server.listen("127.0.0.1:0".parse().unwrap()).unwrap();
     let mut client = Connection::udp(at, "ada", creeer_data::Data::base().hash()).unwrap();
-    client.attach_terrain(terrain());
+    client.attach_terrain(terrain(), &creeer_data::Data::base());
     let start = std::time::Instant::now();
     while client.status() != &Status::Joined || client.kinds.is_empty() {
         assert!(
@@ -280,14 +280,14 @@ fn a_player_joins_over_udp() {
             client.status()
         );
         client.update(STEP);
-        client.input(DVec3::ZERO, false);
+        client.input(DVec3::ZERO, false, DVec3::ZERO);
         client.flush();
         server.tick();
         std::thread::sleep(Duration::from_millis(2));
     }
     assert_eq!(server.players(), vec!["ada"]);
     let avatar = client.welcome.as_ref().unwrap().avatar;
-    assert!(matches!(&client.kinds[&avatar], Kind::Avatar { .. }));
+    assert!(matches!(&client.kinds[&avatar], Kind::Character { .. }));
 }
 
 #[test]
@@ -317,4 +317,39 @@ fn a_client_that_asks_is_sent_the_servers_profile_once_a_second() {
     game.clients[0].0.profile = None;
     game.run(130, still);
     assert!(game.clients[0].0.profile.is_none());
+}
+
+#[test]
+fn a_client_is_told_each_crates_age_and_its_wear_when_it_changes() {
+    let mut w = world();
+    crates(&mut w, 3, 6.0);
+    let mut game = Game::new(w);
+    game.join("ada", None);
+    game.run(90, still);
+    // A crate dropped from 3 m beside the player after they joined: worn as it lands.
+    let up = game.server.world.spawn().normalize();
+    let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
+    let beside = game.server.world.spawn() + east * 3.0;
+    let at = game.server.world.ground_under(beside) + up * 3.0;
+    game.server.world.apply(&Command::Crate(at), None).unwrap();
+    let dropped = *game.server.world.ids().last().expect("the crate");
+    game.run(180, still);
+    let client = &game.clients[0].0;
+    let mut told = 0;
+    for (id, kind) in &client.kinds {
+        if !matches!(kind, Kind::Body(..)) {
+            continue;
+        }
+        let server = game.server.world.age(*id).expect("the server ages it");
+        let age = client.ages.get(id).expect("the client is told its age");
+        assert!((age.wear - server.wear).abs() < 1e-12, "{id:?}");
+        assert!((age.rate - server.rate).abs() < 1e-18);
+        told += 1;
+    }
+    assert_eq!(told, 4);
+    assert!(
+        client.ages[&dropped].wear > 0.05,
+        "{}",
+        client.ages[&dropped].wear
+    );
 }
