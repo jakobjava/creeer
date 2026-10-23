@@ -89,6 +89,7 @@ pub(super) fn scene() -> Save {
         items: crate::save::SavedItems::default(),
         trees: crate::save::SavedTrees::default(),
         pits: Vec::new(),
+        built: Vec::new(),
     }
 }
 

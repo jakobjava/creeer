@@ -99,3 +99,32 @@ The survey is in `docs/g2-plan.md` ("Prior work"); what decided this ADR:
 | Bast lashing, four turns | breaks at 3,840 N apart; slips at 0.25 to 1 × 0.4 × that | exact |
 | Every catalogue entry on green spruce | valid, and its law builds an equivalent member | all |
 | Green spruce's density for fastening | 450 kg/m³ seasoned | exact |
+
+## G2.3: building by hand (2026-10-23, in progress)
+
+**Growing a structure in place** (`creeer_physics::structure::grow`):
+- `insert_node(e, t)` puts a node into a member as it lies now, on the cubic through its ends and their tangents. Its plastic deformation is shared, and mass and momentum are kept.
+- `append(other)` takes another structure in as it is: moving, bent, loaded.
+- `join(a, b, law)` makes a joint between two nodes as they lie. A joint keeps b's rest frame relative to a's (`Fastened::to_b`), so a joint made between nodes that have turned apart measures nothing.
+- Building onto a loaded structure keeps its sag (tested): nothing springs back.
+
+**Parts** (`creeer_building::assembly`): a wooden rod or block item, or a felled log with no branches on, becomes a member where it lies, moving as it moved.
+- Split into elements at its joints and at least every metre.
+- Collides as a prism round its axis (a twelve-sided one for round parts, a box for boards), split in halves on each element's two nodes.
+
+**The fasten command** (`Command::Fasten { target, fastener }`, protocol 26; `creeer_server::world::building`, `building_parts`):
+- The aimed part and the part touching it nearest the aim are fastened after the fastener's time (`seconds` in `data/fasteners.ron`: estimates), if the player's hands still reach the point (kept in the part's frame while the work goes on).
+- Both hands must be free: a part is propped or held by someone else.
+- On a creative server any fastener is at hand. In survival a lashing takes a bast strip from the pockets; nails need iron and pegs a bored hole (G3).
+- The second structure is taken into the first; the joint goes between nodes put into both members where they touch.
+- The joint's law comes from the two members' woods and thicknesses. The bearing area is taken as the narrower member's thickness squared (an estimate).
+
+**Records:** each built structure keeps the items it was made of (for salvage, G2.6) and each element's wood, saved in the section `BILT` (save version 13).
+
+**Replication:** `Frame` carries each member's own radius (joints 0, not drawn).
+
+**Found: face patches on multi-node structures.** Until now structures collided only as balls on their nodes. Hulls and boxes on a structure's nodes diverge in its first step on the ground, while rigid bodies with the same shapes are fine.
+- **What was found so far:** a face's corners have no stiffness of their own, only coupled blocks built for rigid bodies; and a lifted corner's friction gave negative stiffness in a node's block.
+- **Status:** both are addressed in the structures' contact blocks, and the divergence remains. It is being worked on (`faces_on_structures_nodes_repro`). The tests that need it are ignored until then.
+
+Client: J fastens what the crosshair is on with the chosen fastener; K chooses the next.

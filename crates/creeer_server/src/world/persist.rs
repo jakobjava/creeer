@@ -68,6 +68,9 @@ impl ServerWorld {
             this.items.laid_log.push(id);
         }
         this.restore_trees(save.trees);
+        for (id, items, woods) in save.built {
+            (this.building.built).insert(EntityId(id), super::building::Built { items, woods });
+        }
         for (at, volume) in save.pits {
             this.digging.pits.insert(
                 super::digging::spot(at),
@@ -134,6 +137,9 @@ impl ServerWorld {
                     .collect(),
             },
             trees: self.saved_trees(),
+            built: (self.building.built.iter())
+                .map(|(id, b)| (id.0, b.items.clone(), b.woods.clone()))
+                .collect(),
             pits: (self.digging.pits.values())
                 .map(|p| (p.centre, p.volume))
                 .collect(),

@@ -25,7 +25,7 @@ fn kit() -> &'static [String] {
 
 impl PlanetView {
     /// What the crosshair is on as a target, if it is a body within reach.
-    fn reached(&self, camera: &Camera) -> Option<Target> {
+    pub(crate) fn reached(&self, camera: &Camera) -> Option<Target> {
         let t = target(self, camera).filter(|t| t.in_reach && t.aimed.body.is_some())?;
         Some(Target {
             body: t.aimed.body,
@@ -191,7 +191,10 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
     let hands = c.inventory.hands.as_ref();
     let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
     line(&held, egui::Color32::from_white_alpha(200));
-    line(&hint(hands, aimed), egui::Color32::from_rgb(160, 200, 230));
+    line(
+        &hint(hands, aimed, view.fastening.name()),
+        egui::Color32::from_rgb(160, 200, 230),
+    );
     let recent = |told: &Option<(String, std::time::Instant)>| {
         told.as_ref()
             .filter(|(_, when)| when.elapsed().as_secs_f64() < 5.0)
@@ -222,6 +225,7 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
 fn hint(
     hands: Option<&creeer_net::message::ItemView>,
     aimed: Option<&crate::planet_aim::Target>,
+    fastener: Option<&str>,
 ) -> String {
     let aimed = aimed.filter(|t| t.in_reach);
     let on_thing = aimed.is_some_and(|t| t.loose.is_some() || t.aimed.body.is_some());
@@ -241,6 +245,10 @@ fn hint(
         None => {
             if on_thing {
                 keys.extend([lift, "E: into a pocket".into()]);
+                // (Two parts touching there are fastened: the hands must be free, G2.3.)
+                if let Some(f) = fastener {
+                    keys.push(format!("J: fasten with {f} (K: another)"));
+                }
             }
             if on_ground {
                 keys.push("click: dig with the hands".into());

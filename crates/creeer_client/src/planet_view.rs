@@ -87,6 +87,8 @@ pub struct PlanetView {
     pub day_fraction: f64,
     /// How much faster than real time the sun moves.
     pub day_speed: f64,
+    /// The fastener chosen to fasten parts with (G2.3).
+    pub fastening: crate::fastening::Fastening,
 }
 
 impl std::fmt::Debug for PlanetView {
@@ -165,6 +167,7 @@ impl PlanetView {
             fill_rock,
             day_fraction: 0.05,
             day_speed: 1.0,
+            fastening: crate::fastening::Fastening::from_data(),
             terrain,
         }
     }

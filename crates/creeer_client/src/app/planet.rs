@@ -79,6 +79,14 @@ impl Running {
                 planet.send(creeer_net::message::Command::Strip);
                 return true;
             }
+            KeyCode::KeyJ => {
+                planet.fasten(&self.camera);
+                return true;
+            }
+            KeyCode::KeyK => {
+                planet.fastening.next();
+                return true;
+            }
             KeyCode::KeyB => {
                 planet.bind(&self.camera);
                 return true;

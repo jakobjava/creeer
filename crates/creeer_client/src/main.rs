@@ -50,6 +50,7 @@ mod held;
 mod hulls;
 mod icon_image;
 mod icons;
+mod fastening;
 mod inventory_ui;
 mod lab;
 mod lab_ellingham;
