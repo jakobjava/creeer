@@ -42,6 +42,8 @@ mod heat_tests;
 mod hessian_check;
 pub mod history;
 mod lbfgs;
+#[cfg(test)]
+mod ltb_tests;
 mod mass;
 mod minimise;
 mod objective;

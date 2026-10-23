@@ -166,7 +166,12 @@ impl Structure {
     /// Holds node `node` in the ground by a spring of law `law` along `axis` (unit: the
     /// post's way, out of the ground): a fixed node in the ground beside it, joined to it.
     /// Returns the joint's index.
-    pub fn anchor(&mut self, node: NodeId, axis: creeer_math::glam::DVec3, law: &JointLaw) -> usize {
+    pub fn anchor(
+        &mut self,
+        node: NodeId,
+        axis: creeer_math::glam::DVec3,
+        law: &JointLaw,
+    ) -> usize {
         use creeer_math::glam::{DMat3, DVec3};
         let at = self.position[node] - axis * GROUND_GAP;
         let ground = self.node_count();
