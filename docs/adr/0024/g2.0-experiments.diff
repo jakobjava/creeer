@@ -1,0 +1,1350 @@
+diff --git a/crates/creeer_physics/src/structure/group.rs b/crates/creeer_physics/src/structure/group.rs
+index 53044f3..91324ae 100644
+--- a/crates/creeer_physics/src/structure/group.rs
++++ b/crates/creeer_physics/src/structure/group.rs
+@@ -41,6 +41,9 @@ pub(super) fn trial_states<'a>(members: &'a [Member<'_>]) -> Vec<MemberState<'a>
+ /// bounded energy oscillation, and its second-order error in fields that vary in space).
+ const ENERGY_SLACK: f64 = 1.0e-3;
+ 
++/// TEMP trace.
++pub static TRACE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++
+ /// Total energy (kinetic, elastic, potential of gravity and loads, coupling) and its
+ /// kinetic + elastic part. Member elastic energies come from the last minimisation when it
+ /// has `just_minimised` the members, or when the state is unchanged since (checked bit for
+@@ -235,6 +238,13 @@ pub fn step_group_with(
+                     (after, removed) = (before, true);
+                 }
+             }
++            if TRACE.load(std::sync::atomic::Ordering::Relaxed) && (std::env::var_os("HELD").is_none() || members.len() == 2) {
++                let ke: f64 = members.iter().map(|(s, _)| s.node_energy().0).sum();
++                eprintln!(
++                    "  guard: before={before:.6} after={after:.6} limit={limit:.6} surplus={surplus:.6} left={left:?} ke={ke:.6} removed={removed} fb={}",
++                    members[0].1.fallbacks
++                );
++            }
+             if after > limit - surplus {
+                 remove_kinetic(members, after - (before - surplus));
+                 removed = true;
+diff --git a/crates/creeer_physics/src/world/anchor.rs b/crates/creeer_physics/src/world/anchor.rs
+index 17f3bc3..7aa1a7e 100644
+--- a/crates/creeer_physics/src/world/anchor.rs
++++ b/crates/creeer_physics/src/world/anchor.rs
+@@ -33,6 +33,10 @@ pub struct Anchor {
+     pub(super) local_a: DVec3,
+     pub(super) b: Option<(usize, NodeId)>,
+     pub(super) kept: Kept,
++    /// A bump of the ground's inset (`ground_rise::bump`), kept for the next step's detection.
++    pub(super) bump: Option<f64>,
++    /// EXPERIMENT: rest shift of the offset.
++    pub(super) rest: f64,
+ }
+ 
+ /// The bodies (and nodes) an anchor joins: A's, and B's or none for fixed geometry.
+@@ -61,7 +65,7 @@ impl<'a> Index<'a> {
+         a: (usize, NodeId),
+         local_a: DVec3,
+         b: Option<(usize, NodeId)>,
+-    ) -> Option<Kept> {
++    ) -> Option<(Kept, f64)> {
+         find(
+             self.by_pair.get(&(a, b))?.iter().map(|&i| &self.anchors[i]),
+             local_a,
+@@ -69,13 +73,33 @@ impl<'a> Index<'a> {
+     }
+ }
+ 
++/// The bumps of the ground the last step had, by the body and node they are on: each one's
++/// point (in the node's frame) and inset (`ground_rise::bump`).
++pub fn bumps(anchors: &[Anchor]) -> HashMap<(usize, NodeId), Vec<(DVec3, f64)>> {
++    let mut out: HashMap<(usize, NodeId), Vec<(DVec3, f64)>> = HashMap::new();
++    for x in anchors.iter().filter(|x| x.b.is_none()) {
++        if let Some(inset) = x.bump {
++            out.entry(x.a).or_default().push((x.local_a, inset));
++        }
++    }
++    out
++}
++
++/// A bump's point found again within this distance (m, in its node's frame) is the same
++/// bump: its points lie where a face's or an edge's grid puts them, centimetres apart, and
++/// come back to within rounding.
++pub const SAME_BUMP: f64 = 1.0e-4;
++
+ /// The anchor among `candidates` (of the contact's pair) nearest its point, if one is near.
+-fn find<'a>(candidates: impl Iterator<Item = &'a Anchor>, local_a: DVec3) -> Option<Kept> {
++fn find<'a>(
++    candidates: impl Iterator<Item = &'a Anchor>,
++    local_a: DVec3,
++) -> Option<(Kept, f64)> {
+     candidates
+         .map(|x| (x, (x.local_a - local_a).length()))
+         .filter(|(_, d)| *d < SAME_POINT)
+         .min_by(|p, q| p.1.total_cmp(&q.1))
+-        .map(|(x, _)| x.kept)
++        .map(|(x, _)| (x.kept, x.rest))
+ }
+ 
+ /// The anchors after a group's step (moved where the contacts slid). `group` lists the
+@@ -130,6 +154,8 @@ pub fn after_step(bodies: &[&mut Body], group: &[usize], contacts: &Contacts) ->
+                 local_a: local,
+                 b,
+                 kept,
++                bump: c.bump.then_some(c.offset - c.rest),
++                rest: c.rest,
+             })
+         })
+         .collect()
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 8bdbff5..3fbad3a 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -41,6 +41,7 @@ pub mod patch;
+ #[cfg(test)]
+ mod patch_tests;
+ pub mod turning;
++mod trace;
+ mod twist;
+ 
+ use super::friction::Carried;
+@@ -126,6 +127,11 @@ pub struct Contact {
+     /// Whether it touches at the start of the step or will within it (set when the step
+     /// begins): its stiffness then counts in the step's matrix.
+     touching: bool,
++    /// Whether it is a bump of the ground (`ground_rise::bump`): its offset is kept for the
++    /// next step (`anchor.rs`).
++    pub bump: bool,
++    /// EXPERIMENT: rest shift in offset.
++    pub rest: f64,
+     /// Coulomb friction coefficient μ.
+     pub friction: f64,
+     /// Coefficient of restitution for the impact law after the step.
+@@ -179,6 +185,8 @@ impl Contact {
+             damping: 0.0,
+             dashpot: true,
+             touching: false,
++            bump: false,
++            rest: 0.0,
+             friction,
+             restitution: 0.0,
+             approach: 0.0,
+diff --git a/crates/creeer_physics/src/world/contact/trace.rs b/crates/creeer_physics/src/world/contact/trace.rs
+new file mode 100644
+index 0000000..96ce52a
+--- /dev/null
++++ b/crates/creeer_physics/src/world/contact/trace.rs
+@@ -0,0 +1,84 @@
++//! TEMP: G2.0 trace of each contact's elastic energy, matched from step to step.
++
++use super::{Contacts, Law, Side};
++use crate::structure::group::MemberState;
++use std::sync::Mutex;
++
++static LAST: Mutex<Vec<(String, f64, f64)>> = Mutex::new(Vec::new());
++
++impl Contacts {
++    fn keyed(&self, states: &[MemberState<'_>]) -> Vec<(String, f64, f64)> {
++        let geometry = self.geometry(states);
++        let gaps = geometry.gaps();
++        let measured = &*geometry.measured;
++        let key = |i: usize, kind: &str| {
++            let c = &self.list[i];
++            let (m, l) = match c.a {
++                Side::Node { local, member, .. } => (member, local),
++                Side::Fixed(p) => (9, p),
++            };
++            let b = match c.b {
++                Side::Node { member, .. } => format!("{member}"),
++                Side::Fixed(_) => "g".to_string(),
++            };
++            let bump = if c.bump { "bump" } else { "" };
++            format!("{kind}{bump}{m}{b}({:+.2},{:+.2},{:+.2})", l.x, l.y, l.z)
++        };
++        let mut out = Vec::new();
++        for (i, c) in self.list.iter().enumerate() {
++            if let Law::Hertz(h) = c.law {
++                out.push((key(i, "pt"), h.energy(-gaps[i]), gaps[i]));
++            }
++        }
++        for (p, m) in self.patches.iter().zip(measured) {
++            let depths: [f64; 4] = std::array::from_fn(|k| -gaps[p.first + k]);
++            let e = p.evaluate_on(depths, m).0;
++            let least = m.iter().copied().fold(f64::NEG_INFINITY, f64::max);
++            let k = key(p.first, "pa") + &key(p.first + 2, "");
++            out.push((k, e, -least));
++        }
++        out
++    }
++
++    /// Prints the contacts found at `states` against the last step's end.
++    pub fn trace_start(&self, states: &[MemberState<'_>]) {
++        let now = self.keyed(states);
++        let last = LAST.lock().expect("trace");
++        let mut lines = Vec::new();
++        let (mut e_now, mut e_last) = (0.0, 0.0);
++        for (k, e, g) in &now {
++            e_now += e;
++            let before = last.iter().find(|(l, _, _)| l == k);
++            let eb = before.map_or(0.0, |b| b.1);
++            if (e - eb).abs() > 1e-4 {
++                lines.push(format!(
++                    "    {k} {:.2}mJ (was {}) gap {:.0}um",
++                    e * 1e3,
++                    before.map_or("new".to_string(), |b| format!("{:.2}mJ gap {:.0}um", b.1 * 1e3, b.2 * 1e6)),
++                    g * 1e6
++                ));
++            }
++        }
++        for (k, e, g) in last.iter() {
++            e_last += e;
++            if !now.iter().any(|(n, _, _)| n == k) && *e > 1e-4 {
++                lines.push(format!("    {k} gone, held {:.2}mJ gap {:.0}um", e * 1e3, g * 1e6));
++            }
++        }
++        eprintln!(
++            "  found {:.2}mJ in {} against {:.2}mJ in {}",
++            e_now * 1e3,
++            now.len(),
++            e_last * 1e3,
++            last.len()
++        );
++        for l in lines {
++            eprintln!("{l}");
++        }
++    }
++
++    /// Keeps the contacts at the step's end.
++    pub fn trace_end(&self, states: &[MemberState<'_>]) {
++        *LAST.lock().expect("trace") = self.keyed(states);
++    }
++}
+diff --git a/crates/creeer_physics/src/world/detect.rs b/crates/creeer_physics/src/world/detect.rs
+index 3c58b9c..d60d516 100644
+--- a/crates/creeer_physics/src/world/detect.rs
++++ b/crates/creeer_physics/src/world/detect.rs
+@@ -1,8 +1,11 @@
+ //! Finding contacts: sort and sweep over bounding balls, then exact shape pairs.
+ 
++use super::anchor::SAME_BUMP;
++use super::ground::contacts_kept;
+ use super::shape::{Pose, RawContact, Shape, StaticShape};
+ use super::{World, narrow};
+ use crate::structure::NodeId;
++use creeer_math::glam::DVec3;
+ 
+ /// A contact found at the start of a step: body A, node A, body and node B (or fixed
+ /// geometry), and its geometry.
+@@ -68,6 +71,7 @@ impl World {
+         // Bodies joined do not collide with each other, unless their joint says so; nor do
+         // bodies let pass.
+         let unjoined = self.unjoined_pairs();
++        let bumps = super::anchor::bumps(&self.anchors);
+         let joined = |a: usize, b: usize| unjoined.binary_search(&(a.min(b), a.max(b))).is_ok();
+         for (i, a) in items.iter().enumerate() {
+             for b in &items[i + 1..] {
+@@ -102,7 +106,20 @@ impl World {
+                 }
+             }
+             if let Some(ground) = &self.ground {
+-                for raw in super::ground::contacts(&**ground, a.pose, &a.shape, a.margin) {
++                // The bumps it had: kept as the last step left them (`ground_rise::bump`).
++                let had = bumps.get(&(a.body, a.node)).map_or(&[][..], Vec::as_slice);
++                let nokeep = std::env::var_os("NOKEEP").is_some();
++                let kept = |p: DVec3| {
++                    if nokeep {
++                        return None;
++                    }
++                    let local = a.pose.rotation.conjugate() * (p - a.pose.position);
++                    (had.iter())
++                        .find(|(at, _)| (*at - local).length() < SAME_BUMP)
++                        .map(|&(_, inset)| inset)
++                };
++                let shape = &a.shape;
++                for raw in contacts_kept(&**ground, a.pose, shape, a.margin, &kept) {
+                     found.push((a.body, a.node, None, raw));
+                 }
+             }
+diff --git a/crates/creeer_physics/src/world/ground.rs b/crates/creeer_physics/src/world/ground.rs
+index 594cb5d..ad4dc2d 100644
+--- a/crates/creeer_physics/src/world/ground.rs
++++ b/crates/creeer_physics/src/world/ground.rs
+@@ -15,7 +15,7 @@
+ //!   it first counts. (Counted only from 1 mm above the plane, under a face resting on the
+ //!   ground it began 1 mm deep, and a rock on a hump was kicked every few steps, F5.)
+ 
+-use super::ground_rise::{Pressing, face_gap};
++use super::ground_rise::{Kept, Pressing, bump, face_gap, none_kept};
+ use super::ground_sample::{Feet, measure_face};
+ use super::shape::{Domain, Follows, Pose, RawContact, Shape};
+ use super::surface::Feature;
+@@ -150,6 +150,18 @@ pub(super) fn point_contact(
+ 
+ /// Contacts of a shape at `pose` with the ground (gap below `margin`).
+ pub fn contacts(ground: &dyn Ground, pose: Pose, shape: &Shape, margin: f64) -> Vec<RawContact> {
++    contacts_kept(ground, pose, shape, margin, &none_kept)
++}
++
++/// Contacts of a shape at `pose` with the ground (gap below `margin`), keeping the bumps the
++/// last step had (`kept`, `ground_rise::bump`).
++pub(super) fn contacts_kept(
++    ground: &dyn Ground,
++    pose: Pose,
++    shape: &Shape,
++    margin: f64,
++    kept: Kept<'_>,
++) -> Vec<RawContact> {
+     // Cheap rejection from the centre's distance. The first-order distance can
+     // underestimate the true one on steep slopes, never by more than half.
+     let Some(center) = estimate(ground, pose.position) else {
+@@ -162,12 +174,18 @@ pub fn contacts(ground: &dyn Ground, pose: Pose, shape: &Shape, margin: f64) ->
+         Shape::Sphere { radius } => point_contact(ground, pose.position, *radius, margin)
+             .into_iter()
+             .collect(),
+-        Shape::Box { half } => box_contacts(ground, pose, *half, margin),
+-        Shape::Hull(hull) => super::ground_hull::hull_contacts(ground, pose, hull, margin),
++        Shape::Box { half } => box_contacts(ground, pose, *half, margin, kept),
++        Shape::Hull(hull) => super::ground_hull::hull_contacts(ground, pose, hull, margin, kept),
+     }
+ }
+ 
+-fn box_contacts(ground: &dyn Ground, pose: Pose, half: DVec3, margin: f64) -> Vec<RawContact> {
++fn box_contacts(
++    ground: &dyn Ground,
++    pose: Pose,
++    half: DVec3,
++    margin: f64,
++    kept: Kept<'_>,
++) -> Vec<RawContact> {
+     let r = DMat3::from_quat(pose.rotation);
+     let at = |s: DVec3| pose.position + r * (half * s);
+     // Gaps of the eight corners (s = ±1 per axis), corner c has bits x, y, z.
+@@ -234,14 +252,7 @@ fn box_contacts(ground: &dyn Ground, pose: Pose, half: DVec3, margin: f64) -> Ve
+                 let Some(gap) = estimate(ground, p) else {
+                     continue;
+                 };
+-                if gap < margin && gap < plane - BULGE {
+-                    let bump = Feature::Round(BOX_SAMPLE_SPACING);
+-                    found.extend(point_contact(ground, p, 0.0, margin).map(|mut c| {
+-                        c.features = [Feature::Face, bump];
+-                        c.inset = (plane - BULGE).min(0.0);
+-                        c
+-                    }));
+-                }
++                found.extend(bump(ground, (p, Feature::Face), (gap, plane), margin, kept));
+             }
+         }
+     }
+diff --git a/crates/creeer_physics/src/world/ground_hull.rs b/crates/creeer_physics/src/world/ground_hull.rs
+index b8cd468..e8cde95 100644
+--- a/crates/creeer_physics/src/world/ground_hull.rs
++++ b/crates/creeer_physics/src/world/ground_hull.rs
+@@ -6,8 +6,8 @@
+ //! size. (Inside the faces and along the edges apart: a point on an
+ //! edge sampled with both its faces would press twice.)
+ 
+-use super::ground::{BOX_SAMPLE_SPACING, BULGE, Ground, estimate, point_contact, project};
+-use super::ground_rise::{Pressing, face_gap};
++use super::ground::{BOX_SAMPLE_SPACING, Ground, estimate, project};
++use super::ground_rise::{Kept, Pressing, bump, face_gap};
+ use super::ground_sample::{Feet, measure_face};
+ use super::hull::Hull;
+ use super::hull_narrow::{Placed, domain};
+@@ -15,8 +15,15 @@ use super::shape::{Pose, RawContact};
+ use super::surface::Feature;
+ use creeer_math::glam::DVec3;
+ 
+-/// Contacts of a hull at `pose` with the ground (gap below `margin`).
+-pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64) -> Vec<RawContact> {
++/// Contacts of a hull at `pose` with the ground (gap below `margin`; the bumps the last step
++/// had, `kept`).
++pub fn hull_contacts(
++    ground: &dyn Ground,
++    pose: Pose,
++    hull: &Hull,
++    margin: f64,
++    kept: Kept<'_>,
++) -> Vec<RawContact> {
+     let placed = Placed::new(hull, pose);
+     let gaps: Vec<f64> = placed
+         .vertices
+@@ -42,20 +49,14 @@ pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64)
+         let n = ((length / BOX_SAMPLE_SPACING).ceil() as u32).clamp(2, 16);
+         n
+     };
+-    let mut bump = |p: DVec3, plane: f64, feature: Feature| {
++    let mut sample = |p: DVec3, plane: f64, feature: Feature| {
+         // On a face pressing as a patch, the gap its patch sees there: a bump is what rises
+         // beyond.
+         let plane = face_gap(&patched, p).unwrap_or(plane);
+         let Some(gap) = estimate(ground, p) else {
+             return;
+         };
+-        if gap < margin && gap < plane - BULGE {
+-            found.extend(point_contact(ground, p, 0.0, margin).map(|mut c| {
+-                c.features = [feature, Feature::Round(BOX_SAMPLE_SPACING)];
+-                c.inset = (plane - BULGE).min(0.0);
+-                c
+-            }));
+-        }
++        found.extend(bump(ground, (p, feature), (gap, plane), margin, kept));
+     };
+     for f in 0..hull.faces().len() {
+         let ring = placed.ring(f);
+@@ -76,7 +77,7 @@ pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64)
+                 }
+                 // The corners' gaps interpolated to p: the gap a flat ground would have.
+                 let plane: f64 = (0..4).map(|k| corner_gaps[k] * w[k]).sum();
+-                bump(p, plane, Feature::Face);
++                sample(p, plane, Feature::Face);
+             }
+         }
+     }
+@@ -86,7 +87,7 @@ pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64)
+         let n = spacing((q - p).length());
+         for k in 1..n {
+             let t = f64::from(k) / f64::from(n);
+-            bump(
++            sample(
+                 p + (q - p) * t,
+                 gaps[u] + (gaps[v] - gaps[u]) * t,
+                 Feature::Edge,
+diff --git a/crates/creeer_physics/src/world/ground_rise.rs b/crates/creeer_physics/src/world/ground_rise.rs
+index 957c9db..54386e5 100644
+--- a/crates/creeer_physics/src/world/ground_rise.rs
++++ b/crates/creeer_physics/src/world/ground_rise.rs
+@@ -14,7 +14,7 @@
+ //! off a face with 5 kJ every third step, then kicked every few steps, crept, and turned on
+ //! a bump past where its face pressed for seconds, F5.)
+ 
+-use super::ground::BULGE;
++use super::ground::{BOX_SAMPLE_SPACING, BULGE, Ground, point_contact};
+ use super::ground_sample::Feet;
+ use super::shape::{Domain, Follows, PatchVertex, RawContact};
+ use super::surface::Feature;
+@@ -103,6 +103,66 @@ impl FaceGround {
+     }
+ }
+ 
++/// The bumps the last step had on a shape: for a point of its surface (world), the inset its
++/// bump had there, if it had one (`World::detect` looks them up in the friction anchors).
++pub type Kept<'a> = &'a dyn Fn(DVec3) -> Option<f64>;
++
++/// No bumps kept (a shape seen afresh: a query, a test).
++pub fn none_kept(_: DVec3) -> Option<f64> {
++    None
++}
++
++/// The bump at the point `p` of a box's or a hull's surface (`feature` on it; `gap` its
++/// first-order distance to the ground) where the face pressing there as a patch sees the
++/// ground at `plane` (the corners' plane where none presses): a point contact pressing with
++/// what the ground rises more than [`BULGE`] beyond that (its inset), as `ground.rs` says.
++///
++/// **A bump the last step had (`kept`) is kept** while it presses or is within [`BULGE`] of
++/// pressing (and within `margin`), its inset as that step left it while it presses (G2.0). Found afresh each step,
++/// it went with what the face's patch saw there, which moves as the patch is measured again: a
++/// felled trunk's bump 20 µm in was not found the next step (its patch now saw the ground
++/// within 1 mm there), the trunk sank 46 µm into it unopposed and found it again holding
++/// 37 mJ, which threw it 1–2 mm; the energy guard stopped it dead and the cycle began
++/// again, and the trunk never rested (ADR-0024). Kept, a bump holds in the next step's start
++/// just what it held at the last step's end. Where it does not press, its inset follows the
++/// patch again, no deeper than touching (no energy is found anew).
++pub(super) fn bump(
++    ground: &dyn Ground,
++    (p, feature): (DVec3, Feature),
++    (gap, plane): (f64, f64),
++    margin: f64,
++    kept: Kept<'_>,
++) -> Option<RawContact> {
++    let kept = kept(p);
++    if kept.is_none() && !(gap < margin && gap < plane - BULGE) {
++        return None;
++    }
++    let mut c = point_contact(ground, p, 0.0, f64::INFINITY)?;
++    c.features = [feature, Feature::Round(BOX_SAMPLE_SPACING)];
++    let touches = c.gap();
++    let follows = (plane - BULGE).min(0.0);
++    match kept {
++        Some(inset) => {
++            c.inset = if touches < inset {
++                inset
++            } else {
++                follows.min(touches)
++            };
++            (c.gap() < BULGE.min(margin)).then_some(c)
++        }
++        None => {
++            c.inset = follows;
++            (touches < margin).then_some(c)
++        }
++    }
++}
++
++/// Whether a contact is a bump ([`bump`]): the only contacts with the ground's round feature
++/// of the sample spacing.
++pub(super) fn is_bump(c: &RawContact) -> bool {
++    c.patch.is_none() && c.features[1] == Feature::Round(BOX_SAMPLE_SPACING)
++}
++
+ /// How far the ground can rise above the plane through a face's corners `corners` (a
+ /// parallelogram) curving as it does `under` it: the quadric's most, and a [`BULGE`] more for
+ /// how the ground strays from it.
+diff --git a/crates/creeer_physics/src/world/hull_sat.rs b/crates/creeer_physics/src/world/hull_sat.rs
+index c934414..39b9edd 100644
+--- a/crates/creeer_physics/src/world/hull_sat.rs
++++ b/crates/creeer_physics/src/world/hull_sat.rs
+@@ -30,15 +30,80 @@ pub fn hull_hull(pose_a: Pose, a: &Hull, pose_b: Pose, b: &Hull, margin: f64) ->
+     if edges.is_some_and(|(separation, ..)| separation > margin) {
+         return Vec::new();
+     }
++    let (separation_a, separation_b) = if std::env::var_os("LOCAL").is_some() {
++        let (la, lb) = (local(&a, face_a, &b), local(&b, face_b, &a));
++        (
++            if la.is_finite() { la } else { separation_a },
++            if lb.is_finite() { lb } else { separation_b },
++        )
++    } else {
++        (separation_a, separation_b)
++    };
+     let face = separation_a.max(separation_b);
++    if crate::structure::group::TRACE.load(std::sync::atomic::Ordering::Relaxed)
++        && std::env::var_os("SAT").is_some()
++    {
++        eprintln!(
++            "  sat: face a {:.1}um b {:.1}um edges {:?}um",
++            separation_a * 1e6,
++            separation_b * 1e6,
++            edges.map(|e| e.0 * 1e6)
++        );
++    }
+     // Edge axes only when clearly better than the faces (as for boxes: no flicker at rest).
+     if let Some((separation, i, j, axis)) = edges
+-        && separation > face + 1e-4
++        && (separation > face + 1e-4 || std::env::var_os("EDGES").is_some())
+     {
++        if std::env::var_os("MANIFOLD").is_some() {
++            let best = |p: &Placed<'_>, e: usize, towards: DVec3| {
++                (p.hull.edges()[e].faces.iter())
++                    .map(|&f| (f, p.normals[f].dot(towards)))
++                    .max_by(|x, y| x.1.total_cmp(&y.1))
++                    .expect("faces")
++            };
++            let ((fa, ca), (fb, cb)) = (best(&a, i, axis), best(&b, j, -axis));
++            let found = if ca >= cb {
++                clip(&a, fa, &b, margin, true)
++            } else {
++                clip(&b, fb, &a, margin, false)
++            };
++            if std::env::var_os("SAT").is_some() {
++                eprintln!("  manifold: ca {ca:.3} cb {cb:.3} found {}", found.len());
++            }
++            if !found.is_empty() {
++                return found;
++            }
++        }
+         let ends = |p: &Placed<'_>, e: usize| {
+             let [u, v] = p.hull.edges()[e].ends;
+             (p.vertices[u], p.vertices[v])
+         };
++        if std::env::var_os("ALLEDGES").is_some() {
++            let mut all = crossings(&a, &b, margin);
++            all.retain(|c| c.0 > separation - 1e-3);
++            all.sort_by(|x, y| y.0.total_cmp(&x.0));
++            if !all.iter().any(|c| (c.1, c.2) == (i, j)) {
++                all.insert(0, (separation, i, j, axis));
++            }
++            return (all.into_iter().take(4))
++                .map(|(_, i, j, axis)| {
++                    let ((pa, qa), (pb, qb)) = (ends(&a, i), ends(&b, j));
++                    let (point_a, point_b) = closest_points(pa, qa, pb, qb);
++                    RawContact {
++                        point_a,
++                        point_b,
++                        normal: -axis,
++                        radius_a: 0.0,
++                        radius_b: 0.0,
++                        features: [Feature::Edge, Feature::Edge],
++                        patch: None,
++                        bend: None,
++                        follows: Follows::Edges((qa - pa).normalize(), (qb - pb).normalize()),
++                        inset: 0.0,
++                    }
++                })
++                .collect();
++        }
+         let ((pa, qa), (pb, qb)) = (ends(&a, i), ends(&b, j));
+         let (point_a, point_b) = closest_points(pa, qa, pb, qb);
+         // The axis points out of A, the normal from B to A.
+@@ -62,6 +127,48 @@ pub fn hull_hull(pose_a: Pose, a: &Hull, pose_b: Pose, b: &Hull, margin: f64) ->
+     }
+ }
+ 
++/// EXPERIMENT: every edge pair that can touch, crossing within both edges, within `margin`.
++fn crossings(a: &Placed<'_>, b: &Placed<'_>, margin: f64) -> Vec<(f64, usize, usize, DVec3)> {
++    let centre = a.inside();
++    let mut out = Vec::new();
++    for (i, ea) in a.hull.edges().iter().enumerate() {
++        let (pa, qa) = (a.vertices[ea.ends[0]], a.vertices[ea.ends[1]]);
++        let (u1, u2) = (a.normals[ea.faces[0]], a.normals[ea.faces[1]]);
++        for (j, eb) in b.hull.edges().iter().enumerate() {
++            let (pb, qb) = (b.vertices[eb.ends[0]], b.vertices[eb.ends[1]]);
++            let (w1, w2) = (-b.normals[eb.faces[0]], -b.normals[eb.faces[1]]);
++            if !minkowski_face(u1, u2, w1, w2) {
++                continue;
++            }
++            let (da, db) = (qa - pa, qb - pb);
++            let cross = da.cross(db);
++            let length = cross.length();
++            if length < 1e-6 * (da.length() * db.length()) {
++                continue;
++            }
++            let mut axis = cross / length;
++            if axis.dot(pa - centre) < 0.0 {
++                axis = -axis;
++            }
++            let separation = axis.dot(pb - pa);
++            if separation >= margin {
++                continue;
++            }
++            // Crossing within both edges.
++            let r = pa - pb;
++            let (aa, bb, ee) = (da.dot(da), da.dot(db), db.dot(db));
++            let (c, f) = (da.dot(r), db.dot(r));
++            let denom = aa * ee - bb * bb;
++            let s = (bb * f - c * ee) / denom;
++            let t = (aa * f - bb * c) / denom;
++            if (0.0..=1.0).contains(&s) && (0.0..=1.0).contains(&t) {
++                out.push((separation, i, j, axis));
++            }
++        }
++    }
++    out
++}
++
+ /// The largest separation of `other` from a face plane of `reference`, and that face.
+ fn face_query(reference: &Placed<'_>, other: &Placed<'_>) -> (f64, usize) {
+     let mut best = (f64::NEG_INFINITY, 0);
+@@ -177,6 +284,32 @@ fn clip(
+     )
+ }
+ 
++/// EXPERIMENT: the least depth of the incident face clipped to reference face `f`.
++fn local(reference: &Placed<'_>, f: usize, incident: &Placed<'_>) -> f64 {
++    let (normal, offset) = (reference.normals[f], reference.offsets[f]);
++    let opposed = (0..incident.normals.len())
++        .min_by(|&x, &y| {
++            incident.normals[x]
++                .dot(normal)
++                .total_cmp(&incident.normals[y].dot(normal))
++        })
++        .expect("a hull has faces");
++    let ring = reference.ring(f);
++    let mut polygon = incident.ring(opposed);
++    for k in 0..ring.len() {
++        let (p, q) = (ring[k], ring[(k + 1) % ring.len()]);
++        let side = (q - p).cross(normal).normalize();
++        polygon = clip_by(&polygon, |v| side.dot(v - p));
++    }
++    if polygon.len() < 3 {
++        return f64::INFINITY;
++    }
++    polygon
++        .iter()
++        .map(|&p| normal.dot(p) - offset)
++        .fold(f64::INFINITY, f64::min)
++}
++
+ /// `polygon` without the part where `distance` is positive.
+ fn clip_by(polygon: &[DVec3], distance: impl Fn(DVec3) -> f64) -> Vec<DVec3> {
+     let mut clipped = Vec::with_capacity(polygon.len() + 1);
+diff --git a/crates/creeer_physics/src/world/mod.rs b/crates/creeer_physics/src/world/mod.rs
+index df4e4c0..94946fa 100644
+--- a/crates/creeer_physics/src/world/mod.rs
++++ b/crates/creeer_physics/src/world/mod.rs
+@@ -50,6 +50,8 @@ mod pile_tests;
+ mod planet_tests;
+ mod query;
+ pub mod ray;
++#[cfg(test)]
++mod rest_tests;
+ mod sat;
+ mod save;
+ pub mod shape;
+diff --git a/crates/creeer_physics/src/world/pass.rs b/crates/creeer_physics/src/world/pass.rs
+index 0003236..3bccccb 100644
+--- a/crates/creeer_physics/src/world/pass.rs
++++ b/crates/creeer_physics/src/world/pass.rs
+@@ -134,7 +134,15 @@ impl World {
+                     }
+                 }
+             };
+-            list.push(self.contact(&groups, &group_of, &anchors, (a, na, b, raw.clone()), law));
++            let continuing = left[group_of[a]].is_some();
++            list.push(self.contact(
++                &groups,
++                &group_of,
++                &anchors,
++                (a, na, b, raw.clone()),
++                law,
++                continuing,
++            ));
+         }
+         // Step every group, in parallel, each borrowing its own bodies (in their order, as
+         // its contacts number them): moving them out and back cost more than stepping 200
+@@ -258,6 +266,7 @@ impl World {
+         anchors: &anchor::Index<'_>,
+         (a, na, b, raw): Found,
+         law: Law,
++        continuing: bool,
+     ) -> Contact {
+         let member = |body: usize| {
+             groups[group_of[body]]
+@@ -329,12 +338,13 @@ impl World {
+         };
+         contact.radius_a = raw.radius_a;
+         contact.radius_b = raw.radius_b;
++        contact.bump = super::ground_rise::is_bump(&raw);
+         let kept = anchors.find((a, na), local_a, b);
+         if contact.rolls() {
+             // A contact with a sphere: the anchor lies under A's surface point, less the
+             // stick offset carried over from the last step (`friction.rs`).
+             let slip = match kept {
+-                Some(anchor::Kept::Slip(u)) => u,
++                Some((anchor::Kept::Slip(u), _)) => u,
+                 _ => DVec3::ZERO,
+             };
+             let at = raw.point_a - raw.normal * raw.radius_a - slip;
+@@ -342,7 +352,7 @@ impl World {
+                 Some((bb, nb)) => side(bb, nb, at),
+                 None => Side::Fixed(at),
+             };
+-        } else if let Some(anchor::Kept::Point(point)) = kept {
++        } else if let Some((anchor::Kept::Point(point), _)) = kept {
+             contact.anchor = match b {
+                 Some((bb, nb)) => Side::Node {
+                     member: member(bb),
+@@ -359,6 +369,20 @@ impl World {
+         let relative = point_velocity(&body_a.structure, na, raw.point_a) - velocity_b;
+         contact.approach = raw.normal.dot(relative);
+         contact.sliding = (relative - raw.normal * contact.approach).length();
++        if std::env::var_os("REST").is_some()
++            && matches!(contact.law, Law::Hertz(_))
++            && continuing
++        {
++            let g = raw.gap();
++            let rest = match kept {
++                Some((_, r)) if g - r < 0.0 => r,
++                Some((_, r)) => r.max(g.min(0.0)),
++                None if contact.approach >= -0.05 => g.min(0.0),
++                None => 0.0,
++            };
++            contact.rest = rest;
++            contact.offset += rest;
++        }
+         contact
+     }
+ }
+diff --git a/crates/creeer_physics/src/world/rest_tests.rs b/crates/creeer_physics/src/world/rest_tests.rs
+new file mode 100644
+index 0000000..ed5a67a
+--- /dev/null
++++ b/crates/creeer_physics/src/world/rest_tests.rs
+@@ -0,0 +1,164 @@
++//! Felled logs come to rest (G2.0, ADR-0024): a long twelve-sided log on rough sloping ground,
++//! and a log lying across another.
++
++use super::hull::Hull;
++use super::planet_tests::FieldGround;
++use super::shape::Shape;
++use super::surface::Surface;
++use super::*;
++use creeer_math::det;
++use std::sync::Arc;
++
++const DT: f64 = 1.0 / 60.0;
++
++/// A log's stem as a felled tree's (`creeer_sim::trees::felled`): twelve-sided rings every
++/// 3 m along z, tapering from `r0` to `r1` (faster towards its top, so its faces bend at
++/// every ring), `length` long.
++fn stem(length: f64, r0: f64, r1: f64) -> Vec<DVec3> {
++    let rings = (length / 3.0).ceil().max(1.0);
++    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a few rings
++    let n = rings as u32;
++    let mut points = Vec::new();
++    for k in 0..=n {
++        let t = f64::from(k) / f64::from(n);
++        let r = r0 + (r1 - r0) * det::pow(t, 0.7);
++        for c in 0..12 {
++            let a = f64::from(c) * std::f64::consts::TAU / 12.0;
++            let (s, co) = det::sin_cos(a);
++            points.push(DVec3::new(r * co, r * s, (t - 0.5) * length));
++        }
++    }
++    points
++}
++
++/// A log of wood (700 kg/m³) with a crown's mass beyond its top: its node at the centre of
++/// mass, `offset` along its axis from its hull's centroid, as `Hull::about` puts a felled
++/// tree's.
++fn log(length: f64, r0: f64, r1: f64, offset: f64, at: DVec3, turn: DQuat) -> Body {
++    let (hull, _) = Hull::new(&stem(length, r0, r1)).expect("a stem");
++    let mass = 700.0 * hull.volume();
++    let inertia = hull.inertia(mass) + DMat3::from_diagonal(DVec3::new(1.0, 1.0, 0.0))
++        * (mass * offset * offset);
++    let hull = hull.about(DVec3::Z * offset);
++    let mut body = Body::rigid_with(Shape::Hull(Arc::new(hull)), mass, inertia, at, DT);
++    body.structure.orientation[0] = turn;
++    body.friction = 0.6;
++    body.restitution = 0.1;
++    body.solver.reset_history(&body.structure);
++    body
++}
++
++/// Rough sloping ground as the terrain's (`creeer_terrain::tiles`): heights on a 1 m lattice,
++/// 7° down +x with swells of 5 cm some 9 m apart and 1 cm of roughness from node to node,
++/// joined by Catmull–Rom splines (its slope continuous, its curvature not).
++fn rough(p: DVec3) -> f64 {
++    let node = |i: f64, j: f64| {
++        let swell = 0.05 * det::sin(0.7 * i) * det::sin(0.6 * j + 0.4);
++        let hash = det::sin(i * 12.9898 + j * 78.233) * 43_758.545;
++        -0.07 * i + swell + 0.01 * (hash - hash.floor() - 0.5)
++    };
++    let spline = |f: f64| {
++        let (f2, f3) = (f * f, f * f * f);
++        [
++            -0.5 * f3 + f2 - 0.5 * f,
++            1.5 * f3 - 2.5 * f2 + 1.0,
++            -1.5 * f3 + 2.0 * f2 + 0.5 * f,
++            0.5 * f3 - 0.5 * f2,
++        ]
++    };
++    let (i, j) = (p.x.floor(), p.z.floor());
++    let (wx, wz) = (spline(p.x - i), spline(p.z - j));
++    let mut height = 0.0;
++    for (a, wa) in wx.iter().enumerate() {
++        for (b, wb) in wz.iter().enumerate() {
++            #[allow(clippy::cast_precision_loss)] // 0..4
++            let (da, db) = (a as f64 - 1.0, b as f64 - 1.0);
++            height += wa * wb * node(i + da, j + db);
++        }
++    }
++    p.y - height
++}
++
++/// Puts a body's lowest corner 2 mm over the ground `ground` (a height field's density).
++fn set_down(body: &mut Body, ground: impl Fn(DVec3) -> f64) {
++    let Shape::Hull(hull) = &body.shapes[0].1 else {
++        panic!("a hull");
++    };
++    let s = &mut body.structure;
++    let lowest = (hull.vertices().iter())
++        .map(|&v| ground(s.position[0] + s.orientation[0] * v))
++        .fold(f64::INFINITY, f64::min);
++    s.position[0].y += 0.0005 - lowest;
++}
++
++/// Steps `world` until every body sleeps or `seconds` pass: when they all slept (s).
++fn asleep_after(world: &mut World, seconds: f64) -> Option<f64> {
++    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a few thousand
++    let ticks = (seconds / DT) as u32;
++    let from: u32 = std::env::var("TRACE_FROM")
++        .ok()
++        .and_then(|t| t.parse().ok())
++        .unwrap_or(u32::MAX);
++    for tick in 0..ticks {
++        let on = tick >= from && tick < from + 15;
++        crate::structure::group::TRACE.store(on, std::sync::atomic::Ordering::Relaxed);
++        let before = world.bodies[0].structure.orientation[0];
++        world.step();
++        crate::structure::group::TRACE.store(false, std::sync::atomic::Ordering::Relaxed);
++        if on {
++            let s = &world.bodies[0].structure;
++            let r = DMat3::from_quat(s.orientation[0]);
++            let turn = r.transpose() * (s.orientation[0] * before.inverse()).to_scaled_axis();
++            eprintln!(
++                "{tick}: v {:.2e} turn {:.0?} urad, {} contacts",
++                s.velocity[0].length(),
++                turn * 1e6,
++                world.contacts.len()
++            );
++        }
++        if tick % 30 == 0 {
++            let bumps = world.contacts.iter().filter(|c| c.bump).count();
++            let s = &world.bodies[0].structure;
++            eprintln!(
++                "  {tick}: {} contacts, {bumps} bumps, v {:.2e} w {:.2e}",
++                world.contacts.len(),
++                s.velocity[0].length(),
++                s.angular_velocity[0].length()
++            );
++        }
++        if world.bodies.iter().all(|b| b.sleep.asleep) {
++            return Some(f64::from(tick) * DT);
++        }
++    }
++    None
++}
++
++/// A 12 m log laid across the slope of rough ground comes to rest and sleeps within 4 s,
++/// without creeping. (Each step found the ground's bumps afresh: one 20 µm in was not found
++/// the next step, the log sank into it unopposed and found it again holding 37 mJ, which
++/// threw it 1–2 mm; it never rested, G2.0.)
++#[test]
++fn a_log_rests_on_rough_sloping_ground() {
++    let mut late = Vec::new();
++    for (case, (z, roll)) in [(0.0, 0.0), (1.3, 0.1), (-2.1, 0.25), (0.7, 0.4)]
++        .into_iter()
++        .enumerate()
++    {
++        let mut world = World::new(DT);
++        world.ground = Some(Arc::new(FieldGround(rough)));
++        world.static_friction = 0.6;
++        // Across the slope: its axis along z, its lowest face down.
++        let turn = rotation(DVec3::Z, roll) * rotation(DVec3::Z, std::f64::consts::PI / 12.0);
++        world.add(log(12.0, 0.2, 0.08, 1.5, DVec3::new(0.0, 0.0, z), turn));
++        set_down(&mut world.bodies[0], rough);
++        let slept = asleep_after(&mut world, 8.0);
++        let s = &world.bodies[0].structure;
++        eprintln!(
++            "case {case}: asleep {slept:?}, moving at {} m/s, {} rad/s",
++            s.velocity[0].length(),
++            s.angular_velocity[0].length()
++        );
++        late.extend(slept.is_none_or(|t| t >= 4.0).then_some((case, slept)));
++    }
++    assert!(late.is_empty(), "{late:?}");
++}
+diff --git a/crates/creeer_physics/src/world/save.rs b/crates/creeer_physics/src/world/save.rs
+index a47579d..78d9dc8 100644
+--- a/crates/creeer_physics/src/world/save.rs
++++ b/crates/creeer_physics/src/world/save.rs
+@@ -1,7 +1,8 @@
+ //! The physics world as a save holds it: its settings, fixed geometry, every body (its
+ //! structure, solver history, shapes, surface and sleep), and what the next step continues
+ //! from: the friction anchors, the energy the contacts held (from version 5) and the joints
+-//! (from version 8, their constraint forces with them). The ground
++//! (from version 8, their constraint forces with them), and the bumps of the ground the
++//! contacts kept (from version 13, `ground_rise::bump`). The ground
+ //! is not in it: it is the terrain's, which a save holds as its edits (`creeer_sim::save`);
+ //! nor are the pairs of bodies let pass through each other (`World::let_pass`), its owner's;
+ //! whoever loads a world gives it both again.
+@@ -184,6 +185,8 @@ fn write_anchor(a: &Anchor, w: &mut Writer) {
+             w.put(&s);
+         }
+     }
++    // (Version 13 on.)
++    w.put(&a.bump);
+ }
+ 
+ fn read_anchor(r: &mut Reader<'_>) -> Result<Anchor, DecodeError> {
+@@ -199,11 +202,14 @@ fn read_anchor(r: &mut Reader<'_>) -> Result<Anchor, DecodeError> {
+         1 => Kept::Slip(r.get()?),
+         _ => return Err(r.error("unknown anchor")),
+     };
++    let bump = if r.version() >= 13 { r.get()? } else { None };
+     Ok(Anchor {
+         a,
+         local_a,
+         b,
+         kept,
++        bump,
++        rest: 0.0,
+     })
+ }
+ 
+diff --git a/crates/creeer_physics/src/world/stepping.rs b/crates/creeer_physics/src/world/stepping.rs
+index debd29e..cb75a03 100644
+--- a/crates/creeer_physics/src/world/stepping.rs
++++ b/crates/creeer_physics/src/world/stepping.rs
+@@ -115,6 +115,10 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
+         })
+         .collect();
+     contacts.start_turning(&states);
++    let tracing = crate::structure::group::TRACE.load(std::sync::atomic::Ordering::Relaxed) && (std::env::var_os("HELD").is_none() || bodies.iter().any(|b| b.held));
++    if tracing {
++        contacts.trace_start(&states);
++    }
+     // The bodies' energy only: contacts found pressed into each other at the step's start hold
+     // energy that never existed (a ball found inside a crate held 290 kJ, and the rebound was
+     // allowed to give some of it back, F5).
+@@ -154,6 +158,16 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
+         Some(Scheme::Bdf2)
+     };
+     step_group_with(&mut members, contacts, scheme);
++    if tracing {
++        let states: Vec<MemberState<'_>> = members
++            .iter()
++            .map(|(s, _)| MemberState {
++                position: &s.position,
++                orientation: &s.orientation,
++            })
++            .collect();
++        contacts.trace_end(&states);
++    }
+     if impact {
+         // The rebound may not lift the total energy above its level before the step, less
+         // the plastic work done in the step (that energy is gone: it heated the metal).
+diff --git a/crates/creeer_server/src/play.rs b/crates/creeer_server/src/play.rs
+index a5d6873..6e163f1 100644
+--- a/crates/creeer_server/src/play.rs
++++ b/crates/creeer_server/src/play.rs
+@@ -284,4 +284,6 @@ fn finish(mut play: Play, ticks: Vec<Tick>, start: &[(u64, u64)]) -> Report {
+ #[cfg(test)]
+ mod rest_probe;
+ #[cfg(test)]
++mod rest_detail;
++#[cfg(test)]
+ mod tests;
+diff --git a/crates/creeer_server/src/play/rest_detail.rs b/crates/creeer_server/src/play/rest_detail.rs
+new file mode 100644
+index 0000000..1a7ec8e
+--- /dev/null
++++ b/crates/creeer_server/src/play/rest_detail.rs
+@@ -0,0 +1,220 @@
++//! TEMP: G2.0's detailed trace of one trunk alone (run by hand).
++
++use super::Play;
++use super::record::Act;
++use super::scenes::{scene, terrain};
++use creeer_math::glam::{DMat3, DVec3};
++use creeer_physics::world::World;
++use creeer_physics::world::contact::Law;
++
++/// The trunk `TRUNK` alone on the ground after the scene, 120 steps on (cached in `CACHE`).
++pub fn trunk_alone() -> World {
++    let s = scene("lumberjack").expect("the scene");
++    let terrain = terrain();
++    let mut play = Play::new((s.build)(terrain.clone()), s.name, s.players, &terrain);
++    let b: usize = std::env::var("TRUNK")
++        .ok()
++        .and_then(|t| t.parse().ok())
++        .unwrap_or(5);
++    let cache = std::env::var("CACHE").ok().map(|c| {
++        let t = std::env::var("TRUNKS").unwrap_or_default().replace(',', "_");
++        format!("{c}.{b}.{t}.bin")
++    });
++    let all = &play.server.world.world;
++    let fresh = |all: &World| {
++        let mut w = World::new(all.dt());
++        w.ground = all.ground.clone();
++        w.static_friction = all.static_friction;
++        w.static_surface = all.static_surface;
++        w
++    };
++    if let Some(bytes) = cache.as_ref().and_then(|c| std::fs::read(c).ok()) {
++        let mut w = World::from_bytes(&bytes).expect("cached");
++        w.ground = all.ground.clone();
++        return w;
++    }
++    let mut w = fresh(all);
++    let still = vec![Act::default(); s.players.len()];
++    for tick in 0..1800 {
++        let acts = (s.script)(tick, &play);
++        play.tick(&acts);
++    }
++    for _ in 0..600 {
++        play.tick(&still);
++    }
++    let all = &play.server.world.world;
++    for (i, body) in all.bodies.iter().enumerate() {
++        println!(
++            "body {i}: m={:.1} asleep={} held={} shapes={} nodes={}",
++            body.structure.total_mass(),
++            body.sleep.asleep,
++            body.held,
++            body.shapes.len(),
++            body.structure.node_count()
++        );
++    }
++    let list: Vec<usize> = std::env::var("TRUNKS").ok().map_or(vec![b], |t| {
++        t.split(',').filter_map(|x| x.parse().ok()).collect()
++    });
++    for &i in &list {
++        w.add(all.bodies[i].clone());
++    }
++    if let Some(mu) = std::env::var("MU").ok().and_then(|m| m.parse::<f64>().ok()) {
++        w.bodies[0].friction = mu;
++        w.static_friction = mu;
++    }
++    for _ in 0..120 {
++        w.step();
++    }
++    if let Some(c) = &cache {
++        std::fs::write(c, w.to_bytes()).expect("cache written");
++    }
++    w
++}
++
++fn kinetic(w: &World) -> f64 {
++    let s = &w.bodies[0].structure;
++    let r = DMat3::from_quat(s.orientation[0]);
++    let om = s.angular_velocity[0];
++    0.5 * s.total_mass() * s.velocity[0].length_squared()
++        + 0.5 * om.dot(r * s.inertia_of(0) * r.transpose() * om)
++}
++
++#[test]
++#[ignore = "a measurement, run by hand"]
++fn rest_probe_detail() {
++    let mut w = trunk_alone();
++    {
++        let s = &w.bodies[0].structure;
++        let r = DMat3::from_quat(s.orientation[0]);
++        println!(
++            "mass {:.1} I={:?} axes x={:.3?} y={:.3?} z={:.3?} up={:.3?} g={:.3?} shapes={}",
++            s.total_mass(),
++            s.inertia_of(0),
++            r.col(0),
++            r.col(1),
++            r.col(2),
++            s.position[0].normalize(),
++            s.gravity,
++            w.bodies[0].shapes.len()
++        );
++    }
++    let trace = std::env::var("GUARD").is_ok();
++    let p0 = w.bodies[0].structure.position[0];
++    let ticks: usize = std::env::var("TICKS")
++        .ok()
++        .and_then(|t| t.parse().ok())
++        .unwrap_or(40);
++    let mut asleep_at = None;
++    for tick in 0..ticks {
++        let q_before = w.bodies[0].structure.orientation[0];
++        let x_before = w.bodies[0].structure.position[0];
++        creeer_physics::structure::group::TRACE.store(trace, std::sync::atomic::Ordering::Relaxed);
++        w.step();
++        creeer_physics::structure::group::TRACE.store(false, std::sync::atomic::Ordering::Relaxed);
++        let body = &w.bodies[0];
++        if body.sleep.asleep && asleep_at.is_none() {
++            asleep_at = Some(tick);
++        }
++        let s = &body.structure;
++        let r = DMat3::from_quat(s.orientation[0]);
++        let d = (s.position[0] - p0) * 1e6;
++        let step = (s.position[0] - x_before) * 1e6;
++        let turn = r.transpose() * (s.orientation[0] * q_before.inverse()).to_scaled_axis() * 1e6;
++        let (mut patches, mut points, mut fresh, mut lambda) = (0, 0, 0, 0.0);
++        let mut force = DVec3::ZERO;
++        for c in &w.contacts {
++            match c.law {
++                Law::Patch { vertex: 0, .. } => patches += 1,
++                Law::Patch { .. } => {}
++                Law::Hertz(_) => points += 1,
++            }
++            if c.anchor == c.b {
++                fresh += 1;
++            }
++            lambda += c.normal_force();
++            force += c.normal * c.normal_force();
++        }
++        println!(
++            "{tick:3} ke={:8.3}mJ dx=({:+6.0},{:+6.0},{:+6.0}) step={:5.0}um turn(body)=({:+5.0},{:+5.0},{:+5.0})urad v={:.1}mm/s it={:2} fb={} n={} pa={patches} pt={points} fresh={fresh} sl={lambda:.0} F={force:.0?}{}",
++            kinetic(&w) * 1e3,
++            d.x,
++            d.y,
++            d.z,
++            step.length(),
++            turn.x,
++            turn.y,
++            turn.z,
++            s.velocity[0].length() * 1e3,
++            body.solver.last_iterations,
++            body.solver.fallbacks,
++            w.contacts.len(),
++            if body.sleep.asleep { " Z" } else { "" }
++        );
++    }
++    println!("asleep at {asleep_at:?}");
++}
++
++#[test]
++#[ignore = "a measurement, run by hand"]
++fn rest_probe_group() {
++    use creeer_physics::world::contact::Side;
++    let s = scene("lumberjack").expect("the scene");
++    let terrain = terrain();
++    let mut play = Play::new((s.build)(terrain.clone()), s.name, s.players, &terrain);
++    let still = vec![Act::default(); s.players.len()];
++    for tick in 0..1800 {
++        let acts = (s.script)(tick, &play);
++        play.tick(&acts);
++    }
++    let idle: usize = std::env::var("IDLE")
++        .ok()
++        .and_then(|t| t.parse().ok())
++        .unwrap_or(0);
++    for _ in 0..idle {
++        play.tick(&still);
++    }
++    let trace = std::env::var("GUARD").is_ok();
++    let ticks: usize = std::env::var("TICKS")
++        .ok()
++        .and_then(|t| t.parse().ok())
++        .unwrap_or(40);
++    for tick in 0..ticks {
++        let w = &play.server.world.world;
++        let before: Vec<_> = (w.bodies.iter())
++            .map(|b| (b.structure.position[0], b.structure.orientation[0]))
++            .collect();
++        creeer_physics::structure::group::TRACE.store(trace, std::sync::atomic::Ordering::Relaxed);
++        let ms = play.tick(&still).ms;
++        creeer_physics::structure::group::TRACE.store(false, std::sync::atomic::Ordering::Relaxed);
++        let w = &play.server.world.world;
++        let mut line = format!("{tick:3} {ms:.1}ms");
++        for (i, b) in w.bodies.iter().enumerate() {
++            if b.sleep.asleep || b.held || i >= before.len() {
++                continue;
++            }
++            let s = &b.structure;
++            let r = DMat3::from_quat(s.orientation[0]);
++            let step = (s.position[0] - before[i].0) * 1e6;
++            let turn =
++                r.transpose() * (s.orientation[0] * before[i].1.inverse()).to_scaled_axis() * 1e6;
++            let om = s.angular_velocity[0];
++            let ke = 0.5 * s.total_mass() * s.velocity[0].length_squared()
++                + 0.5 * om.dot(r * s.inertia_of(0) * r.transpose() * om);
++            line += &format!(
++                " [{i}{} ke={:.2}mJ step={:.0}um turn=({:+.0},{:+.0},{:+.0})ur it={} fb={}]",
++                if b.sleep.asleep { "Z" } else { "" },
++                ke * 1e3,
++                step.length(),
++                turn.x,
++                turn.y,
++                turn.z,
++                b.solver.last_iterations,
++                b.solver.fallbacks
++            );
++        }
++        let groups: Vec<&[usize]> = w.groups().filter(|g| g.len() > 1 || !w.bodies[g[0]].held).collect();
++        let _ = Side::Fixed(DVec3::ZERO);
++        println!("{line} groups={groups:?} contacts={}", w.contacts.len());
++    }
++}
+diff --git a/crates/creeer_server/src/play/rest_probe.rs b/crates/creeer_server/src/play/rest_probe.rs
+index 69ae2d0..7f288dd 100644
+--- a/crates/creeer_server/src/play/rest_probe.rs
++++ b/crates/creeer_server/src/play/rest_probe.rs
+@@ -148,6 +148,100 @@ fn rest_probe_paths() {
+     }
+ }
+ 
++/// TEMP: the scene's felled parts (players taken out) after it and 10 s idle, as world bytes.
++#[test]
++#[ignore = "writes a fixture"]
++fn rest_fixture() {
++    let s = scene("lumberjack").expect("the scene");
++    let terrain = terrain();
++    let mut play = Play::new((s.build)(terrain.clone()), s.name, s.players, &terrain);
++    let still = vec![Act::default(); s.players.len()];
++    for tick in 0..1800 {
++        let acts = (s.script)(tick, &play);
++        play.tick(&acts);
++    }
++    for _ in 0..600 {
++        play.tick(&still);
++    }
++    let mut w = play.server.world.world.clone();
++    w.retain_bodies(|_, b| !b.held);
++    println!("{} bodies kept", w.bodies.len());
++    let path = std::env::var("FIXTURE").expect("FIXTURE");
++    std::fs::write(path, w.to_bytes()).expect("written");
++}
++
++/// TEMP: the fixture stepped 10 s: when each body falls asleep.
++#[test]
++#[ignore = "a measurement"]
++fn rest_fixture_run() {
++    let s = scene("lumberjack").expect("the scene");
++    let terrain = terrain();
++    let play = Play::new((s.build)(terrain.clone()), s.name, s.players, &terrain);
++    let bytes = std::fs::read(std::env::var("FIXTURE").expect("FIXTURE")).expect("read");
++    let mut w = creeer_physics::world::World::from_bytes_of(&bytes, 12).expect("a world");
++    w.ground = play.server.world.world.ground.clone();
++    if let Ok(only) = std::env::var("ALONE") {
++        let only: Vec<usize> = only.split(',').filter_map(|x| x.parse().ok()).collect();
++        w.retain_bodies(|i, _| only.contains(&i));
++    }
++    let mut slept: Vec<Option<u32>> = vec![None; w.bodies.len()];
++    let from: u32 = std::env::var("TRACE_FROM")
++        .ok()
++        .and_then(|t| t.parse().ok())
++        .unwrap_or(u32::MAX);
++    for tick in 0..600 {
++        let on = tick >= from && tick < from + 12;
++        creeer_physics::structure::group::TRACE.store(on, std::sync::atomic::Ordering::Relaxed);
++        let before: Vec<_> = (w.bodies.iter())
++            .map(|b| (b.structure.position[0], b.structure.orientation[0]))
++            .collect();
++        w.step();
++        creeer_physics::structure::group::TRACE.store(false, std::sync::atomic::Ordering::Relaxed);
++        if on {
++            let mut line = format!("{tick}:");
++            for (i, b) in w.bodies.iter().enumerate() {
++                let s = &b.structure;
++                let r = creeer_math::glam::DMat3::from_quat(s.orientation[0]);
++                let turn = r.transpose()
++                    * (s.orientation[0] * before[i].1.inverse()).to_scaled_axis()
++                    * 1e6;
++                line += &format!(
++                    " [{i} step {:.0}um turn ({:+.0},{:+.0},{:+.0})]",
++                    (s.position[0] - before[i].0).length() * 1e6,
++                    turn.x,
++                    turn.y,
++                    turn.z
++                );
++            }
++            let groups: Vec<&[usize]> = w.groups().collect();
++            println!("{line} {groups:?}");
++        }
++        if tick % 60 == 59 {
++            let mut line = format!("{}s:", (tick + 1) / 60);
++            for (i, b) in w.bodies.iter().enumerate() {
++                let s = &b.structure;
++                line += &format!(
++                    " [{i}{} m={:.0} v={:.1}mm/s w={:.1}mrad/s]",
++                    if b.sleep.asleep { "Z" } else { "" },
++                    s.total_mass(),
++                    s.velocity[0].length() * 1e3,
++                    s.angular_velocity[0].length() * 1e3
++                );
++            }
++            let groups: Vec<&[usize]> = w.groups().collect();
++            println!("{line} {groups:?}");
++        }
++        for (i, b) in w.bodies.iter().enumerate() {
++            if b.sleep.asleep {
++                slept[i].get_or_insert(tick);
++            } else {
++                slept[i] = None;
++            }
++        }
++    }
++    println!("asleep since: {slept:?}");
++}
++
+ /// Each awake trunk alone on the ground (the others taken away): does it rest by itself?
+ #[test]
+ #[ignore = "a measurement, run by hand"]
+diff --git a/crates/creeer_sim/src/save.rs b/crates/creeer_sim/src/save.rs
+index 144511f..533d813 100644
+--- a/crates/creeer_sim/src/save.rs
++++ b/crates/creeer_sim/src/save.rs
+@@ -1,6 +1,9 @@
+ //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
+ //! now (migration).
+ //!
++//! **Version 13** (G2.0): as version 12, the physics world's friction anchors keeping the
++//! inset of each bump of the ground they belong to (`WRLD`; ADR-0024's "G2.0: rest").
++//!
+ //! **Version 12** (G1.5): as version 11, with an optional section `PITS`: what was dug and not
+ //! yet cut from the terrain (`save/pits.rs`).
+ //!
+@@ -73,7 +76,7 @@ pub use people::SavedPerson;
+ pub use trees::SavedTrees;
+ 
+ /// The version this game writes.
+-pub const VERSION: u32 = 12;
++pub const VERSION: u32 = 13;
+ /// The signature of a save.
+ const MAGIC: &[u8; 8] = b"CREEERSV";
+ /// The signature of a version 1 save (an edit log).
