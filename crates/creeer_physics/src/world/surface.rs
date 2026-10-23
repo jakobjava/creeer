@@ -20,6 +20,9 @@ pub struct Surface {
 /// Edge radius of a machined or welded box (m).
 const ROUNDING: f64 = 0.002;
 
+/// The largest Poisson's ratio of an isotropic solid (an incompressible one's).
+const MOST_POISSON: f64 = 0.5;
+
 impl Surface {
     /// Structural steel: E = 210 GPa, ν = 0.3.
     pub const STEEL: Self = Self::new(210.0e9, 0.3);
@@ -41,12 +44,17 @@ impl Surface {
         }
     }
 
-    /// The surface of a member's material (ν = E/2G − 1).
+    /// The surface of a member's material: ν = E/2G − 1, an isotropic solid's, at most ½.
+    ///
+    /// A beam's E and G need not be one isotropic solid's: wood's E is along the grain, its G
+    /// across it (spruce C24: E/G = 16), and E/2G − 1 = 7 is no Poisson's ratio (an isotropic
+    /// solid's lies within −1 < ν ≤ ½). With it 1 − ν² < 0, the contact modulus came out
+    /// negative, and a face of a wooden member pressed into the ground pulled itself in: its
+    /// energy fell without bound and the step ran off to 10¹⁵⁰ m (G2.3). Wood's own ratios lie
+    /// near ½ (ν_LT 0.47, ν_RT 0.43 for spruce, *Wood Handbook* FPL-GTR-282, Table 5-2).
     pub fn of(material: &Material) -> Self {
-        Self::new(
-            material.youngs_modulus,
-            material.youngs_modulus / (2.0 * material.shear_modulus) - 1.0,
-        )
+        let derived = material.youngs_modulus / (2.0 * material.shear_modulus) - 1.0;
+        Self::new(material.youngs_modulus, derived.min(MOST_POISSON))
     }
 
     /// Compliance (1 − ν²)/E (1/Pa).
@@ -122,6 +130,21 @@ mod tests {
         let rubber = Surface::RUBBER;
         let rigid = Surface::new(1e30, 0.0);
         assert!((rubber.contact_modulus(&rigid) - 7.0e6 / (1.0 - 0.49 * 0.49)).abs() < 1.0);
+        // Wood: E along the grain, G across it (E/2G − 1 = 7). Its surface takes ν = ½, and
+        // presses with a positive modulus (G2.3: negative, a face pulled itself into the ground).
+        let spruce = crate::structure::section::Material {
+            youngs_modulus: 11.0e9,
+            shear_modulus: 0.69e9,
+            ..STEEL_S235
+        };
+        let wood = Surface::of(&spruce);
+        assert!((wood.poisson_ratio - 0.5).abs() < 1e-12);
+        let on_concrete = wood.contact_modulus(&Surface::CONCRETE);
+        let expected = 1.0 / (0.75 / 11.0e9 + 0.96 / 30.0e9);
+        assert!(
+            (on_concrete / expected - 1.0).abs() < 1e-12,
+            "{on_concrete}"
+        );
         let r = |a, b| effective_radius((a, 0.002), (b, 0.002));
         // Ball on a face: its radius. Two balls: R₁R₂/(R₁ + R₂).
         assert!((r(Feature::Round(0.1), Feature::Face) - 0.1).abs() < 1e-12);

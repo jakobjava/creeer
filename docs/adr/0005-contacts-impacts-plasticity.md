@@ -336,3 +336,53 @@ The sandbox's rock pile and stacks lagged: the physics ran slower than real time
 
 - **A member's end-moment pairs** are split by coordinate descent starting where the member's last split in the step left them (they started from nought: 14 sweeps a split in a crash). The same minimum, to rounding (`split_tests.rs`); the cars' impact tick 134 → 91 ms (ADR-0021).
 - **A buckling split kept the solver's books at nought:** the new solver began `iterations_total` and the plastic work again (now `ImplicitSolver::plastic_work`). Kept: the crash scene's worst tick counts its 495 Newton iterations (207 before); the crash's plastic work is booked whole.
+
+## Amended in G2.3 (2026-10-23): faces on structures' nodes
+
+G2 builds with members that collide as prisms: `creeer_building::assembly` puts half-prism hulls on each member's end nodes, so faces (`Law::Patch`, four corners) press on the nodes of multi-node structures, not only on rigid bodies. A wooden pole lying on the ground ran off to 10¹⁵⁰ m in its first step, or its factorisation found no positive definite matrix. A steel rigid body with the same box, on its centre or off it, rested.
+
+### The cause: no Poisson's ratio for wood
+`Surface::of` gave a member's surface ν = E/2G − 1, an isotropic solid's. Wood is not one: its E is along the grain, its G across it (spruce C24: E/G = 16), and E/2G − 1 = 6.97. With 1 − ν² < 0 the surface's compliance was negative, and so was the contact modulus: E* = −2.3·10⁸ Pa for spruce on concrete, the face's κ −1.86·10⁹ Pa/m. A face's material energy ½·κ·∫ max(δ, 0)² then fell as it pressed in. At 10 µm everywhere the beam's two boxes held −3.7 mJ, where a steel rigid body's box held +40 µJ. The line search accepted ever deeper trials, and the objective reached −10²⁵⁰ in 33 iterations.
+- Found by printing the step's objective, the contacts' energies and each patch's modulus and σ at every iteration.
+- Every wooden structure was exposed, with balls on its nodes as well (Hertz's k = 4/3·E*·√R is negative too). The sandbox's structures are steel, and rigid bodies take steel's surface unless given one.
+- So the faces themselves, their gradients and their blocks on a structure's nodes were never at fault.
+
+### Decision
+- **ν = min(E/2G − 1, ½)** (`world/surface.rs`). An isotropic solid's ratio lies in −1 < ν ≤ ½, and E/2G − 1 > −1 for any positive E and G, so only the upper bound needs holding.
+  - Wood's own major ratios lie near it: spruce's ν_LT 0.47, ν_RT 0.43, ν_LR 0.37 (*Wood Handbook*, FPL-GTR-282, 2021, ch. 5).
+  - Bit-identical for every isotropic material of the tables (their ν are 0.15–0.45, `material_tests.rs`).
+- **The nodes' blocks of the step's matrix stay translations only** (`contact/matrix.rs`), as before G2.3.
+  - A face's lifted corner may pull (λ < 0). Its friction's stiffness μ·λ/slip is then negative, and on a node's own block it could make the preconditioner indefinite (rigid bodies take a face's corners together, in their 6×6 blocks). Such a corner gives its normal part alone. It never acted in the cases measured; it guards the factorisation.
+
+### Prior work
+| Source | What it does | For Creëer |
+|---|---|---|
+| Johnson, *Contact Mechanics* (1985), §4.2, §5.2 | Hertz and the flat punch for isotropic solids: compliance (1 − ν²)/E | The laws used; they need an isotropic ν |
+| Willis (1966), *J. Mech. Phys. Solids* 14; Vlassak & Nix (1993, 1994); Swadener & Pharr (2001) | Contact and indentation of anisotropic (orthotropic, transversely isotropic) half-spaces: an indentation modulus from all the elastic constants | The right law for wood; it needs E_R, E_T and the ratios, which `Material` does not carry (limits) |
+| *Wood Handbook* (FPL-GTR-282, 2021), ch. 5 | Wood's elastic ratios: E_R/E_L ≈ 0.08 and E_T/E_L ≈ 0.04 for spruce; its major Poisson's ratios 0.37–0.47 | ν ≤ ½ is physical for wood; its transverse moduli size the limit |
+| PhysX, Bullet, MuJoCo (solref, solimp), ODE (ERP, CFM) | A contact's stiffness per material pair or per geometry, not from elastic constants | No anisotropic material to mishandle. Creëer derives contacts from materials (F5), so the derivation must hold for all of them |
+
+### Measured and rejected
+| Tried | Measured | Why rejected |
+|---|---|---|
+| **A face's coupled stiffness Σ K_kl·gₖ·gₗᵀ and its corners' turning blocks sᵀ·H·s on a structure's nodes**, as `rigid_blocks` takes them for rigid bodies (rotations' and translations' blocks, without their cross terms). Patch: `docs/adr/0005/faces-coupled-node-blocks.diff` | With the modulus fixed: six tapered poles and two beams with boxes settling on a plane for 300 steps took 208,396 iterations against 59,752, 3.4–5.5 s against 1.2–2.9 s, worst step 190–247 ms against 54–109 ms (three runs each). The boxed beams needed fewer factorisations (11 against 72); the pole more iterations (446 against 341) | Slower where members collide as prisms. It was added in G2.3's first pass (a526f6a) against the divergence, which it did not cause |
+| The coupled blocks alone, without the corners' turning blocks | The pole took 12,444 iterations to sleep (341 without either) | Far slower |
+| The λ < 0 guard left out | Identical in every case measured | Kept as a guard (above) |
+
+### Validation added
+- `creeer_building/src/faces_tests.rs`: a pole with its prism hulls, a beam with boxes centred on its nodes and 0.2 m off them, and the rigid control come to rest on the ground and sleep within 4 s. Their lowest corners are pressed in 12–43 µm (gate 0–0.1 mm, the step's resolvable stiffness, `cap.rs`).
+- The same file: two poles crossed on the ground, merged into one structure with a joint (the server's way) and stepped on. `creeer_server`'s `two_crossed_poles_nailed_become_one_structure` runs again.
+- `surface.rs`: wood's surface takes ν = ½ and a positive contact modulus.
+- Every play hash holds (`play --check`, full and `--short`): the scenes' motion is bit-identical.
+
+### Measured (development machine, shared with another build; three runs each)
+| `play --only` | before (a526f6a), p50 / p99 / worst ms | now |
+|---|---|---|
+| work | 0.56–0.77 / 1.1–8.2 / 1.8–19.7 | 0.55–0.65 / 1.1–2.1 / 1.9–9.4 |
+| crowd | 0.82–0.90 / 11.4–16.2 / 24–71 | 0.80–0.86 / 11.0–25.9 / 23–176 (four of six runs 23.3–23.8) |
+
+The same hashes, so the same work: the spread is the machine's (the crowd's worst ticks vary run to run either way).
+
+### Limits
+- **Wood's contact modulus is the one along the grain** (E_L, ν = ½); across it wood is 12–25 times softer. Below the step's resolvable stiffness this rarely matters: a pole's faces press at the cap's 0.8 MN/m, where its punch would give 10⁹ N/m. It does matter for a face pressed near a corner and for Hertz's edges. An anisotropic indentation modulus needs the transverse constants in `Material` (`docs/future-improvements.md`).
+- **Members as prisms cost far more than as balls** (open). The bench above (59,752 iterations, 1.2–2.9 s for 300 steps, worst step 54–109 ms) took 4,320 iterations and 23 ms with balls on the nodes. A tapered 12-sided pole rolls from face to face, each landing an impact, and impacts step structures in 0.5 ms substeps (`stepping.rs`): 3,536 impact substeps against 544, each with several faces.

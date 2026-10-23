@@ -307,8 +307,8 @@ impl Coupling for Contacts {
         blocks
     }
 
-    fn node_stiffness(&self, member: usize, nodes: usize) -> Vec<(usize, DMat3)> {
-        let mut blocks = self.node_blocks(member, nodes);
+    fn node_stiffness(&self, member: usize) -> Vec<(usize, DMat3)> {
+        let mut blocks = self.node_blocks(member);
         blocks.extend(self.joints.node_blocks(member));
         blocks
     }

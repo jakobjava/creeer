@@ -87,7 +87,6 @@ fn fasten(
 }
 
 #[test]
-#[ignore = "G2.3: needs face patches on multi-node structures"]
 fn two_crossed_poles_nailed_become_one_structure() {
     let (mut w, ada, below, above, at) = crossed(true);
     let bodies = w.world.bodies.len();

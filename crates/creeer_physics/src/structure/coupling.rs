@@ -75,10 +75,9 @@ pub trait Coupling: Sync {
     ) -> Option<f64> {
         None
     }
-    /// Stiffness the coupling adds at nodes of a structure member of `nodes` nodes (3×3 blocks
-    /// by block: translations 0..nodes, rotations nodes..2·nodes; possibly several per block),
-    /// for its factorised matrix. With `nodes` 0, translations only.
-    fn node_stiffness(&self, _member: usize, _nodes: usize) -> Vec<(usize, DMat3)> {
+    /// Translation stiffness the coupling adds at nodes of a structure member (3×3 blocks,
+    /// possibly several per node), for its factorised matrix.
+    fn node_stiffness(&self, _member: usize) -> Vec<(usize, DMat3)> {
         Vec::new()
     }
     /// Updates lagged quantities (friction's normal force) to `states`; returns whether any

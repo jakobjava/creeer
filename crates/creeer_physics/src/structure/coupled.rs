@@ -146,7 +146,7 @@ impl Coupled {
             .iter()
             .map(|&(s, node)| {
                 let now: DMat3 = coupling
-                    .node_stiffness(s, 0)
+                    .node_stiffness(s)
                     .iter()
                     .filter(|b| b.0 == node)
                     .map(|b| b.1)

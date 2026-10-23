@@ -4,6 +4,8 @@
 pub mod assembly;
 #[cfg(test)]
 mod assembly_tests;
+#[cfg(test)]
+mod faces_tests;
 pub mod fasteners;
 pub mod law;
 pub mod soil;

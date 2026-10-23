@@ -111,6 +111,7 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | What | Why deferred | Improves | Size | Recorded in |
 |---|---|---|---|---|
 | **Sharp corners on flat faces are soft**: a face pressed near a corner follows its whole face's punch law, sinking 0.6–1.1 mm where Hertz gives about 30 µm | A local punch law on planes turned a sliding tall box unstable in yaw | R | Medium | ADR-0005 (F5 contact law) |
+| **Wood presses with its modulus along the grain** (E_L, ν = ½), though 12–25 times softer across it: it matters for a face pressed near a corner and for edges' Hertz contacts, not where the step's resolvable stiffness caps a contact | `Material` carries no transverse constants; an orthotropic indentation modulus (Vlassak & Nix 1994; Swadener & Pharr 2001) needs E_R, E_T and the ratios | R | Medium | ADR-0005 (G2.3) |
 | **Settling is overdamped**: a box dropped on bumps rocks to rest over 2 s instead of a fraction of one | Contacts are critically damped at their resolvable stiffness | R | Medium | ADR-0005 |
 | **Faces over curved ground cost points**: 50 crates landing on terrain take about twice as long a step as in F4 | Correctness first; each face measures 5–40 ground points | S | Medium | ADR-0005 |
 | **Contacts resolve only what the step can**: beyond that they sink a reach per e-fold of their load (micrometres to a fraction of a millimetre) | The step's stiffness limit | R | Large | ADR-0005 |
