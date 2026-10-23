@@ -269,7 +269,7 @@ impl Server {
                             Err("too many commands".into())
                         };
                         if let Err(why) = result {
-                            self.events.push(Event::CommandRefused(player, why));
+                            self.refuse(id, player, why);
                         }
                     }
                     Ok(ClientMessage::Profile(on)) => {

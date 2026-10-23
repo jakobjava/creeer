@@ -187,3 +187,33 @@ fn a_stone_picked_up_is_its_rock_at_its_density() {
         assert!(scatter.item(b, &rocks, &densities).unwrap().mass() > 0.0);
     }
 }
+
+#[test]
+fn the_cells_near_a_point_are_every_cell_within_reach() {
+    let data = data();
+    let terrain = terrain(&data);
+    let scatter = Scatter::from_data(&data, &terrain).unwrap();
+    // Near a face's middle (cells smallest there) and near its edge.
+    for dir in [
+        DVec3::new(1.0, 0.01, 0.02),
+        DVec3::new(1.0, 0.98, 0.3),
+        land(&terrain),
+    ] {
+        let p = on_ground(&terrain, dir.normalize());
+        let near = scatter.cells_near(p, 40.0);
+        let (east, north) = creeer_terrain::geology::deposits::tangent_frame(p.normalize());
+        for a in -80..=80 {
+            for b in -80..=80 {
+                let off = (east * f64::from(a) + north * f64::from(b)) * 0.5;
+                if off.length() > 39.0 {
+                    continue;
+                }
+                let cell = scatter.cell_of(p + off);
+                assert!(
+                    near.contains(&cell),
+                    "{cell:?} missed at {a}, {b} about {dir}"
+                );
+            }
+        }
+    }
+}

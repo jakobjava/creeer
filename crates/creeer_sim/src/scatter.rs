@@ -93,25 +93,27 @@ impl Scatter {
         }
     }
 
-    /// The cells within `radius` (m) of point `p` (on a planet of `radius_planet`).
+    /// The cells within `radius` (m) of point `p`: every cell some point of the disc about `p`
+    /// lies in. The disc is sampled at a third of the smallest cell (the warp makes a cell
+    /// 1/1.35 of `cell` across at the least, between a face's middle and its edge), so none is
+    /// missed (G1.6c: sampled at a cell's size, cells were skipped, and stones came and went as
+    /// the camera moved).
     pub fn cells_near(&self, p: DVec3, radius: f64) -> Vec<Cell> {
         let up = p.normalize();
         let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
-        let across = radius / (self.step * p.length());
-        #[allow(clippy::cast_possible_truncation)] // a few cells
-        let n = across.ceil() as i32 + 1;
-        let mut out: Vec<Cell> = Vec::new();
+        let spacing = self.step * p.length() / 1.35 / 3.0;
+        #[allow(clippy::cast_possible_truncation)] // a few dozen
+        let n = (radius / spacing).ceil() as i32;
+        let mut out = std::collections::BTreeSet::new();
         for a in -n..=n {
             for b in -n..=n {
-                let d = p + (east * f64::from(a) + north * f64::from(b)) * (radius / f64::from(n));
-                let cell = self.cell_of(d);
-                if !out.contains(&cell) {
-                    out.push(cell);
+                let off = (east * f64::from(a) + north * f64::from(b)) * spacing;
+                if off.length() <= radius + spacing {
+                    out.insert(self.cell_of(p + off));
                 }
             }
         }
-        out.sort_unstable();
-        out
+        out.into_iter().collect()
     }
 
     /// What lies in `cell`.
@@ -203,7 +205,10 @@ impl Scatter {
                 out.push((at + at.normalize() * radius, turn, what));
             }
         }
-        (out.into_iter().enumerate())
+        // (A cell at a face's edge reaches past it: what lies there is the next face's.)
+        (out.into_iter())
+            .filter(|(centre, ..)| self.cell_of(*centre) == cell)
+            .enumerate()
             .filter(|(k, _)| *k < 1 << INDEX_BITS)
             .map(|(k, (centre, turn, what))| Loose {
                 id: (key(cell) << INDEX_BITS) | k as u64,

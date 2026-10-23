@@ -39,6 +39,14 @@ impl Server {
         self.world.apply(&command, Some(avatar))
     }
 
+    /// Client `id`'s player's command was refused, and why: told to them (G1.6), and noted.
+    pub(super) fn refuse(&mut self, id: creeer_net::renet::ClientId, player: String, why: String) {
+        if let Some(s) = self.sessions.get_mut(&id) {
+            s.queue(&ServerMessage::Refusal(why.clone()));
+        }
+        self.events.push(super::Event::CommandRefused(player, why));
+    }
+
     /// Tells each player whose inventory changed what they now carry (G1.6a).
     pub(super) fn tell_inventories(&mut self) {
         for avatar in self.world.take_inventories() {

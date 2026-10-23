@@ -162,3 +162,26 @@ fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
         ui.colored_label(egui::Color32::from_rgb(r, g, b), "■");
     }
 }
+
+/// Why the last command was refused, under the crosshair for a few seconds (G1.6: nothing a
+/// player asks is refused silently).
+pub fn refusal(ctx: &egui::Context, view: &PlanetView) {
+    let Some((why, when)) = &view.session.connection.refused else {
+        return;
+    };
+    if when.elapsed().as_secs_f64() > 4.0 {
+        return;
+    }
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("refusal"),
+    ));
+    painter.text(
+        ctx.content_rect().center() + egui::vec2(0.0, 40.0),
+        egui::Align2::CENTER_TOP,
+        why,
+        egui::FontId::proportional(14.0),
+        egui::Color32::from_rgb(232, 180, 0),
+    );
+    ctx.request_repaint();
+}

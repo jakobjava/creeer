@@ -81,6 +81,9 @@ pub enum ServerMessage {
     /// Loose things picked up from the ground (G1.6c, `creeer_sim::scatter`), by id: no longer
     /// drawn. A client joining is told all, then each as it is taken.
     Taken(Vec<u64>),
+    /// Why the player's last command was refused (G1.6: shown to them, so a refused act is not
+    /// silent).
+    Refusal(String),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -230,6 +233,10 @@ impl Encode for ServerMessage {
                     w.u64(*id);
                 }
             }
+            Self::Refusal(why) => {
+                w.u8(14);
+                text(w, why);
+            }
         }
     }
 }
@@ -316,6 +323,7 @@ impl Decode for ServerMessage {
                     .map(|_| r.u64())
                     .collect::<Result<_, _>>()?,
             ),
+            14 => Self::Refusal(read_text(r)?),
             _ => return Err(r.error("unknown server message")),
         })
     }

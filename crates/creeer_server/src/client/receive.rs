@@ -49,6 +49,7 @@ impl Connection {
             ServerMessage::Profile(report) => self.profile = Some(report),
             ServerMessage::Inventory(inventory) => self.inventory = inventory,
             ServerMessage::Taken(ids) => self.taken.extend(ids),
+            ServerMessage::Refusal(why) => self.refused = Some((why, std::time::Instant::now())),
             ServerMessage::Own {
                 gas,
                 health,

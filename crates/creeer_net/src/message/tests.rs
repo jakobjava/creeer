@@ -211,6 +211,7 @@ fn server_messages_read_back() {
     };
     back(&ServerMessage::Age(EntityId(42), age));
     back(&ServerMessage::Swing(EntityId(7), 123_456));
+    back(&ServerMessage::Refusal("fits no pocket".into()));
     // Six hours of 60 Hz ticks later, a year more.
     assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
     assert!(
