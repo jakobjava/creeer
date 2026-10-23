@@ -53,6 +53,16 @@ impl Server {
 
     /// Tells each player whose inventory changed what they now carry (G1.6a).
     pub(super) fn tell_inventories(&mut self) {
+        for (avatar, note) in self.world.take_notes() {
+            let note = ServerMessage::Note(note);
+            for s in self
+                .sessions
+                .values_mut()
+                .filter(|s| s.avatar == Some(avatar))
+            {
+                s.queue(&note);
+            }
+        }
         for avatar in self.world.take_inventories() {
             let inventory = ServerMessage::Inventory(self.world.inventory(avatar));
             for s in self

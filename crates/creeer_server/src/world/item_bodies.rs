@@ -78,15 +78,21 @@ fn heap(volume: f64) -> Shape {
     Shape::Hull(Arc::new(Hull::new(&points).expect("a cone is a hull").0))
 }
 
-/// A made thing as the hull about its parts' boxes (a tool's haft and head as one body).
-fn made(a: &creeer_sim::items::Assembly) -> Shape {
+/// A piece's box: its half extents in its own frame.
+pub(super) fn piece_half(form: Form) -> DVec3 {
+    match form {
+        Form::Block { size } | Form::Lump { size } => size * 0.5,
+        Form::Ball { radius } => DVec3::splat(radius),
+        Form::Rod { radius, length } => DVec3::new(length * 0.5, radius, radius),
+    }
+}
+
+/// A made thing as the hull about its parts' boxes (a tool's haft and head as one body), and
+/// where its centre (the hull's centroid) is in the thing's frame.
+pub(super) fn made_hull(a: &creeer_sim::items::Assembly) -> (Hull, DVec3) {
     let mut points = Vec::new();
     for p in &a.parts {
-        let half = match p.piece.form {
-            Form::Block { size } | Form::Lump { size } => size * 0.5,
-            Form::Ball { radius } => DVec3::splat(radius),
-            Form::Rod { radius, length } => DVec3::new(length * 0.5, radius, radius),
-        };
+        let half = piece_half(p.piece.form);
         for k in 0..8 {
             let corner = DVec3::new(
                 if k & 1 == 0 { -half.x } else { half.x },
@@ -96,5 +102,26 @@ fn made(a: &creeer_sim::items::Assembly) -> Shape {
             points.push(p.at + p.turn * corner);
         }
     }
-    Shape::Hull(Arc::new(Hull::new(&points).expect("parts make a hull").0))
+    Hull::new(&points).expect("parts make a hull")
+}
+
+fn made(a: &creeer_sim::items::Assembly) -> Shape {
+    Shape::Hull(Arc::new(made_hull(a).0))
+}
+
+/// A made thing's pieces as drawn about `origin` (in its frame), each in its material's colour
+/// (G1.6: a tool is its haft and its head, not the box about them).
+pub(super) fn parts(
+    a: &creeer_sim::items::Assembly,
+    origin: DVec3,
+    colour: impl Fn(&str) -> Option<[u8; 3]>,
+) -> Vec<creeer_net::message::Part> {
+    (a.parts.iter())
+        .map(|p| creeer_net::message::Part {
+            at: p.at - origin,
+            turn: p.turn,
+            half: piece_half(p.piece.form),
+            colour: colour(&p.piece.material).unwrap_or([128, 120, 110]),
+        })
+        .collect()
 }

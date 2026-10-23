@@ -206,10 +206,13 @@ pub fn describe(item: &Item) -> String {
             } else {
                 String::new()
             };
+            let edge = p
+                .edge
+                .map_or_else(String::new, |e| format!("; {}", edge(e)));
             if matches!(p.form, Form::Lump { .. }) {
-                return format!("{size}, {:.2} kg", item.mass());
+                return format!("{size}, {:.2} kg{edge}", item.mass());
             }
-            format!("{}, {size}, {:.2} kg{holds}", p.material, item.mass())
+            format!("{}, {size}, {:.2} kg{holds}{edge}", p.material, item.mass())
         }
         Item::Made(a) => {
             let parts: Vec<String> = (a.parts.iter())
@@ -223,5 +226,34 @@ pub fn describe(item: &Item) -> String {
             b.volume() * 1000.0,
             b.grain * 1000.0
         ),
+    }
+}
+
+/// An edge as a person sees and feels it: its length, its angle and how keen it is (G1.6).
+fn edge(e: crate::items::Edge) -> String {
+    let keen = match e.radius {
+        r if r < 1e-6 => "razor sharp",
+        r if r < 2e-5 => "sharp",
+        r if r < 2e-4 => "fairly sharp",
+        _ => "blunt",
+    };
+    format!(
+        "an edge {:.0} cm long, {:.0}°, {keen}",
+        e.length * 100.0,
+        e.angle.to_degrees()
+    )
+}
+
+/// A word for an item, by its shape (never its material: principle 9).
+pub fn word(item: &Item) -> &'static str {
+    match item {
+        Item::Piece(p, _) => match p.form {
+            Form::Lump { .. } | Form::Ball { .. } => "stone",
+            Form::Rod { .. } => "stick",
+            Form::Block { size } if size.min_element() < 0.004 => "strip",
+            Form::Block { .. } => "block",
+        },
+        Item::Made(_) => "tool",
+        Item::Bulk(_) => "grit",
     }
 }

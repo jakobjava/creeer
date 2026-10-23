@@ -6,7 +6,7 @@
 //! Everything is in the planet's rotating frame (centre at the origin, axis +Y). The sun turns
 //! about the axis once per sidereal day (a stand-in until the orbits of F4).
 
-use crate::physics_sandbox::{Look, PhysicsSnapshot};
+use crate::physics_sandbox::PhysicsSnapshot;
 use crate::planet_net::PlanetSession;
 use creeer_math::det;
 use creeer_math::glam::{DQuat, DVec3};
@@ -177,12 +177,7 @@ impl PlanetView {
         // What lies loose, as boxes in its colours (G1.6c).
         if let Some(loose) = &self.loose {
             let rocks = &self.terrain.planet().geology.rocks;
-            let c = &self.session.connection;
-            for t in loose.things(&c.taken, &c.laid, rocks) {
-                out.boxes.push((t.centre, t.turn, t.half));
-                out.box_look.push(Look::Colour(t.colour));
-                out.box_age.push((0.0, 0.0));
-            }
+            loose.draw(&mut out, &self.session.connection, rocks);
         }
         out
     }

@@ -24,24 +24,10 @@ pub(super) fn half(item: &Item) -> DVec3 {
             Form::Rod { radius, length } => DVec3::new(length * 0.5, radius, radius),
         },
         Item::Made(a) => {
-            let [x, y, z] = a.extents();
-            DVec3::new(x, y, z) * 0.5
+            let (lo, hi) = a.bounds();
+            (hi - lo) * 0.5
         }
         Item::Bulk(b) => DVec3::splat(0.5 * creeer_math::det::cbrt(b.volume())),
-    }
-}
-
-/// A word for what lies there (not what it is made of: principle 9).
-fn word(item: &Item) -> &'static str {
-    match item {
-        Item::Piece(p, _) => match p.form {
-            Form::Lump { .. } | Form::Ball { .. } => "stone",
-            Form::Rod { .. } => "stick",
-            Form::Block { size } if size.min_element() < 0.004 => "strip",
-            Form::Block { .. } => "block",
-        },
-        Item::Made(_) => "tool",
-        Item::Bulk(_) => "grit",
     }
 }
 
@@ -102,10 +88,40 @@ impl ServerWorld {
                     turn: *turn,
                     half: half(item),
                     colour,
-                    word: word(item).into(),
+                    word: creeer_sim::items::kit::word(item).into(),
+                    parts: match item {
+                        Item::Made(a) => {
+                            let (lo, hi) = a.bounds();
+                            let d = self.items.densities.as_ref();
+                            super::item_bodies::parts(a, (lo + hi) * 0.5, |m| d?.colour(m))
+                        }
+                        _ => Vec::new(),
+                    },
                 })
             })
             .collect();
         (new, self.items.laid_log.len())
+    }
+}
+
+impl ServerWorld {
+    /// The pieces item body `id` is drawn as, if it is made of pieces (about its centre).
+    pub fn drawn_parts(&self, id: EntityId) -> Option<Vec<creeer_net::message::Part>> {
+        let Some(Item::Made(a)) = self.items.bodies.get(&id) else {
+            return None;
+        };
+        let (_, centroid) = super::item_bodies::made_hull(a);
+        let d = self.items.densities.as_ref();
+        Some(super::item_bodies::parts(a, centroid, |m| d?.colour(m)))
+    }
+
+    /// Tells avatar `by`'s player what came of what they did.
+    pub(super) fn note(&mut self, by: EntityId, note: String) {
+        self.items.notes.push((by, note));
+    }
+
+    /// The notes since the last call: for whom, and what.
+    pub fn take_notes(&mut self) -> Vec<(EntityId, String)> {
+        std::mem::take(&mut self.items.notes)
     }
 }

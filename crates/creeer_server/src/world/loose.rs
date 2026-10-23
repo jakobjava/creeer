@@ -75,7 +75,11 @@ impl ServerWorld {
 
     /// What lies at `id`, if untaken within reach of avatar `by`'s hands: an item laid there, or
     /// the scatter's stone or branch as an item; with where it lies and its turn.
-    fn lying_in_reach(&self, by: EntityId, id: u64) -> Result<(Item, DVec3, DQuat), String> {
+    pub(super) fn lying_in_reach(
+        &self,
+        by: EntityId,
+        id: u64,
+    ) -> Result<(Item, DVec3, DQuat), String> {
         let lying = if let Some((item, centre, turn)) = self.items.laid.get(&id) {
             (item.clone(), *centre, *turn)
         } else {
@@ -100,7 +104,7 @@ impl ServerWorld {
     }
 
     /// What lies at `id` taken from the ground: clients stop drawing it.
-    fn take_lying(&mut self, id: u64) {
+    pub(super) fn take_lying(&mut self, id: u64) {
         self.items.laid.remove(&id);
         if self.items.taken_set.insert(id) {
             self.items.taken.push(id);

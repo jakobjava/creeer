@@ -133,8 +133,10 @@ impl ServerWorld {
         // The load in the hands passes the body's box (as a joint's sides did; the box is no
         // chest and arms: a load swaying in soft hands struck it and tumbled).
         self.world.let_pass(i, load);
-        // (Told anew, the load is no longer predicted on its own: in the hands.)
+        // (Told anew, the load is no longer predicted on its own: in the hands.) The player is
+        // told what the hands hold (G1.6).
         self.changed.extend([by, id]);
+        self.items.changed.insert(by);
         Ok(())
     }
 
@@ -145,6 +147,7 @@ impl ServerWorld {
                 self.world.let_collide(a, b);
             }
             self.changed.extend([by, c.load]);
+            self.items.changed.insert(by);
         }
     }
 

@@ -28,6 +28,7 @@ impl ServerWorld {
                 | Command::Pick { .. }
                 | Command::Strip
                 | Command::Bind(_)
+                | Command::BindLying(_)
                 | Command::StrikeLoose { .. }
         );
         if sandbox && by.is_some() && !self.creative {
@@ -73,7 +74,15 @@ impl ServerWorld {
                 self.pick(by.ok_or("only a player")?, *loose, *pocket)?
             }
             Command::Strip => self.strip(by.ok_or("only a player")?)?,
-            Command::Bind(target) => self.bind(by.ok_or("only a player")?, target)?,
+            Command::Bind(target) => {
+                let by = by.ok_or("only a player")?;
+                self.reached(by, target.body, target.at, target.seen)?;
+                let head = target.body.ok_or("nothing there to bind on")?;
+                self.bind(by, making::Head::Body(head))?;
+            }
+            Command::BindLying(id) => {
+                self.bind(by.ok_or("only a player")?, making::Head::Lying(*id))?
+            }
             Command::StrikeLoose { loose, started } => {
                 self.strike_loose(by.ok_or("only a player")?, *loose, *started)?;
             }

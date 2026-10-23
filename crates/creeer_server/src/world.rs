@@ -340,7 +340,7 @@ mod laid;
 mod loose;
 #[cfg(test)]
 mod loose_tests;
-mod making;
+pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
 mod spawn;

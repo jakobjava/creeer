@@ -53,7 +53,12 @@ impl PlanetView {
 
     /// Binds the head the crosshair is on to the haft in the hands (G1.6d).
     pub fn bind(&mut self, camera: &Camera) {
-        if let Some(t) = self.reached(camera) {
+        let loose = target(self, camera)
+            .filter(|t| t.in_reach)
+            .and_then(|t| t.loose);
+        if let Some(id) = loose {
+            self.send(Command::BindLying(id));
+        } else if let Some(t) = self.reached(camera) {
             self.send(Command::Bind(t));
         }
     }
@@ -163,25 +168,84 @@ fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
     }
 }
 
-/// Why the last command was refused, under the crosshair for a few seconds (G1.6: nothing a
-/// player asks is refused silently).
-pub fn refusal(ctx: &egui::Context, view: &PlanetView) {
-    let Some((why, when)) = &view.session.connection.refused else {
-        return;
-    };
-    if when.elapsed().as_secs_f64() > 4.0 {
-        return;
-    }
+/// Under the crosshair (G1.6): what the hands hold, what the keys would do with it and what the
+/// crosshair is on, and what came of the last thing done (or why it was refused) for a few
+/// seconds. Nothing a player does is silent, and no key has to be found by trying.
+pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet_aim::Target>) {
+    let c = &view.session.connection;
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
-        egui::Id::new("refusal"),
+        egui::Id::new("told"),
     ));
-    painter.text(
-        ctx.content_rect().center() + egui::vec2(0.0, 40.0),
-        egui::Align2::CENTER_TOP,
-        why,
-        egui::FontId::proportional(14.0),
-        egui::Color32::from_rgb(232, 180, 0),
+    let mut at = ctx.content_rect().center() + egui::vec2(0.0, 40.0);
+    let mut line = |text: &str, colour: egui::Color32| {
+        painter.text(
+            at,
+            egui::Align2::CENTER_TOP,
+            text,
+            egui::FontId::proportional(14.0),
+            colour,
+        );
+        at.y += 18.0;
+    };
+    let hands = c.inventory.hands.as_ref();
+    let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
+    line(&held, egui::Color32::from_white_alpha(200));
+    line(
+        &hint(hands.map(|h| h.word.as_str()), aimed),
+        egui::Color32::from_rgb(160, 200, 230),
     );
-    ctx.request_repaint();
+    let recent = |told: &Option<(String, std::time::Instant)>| {
+        told.as_ref()
+            .filter(|(_, when)| when.elapsed().as_secs_f64() < 5.0)
+            .cloned()
+    };
+    let (refused, noted) = (recent(&c.refused), recent(&c.noted));
+    // The later of the two.
+    let last = match (refused, noted) {
+        (Some(r), Some(n)) if n.1 > r.1 => Some((n.0, false)),
+        (Some(r), _) => Some((r.0, true)),
+        (None, Some(n)) => Some((n.0, false)),
+        (None, None) => None,
+    };
+    if let Some((text, refused)) = last {
+        let colour = if refused {
+            egui::Color32::from_rgb(232, 180, 0)
+        } else {
+            egui::Color32::from_rgb(200, 230, 170)
+        };
+        line(&text, colour);
+        ctx.request_repaint();
+    }
+}
+
+/// What the keys would do now, with what the hands hold (its word: stone, stick, tool…) and what
+/// the crosshair is on in reach. The keys, not recipes: what makes a good tool is the player's
+/// to know.
+fn hint(hands: Option<&str>, aimed: Option<&crate::planet_aim::Target>) -> String {
+    let aimed = aimed.filter(|t| t.in_reach);
+    let on_thing = aimed.is_some_and(|t| t.loose.is_some() || t.aimed.body.is_some());
+    let on_stone = aimed.is_some_and(|t| t.what.starts_with("stone") || t.what == "rock");
+    let mut keys: Vec<&str> = Vec::new();
+    match hands {
+        None => {
+            if on_thing {
+                keys.extend(["G: take in the hands", "E: into a pocket"]);
+            }
+        }
+        Some(word) => {
+            if on_thing {
+                keys.push("click: strike it");
+            }
+            if word == "stick" {
+                keys.push("R: strip bark");
+                if on_stone {
+                    keys.push("B: bind it on as a head");
+                }
+            }
+            keys.extend(["G: put down", "T: throw", "E: into a pocket"]);
+        }
+    }
+    keys.push("I: what you carry");
+    keys.join("  ·  ")
 }

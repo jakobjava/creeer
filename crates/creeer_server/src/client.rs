@@ -91,6 +91,10 @@ pub struct Connection {
     pub laid: BTreeMap<u64, creeer_net::message::Laid>,
     /// Why the last command was refused, and when it was told (G1.6).
     pub refused: Option<(String, std::time::Instant)>,
+    /// What came of the last thing done, and when it was told (G1.6).
+    pub noted: Option<(String, std::time::Instant)>,
+    /// The pieces made things' bodies are drawn as (G1.6), by entity.
+    pub parts: BTreeMap<EntityId, Vec<creeer_net::message::Part>>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -140,6 +144,8 @@ impl Connection {
             taken: BTreeSet::new(),
             laid: BTreeMap::new(),
             refused: None,
+            noted: None,
+            parts: BTreeMap::new(),
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),

@@ -85,6 +85,8 @@ pub enum Command {
     /// Strike loose thing `loose` on the ground (G1.6: a stone lying there, by its id) with what
     /// the hands hold, the swing begun at the player's own tick `started`.
     StrikeLoose { loose: u64, started: f64 },
+    /// Bind the thing lying on the ground at `loose` (by its id) to the haft in the hands.
+    BindLying(u64),
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -269,6 +271,10 @@ impl Encode for ClientMessage {
                         w.u64(*loose);
                         w.f64(*started);
                     }
+                    Command::BindLying(id) => {
+                        w.u8(23);
+                        w.u64(*id);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -338,6 +344,7 @@ impl Decode for ClientMessage {
                     loose: r.u64()?,
                     started: r.f64()?,
                 },
+                23 => Command::BindLying(r.u64()?),
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {
@@ -376,7 +383,7 @@ pub fn from_bytes<T: Decode>(bytes: &[u8]) -> Result<T, DecodeError> {
 mod inputs;
 mod inventory;
 mod laid;
-pub use laid::Laid;
+pub use laid::{Laid, Part};
 pub(crate) mod profile;
 mod server;
 pub use profile::ProfileReport;

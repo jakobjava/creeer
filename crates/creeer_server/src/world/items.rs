@@ -38,6 +38,8 @@ pub struct Items {
     pub(super) laid: BTreeMap<u64, (Item, DVec3, creeer_math::glam::DQuat)>,
     pub(super) laid_log: Vec<u64>,
     pub(super) next_laid: u64,
+    /// What came of what players did, to tell them (G1.6).
+    pub(super) notes: Vec<(EntityId, String)>,
 }
 
 impl Items {
@@ -62,19 +64,25 @@ impl Items {
     }
 }
 
+/// `i` as a player sees it (a made thing in its head's colour).
+fn item_view(i: &Item, densities: Option<&Densities>) -> ItemView {
+    ItemView {
+        text: describe(i),
+        word: creeer_sim::items::kit::word(i).into(),
+        colour: densities.and_then(|d| d.colour(&i.head()?.material)),
+        mass: i.mass(),
+        room: i.room(),
+    }
+}
+
 fn view(store: &Store, densities: Option<&Densities>) -> StoreView {
-    // A made thing in its head's colour.
-    let colour = |i: &Item| densities?.colour(&i.head()?.material);
     StoreView {
         name: store.name.clone(),
         volume: store.volume(),
-        items: (store.items.iter())
-            .map(|i| ItemView {
-                text: describe(i),
-                colour: colour(i),
-                mass: i.mass(),
-                room: i.room(),
-            })
+        items: store
+            .items
+            .iter()
+            .map(|i| item_view(i, densities))
             .collect(),
     }
 }
@@ -97,7 +105,14 @@ impl ServerWorld {
         let open = (self.items.open.get(&id))
             .and_then(|c| Some((*c, self.items.bodies.get(c)?.store()?)))
             .map(|(c, store)| (c, view(&store, d)));
-        Inventory { pockets, open }
+        let hands = (self.carried(id))
+            .and_then(|c| self.items.bodies.get(&c))
+            .map(|i| item_view(i, d));
+        Inventory {
+            pockets,
+            open,
+            hands,
+        }
     }
 
     /// The avatars whose inventories changed since the last call.

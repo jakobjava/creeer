@@ -194,7 +194,7 @@ impl Running {
             crate::inventory_ui::window(ui.ctx(), planet, &self.camera);
             let target = crate::planet_aim::target(planet, &self.camera);
             planet_ui::crosshair(ui.ctx(), target.as_ref());
-            crate::inventory_ui::refusal(ui.ctx(), planet);
+            crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
             self.profiler
                 .window(ui.ctx(), Some(&mut planet.session.connection));
         });

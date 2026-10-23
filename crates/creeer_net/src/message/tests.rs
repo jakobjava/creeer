@@ -100,6 +100,7 @@ fn client_messages_read_back() {
         Command::Open(target),
         Command::Strip,
         Command::Bind(target),
+        Command::BindLying(1 << 63),
         Command::StrikeLoose {
             loose: 77,
             started: 1200.5,
@@ -189,6 +190,7 @@ fn server_messages_read_back() {
     });
     let item = |text: &str| crate::message::ItemView {
         text: text.into(),
+        word: "stone".into(),
         colour: Some([95, 90, 85]),
         mass: 0.04,
         room: 2.7e-5,
@@ -203,6 +205,7 @@ fn server_messages_read_back() {
             crate::message::StoreView::default(),
         ],
         open: Some((EntityId(9), crate::message::StoreView::default())),
+        hands: Some(item("granite, 8 cm across")),
     }));
     back(&ServerMessage::Inventory(
         crate::message::Inventory::default(),
@@ -223,7 +226,15 @@ fn server_messages_read_back() {
         half: DVec3::new(0.02, 0.015, 0.004),
         colour: [95, 90, 85],
         word: "stone".into(),
+        parts: vec![crate::message::Part {
+            at: DVec3::X * 0.3,
+            turn: creeer_math::glam::DQuat::IDENTITY,
+            half: DVec3::new(0.3, 0.015, 0.015),
+            colour: [200, 160, 100],
+        }],
     }]));
+    back(&ServerMessage::Note("a flake came off".into()));
+    back(&ServerMessage::Parts(EntityId(4), Vec::new()));
     // Six hours of 60 Hz ticks later, a year more.
     assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
     assert!(

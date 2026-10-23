@@ -83,11 +83,16 @@ impl Assembly {
         parts + self.bindings.iter().map(Piece::mass).sum::<f64>()
     }
 
+    /// Its box in its own frame: least and most corners.
+    pub fn bounds(&self) -> (DVec3, DVec3) {
+        (self.parts.iter()).fold((DVec3::MAX, DVec3::MIN), |(lo, hi), p| {
+            (lo.min(p.at - p.half()), hi.max(p.at + p.half()))
+        })
+    }
+
     /// Its box's edges, longest first (m).
     pub fn extents(&self) -> [f64; 3] {
-        let (lo, hi) = (self.parts.iter()).fold((DVec3::MAX, DVec3::MIN), |(lo, hi), p| {
-            (lo.min(p.at - p.half()), hi.max(p.at + p.half()))
-        });
+        let (lo, hi) = self.bounds();
         let mut e = (hi - lo).to_array();
         e.sort_by(|a, b| b.total_cmp(a));
         e

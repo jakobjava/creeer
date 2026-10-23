@@ -11,6 +11,8 @@ use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 #[derive(Clone, Debug, PartialEq)]
 pub struct ItemView {
     pub text: String,
+    /// A word for it (stone, stick, strip, tool, grit, block: G1.6).
+    pub word: String,
     pub colour: Option<[u8; 3]>,
     pub mass: f64,
     pub room: f64,
@@ -29,11 +31,14 @@ pub struct StoreView {
 pub struct Inventory {
     pub pockets: Vec<StoreView>,
     pub open: Option<(EntityId, StoreView)>,
+    /// What the hands hold (G1.6), if anything.
+    pub hands: Option<ItemView>,
 }
 
 impl Encode for ItemView {
     fn encode(&self, w: &mut Writer) {
         text(w, &self.text);
+        text(w, &self.word);
         match self.colour {
             Some(c) => {
                 w.u8(1);
@@ -50,6 +55,7 @@ impl Decode for ItemView {
     fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
         Ok(Self {
             text: read_text(r)?,
+            word: read_text(r)?,
             colour: match r.u8()? {
                 0 => None,
                 1 => {
@@ -93,6 +99,7 @@ impl Encode for Inventory {
             }
             None => w.u8(0),
         }
+        w.put(&self.hands);
     }
 }
 
@@ -104,6 +111,10 @@ impl Decode for Inventory {
             1 => Some((r.get()?, r.get()?)),
             _ => return Err(r.error("not a flag")),
         };
-        Ok(Self { pockets, open })
+        Ok(Self {
+            pockets,
+            open,
+            hands: r.get()?,
+        })
     }
 }

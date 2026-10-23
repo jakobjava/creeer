@@ -191,3 +191,70 @@ fn a_made_axe_whose_binding_gives_comes_apart() {
     assert!(w.items.laid.len() >= parts, "its pieces lie there");
     assert!((items_mass(&w, ada) - total).abs() < 1e-9 * total);
 }
+
+#[test]
+fn a_flake_lying_where_it_fell_binds_onto_a_stick_and_a_strip_is_no_head() {
+    let (mut w, ada, east) = ada();
+    // A flake knapped off a chert core: it lies on the ground (laid, not a body).
+    let core = put_down(
+        &mut w,
+        ada,
+        east,
+        lump("chert", 2580.0, DVec3::new(0.14, 0.10, 0.06)),
+    );
+    let hammer = lump("basalt", 2900.0, DVec3::new(0.10, 0.08, 0.06));
+    w.put_in_hands(ada, hammer).unwrap();
+    wait(&mut w, ada, 60);
+    strike(&mut w, ada, core);
+    let flake = (w.items.laid.iter())
+        .find(
+            |(_, (i, ..))| matches!(i, Item::Piece(p, _) if p.edge.is_some_and(|e| e.angle < 0.6)),
+        )
+        .map(|(id, _)| *id)
+        .expect("a flake lies there");
+    // A stick in the hands, a strip lying beside.
+    w.apply(&Command::Drop, Some(ada)).unwrap();
+    wait(&mut w, ada, 30);
+    let stick = Piece::solid(
+        "spruce_c24",
+        420.0,
+        Form::Rod {
+            radius: 0.015,
+            length: 0.6,
+        },
+    );
+    w.put_in_hands(ada, Item::Piece(stick, Vec::new())).unwrap();
+    let strip = Piece::solid(
+        "spruce_bast",
+        600.0,
+        Form::Block {
+            size: DVec3::new(0.9, 0.03, 0.0015),
+        },
+    );
+    let at = centre(&w, ada);
+    let strip = w.lay(
+        Item::Piece(strip, Vec::new()),
+        at + east * 0.6,
+        creeer_math::glam::DQuat::IDENTITY,
+    );
+    wait(&mut w, ada, 30);
+    // A strip is no head.
+    let why = w.apply(&Command::BindLying(strip), Some(ada)).unwrap_err();
+    assert!(why.contains("a head is a stone"), "{why}");
+    let total = items_mass(&w, ada);
+    w.apply(&Command::BindLying(flake), Some(ada)).unwrap();
+    let held = w.carried(ada).expect("the tool in hand");
+    assert!(matches!(w.items.bodies[&held], Item::Made(_)));
+    assert!(!w.items.laid.contains_key(&flake) && !w.items.laid.contains_key(&strip));
+    assert!((items_mass(&w, ada) - total).abs() < 1e-9 * total);
+    let notes = w.take_notes();
+    assert!(
+        notes.iter().any(|(_, n)| n.starts_with("bound:")),
+        "{notes:?}"
+    );
+    assert!(
+        w.drawn_parts(held).is_some_and(|p| p.len() == 2),
+        "drawn as a haft and a head"
+    );
+    assert!(w.inventory(ada).hands.is_some_and(|h| h.word == "tool"));
+}

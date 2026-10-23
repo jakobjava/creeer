@@ -195,6 +195,13 @@ impl Session {
                 bytes: to_bytes(&ServerMessage::Spawn(id, kind)),
                 spawns: Some(id),
             });
+            // A made thing's pieces right after it (G1.6).
+            if let Some(parts) = world.drawn_parts(id) {
+                self.outbox.push_back(Queued {
+                    bytes: to_bytes(&ServerMessage::Parts(id, parts)),
+                    spawns: Some(id),
+                });
+            }
             // Its age right after it (G1.3c); unsent with it if it leaves first.
             if let Some(age) = world.age_told(id, tick) {
                 self.outbox.push_back(Queued {

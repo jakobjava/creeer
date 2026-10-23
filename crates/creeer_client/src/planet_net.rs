@@ -217,7 +217,14 @@ impl PlanetSession {
                 // An item's hull (a stone, a stick: G1.6c) as the box about it in its colour; the
                 // sandbox's other hulls as the ball around them.
                 Kind::Body(Shape::Hull(corners), matter) => {
-                    if let Some(colour) = matter.colour {
+                    if let Some(parts) = c.parts.get(id) {
+                        // A made thing as its pieces (G1.6).
+                        for part in parts {
+                            out.boxes.push((p + q * part.at, q * part.turn, part.half));
+                            out.box_look.push(Look::Colour(part.colour));
+                            out.box_age.push((0.0, 0.0));
+                        }
+                    } else if let Some(colour) = matter.colour {
                         let (lo, hi) = (corners.iter())
                             .fold((DVec3::MAX, DVec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
                         out.boxes

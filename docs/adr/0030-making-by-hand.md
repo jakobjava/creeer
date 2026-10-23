@@ -72,3 +72,11 @@ Measured after: three stones knapped in turn, the worst tick 2.1–4.7 ms and at
 | Laying a body asleep while a swing was aimed at it | The blow fell on nothing: the core lay unbroken | A body a swing is on its way to stays one until the blow |
 
 Found in the same play: carried sticks spun up (the hands pulled at the grip, off a stick's axis; now at the centre of mass, the turn held through the full inertia: ADR-0027 amended), and stones lying on the ground could not be struck (scenery is no body: `Command::StrikeLoose` makes one where it lies).
+
+## Amended after the user's second play (2026-10-23): made things drawn as their pieces; nothing found by trying
+
+The user: a made tool was "a square" (drawn as the box about it, in its head's colour), and "it feels like you have to randomly click at things until it works". Found: binding took only a body as the head, but flakes now lie as scenery, so a flake could never be bound and nothing said why.
+
+- **Drawn as pieces:** a made thing's body is told to clients with its pieces (`ServerMessage::Parts`, after its spawn) and a laid one with them (`Laid.parts`): the haft a stick and the head a stone, each in its material's colour.
+- **Told, not found by trying:** under the crosshair, what the hands hold (its size, mass and edge: "an edge 4 cm long, 30°, sharp"), the keys that would act on it and on what the crosshair is on ("click: strike it · R: strip bark · B: bind it on as a head"), and what came of the last act (`ServerMessage::Note`: "a flake came off: …", "it crumbled: 12 g of grit", "it only bruised", "bound: …; it holds 2,400 N") or why it was refused. The keys, not recipes: which stone makes a good head stays the player's to know.
+- **Binding checks its parts:** the haft a stick of 25 cm or more, the head a stone (a rock, not a strip), the strip from a pocket or lying in reach; a lying head is bound by its id (`Command::BindLying`, protocol 20).

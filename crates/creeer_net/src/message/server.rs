@@ -87,6 +87,11 @@ pub enum ServerMessage {
     /// Items laid at rest on the ground (G1.6: drawn and aimed at, no bodies); gone again by
     /// [`ServerMessage::Taken`].
     Laid(Vec<super::Laid>),
+    /// What came of something the player did (G1.6: a flake came off, a tool was bound), told to
+    /// them as the refusals are.
+    Note(String),
+    /// The pieces a made thing's body is drawn as (G1.6), about its centre: sent after its spawn.
+    Parts(EntityId, Vec<super::Part>),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -244,6 +249,15 @@ impl Encode for ServerMessage {
                 w.u8(15);
                 w.put(laid);
             }
+            Self::Note(note) => {
+                w.u8(16);
+                text(w, note);
+            }
+            Self::Parts(id, parts) => {
+                w.u8(17);
+                w.put(id);
+                w.put(parts);
+            }
         }
     }
 }
@@ -332,6 +346,8 @@ impl Decode for ServerMessage {
             ),
             14 => Self::Refusal(read_text(r)?),
             15 => Self::Laid(r.get()?),
+            16 => Self::Note(read_text(r)?),
+            17 => Self::Parts(r.get()?, r.get()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

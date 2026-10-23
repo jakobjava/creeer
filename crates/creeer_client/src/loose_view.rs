@@ -136,3 +136,33 @@ pub fn aim(things: &[Thing], origin: DVec3, direction: DVec3, length: f64) -> Op
     }
     best
 }
+
+impl LooseView {
+    /// Everything lying about into `out`: a made thing as its pieces (G1.6), else as its box, in
+    /// its colours.
+    pub fn draw(
+        &self,
+        out: &mut crate::physics_sandbox::PhysicsSnapshot,
+        c: &creeer_server::Connection,
+        rocks: &creeer_terrain::geology::rocks::RockTable,
+    ) {
+        use crate::physics_sandbox::Look;
+        for t in self.things(&c.taken, &c.laid, rocks) {
+            let parts = (c.laid.get(&t.id))
+                .map(|l| l.parts.as_slice())
+                .unwrap_or_default();
+            let boxes: Vec<(DVec3, DQuat, DVec3, [u8; 3])> = if parts.is_empty() {
+                vec![(t.centre, t.turn, t.half, t.colour)]
+            } else {
+                (parts.iter())
+                    .map(|p| (t.centre + t.turn * p.at, t.turn * p.turn, p.half, p.colour))
+                    .collect()
+            };
+            for (centre, turn, half, colour) in boxes {
+                out.boxes.push((centre, turn, half));
+                out.box_look.push(Look::Colour(colour));
+                out.box_age.push((0.0, 0.0));
+            }
+        }
+    }
+}
