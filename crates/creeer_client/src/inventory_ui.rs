@@ -225,7 +225,11 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
 fn hint(hands: Option<&str>, aimed: Option<&crate::planet_aim::Target>) -> String {
     let aimed = aimed.filter(|t| t.in_reach);
     let on_thing = aimed.is_some_and(|t| t.loose.is_some() || t.aimed.body.is_some());
-    let on_stone = aimed.is_some_and(|t| t.what.starts_with("stone") || t.what == "rock");
+    let on_stone = aimed.is_some_and(|t| {
+        ["stone", "flake", "worked stone", "rock"]
+            .iter()
+            .any(|w| t.what.starts_with(w))
+    });
     let mut keys: Vec<&str> = Vec::new();
     match hands {
         None => {

@@ -33,7 +33,7 @@ pub(super) fn half(item: &Item) -> DVec3 {
 
 impl ServerWorld {
     /// Lays `item` on the ground under `near`, turned by `turn`: its id.
-    pub(super) fn lay(&mut self, item: Item, near: DVec3, turn: DQuat) -> u64 {
+    pub(crate) fn lay(&mut self, item: Item, near: DVec3, turn: DQuat) -> u64 {
         let ground = self.ground_under(near);
         let up = character::plumb(&self.world, ground);
         let h = half(&item);
@@ -105,14 +105,25 @@ impl ServerWorld {
 }
 
 impl ServerWorld {
-    /// The pieces item body `id` is drawn as, if it is made of pieces (about its centre).
-    pub fn drawn_parts(&self, id: EntityId) -> Option<Vec<creeer_net::message::Part>> {
-        let Some(Item::Made(a)) = self.items.bodies.get(&id) else {
-            return None;
+    /// What item body `id` is, if it is one: a word for it, and the pieces it is drawn as if it
+    /// is made of pieces (about its centre).
+    pub fn item_look(&self, id: EntityId) -> Option<(String, Vec<creeer_net::message::Part>)> {
+        let item = self.items.bodies.get(&id)?;
+        let word = creeer_sim::items::kit::word(item).to_owned();
+        let Item::Made(a) = item else {
+            return Some((word, Vec::new()));
         };
         let (_, centroid) = super::item_bodies::made_hull(a);
         let d = self.items.densities.as_ref();
-        Some(super::item_bodies::parts(a, centroid, |m| d?.colour(m)))
+        Some((
+            word,
+            super::item_bodies::parts(a, centroid, |m| d?.colour(m)),
+        ))
+    }
+
+    /// The pieces item body `id` is drawn as, if it is made of pieces.
+    pub fn drawn_parts(&self, id: EntityId) -> Option<Vec<creeer_net::message::Part>> {
+        self.item_look(id).map(|l| l.1).filter(|p| !p.is_empty())
     }
 
     /// Tells avatar `by`'s player what came of what they did.

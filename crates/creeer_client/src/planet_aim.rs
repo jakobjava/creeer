@@ -72,22 +72,22 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
     let from_hands = (aimed.point - hands).length();
     (from_hands <= reach::REACH + NAMED).then(|| Target {
         aimed,
-        what: name(aimed, &connection.kinds),
+        what: name(aimed, connection),
         from_hands,
         in_reach: from_hands <= reach::REACH,
         loose: None,
     })
 }
 
-/// A word for what was aimed at.
-fn name(
-    aimed: Aimed,
-    kinds: &std::collections::BTreeMap<creeer_net::entity::EntityId, Kind>,
-) -> String {
+/// A word for what was aimed at: an item by what the server says it is (G1.6), else by its kind.
+fn name(aimed: Aimed, connection: &creeer_server::Connection) -> String {
     let Some(id) = aimed.body else {
         return "ground".into();
     };
-    match kinds.get(&id) {
+    if let Some((word, _)) = connection.items.get(&id) {
+        return word.clone();
+    }
+    match connection.kinds.get(&id) {
         Some(Kind::Character { player, .. }) => player.clone(),
         Some(Kind::Segment { .. }) => "someone fallen".into(),
         Some(Kind::Body(Shape::Box(_), _)) => "box".into(),

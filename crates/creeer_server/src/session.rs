@@ -195,10 +195,10 @@ impl Session {
                 bytes: to_bytes(&ServerMessage::Spawn(id, kind)),
                 spawns: Some(id),
             });
-            // A made thing's pieces right after it (G1.6).
-            if let Some(parts) = world.drawn_parts(id) {
+            // What an item is, and a made thing's pieces, right after it (G1.6).
+            if let Some((word, parts)) = world.item_look(id) {
                 self.outbox.push_back(Queued {
-                    bytes: to_bytes(&ServerMessage::Parts(id, parts)),
+                    bytes: to_bytes(&ServerMessage::Item(id, word, parts)),
                     spawns: Some(id),
                 });
             }

@@ -32,6 +32,7 @@ impl Connection {
                 self.broken.remove(&id);
                 self.ages.remove(&id);
                 self.swings.remove(&id);
+                self.items.remove(&id);
             }
             ServerMessage::Age(id, age) => {
                 self.ages.insert(id, age);
@@ -55,8 +56,8 @@ impl Connection {
                 self.taken.extend(ids);
             }
             ServerMessage::Note(note) => self.noted = Some((note, std::time::Instant::now())),
-            ServerMessage::Parts(id, parts) => {
-                self.parts.insert(id, parts);
+            ServerMessage::Item(id, word, parts) => {
+                self.items.insert(id, (word, parts));
             }
             ServerMessage::Laid(laid) => {
                 for l in laid {

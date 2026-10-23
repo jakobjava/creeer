@@ -144,7 +144,7 @@ impl ServerWorld {
     }
 
     /// Adds `item` as a body at `at` (lifted clear of what is there if `lift`).
-    pub(super) fn add_item(&mut self, item: Item, at: DVec3, lift: bool) -> EntityId {
+    pub(crate) fn add_item(&mut self, item: Item, at: DVec3, lift: bool) -> EntityId {
         let body = body_of(&item, at);
         let id = if lift {
             self.add(body, None)

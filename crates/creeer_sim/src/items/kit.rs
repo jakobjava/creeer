@@ -248,7 +248,12 @@ fn edge(e: crate::items::Edge) -> String {
 pub fn word(item: &Item) -> &'static str {
     match item {
         Item::Piece(p, _) => match p.form {
-            Form::Lump { .. } | Form::Ball { .. } => "stone",
+            Form::Lump { .. } | Form::Ball { .. } => match p.edge {
+                // A flake's margin is keen (20–45°); a core's or a worked stone's steep.
+                Some(e) if e.angle < 45f64.to_radians() => "flake",
+                Some(_) => "worked stone",
+                None => "stone",
+            },
             Form::Rod { .. } => "stick",
             Form::Block { size } if size.min_element() < 0.004 => "strip",
             Form::Block { .. } => "block",

@@ -85,6 +85,8 @@ impl LooseView {
             colour: l.colour,
             word: match l.word.as_str() {
                 "stone" => "stone",
+                "flake" => "flake",
+                "worked stone" => "worked stone",
                 "stick" => "stick",
                 "strip" => "strip",
                 "tool" => "tool",

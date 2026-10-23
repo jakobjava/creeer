@@ -218,3 +218,34 @@ fn a_stone_in_the_fist_swings_harder_than_a_pebble_and_softer_than_an_axe() {
     );
     assert!((5.0..60.0).contains(&h), "a hammerstone's blow {h} J");
 }
+
+#[test]
+fn what_a_blow_leaves_is_named_by_its_shape() {
+    use crate::items::kit::word;
+    let mut core = stone("chert", 2600.0);
+    assert_eq!(word(&Item::Piece(core.clone(), Vec::new())), "stone");
+    let Some(Broken::Flake(flake)) = knap(&mut core, &CHERT, 20.0) else {
+        panic!("a flake")
+    };
+    assert_eq!(word(&Item::Piece(flake.clone(), Vec::new())), "flake");
+    assert_eq!(word(&Item::Piece(core, Vec::new())), "worked stone");
+    let haft = Piece::solid(
+        "spruce_c24",
+        420.0,
+        Form::Rod {
+            radius: 0.015,
+            length: 0.6,
+        },
+    );
+    let strip = Piece::solid(
+        "spruce_bast",
+        600.0,
+        Form::Block {
+            size: DVec3::new(0.9, 0.03, 0.0015),
+        },
+    );
+    assert_eq!(word(&Item::Piece(haft.clone(), Vec::new())), "stick");
+    assert_eq!(word(&Item::Piece(strip.clone(), Vec::new())), "strip");
+    let made = bind(haft, flake, strip, 20e6).unwrap();
+    assert_eq!(word(&Item::Made(Box::new(made))), "tool");
+}

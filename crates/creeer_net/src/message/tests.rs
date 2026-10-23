@@ -188,28 +188,6 @@ fn server_messages_read_back() {
         fallen: true,
         load: 0.71,
     });
-    let item = |text: &str| crate::message::ItemView {
-        text: text.into(),
-        word: "stone".into(),
-        colour: Some([95, 90, 85]),
-        mass: 0.04,
-        room: 2.7e-5,
-    };
-    back(&ServerMessage::Inventory(crate::message::Inventory {
-        pockets: vec![
-            crate::message::StoreView {
-                name: "jacket.chest.L".into(),
-                volume: 3.3e-4,
-                items: vec![item("granite, 3 cm across"), item("granite, 2 cm across")],
-            },
-            crate::message::StoreView::default(),
-        ],
-        open: Some((EntityId(9), crate::message::StoreView::default())),
-        hands: Some(item("granite, 8 cm across")),
-    }));
-    back(&ServerMessage::Inventory(
-        crate::message::Inventory::default(),
-    ));
     let age = crate::message::Age {
         exposure: 1.5,
         rate: 1.0 / 21_600.0,
@@ -219,22 +197,6 @@ fn server_messages_read_back() {
     back(&ServerMessage::Age(EntityId(42), age));
     back(&ServerMessage::Swing(EntityId(7), 123_456));
     back(&ServerMessage::Refusal("fits no pocket".into()));
-    back(&ServerMessage::Laid(vec![crate::message::Laid {
-        id: (1 << 63) | 5,
-        centre: DVec3::new(1.0, 2.0, 3.0),
-        turn: creeer_math::glam::DQuat::from_rotation_z(0.5),
-        half: DVec3::new(0.02, 0.015, 0.004),
-        colour: [95, 90, 85],
-        word: "stone".into(),
-        parts: vec![crate::message::Part {
-            at: DVec3::X * 0.3,
-            turn: creeer_math::glam::DQuat::IDENTITY,
-            half: DVec3::new(0.3, 0.015, 0.015),
-            colour: [200, 160, 100],
-        }],
-    }]));
-    back(&ServerMessage::Note("a flake came off".into()));
-    back(&ServerMessage::Parts(EntityId(4), Vec::new()));
     // Six hours of 60 Hz ticks later, a year more.
     assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
     assert!(

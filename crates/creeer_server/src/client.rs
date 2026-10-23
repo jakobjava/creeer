@@ -93,8 +93,8 @@ pub struct Connection {
     pub refused: Option<(String, std::time::Instant)>,
     /// What came of the last thing done, and when it was told (G1.6).
     pub noted: Option<(String, std::time::Instant)>,
-    /// The pieces made things' bodies are drawn as (G1.6), by entity.
-    pub parts: BTreeMap<EntityId, Vec<creeer_net::message::Part>>,
+    /// What item bodies are (G1.6), by entity: a word, and a made thing's pieces.
+    pub items: BTreeMap<EntityId, (String, Vec<creeer_net::message::Part>)>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -145,7 +145,7 @@ impl Connection {
             laid: BTreeMap::new(),
             refused: None,
             noted: None,
-            parts: BTreeMap::new(),
+            items: BTreeMap::new(),
             edits: Edits::default(),
             edits_generation: 0,
             receiver: Receiver::default(),

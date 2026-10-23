@@ -390,4 +390,6 @@ pub use profile::ProfileReport;
 pub use server::{Age, Inventory, ItemView, MachineView, Plastic, ServerMessage, StoreView};
 
 #[cfg(test)]
+mod items_tests;
+#[cfg(test)]
 mod tests;

@@ -89,3 +89,7 @@ impl Server {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "items_tests.rs"]
+mod items_tests;
