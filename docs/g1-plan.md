@@ -428,7 +428,8 @@ Re-planned 2026-10-22 with the user (principles 9–11): no landing pod and no s
   - controls: the left click strikes with what the hands hold, T throws, R strips, B binds;
   - found: a made tool's inertia axes are not principal, and the hands' turn spun it up (Gershgorin's bound now);
   - not built: grinding, a tool drawn by its parts (it is its bounding box).
-- **Next:** the user plays G1.6.
+- **Played** (2026-10-23): fixed after the user's play: stones flickering (cells skipped), silent refusals (told now), carried sticks spinning (hands pull at the centre of mass), loose stones not strikable (`StrikeLoose`), knapping freezing the game (small things at rest laid as scenery, `world/laid.rs`), tools drawn as one box and named "stone" (drawn by pieces, named by shape), binding a lying flake impossible (`BindLying`), and a hint line under the crosshair (what the hands hold, the keys, what came of the last act).
+- **Next:** G1.7 (the user, 2026-10-23: before G1.5).
 
 ### G1.7 Trees: one generic tree
 
