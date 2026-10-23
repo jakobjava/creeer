@@ -89,6 +89,8 @@ mod profiler_ui;
 mod profiler_ui_tests;
 mod sandbox;
 mod shimmer;
+#[cfg(test)]
+mod struck_bench_tests;
 mod style_board;
 mod style_people;
 mod system_bench;

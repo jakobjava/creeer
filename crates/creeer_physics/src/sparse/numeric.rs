@@ -13,9 +13,9 @@
 //! Every value is computed by the same operations in the same order whether the halves run
 //! in parallel or not, so the results are bit-identical on any number of threads.
 
-use super::dense3;
 use super::ordering::Dissection;
 use super::{NotPositiveDefinite, SymbolicCholesky};
+use super::{dense3, kernels};
 use creeer_math::glam::{DMat3, DVec3};
 
 /// Cuts covering fewer blocks than this are processed on one thread (task overhead).
@@ -65,8 +65,9 @@ pub(super) fn factor(
 }
 
 /// Left-looking factorisation of column j (storage of `l` starts at index `base`).
-fn factor_column(
-    input: &FactorInput<'_>,
+#[multiversion::multiversion(targets("x86_64+avx+avx2"))]
+fn factor_column<'a>(
+    input: &FactorInput<'a>,
     j: usize,
     base: usize,
     l: &mut [DMat3],
@@ -80,13 +81,14 @@ fn factor_column(
     }
     let mut d = input.diag[sym.perm[j]];
     for &(k, entry) in &sym.row_entry[sym.row_ptr[j]..sym.row_ptr[j + 1]] {
-        let ljk_t = l[entry - base].transpose();
-        d -= l[entry - base] * ljk_t;
+        // d −= L_jk·L_jkᵀ, L_ij −= L_ik·L_jkᵀ (`kernels.rs`: glam's products, lane by lane).
+        let ljk = l[entry - base];
+        kernels::sub_mul_transpose(&mut d, &ljk, &ljk);
         // Rows below j in column k: all of them appear in column j as well (fill).
         for idx in entry + 1..sym.col_ptr[k + 1] {
             let target = slot[sym.row_idx[idx]];
-            let update = l[idx - base] * ljk_t;
-            l[target - base] -= update;
+            let lik = l[idx - base];
+            kernels::sub_mul_transpose(&mut l[target - base], &lik, &ljk);
         }
     }
     let ljj = dense3::cholesky(d).ok_or(NotPositiveDefinite { node: sym.perm[j] })?;
@@ -125,11 +127,14 @@ pub(super) fn forward(f: &Factor<'_>, tree: &Dissection, lo: usize, x: &mut [DVe
         _ => lo..hi,
     };
     for j in separator {
-        let mut b = x[j - lo];
         let range = f.sym.row_ptr[j]..f.sym.row_ptr[j + 1];
-        for (&k, l) in f.sym.row_col[range.clone()].iter().zip(&f.rows[range]) {
-            b -= *l * x[k as usize - lo];
-        }
+        let b = kernels::row_sum(
+            x[j - lo],
+            &f.rows[range.clone()],
+            &f.sym.row_col[range],
+            x,
+            lo,
+        );
         x[j - lo] = f.diag_inv[j] * b;
     }
 }
@@ -147,9 +152,7 @@ pub(super) fn backward(f: &Factor<'_>, tree: &Dissection, lo: usize, x: &mut [DV
         let xj = f.diag_inv[j].transpose() * x[j - lo];
         x[j - lo] = xj;
         let range = f.sym.row_ptr[j]..f.sym.row_ptr[j + 1];
-        for (&k, l) in f.sym.row_col[range.clone()].iter().zip(&f.rows[range]) {
-            x[k as usize - lo] -= l.transpose() * xj;
-        }
+        kernels::row_push_t(xj, &f.rows[range.clone()], &f.sym.row_col[range], x, lo);
     }
     if let Some((left, right)) = halves {
         let m1 = lo + left.len();

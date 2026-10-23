@@ -11,6 +11,7 @@ creeer_core.workspace = true
 creeer_materials.workspace = true
 creeer_math.workspace = true
 rayon.workspace = true
+multiversion.workspace = true
 
 [lints]
 workspace = true

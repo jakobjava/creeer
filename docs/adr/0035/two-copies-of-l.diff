@@ -1,0 +1,146 @@
+diff --git b/crates/creeer_physics/src/sparse/kernel_tests.rs a/crates/creeer_physics/src/sparse/kernel_tests.rs
+index 5dedbc7..b8b1d6a 100644
+--- b/crates/creeer_physics/src/sparse/kernel_tests.rs
++++ a/crates/creeer_physics/src/sparse/kernel_tests.rs
+@@ -66,6 +66,7 @@ fn a_row_push_is_glam_bit_for_bit() {
+         let v = values(seed as u64 + 1000, 400);
+         let count = 1 + seed % 20;
+         let blocks: Vec<DMat3> = (0..count).map(|e| matrix(&v[9 * e..])).collect();
++        let transposed: Vec<DMat3> = blocks.iter().map(DMat3::transpose).collect();
+         let x: Vec<DVec3> = (0..10).map(|i| vector(&v[200 + 3 * i..])).collect();
+         // Distinct columns, as in a row of L.
+         let cols: Vec<u32> = (0..count.min(10))
+@@ -77,7 +78,7 @@ fn a_row_push_is_glam_bit_for_bit() {
+             expected[k as usize] -= m.transpose() * xj;
+         }
+         let mut got = x.clone();
+-        kernels::row_push_t(xj, &blocks, &cols, &mut got, 0);
++        kernels::row_push(xj, &transposed, &cols, &mut got, 0);
+         assert!(got.iter().zip(&expected).all(|(a, b)| same(*a, *b)));
+     }
+ }
+diff --git b/crates/creeer_physics/src/sparse/kernels.rs a/crates/creeer_physics/src/sparse/kernels.rs
+index 77a0666..9e02160 100644
+--- b/crates/creeer_physics/src/sparse/kernels.rs
++++ a/crates/creeer_physics/src/sparse/kernels.rs
+@@ -13,7 +13,6 @@
+ //! A block is read as three overlapping four-lane columns of its nine contiguous values
+ //! (the fourth lane of the first two holds the next column's first value, of the third a
+ //! zero): one load a column, no padding in memory. The fourth lane's result is never used.
+-//! The backward substitution reads the same blocks for mᵀ·v, their rows gathered into lanes.
+ 
+ use creeer_math::glam::{DMat3, DVec3};
+ use multiversion::multiversion;
+@@ -72,32 +71,6 @@ fn mat_vec(m: &DMat3, v: Lanes) -> Lanes {
+     )
+ }
+ 
+-/// mᵀ·v as glam's `m.transpose() * v` computes it: the rows of m as the columns.
+-#[inline(always)]
+-fn mat_t_vec(m: &DMat3, v: Lanes) -> Lanes {
+-    let a: &[f64; 9] = m.as_ref();
+-    let (r0, r1, r2) = (
+-        [a[0], a[3], a[6], 0.0],
+-        [a[1], a[4], a[7], 0.0],
+-        [a[2], a[5], a[8], 0.0],
+-    );
+-    add(
+-        add(mul(r0, splat(v[0])), mul(r1, splat(v[1]))),
+-        mul(r2, splat(v[2])),
+-    )
+-}
+-
+-/// x[k_e − lo] −= m_eᵀ·xj for every entry: a row's push in the backward substitution, from
+-/// the same blocks the forward one reads.
+-#[multiversion(targets("x86_64+avx+avx2"))]
+-pub(super) fn row_push_t(xj: DVec3, blocks: &[DMat3], cols: &[u32], x: &mut [DVec3], lo: usize) {
+-    let xj = lanes(xj);
+-    for (m, &k) in blocks.iter().zip(cols) {
+-        let at = &mut x[k as usize - lo];
+-        *at = vector(sub(lanes(*at), mat_t_vec(m, xj)));
+-    }
+-}
+-
+ /// b − Σ m_e·x[k_e − lo] over the entries in order: a row of the forward substitution.
+ #[multiversion(targets("x86_64+avx+avx2"))]
+ pub(super) fn row_sum(b: DVec3, blocks: &[DMat3], cols: &[u32], x: &[DVec3], lo: usize) -> DVec3 {
+@@ -108,6 +81,17 @@ pub(super) fn row_sum(b: DVec3, blocks: &[DMat3], cols: &[u32], x: &[DVec3], lo:
+     vector(acc)
+ }
+ 
++/// x[k_e − lo] −= m_eᵀ·xj for every entry, given the blocks already transposed (`tblocks`
++/// holds m_eᵀ): a row's push in the backward substitution.
++#[multiversion(targets("x86_64+avx+avx2"))]
++pub(super) fn row_push(xj: DVec3, tblocks: &[DMat3], cols: &[u32], x: &mut [DVec3], lo: usize) {
++    let xj = lanes(xj);
++    for (m, &k) in tblocks.iter().zip(cols) {
++        let at = &mut x[k as usize - lo];
++        *at = vector(sub(lanes(*at), mat_vec(m, xj)));
++    }
++}
++
+ /// target −= a·bᵀ, as glam's `target -= a * b.transpose()` (column c of a·bᵀ is a·(row c of
+ /// b), each a matrix-vector product as above): the factorisation's block update.
+ #[inline(always)]
+diff --git b/crates/creeer_physics/src/sparse/mod.rs a/crates/creeer_physics/src/sparse/mod.rs
+index 361c800..727d754 100644
+--- b/crates/creeer_physics/src/sparse/mod.rs
++++ a/crates/creeer_physics/src/sparse/mod.rs
+@@ -56,12 +56,12 @@ impl std::error::Error for NotPositiveDefinite {}
+ #[derive(Clone, Debug)]
+ pub struct Cholesky {
+     sym: SymbolicCholesky,
+-    /// Off-diagonal blocks of L, in the symbolic storage order.
++    /// Off-diagonal blocks of L: in the symbolic (column) storage order while a
++    /// factorisation runs; once it is done, the same blocks transposed, in row order (the
++    /// backward substitution's products, `kernels.rs`). One array for both: the
++    /// factorisation starts it again from the matrix.
+     l: Vec<DMat3>,
+-    /// The same blocks in row order, for both substitutions. One copy for both (not a
+-    /// transposed one for the backward pass): the backward pass then starts on the blocks
+-    /// the forward one read last, still in the cache, and eight bridges solving at once
+-    /// spent 5.4 ms a step in their solves against 7.0 with two copies (ADR-0035).
++    /// The same blocks in row order, for the forward substitution.
+     rows: Vec<DMat3>,
+     /// Inverses of the (lower-triangular) diagonal blocks of L.
+     diag_inv: Vec<DMat3>,
+@@ -123,6 +123,9 @@ impl Cholesky {
+         for (row, &(_, entry)) in self.rows.iter_mut().zip(&sym.row_entry) {
+             *row = self.l[entry];
+         }
++        for (t, row) in self.l.iter_mut().zip(&self.rows) {
++            *t = row.transpose();
++        }
+         Ok(())
+     }
+ 
+@@ -140,6 +143,7 @@ impl Cholesky {
+         let factor = numeric::Factor {
+             sym,
+             rows: &self.rows,
++            rows_t: &self.l,
+             diag_inv: &self.diag_inv,
+         };
+         numeric::forward(&factor, &sym.tree, 0, &mut self.work);
+diff --git b/crates/creeer_physics/src/sparse/numeric.rs a/crates/creeer_physics/src/sparse/numeric.rs
+index 1b8eef6..191770f 100644
+--- b/crates/creeer_physics/src/sparse/numeric.rs
++++ a/crates/creeer_physics/src/sparse/numeric.rs
+@@ -107,6 +107,8 @@ pub(super) struct Factor<'a> {
+     /// L's off-diagonal blocks in row order (row j: `row_entry[row_ptr[j]..row_ptr[j + 1]]`),
+     /// so both substitutions read memory contiguously.
+     pub rows: &'a [DMat3],
++    /// The same blocks transposed (the backward substitution's products).
++    pub rows_t: &'a [DMat3],
+     pub diag_inv: &'a [DMat3],
+ }
+ 
+@@ -152,7 +154,7 @@ pub(super) fn backward(f: &Factor<'_>, tree: &Dissection, lo: usize, x: &mut [DV
+         let xj = f.diag_inv[j].transpose() * x[j - lo];
+         x[j - lo] = xj;
+         let range = f.sym.row_ptr[j]..f.sym.row_ptr[j + 1];
+-        kernels::row_push_t(xj, &f.rows[range.clone()], &f.sym.row_col[range], x, lo);
++        kernels::row_push(xj, &f.rows_t[range.clone()], &f.sym.row_col[range], x, lo);
+     }
+     if let Some((left, right)) = halves {
+         let m1 = lo + left.len();

@@ -57,6 +57,8 @@ gltf = { version = "1.4.1", default-features = false, features = ["utils", "name
 
 # Simulation
 rayon = "1.12.0"
+# Runtime dispatch of SIMD kernels (AVX2 on x86-64), safe; ADR-0035.
+multiversion = "0.8.0"
 
 # Networking (F5, ADR-0008): renet's reliable and unreliable channels over any transport,
 # and its netcode UDP transport.

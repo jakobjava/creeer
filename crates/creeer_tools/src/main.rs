@@ -14,6 +14,7 @@ mod image_diff;
 mod joint_bench;
 mod lod_bench;
 mod logic_bench;
+mod many_bench;
 mod mech_bench;
 mod nasa_import;
 mod network_bench;
