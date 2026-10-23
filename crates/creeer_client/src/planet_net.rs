@@ -267,7 +267,8 @@ impl PlanetSession {
                         // Each member at its own radius; fastened joints are not drawn (G2.3).
                         let radius = frame.radii.get(k).copied().unwrap_or(frame.radius);
                         if radius > 0.0 {
-                            out.beams.push((p + q * *na, p + q * *nb, radius, 0.0, gone));
+                            out.beams
+                                .push((p + q * *na, p + q * *nb, radius, 0.0, gone));
                         }
                     }
                 }
