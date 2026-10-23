@@ -1,6 +1,6 @@
 # G1 plan: player & interaction
 
-Status: **planned** (2026-10-18). Branch `g1`, squash-merged into main as "G1" at the end.
+Status: **done** (2026-10-23; planned 2026-10-18). Branch `g1`, squash-merged into main as "G1"; the demo played by the user.
 
 G1 is the first gameplay milestone. The loop it makes playable: **start with nothing but the clothes you wear, gather stones and wood, make your first tools, fell a tree, dig ore, carry both home, with friends.** It turns F5's test ball into a person with a body, gives that person hands and tools, makes the planet's rock and trees something to take apart, and gives the game its look.
 
@@ -556,7 +556,7 @@ Re-planned 2026-10-22 (principle 10).
   - Found and fixed: the play harness gave its clients one shared terrain, so every edit was applied once per client, and a rounded dig applied twice digs deeper (0.8 m off the server's ground: every quarry strike was refused "not on the ground"). Each client now has its own (`Terrain::sibling`), as on its own machine.
   - **Times measured, gates not met** (full length, development machine; `creeer_tools play --only <scene>`): quarry 0.06 / 1.0 / 2.3 ms (p50 / p99 / worst: met); work 0.5 / 1.0 / 1.8 (met); toolmaking 0.2 / 5.6 / 8.5 (the hands' explicit springs while stones are swung and put down need turn substeps); lumberjack 1.9 / 11.0 / 29.4 (felled trunks: their 12-sided hulls' ground sampling costs 3–4 ms of detection a tick, and they rarely come to rest, 3 of 4 still awake 25 s after the last blow, about 7 ms a tick with nobody near: ADR-0024's never-resting contacts); crowd at one heading 0.8 / 21.8 / 55 ms (its ensemble as recorded in G1.8). Recorded in ADR-0024 ("After G1") and `docs/future-improvements.md`.
   - **Not built** (the user, 2026-10-23): *fall* (the crowd's ragdolls cover it) and *forest* (a client's frame cost, measured in G1.7: impostors deferred).
-  - **The demo**: for the user to play (survival singleplayer, then two players over the network).
+  - **The demo**: played by the user (2026-10-23): "all works".
 
 ## Blender MCP
 
