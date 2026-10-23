@@ -1,4 +1,10 @@
-crowd 300 befd4e6b641a93bb
-work 300 e8eddbb8e66516e4
-crowd 1800 043fa3226ec3b66c
-work 1800 48268669178cc189
+crowd 1800 fb3cf8a1dd9bb0f7
+work 1800 1459b8a81681ffbe
+lumberjack 1800 40544f6b601a4af1
+quarry 1800 52cc21843a6ddee5
+toolmaking 1800 da6a47ba336c9111
+crowd 300 18ca935b1d90473a
+work 300 1df8a4f448becb0f
+lumberjack 300 dc5586c49fad9299
+quarry 300 9a2051d152eae03a
+toolmaking 1100 91bd5f6ff2cc36b1

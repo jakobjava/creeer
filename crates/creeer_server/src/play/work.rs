@@ -60,13 +60,13 @@ pub fn work_world(terrain: Arc<Terrain>) -> ServerWorld {
 }
 
 /// Where entity `id` is now on the server.
-fn at(play: &Play, id: EntityId) -> Option<DVec3> {
+pub(super) fn at(play: &Play, id: EntityId) -> Option<DVec3> {
     let w = &play.server.world;
     w.index(id).map(|i| w.world.bodies[i].structure.position[0])
 }
 
 /// A walk towards `to` from `from` along the ground, stopping `near` m from it.
-fn towards(from: DVec3, to: DVec3, near: f64) -> DVec3 {
+pub(super) fn towards(from: DVec3, to: DVec3, near: f64) -> DVec3 {
     let up = from.normalize();
     let d = (to - from).reject_from(up);
     if d.length() > near {
@@ -106,7 +106,7 @@ pub fn work(tick: u32, play: &Play) -> Vec<Act> {
 }
 
 /// How far apart two points are along the ground (m).
-fn apart(a: DVec3, b: DVec3) -> f64 {
+pub(super) fn apart(a: DVec3, b: DVec3) -> f64 {
     (b - a).reject_from(a.normalize()).length()
 }
 

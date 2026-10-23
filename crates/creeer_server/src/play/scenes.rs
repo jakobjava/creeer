@@ -32,6 +32,9 @@ pub struct Scene {
     pub build: fn(Arc<Terrain>) -> ServerWorld,
     /// Every player's act in a tick.
     pub script: fn(u32, &Play) -> Vec<Act>,
+    /// Whether it is played turned about the spawn (`Play::heading`) for its ensemble: a scene
+    /// whose world is built away from the spawn plays the same at every heading.
+    pub turned: bool,
 }
 
 impl std::fmt::Debug for Scene {
@@ -46,7 +49,7 @@ impl std::fmt::Debug for Scene {
 pub const PLANET: &str = "planets/home.ron";
 
 /// The scenes.
-pub const SCENES: [Scene; 2] = [
+pub const SCENES: [Scene; 5] = [
     Scene {
         name: "crowd",
         what: "8 players walking, jumping and dropping crates in one place",
@@ -54,6 +57,7 @@ pub const SCENES: [Scene; 2] = [
         ticks: (1800, 300),
         build: world,
         script: crowd,
+        turned: true,
     },
     Scene {
         name: "work",
@@ -62,6 +66,34 @@ pub const SCENES: [Scene; 2] = [
         ticks: (1800, 300),
         build: super::work::work_world,
         script: super::work::work,
+        turned: true,
+    },
+    Scene {
+        name: "lumberjack",
+        what: "4 players in the forest with steel axes: each fells a notched tree and bucks its trunk",
+        players: &["ada", "ben", "cai", "dee"],
+        ticks: (1800, 300),
+        build: super::lumberjack::lumber_world,
+        script: super::lumberjack::lumberjack,
+        turned: false,
+    },
+    Scene {
+        name: "quarry",
+        what: "4 players with picks digging the sides of a pit among boulders, its heaps growing",
+        players: &["ada", "ben", "cai", "dee"],
+        ticks: (1800, 300),
+        build: super::quarry::quarry_world,
+        script: super::quarry::quarry,
+        turned: false,
+    },
+    Scene {
+        name: "toolmaking",
+        what: "4 players knapping a chert core, stripping bark, binding a flake on and digging with it",
+        players: &["ada", "ben", "cai", "dee"],
+        ticks: (1800, 1100),
+        build: super::toolmaking::toolmaking_world,
+        script: super::toolmaking::toolmaking,
+        turned: false,
     },
 ];
 

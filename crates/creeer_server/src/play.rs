@@ -8,8 +8,11 @@
 //! (`creeer_tools play --gate`, the development machine), its most work in a tick and its
 //! bandwidth in CI (`play/tests.rs`).
 
+mod lumberjack;
+mod quarry;
 pub mod record;
 pub mod scenes;
+mod toolmaking;
 mod work;
 
 use crate::client::{Connection, Status};
@@ -89,7 +92,9 @@ impl Play {
                 let link = SimulatedLink::new(Conditions::default(), 7 + k as u64);
                 let (relay, end) = Relay::new(end, link);
                 let mut client = Connection::memory(end, name, content);
-                client.attach_terrain(Arc::clone(terrain), &play_data);
+                // Each its own terrain, as on its own machine (a dig's round applied twice digs
+                // deeper).
+                client.attach_terrain(Arc::new(terrain.sibling()), &play_data);
                 (client, relay)
             })
             .collect();

@@ -121,9 +121,15 @@ impl Connection {
 
     /// Strikes loose thing `loose` lying on the ground (G1.6), as `strike` a body.
     pub fn strike_loose(&mut self, loose: u64) {
+        let command = self.strike_loose_command(loose);
+        self.command_swing(command);
+    }
+
+    /// The command striking loose thing `loose` asks the server.
+    pub fn strike_loose_command(&self, loose: u64) -> creeer_net::message::Command {
         let own = self.predicted.as_ref().and_then(|p| p.tick());
         let started = own.map_or(self.drawn_at, f64::from);
-        self.command_swing(creeer_net::message::Command::StrikeLoose { loose, started });
+        creeer_net::message::Command::StrikeLoose { loose, started }
     }
 
     /// Sends a swing's `command`, its swing drawn from now.
@@ -205,12 +211,19 @@ impl Connection {
 
     /// Strikes standing tree `tree` at `height` up its stem (G1.7), as `strike` a body.
     pub fn strike_tree(&mut self, tree: u64, height: f64) {
+        let command = self.strike_tree_command(tree, height);
+        self.command_swing(command);
+    }
+
+    /// The command striking standing tree `tree` at `height` asks the server (the swing begun at
+    /// the player's own tick).
+    pub fn strike_tree_command(&self, tree: u64, height: f64) -> creeer_net::message::Command {
         let own = self.predicted.as_ref().and_then(|p| p.tick());
         let started = own.map_or(self.drawn_at, f64::from);
-        self.command_swing(creeer_net::message::Command::StrikeTree {
+        creeer_net::message::Command::StrikeTree {
             tree,
             height,
             started,
-        });
+        }
     }
 }

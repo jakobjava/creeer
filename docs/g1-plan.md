@@ -548,6 +548,15 @@ Re-planned 2026-10-22 (principle 10).
   - *fall*: characters falling, ragdolling and getting up on terrain, crates and each other;
   - *forest*: one player walking through 100,000 trees of several species for 10 minutes (streaming, no tick cost).
 - **The demo and playtest.** Spawn with nothing but clothes. Gather stones and branches, and make a stone axe and a pick. Fell a tree, dig ore, and carry both back in hands and pockets. Save and load. Then the same with a second player over the network.
+- **Done** (2026-10-23; the user chose three new scenes over five, and to record unmet time gates and merge after playing the demo):
+  - *lumberjack* (`play/lumberjack.rs`): 4 players with steel axes 45 m out in the forest, each at a tree of 12–20 cm notched half through (a notch takes minutes of blows), back-cutting until it goes over, then bucking its trunk; all four fall within 30 s.
+  - *quarry* (`play/quarry.rs`): 4 players with picks on the near rim of a dug pit with four boulders, each side's ledger owing about a pit, so the terrain is cut four times; 49 blows.
+  - *toolmaking* (`play/toolmaking.rs`): 4 players take up a hammerstone, knap a chert core three times, put the stone down, take up a fresh branch, strip it, bind a flake on and dig with the axe they made.
+  - CI gates each on its work and bandwidth (`play/tests.rs`; scenes built away from the spawn are played once, not over the headings); every scene stays under 100 kbit/s to a client.
+  - Found and fixed: the play harness gave its clients one shared terrain, so every edit was applied once per client, and a rounded dig applied twice digs deeper (0.8 m off the server's ground: every quarry strike was refused "not on the ground"). Each client now has its own (`Terrain::sibling`), as on its own machine.
+  - **Times measured, gates not met** (full length, development machine; `creeer_tools play --only <scene>`): quarry 0.06 / 1.0 / 2.3 ms (p50 / p99 / worst: met); work 0.5 / 1.0 / 1.8 (met); toolmaking 0.2 / 5.6 / 8.5 (the hands' explicit springs while stones are swung and put down need turn substeps); lumberjack 1.9 / 11.0 / 29.4 (felled trunks: their 12-sided hulls' ground sampling costs 3–4 ms of detection a tick, and they rarely come to rest, 3 of 4 still awake 25 s after the last blow, about 7 ms a tick with nobody near: ADR-0024's never-resting contacts); crowd at one heading 0.8 / 21.8 / 55 ms (its ensemble as recorded in G1.8). Recorded in ADR-0024 ("After G1") and `docs/future-improvements.md`.
+  - **Not built** (the user, 2026-10-23): *fall* (the crowd's ragdolls cover it) and *forest* (a client's frame cost, measured in G1.7: impostors deferred).
+  - **The demo**: for the user to play (survival singleplayer, then two players over the network).
 
 ## Blender MCP
 

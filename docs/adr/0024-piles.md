@@ -288,3 +288,16 @@ The gates (*crowd* and the rock pile: worst ≤ 5 ms, p99 ≤ 2 ms) are not met.
   - substeps that cost less (each substep starts its Newton afresh).
 - **The rock pile:** its largest group's iterations, about half of them friction's (the bound). Next: friction within Newton with a residual merit (Chen 2024; Larionov 2022), then the joint tree again, since the refreshes wait on both.
 - The rest is deferred (`docs/future-improvements.md`), by the user's choice of a targeted pass.
+
+## After G1 (2026-10-23): what the new play scenes measured
+
+G1.10 added *lumberjack*, *quarry* and *toolmaking* (`docs/g1-plan.md`). Measured at full length on the development machine (p50 / p99 / worst):
+
+| Scene | Times (ms) | Where the time goes |
+|---|---|---|
+| quarry | 0.06 / 1.0 / 2.3 | Gates met; the blow that cuts a pit is 2.3 ms (ADR-0032) |
+| work | 0.5 / 1.0 / 1.8 | Gates met |
+| toolmaking | 0.2 / 5.6 / 8.5 | Ticks while stones are swung in the hands and put down: "group world" 3–4 ms with 40–60 Newton iterations; the hands' explicit springs need turn substeps (Second pass) |
+| lumberjack | 1.9 / 11.0 / 29.4 | Felled trunks: detection 3–4 ms a tick (a 12-sided hull's faces sampled against the ground, `ground_hull.rs`), and they rarely rest: 3 of 4 trunks still awake 25 s after the last blow (one creeping 2–4 cm/s, the others held awake by touching it), about 7 ms a tick with nobody near |
+
+Tried for the trunks: rings every 1 m instead of 3 m (to make their faces shorter on curved ground): no better at rest, and slower. The trunks' unrest is the never-resting contacts of the first pass (contacts found anew hold more energy than the step before; the guard zeroes velocities; bodies jitter), not something new; the persistent contacts it needs are this ADR's open work. Each is in `docs/future-improvements.md`.

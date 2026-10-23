@@ -96,7 +96,13 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// spawn moved to level ground at a temperate latitude (2026-10-22): 127-248 (median 166), and
 /// 4,994 where a crate lands on a fallen player at tick 299. The median a tenth above; the worst
 /// keeps the ceiling above.
-const WORK: [(&str, u64, u64); 2] = [("crowd", 183, 7_300), ("work", 216, 216)];
+const WORK: [(&str, u64, u64); 5] = [
+    ("crowd", 183, 7_300),
+    ("work", 216, 216),
+    ("lumberjack", 50, 50),
+    ("quarry", 185, 185),
+    ("toolmaking", 135, 135),
+];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).
 const HEADINGS: u32 = 8;
@@ -131,7 +137,8 @@ fn every_scene_keeps_within_its_work_and_its_bandwidth() {
     for s in &SCENES {
         let (_, median, ceiling) = *WORK.iter().find(|w| w.0 == s.name).expect("a gate");
         let mut works = Vec::new();
-        for k in 0..HEADINGS {
+        let headings = if s.turned { HEADINGS } else { 1 };
+        for k in 0..headings {
             let heading = f64::from(k) * std::f64::consts::TAU / f64::from(HEADINGS);
             let report = super::scenes::run_turned(s, s.ticks.1, heading, |_, _| {});
             let (tick, most) = report.most_work();
@@ -144,7 +151,7 @@ fn every_scene_keeps_within_its_work_and_its_bandwidth() {
         }
         works.sort_unstable();
         let n = works.len();
-        let middle = (works[n / 2 - 1] + works[n / 2]) / 2;
+        let middle = (works[(n - 1) / 2] + works[n / 2]) / 2;
         assert!(
             middle <= median,
             "{}: its median member {middle} ({works:?})",

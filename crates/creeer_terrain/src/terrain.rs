@@ -38,6 +38,16 @@ impl Terrain {
         }
     }
 
+    /// Another terrain of the same planet, with its own edits (another machine's: a game's
+    /// clients each have their own).
+    pub fn sibling(&self) -> Self {
+        Self {
+            planet: Arc::clone(&self.planet),
+            heights: HeightCache::new(Arc::clone(&self.planet.elevation), HEIGHT_TILES),
+            edits: RwLock::new(Edits::default()),
+        }
+    }
+
     /// The planet.
     pub fn planet(&self) -> &Planet {
         &self.planet
