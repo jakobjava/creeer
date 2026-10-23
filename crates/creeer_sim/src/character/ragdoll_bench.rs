@@ -11,7 +11,7 @@
 //!   once (`RAGDOLL_STATES=<file>`), then stepped once each by any build: the same states for
 //!   all.
 
-use super::ragdoll::{fall, knocked};
+use super::ragdoll::{fall, knocked, pass_within};
 use super::*;
 use creeer_physics::world::shape::StaticShape;
 
@@ -176,6 +176,13 @@ fn ragdoll_states_stepped() {
             continue;
         }
         let mut world = World::from_bytes(state).unwrap();
+        // The fallen ragdoll's own pairs let pass again, as whoever loads a world with fallen
+        // people does (`pass_within`: they are not saved). Without, every limb met every other
+        // and the states took 270 s instead of a few (found in G1.8). The character's body is
+        // the pelvis, the other segments the last bodies added.
+        let n = world.bodies.len();
+        let parts: Vec<usize> = std::iter::once(0).chain(n - 14..n).collect();
+        pass_within(&mut world, &parts);
         let start = std::time::Instant::now();
         world.step();
         let ms = start.elapsed().as_secs_f64() * 1e3;

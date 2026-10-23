@@ -23,6 +23,11 @@ impl World {
     fn items(&self) -> Vec<Item> {
         let mut items = Vec::new();
         for (b, body) in self.bodies.iter().enumerate() {
+            // (A step restricted to some bodies meets no others: its groups were found
+            // closed against them at the step's start, `turn.rs`.)
+            if !self.in_step(b) {
+                continue;
+            }
             let s = &body.structure;
             for (node, shape) in &body.shapes {
                 let node = *node;

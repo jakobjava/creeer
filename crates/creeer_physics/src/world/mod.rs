@@ -62,12 +62,15 @@ pub mod surface;
 #[cfg(test)]
 mod tests;
 mod turn;
+#[cfg(test)]
+mod turn_tests;
 
 use crate::gravity::PlanetGravity;
 use crate::profile::{self, Slot};
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
 use contact::{Contact, Contacts};
 use creeer_math::glam::{DMat3, DQuat, DVec3};
+use detect::Found;
 use ground::Ground;
 use left::Left;
 pub use query::{Support, Touch};
@@ -198,6 +201,9 @@ pub struct World {
     /// the bodies (and nodes) it joined, and the bodies stepped then (the energy guard's,
     /// `structure/group.rs`).
     left: Left,
+    /// The bodies a (sub)step is restricted to while groups turning fast are substepped apart
+    /// from the rest (`turn.rs`); none: every body. Not saved: set only within a step.
+    only: Option<Vec<bool>>,
     dt: f64,
 }
 
@@ -219,6 +225,7 @@ impl World {
             passing: Vec::new(),
             struts: Vec::new(),
             anchors: Vec::new(),
+            only: None,
             dt,
         }
     }
@@ -254,9 +261,14 @@ impl World {
 
     /// One (sub)step of `self.dt`.
     fn step_once(&mut self) {
-        profile::add(Slot::WorldSteps, 1);
+        let found = self.detect_awake();
+        self.step_found(&found);
+    }
+
+    /// The contacts at the start of a (sub)step of `self.dt`, every body they reach woken.
+    fn detect_awake(&mut self) -> Vec<Found> {
         let timer = profile::start();
-        let scope = creeer_core::profile::scope("physics: detect");
+        let _scope = creeer_core::profile::scope("physics: detect");
         self.wake_disturbed();
         // Contacts between an awake and a sleeping body wake the sleeper, which may touch
         // further sleepers: detect until nothing new wakes (a hit at the top of a sleeping
@@ -281,28 +293,56 @@ impl World {
             }
         };
         timer.stop(Slot::Detect);
-        drop(scope);
+        found
+    }
+
+    /// One (sub)step of `self.dt` from the contacts `found` at its start ([`Self::detect_awake`]).
+    fn step_found(&mut self, found: &[Found]) {
+        profile::add(Slot::WorldSteps, 1);
         let timer = profile::start();
         let scope = creeer_core::profile::scope("physics: groups");
-        let anchors = std::mem::take(&mut self.anchors);
-        let stepped = self.pass(&found, &anchors);
+        // A step restricted to some bodies (`only`) keeps the rest's anchors, groups and what
+        // their contacts held, as their own step left them.
+        let (anchors, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.anchors)
+            .into_iter()
+            .partition(|a| self.in_step(a.a.0));
+        let stepped = self.pass(found, &anchors);
         timer.stop(Slot::Pass);
         drop(scope);
         let timer = profile::start();
         let _scope = creeer_core::profile::scope("physics: after");
-        self.contacts.clear();
-        self.groups.clear();
-        self.left = Left::default();
+        self.anchors = kept;
+        match self.only.take() {
+            None => {
+                self.groups.clear();
+                self.left = Left::default();
+            }
+            Some(only) => {
+                let outside = |side: Option<(usize, NodeId)>| side.is_none_or(|(b, _)| !only[b]);
+                self.groups.retain(|(group, _)| !only[group[0]]);
+                (self.left.energies).retain(|((a, b), _)| outside(*a) && outside(*b));
+                self.left.stepped.retain(|&b| !only[b]);
+                self.only = Some(only);
+            }
+        }
         let mut groups = Vec::with_capacity(stepped.len());
         for (group, contacts, anchors) in stepped {
             self.leave(&group, &contacts);
             self.anchors.extend(anchors);
-            self.contacts.extend(contacts.list.iter().copied());
             groups.push(group.clone());
             self.groups.push((group, contacts));
         }
+        self.contacts.clear();
+        for (_, contacts) in &self.groups {
+            self.contacts.extend(contacts.list.iter().copied());
+        }
         self.update_sleep(&groups);
         timer.stop(Slot::After);
+    }
+
+    /// Whether body `b` is stepped in this (sub)step (`only`).
+    fn in_step(&self, b: usize) -> bool {
+        self.only.as_ref().is_none_or(|only| only[b])
     }
 
     /// The groups of the last step: bodies (indices) joined by contacts, stepped together.

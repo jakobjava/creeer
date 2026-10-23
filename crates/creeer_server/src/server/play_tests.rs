@@ -196,13 +196,17 @@ fn a_frame_bent_in_a_crash_is_drawn_bent() {
     );
     block.structure.orientation[0] = creeer_math::glam::DQuat::from_rotation_arc(DVec3::Y, up);
     game.server.world.add_body(block, None);
-    // Until it rests (and the last change has gone out: a few send rounds more).
+    // Until it rests (and the last change has gone out: a few send rounds more). How long the
+    // block takes to settle on the bent frame is chaotic: of eight drops a micrometre apart,
+    // three (before G1.8) or four (after) were still rocking after 20 s, at millimetres a
+    // second and losing energy all the while (one at rest after 25 s); contacts found anew
+    // see-saw (ADR-0024).
     let i = game.server.world.index(frame).unwrap();
     let mut ticks = 0;
     while !game.server.world.world.bodies[i].sleep.asleep {
         game.tick(|_| (DVec3::ZERO, false));
         ticks += 1;
-        assert!(ticks < 1200, "the frame never comes to rest");
+        assert!(ticks < 3000, "the frame never comes to rest");
     }
     game.run(30, |_| (DVec3::ZERO, false));
     let s = &game.server.world.world.bodies[i].structure;

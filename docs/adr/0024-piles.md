@@ -1,6 +1,6 @@
 # ADR-0024: Piles and ragdolls (P1)
 
-- **Status:** In progress (2026-10-18)
+- **Status:** Second pass done (2026-10-23, the user's "targeted pass"); its time gates not met, what remains measured and recorded (*Second pass*, at the end)
 - **Context:** P1 of the performance track (plan.md, `docs/g1-plan.md` G1.8), brought forward after G1.2d: knocked-down players took the play scene *crowd* to 11.9 ms p99 and 58 ms worst (gates 2 and 5 ms). This ADR records what was measured on the way, kept or not, as the work goes.
 - **Builds on:** ADR-0005 (contacts, the energy guard, friction's lagged normal forces), ADR-0017 (fast ticks without loss), ADR-0022 (joints), ADR-0023 (the character)
 - **Evidence:** `creeer_tools play` with `PLAY_TRACE` (now with the physics' phases when built with `--features creeer_physics/profile`); a replay of single dumped steps (below)
@@ -182,3 +182,109 @@ About 8 % in all (5,276 → about 4,900 ms). Realism is untouched: nothing was l
 **Back to G1.8** (`docs/g1-plan.md`), each from the facts measured here: friction within Newton's iterations together with the joint tree (the refreshes wait on both: 35–43 % of a ragdoll's iterations), contacts whose description follows the iterate and persists (the see-saw, the found-anew surplus), the ragdoll's passive joint resistance from biomechanics, the rock pile's targets, large groups across cores.
 
 **The *crowd* work gate** (4,730 iterations against 490): re-set to the measured value a tenth above, 5,200, by the user's decision (2026-10-18; `play/tests.rs`); G1.8 brings it back down. Its time gates (p99 ≤ 2 ms, worst ≤ 5 ms in `cargo xtask perf`) stay, unmet, for G1.8.
+
+## Second pass (G1.8, 2026-10-23)
+
+The user chose a targeted pass after this pass's survey and first measurements. The gates need four to six times the speed, and every lever measured offered a fraction of that. The pass had three parts:
+- turn substeps only for the boxes that need them, and only for their groups;
+- friction's refreshes within Newton;
+- face patches made cheaper per trial.
+
+About twice as fast on the worst ticks was expected. What follows is what was found, kept and rejected.
+
+### Prior work (surveyed first)
+
+Two surveys came before any design: one on solving friction together with the normal force in one Newton iteration, one on how accurate simulators make piles fast.
+
+| Work | What it says | What it means here |
+|---|---|---|
+| Drake's SAP (Castro, Permenter, Han 2022, arXiv 2110.10107); MuJoCo's Newton solver | 3–5 Newton iterations a step in steady state (21 in a clutter's transient). Geometry is frozen at the step's start, the line search is exact on cached quantities, and friction is convex | Convex friction glides: the gap is offset by μ·h·‖v_t‖, 8 mm a step at 60 Hz for μ = 0.5 at 1 m/s (Castro et al. 2023, arXiv 2312.03908; Le Lidec et al. 2023). Not for this engine |
+| Drake's "Lagged" approximation (2312.03908) | Friction on the step's starting normal force, never refreshed: this engine's scheme with no refresh, first order in how the normal force changes | Drake's recommended default. Here it would leave friction on stale forces in every transient, against a realism gate of 5 % |
+| Hüeber, Stadler, Wohlmuth 2008; Acary, Brémond, Huber 2018 (FCLIB); Larionov et al. 2022 (arXiv 2211.10618) | Coulomb friction coupled to the normal force has no potential. Coupled exactly, it needs a residual merit, not the energy. Semismooth Newton about halves a fixed point's iterations where compliance keeps the problem full rank | Why ADR-0017's coupled friction (C) lost its line search's footing. The next design must have a residual merit |
+| Chen, Ly, Wojtan 2024 (Primal–Dual Non-Smooth Friction) | The normal force is lagged per iterate, with a filtered line search (accepted if either residual falls): 6 iterations on a cube stack, 7–15 on grain piles | The candidate for friction within Newton, with its rules against oscillation |
+| Box2D v3, Jolt, PhysX TGS | Contacts are found once a step and kept through large turns (Box2D allows 0.25π a step). Manifolds and their features are cached while motion is small. Islands are split only above 128 constraints (Jolt) | A 22-rock island is below what engines split. The turn limit is what this engine pays where they keep features |
+| Peiret et al. 2019; Distributed ABD 2026 (arXiv 2605.15875) | Large islands split across cores: 5× on a rock pile by substructuring; 10–92 ADMM rounds a frame | For hundreds of bodies, not this pile (as the first pass found) |
+
+The surveys' sources are named here; their downloads stay out of the repository.
+
+### Measured: where the slow ticks go
+
+- **The play trace counted the clients' steps.** The physics phases listed for a slow tick included the eight clients' own prediction steps, because the counter is process-wide. `Play::tick` now returns the server's phases alone (`Tick::phases`).
+- ***crowd*'s slow phase was a hand in the air.** A fallen ragdoll's hand (0.63 kg) whirled about the elbow at up to 27 rad/s for about 30 ticks. It touched nothing but its own forearm, which it passes. Because the turn limit counted every awake box, the whole 35-body world took 3–9 substeps a tick.
+- **The rock pile's slow groups** were measured on the sandbox's 900 ticks, stepped from their saved states (`physics_states.rs`). A slow group step takes 60–75 iterations:
+  - about 15 are cut short where a contact closes;
+  - about 25 reject the full Newton step and take between a tenth and two fifths of it;
+  - about 20 follow friction's refreshes, which move the solution by thousands of tolerances.
+
+  Over the 900 states, 15,880 of 45,563 iterations (35 %) come after a refresh.
+- **Why full steps are rejected.** Along a rejected step, each part of the objective was measured at four points.
+  - The objective is close to a parabola, but 4–10 times steeper than the direction's model.
+  - The excess is friction's. Inertia, the elastic terms and the damping match their model within a few percent.
+  - Friction's own exact local quadratic overestimates it, at a sticking contact that starts to slide.
+  - The direction used is too long because of L-BFGS pairs taken across stick–slip switches.
+  - With pure Newton, the excess lies in sliding contacts turned back past their anchors, where the constant force the model holds reverses.
+- **The bound.** With friction off, the same 900 states take 12,012 iterations against 20,662 (−42 %): 3.2 s against 4.5 s, worst step 9.1–9.5 ms against 18.4. Better friction can at most halve the pile's worst steps, and the cost per trial stays.
+- **A face patch costs 0.3 µs an integration**, and a face search takes 1.7 integrations. A trial costs about 50 µs because a 17-rock group has about a hundred faces, and every one of them moves in every trial. Caching across trials would have nothing to reuse, so it was not built.
+- **The ragdoll bench was broken** (found here). Since G1.3f a ragdoll's segments pass each other (`World::let_pass`), and that is not saved. Loaded from bytes, the bench's states had every limb meeting every other: 270 s instead of about 6. The bench now lets the pairs pass again after loading (`ragdoll_bench.rs`).
+
+### Kept
+
+| Change | Measured |
+|---|---|
+| **Turn substeps only for boxes the step can bring into contact.** A box (or hull) counts when one of its contacts found at the step's start is closer than 5 mm plus both sides' travel in the step at their present speeds. The detection's margin is twice that and more, so a box that touches nothing reaches nothing within the step. A body held in hands counts whatever it touches (`turn.rs`) | *crowd*'s slow phase: world substeps 3–9 → 1–5 a tick. Every physics test as before |
+| **Turn substeps per group.** Each group takes the substeps its own boxes need, and the others step once. A group is bodies joined by contacts found at the start, by joints and by struts, as `pass.rs` groups them. A step restricted to some bodies (`World::only`, not saved) detects, groups and keeps books for those alone, and leaves the others' anchors, groups and left energies as their own step left them | A group stepped beside one that substeps moves exactly as it would alone, bit for bit, through substeps and redos (`turn_tests.rs`) |
+| **The turn check's redo per group.** A group whose box turned more than twice what its substeps allow is restored and stepped again alone, in the substeps its turn needs | In *crowd*, one such redo had taken the whole world to 16 substeps: 147 group steps, 79 ms in a tick |
+| Benches and tools: `physics_states.rs` (the sandbox's piles on the same states by any build, `DUMP` per state, `work_ensemble`); `creeer_tools play --headings <n>` (an ensemble's timings, with `MEMBER` and `PLAY_TRACE`); the server's phases in the play trace; the ragdoll bench fixed | — |
+
+**A held body needs its substeps** (found by `trees_tests.rs`). The hands' loads are explicit springs on a light body (G1.4). Stepped once instead of in its turn's substeps, a branch carried into a trunk spun up to 26 rad/s. The substeps had been keeping it steady, as in the struts' lesson: a load from a stiff spring is stable only on a body heavier than k·h².
+
+**The result** (*crowd*, full length, eight headings, on the development machine; before is 90258e4):
+
+| | before | after |
+|---|---|---|
+| p99 tick, median / worst of the eight | 13.5 / 83.8 ms | 11.5 / 25.2 ms |
+| worst tick, median / worst | 46.8 / 286 ms | 25.9 / 67 ms |
+
+Single runs say little: with the first change alone, heading 0 went from 10.9 to 13.0 ms p99 because its trajectory changed. The other benches:
+- **The rock pile's 900 states:** 4.42–4.60 s, p99 12.2–13.0 ms, worst 17.9–18.9 ms, as before. Rocks seldom spin free, and their worst ticks are one group's iterations.
+- **The ragdoll states:** 6.29–6.33 s against 6.36–6.44 s.
+
+*crowd*'s worst ticks now are a single group, a ragdoll with a crate, substepping 9–10 times at about 40 iterations a substep (4–5 ms each), while every other group steps once.
+
+### Measured and rejected (second pass)
+
+A patch with every experiment below, each behind a switch, lies beside this ADR: `docs/adr/0024/second-pass-friction.diff` (against 90258e4). The baseline, unless said otherwise, is the rock pile's 900 states: 20,662 iterations, 4.4–4.6 s, worst 18.0–18.5 ms.
+
+| What | Measured | Why rejected |
+|---|---|---|
+| **Pure Newton for rigid groups** (no L-BFGS pairs where the matrix is made again every iteration) | Rocks: 19,816 iterations, 3.9 s, worst 15.4–16.8 ms. Stacks: 3,763 iterations against 3,157, worst 13.8 ms against 5.9 | The settling crates need L-BFGS: their worst step became 2.3 times longer |
+| A share of the secant μλ/‖u‖ along every sliding contact's slip (0.1, 0.3, 1) | 22,035, 26,702 and 38,417 iterations; with pure Newton 26,293, 40,683 and 81,923 | Stiffer along the motion, sliding creeps (as F6 found) |
+| **The secant along the slip only where the direction turns a sliding contact back past its anchor**, with the direction solved again (`contact/reversal.rs`). The friction's model then has its least where the true one has | With L-BFGS: 18,405–19,070 iterations, worst 19.6–20 ms. Pure Newton: 19,774–19,802 (no change). One state fell from 74 to 48 iterations, others rose by up to 46 | Neutral overall: each state's rejected steps have other causes too |
+| Friction's λ extrapolated from the last two states (BDF's own extrapolation) | Refreshes 4,724 against 4,862, iterations +1 % | A tumbling pile's forces do not follow their history |
+| **Refreshes only for contacts that slide or stick near their cone's edge.** A contact sticking well inside its cone carries the force equilibrium asks of it, whatever λ is | Refreshes 4,752 against 4,862 | In a tumbling pile nearly every loaded contact slides |
+| **Refreshing before the lagged solve has converged** (at 30, 300 and 3,000 tolerances; the last pass still converged and was checked as before) | Iterations −13 to −15 % (39,677, 38,832 and 39,401 against 45,563); time −1 to +2 %; p99 worse at 300 | More refreshes for fewer iterations, no time saved |
+| The cap's exponential segment removed (a diagnostic: is its stiffening what troubles Newton?) | 24,880 iterations, +20 % | It helps Newton; not the cause |
+| **The turn limit as the sweep of a box's corners** (1.5 cm a substep, what the heap's rocks sweep at 0.05 rad; never more substeps than the angle gives) | Ragdoll states −7 % (5.90 s). Two heap rocks of 0.25 m, turning 0.15 rad a step in the two substeps it allowed, sank 27 mm into each other (`overlap_tests.rs`, limit 8 mm) | A many-faced hull changes its contact features with its turn, whatever its size. For boxes alone (a ragdoll's segments) it may hold, but it needs a test of small fast boxes first (next) |
+
+### Found and recorded
+
+- **Tests that a trajectory change tips, by chaos:**
+  - The save test's frame meets its wall at tick 45 or 46, depending on how its slide goes. Its window is now 50 ticks.
+  - The server's crash test waited 20 s for a block to come to rest on the bent frame. Of eight drops a micrometre apart, the block was still rocking after 20 s in three before this pass and in four after. It lost energy all the while, and one came to rest after 25 s. The wait is now 50 s. The see-saw is this ADR's (*Ragdolls that never rest*).
+- **The rock pile's CI work ceiling** (`physics_bench_tests.rs`, 1,670) was set on one trajectory. Eight runs a nanometre apart spread 1,379–2,610 before this pass, four of them over it. With this pass, all eight peak at tick 40 with 1,803, on a state where 90258e4 spends 1,905. On the same states it works less; the trajectory went elsewhere. The ceiling is re-set to 1,985, a tenth above.
+- **Goldens renewed:**
+  - play *crowd* and *work* at full length, and stress *server* at both lengths: the scenes where a box spun without contact or a group now substeps apart;
+  - the planet physics hash (`planet_tests.rs`): its crates and ball within 2.4 µm of the old trajectory after two seconds;
+  - the style board's ground close-ups: the fallen engineer lies with his arms a little otherwise, his limbs no longer substepped while they turn in the air as he falls.
+
+  Every other hash is unchanged.
+
+### Where this leaves P1
+
+The gates (*crowd* and the rock pile: worst ≤ 5 ms, p99 ≤ 2 ms) are not met. What remains, measured:
+
+- ***crowd*'s worst ticks:** one ragdoll-and-crate group's turn substeps, 9–10 of them at about 40 iterations each. Next:
+  - the sweep limit for boxes alone, proven on small fast boxes;
+  - substeps that cost less (each substep starts its Newton afresh).
+- **The rock pile:** its largest group's iterations, about half of them friction's (the bound). Next: friction within Newton with a residual merit (Chen 2024; Larionov 2022), then the joint tree again, since the refreshes wait on both.
+- The rest is deferred (`docs/future-improvements.md`), by the user's choice of a targeted pass.

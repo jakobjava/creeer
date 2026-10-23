@@ -54,6 +54,9 @@ pub struct Tick {
     pub ms: f64,
     /// Newton iterations the world's bodies took in it.
     pub work: u64,
+    /// The physics' phases in the server's tick alone (`creeer_physics::profile`, with its
+    /// `profile` feature; the clients' own prediction steps left out).
+    pub phases: [u64; creeer_physics::profile::SLOTS],
 }
 
 fn iterations(server: &Server) -> u64 {
@@ -137,15 +140,17 @@ impl Play {
         }
         self.recording.ticks.push(acts.to_vec());
         let before = iterations(&self.server);
+        let _ = creeer_physics::profile::take();
         let start = Instant::now();
         self.server.tick();
         let ms = start.elapsed().as_secs_f64() * 1e3;
+        let phases = creeer_physics::profile::take();
         let work = iterations(&self.server).saturating_sub(before);
         for (_, relay) in &mut self.players {
             relay.pump(self.now);
         }
         self.now += STEP;
-        Tick { ms, work }
+        Tick { ms, work, phases }
     }
 
     /// The players.

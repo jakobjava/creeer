@@ -87,7 +87,8 @@ fn positions(world: &World) -> Vec<DVec3> {
 #[test]
 fn a_saved_world_loads_as_it_was_and_goes_on_as_it_would_have() {
     let mut world = scene();
-    for _ in 0..45 {
+    // (The frame meets the wall at tick 45 or 46, by how its slide went; G1.8.)
+    for _ in 0..50 {
         world.step();
     }
     let frame = world.bodies.last().unwrap();

@@ -70,6 +70,8 @@ mod physics_profile;
 mod physics_rocks;
 mod physics_sandbox;
 mod physics_scenes;
+#[cfg(test)]
+mod physics_states;
 mod physics_view;
 #[cfg(test)]
 mod physics_view_tests;

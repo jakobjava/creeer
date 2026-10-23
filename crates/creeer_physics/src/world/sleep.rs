@@ -99,7 +99,11 @@ impl World {
     /// once all their bodies have been still long enough (one body falling asleep alone
     /// would be woken again at once by its still-awake neighbour).
     pub(super) fn update_sleep(&mut self, groups: &[Vec<usize>]) {
-        for body in self.bodies.iter_mut().filter(|b| !b.sleep.asleep) {
+        let only = self.only.as_deref();
+        let stepped = |b: usize| only.is_none_or(|only| only[b]);
+        for (_, body) in
+            (self.bodies.iter_mut().enumerate()).filter(|(i, b)| !b.sleep.asleep && stepped(*i))
+        {
             if body.is_still() {
                 body.sleep.still += 1;
             } else {

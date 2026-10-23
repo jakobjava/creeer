@@ -465,9 +465,30 @@ Re-planned 2026-10-22 (principle 11; the user: "make a generic system and then t
   - trunks are boxes about what moves (walked into, a falling tree lands on its stump), laid the same in the avatar's prediction;
   - drawn plainly (rods and rough masses, finer the nearer, to 160 m); the crosshair says a tree's girth and how far it is cut; protocol 22, save version 11 (`TREE`).
 - **Not built** (ADR-0031, Limits; `docs/future-improvements.md`): felled parts as beam structures (they are rigid hulls), branches touching the ground, standing trees moved or broken by what hits them, wind on the planet, impostors (the forest costs 2.7 ms a frame).
-- **Next:** G1.8 (P1, piles: the user, 2026-10-23), then G1.5 (digging).
+- **Next:** G1.8 (P1, piles: the user, 2026-10-23), then G1.5 (digging). **G1.8 done** (2026-10-23, below): next G1.5.
 
 ### G1.8 P1: piles (ADR-0024; performance track)
+
+**Done as a targeted pass** (2026-10-23, the user's choice after its survey and first measurements; ADR-0024, "Second pass"). The gates below are not met, and what they need is measured and recorded:
+- **Kept:**
+  - Turn substeps only for boxes the step can bring into contact (and bodies in hands).
+  - Turn substeps and the turn check's redos per group: a group stepped beside one that substeps goes bit for bit as alone.
+  - *crowd* over eight headings: p99 median 13.5 → 11.5 ms; worst tick median 46.8 → 25.9 ms, worst of the eight 286 → 67 ms.
+  - The rock pile unchanged: its worst ticks are one group's iterations.
+- **Measured, not kept:** every friction variant within reach, each within ±10 % (patch beside the ADR). The bound is friction off: −42 % iterations, the worst step halved.
+- **Found:**
+  - The ragdoll bench had been broken since G1.3f (its pairs passing are not saved).
+  - The play trace counted the clients' steps.
+  - Three gates were single chaotic samples (the rocks' work ceiling re-set on the evidence).
+- **Left** (`docs/future-improvements.md`):
+  - the turn limit as a box's corner sweep, proven on small fast boxes (for hulls it failed);
+  - cheaper substeps;
+  - friction within Newton with a residual merit, then the joint tree;
+  - large groups across cores;
+  - edge and face contacts consistent;
+  - faces over curved ground cheaper.
+
+The plan as it stood:
 
 G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock pile's worst tick (18.2 ms, ADR-0017) is measured again here on the real scenes, then cut.
 

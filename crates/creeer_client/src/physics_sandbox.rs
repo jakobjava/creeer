@@ -175,6 +175,12 @@ impl PhysicsSandbox {
         &self.world
     }
 
+    /// The world, to perturb (for ensembles).
+    #[cfg(test)]
+    pub(crate) fn world_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+
     /// Newton iterations its bodies have taken so far (`physics_bench.rs`).
     pub(crate) fn iterations(&self) -> u64 {
         self.world

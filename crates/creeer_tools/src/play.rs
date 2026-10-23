@@ -1,7 +1,8 @@
 //! `creeer_tools play [--short] [--check | --save-golden] [--gate] [--metrics <file>]
-//! [--only <name>] [--record <file>] [--replay <file>]` (G1.0, `docs/g1-plan.md`): the play
-//! scenes (`creeer_server::play::scenes`), headless over the real server path, each with its
-//! tick percentiles, its most work in a tick, its bandwidth and a hash of its end state.
+//! [--only <name>] [--record <file>] [--replay <file>] [--headings <n>]` (G1.0,
+//! `docs/g1-plan.md`): the play scenes (`creeer_server::play::scenes`), headless over the real
+//! server path, each with its tick percentiles, its most work in a tick, its bandwidth and a
+//! hash of its end state.
 //! `PLAY_TRACE=<ms>` lists the ticks over that (2 ms if not a number; with the physics phases
 //! when built with `--features creeer_physics/profile`).
 //!
@@ -11,10 +12,13 @@
 //!   development machine, full lengths only);
 //! - `--metrics`: appends p50s and worst ticks for `cargo xtask perf`;
 //! - `--record <file>`: writes the (one) scene's recording; `--replay <file>`: plays a
-//!   recording (a live client's, or one written by `--record`) in its scene's world.
+//!   recording (a live client's, or one written by `--record`) in its scene's world;
+//! - `--headings <n>`: each scene played turned to `n` headings, its members' times and the
+//!   ensemble's median and worst (G1.8: one chaotic run says little); `MEMBER=<k>` plays the
+//!   k-th alone, and `PLAY_TRACE` lists its slow ticks.
 
 use creeer_server::play::record::Recording;
-use creeer_server::play::scenes::{SCENES, Scene, run_with, scene, terrain};
+use creeer_server::play::scenes::{SCENES, Scene, run_turned, run_with, scene, terrain};
 use creeer_server::play::{Report, replay};
 use std::fmt::Write as _;
 use std::path::Path;
@@ -38,6 +42,54 @@ fn print(name: &str, what: &str, report: &Report) {
     );
 }
 
+/// `--headings <n>`: the scene played turned about the spawn to `n` headings (an ensemble, as
+/// the gates in `play/tests.rs` are; one chaotic run says little), each member's times, then
+/// the ensemble's median and worst p99 and worst tick.
+fn ensemble(s: &Scene, ticks: u32, n: u32) {
+    let (mut p99s, mut worsts) = (Vec::new(), Vec::new());
+    let trace: Option<f64> = std::env::var("PLAY_TRACE")
+        .ok()
+        .and_then(|ms| ms.parse().ok());
+    let only: Option<u32> = std::env::var("MEMBER").ok().and_then(|k| k.parse().ok());
+    for k in (0..n).filter(|k| only.is_none_or(|o| o == *k)) {
+        let heading = f64::from(k) * std::f64::consts::TAU / f64::from(n);
+        let report = run_turned(s, ticks, heading, |t, cost| {
+            if trace.is_some_and(|ms| cost.ms > ms) {
+                let phases: Vec<String> = (creeer_physics::profile::NAMES.iter())
+                    .filter(|(s, _)| cost.phases[*s as usize] > 0)
+                    .map(|(s, n)| format!("{n} {}", cost.phases[*s as usize]))
+                    .collect();
+                println!(
+                    "  tick {t}: {:.3} ms, {} iterations; {}",
+                    cost.ms,
+                    cost.work,
+                    phases.join(", ")
+                );
+            }
+        });
+        let (p99, worst) = (report.percentile_ms(99.0), report.percentile_ms(100.0));
+        let (tick, work) = report.most_work();
+        println!(
+            "{:10} heading {heading:.2}: {:6.3} p50 {p99:6.3} p99 {worst:6.3} worst ms | work {work} (tick {tick})",
+            s.name,
+            report.percentile_ms(50.0)
+        );
+        p99s.push(p99);
+        worsts.push(worst);
+    }
+    p99s.sort_by(f64::total_cmp);
+    worsts.sort_by(f64::total_cmp);
+    let median = |v: &[f64]| v[v.len() / 2];
+    println!(
+        "{:10} ensemble of {n}: p99 median {:.3} worst {:.3} ms; worst tick median {:.3} worst {:.3} ms",
+        s.name,
+        median(&p99s),
+        p99s[p99s.len() - 1],
+        median(&worsts),
+        worsts[worsts.len() - 1]
+    );
+}
+
 fn play(s: &Scene, ticks: u32, trace: Option<f64>, profiled: bool) -> Report {
     let wanted = profiled.then(creeer_core::profile::want);
     let mut clock = wanted.as_ref().and_then(|_| creeer_core::profile::clock(3));
@@ -47,7 +99,7 @@ fn play(s: &Scene, ticks: u32, trace: Option<f64>, profiled: bool) -> Report {
         if let Some(c) = &mut clock {
             c.end_tick(u64::from(t));
         }
-        let spent = creeer_physics::profile::take();
+        let spent = cost.phases;
         if trace.is_some_and(|ms| cost.ms > ms) {
             // With the physics' phases when built with `--features creeer_physics/profile`.
             let phases: Vec<String> = (creeer_physics::profile::NAMES.iter())
@@ -117,6 +169,15 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let only = value("--only");
+    if let Some(n) = value("--headings").and_then(|n| n.parse::<u32>().ok()) {
+        for s in SCENES
+            .iter()
+            .filter(|s| only.as_deref().is_none_or(|o| o == s.name))
+        {
+            ensemble(s, if short { s.ticks.1 } else { s.ticks.0 }, n);
+        }
+        return ExitCode::SUCCESS;
+    }
     let golden = std::fs::read_to_string(GOLDEN).unwrap_or_default();
     let (mut lines, mut metrics, mut failed) = (String::new(), String::new(), false);
     for s in SCENES

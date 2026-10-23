@@ -19,9 +19,9 @@ pub(super) type Stepped = (Vec<usize>, Contacts, Vec<anchor::Anchor>);
 impl World {
     /// Steps the awake bodies, joined into groups by the contacts `found`. `anchors`: the
     /// friction anchors at the start of the step.
-    pub(super) fn pass(&mut self, found: &[Found], anchors: &[anchor::Anchor]) -> Vec<Stepped> {
-        let setup = crate::profile::start();
-        // Groups: bodies joined by contacts (union-find).
+    /// Each body's group, as the least body of it: bodies joined by the contacts `found`, by
+    /// joints and by struts (union-find).
+    pub(super) fn roots(&self, found: &[Found]) -> Vec<usize> {
         let mut parent: Vec<usize> = (0..self.bodies.len()).collect();
         fn root(parent: &mut [usize], mut i: usize) -> usize {
             while parent[i] != i {
@@ -39,10 +39,21 @@ impl World {
             let (ra, rb) = (root(&mut parent, a), root(&mut parent, b));
             parent[ra.max(rb)] = ra.min(rb);
         }
+        (0..self.bodies.len())
+            .map(|b| root(&mut parent, b))
+            .collect()
+    }
+
+    pub(super) fn pass(&mut self, found: &[Found], anchors: &[anchor::Anchor]) -> Vec<Stepped> {
+        let setup = crate::profile::start();
+        // Groups: bodies joined by contacts, joints and struts, of those stepped now.
+        let roots = self.roots(found);
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut group_of = vec![usize::MAX; self.bodies.len()];
-        for body in (0..self.bodies.len()).filter(|&b| !self.bodies[b].sleep.asleep) {
-            let r = root(&mut parent, body);
+        for body in
+            (0..self.bodies.len()).filter(|&b| !self.bodies[b].sleep.asleep && self.in_step(b))
+        {
+            let r = roots[body];
             if group_of[r] == usize::MAX {
                 group_of[r] = groups.len();
                 groups.push(Vec::new());
