@@ -465,7 +465,7 @@ Re-planned 2026-10-22 (principle 11; the user: "make a generic system and then t
   - trunks are boxes about what moves (walked into, a falling tree lands on its stump), laid the same in the avatar's prediction;
   - drawn plainly (rods and rough masses, finer the nearer, to 160 m); the crosshair says a tree's girth and how far it is cut; protocol 22, save version 11 (`TREE`).
 - **Not built** (ADR-0031, Limits; `docs/future-improvements.md`): felled parts as beam structures (they are rigid hulls), branches touching the ground, standing trees moved or broken by what hits them, wind on the planet, impostors (the forest costs 2.7 ms a frame).
-- **Next:** the user plays G1.7; then G1.5 (digging) or G1.8.
+- **Next:** G1.8 (P1, piles: the user, 2026-10-23), then G1.5 (digging).
 
 ### G1.8 P1: piles (ADR-0024; performance track)
 
