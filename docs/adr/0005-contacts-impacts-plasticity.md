@@ -373,6 +373,15 @@ G2 builds with members that collide as prisms: `creeer_building::assembly` puts 
 - `creeer_building/src/faces_tests.rs`: a pole with its prism hulls, a beam with boxes centred on its nodes and 0.2 m off them, and the rigid control come to rest on the ground and sleep within 4 s. Their lowest corners are pressed in 12–43 µm (gate 0–0.1 mm, the step's resolvable stiffness, `cap.rs`).
 - The same file: two poles crossed on the ground, merged into one structure with a joint (the server's way) and stepped on. `creeer_server`'s `two_crossed_poles_nailed_become_one_structure` runs again.
 - `surface.rs`: wood's surface takes ν = ½ and a positive contact modulus.
+- Every play hash holds (`play --check`, full and `--short`): the scenes' motion is bit-identical.
+
+### Measured (development machine, shared with another build; three runs each)
+| `play --only` | before (a526f6a), p50 / p99 / worst ms | now |
+|---|---|---|
+| work | 0.56–0.77 / 1.1–8.2 / 1.8–19.7 | 0.55–0.65 / 1.1–2.1 / 1.9–9.4 |
+| crowd | 0.82–0.90 / 11.4–16.2 / 24–71 | 0.80–0.86 / 11.0–25.9 / 23–176 (four of six runs 23.3–23.8) |
+
+The same hashes, so the same work: the spread is the machine's (the crowd's worst ticks vary run to run either way).
 
 ### Limits
 - **Wood's contact modulus is the one along the grain** (E_L, ν = ½); across it wood is 12–25 times softer. Below the step's resolvable stiffness this rarely matters: a pole's faces press at the cap's 0.8 MN/m, where its punch would give 10⁹ N/m. It does matter for a face pressed near a corner and for Hertz's edges. An anisotropic indentation modulus needs the transverse constants in `Material` (`docs/future-improvements.md`).
