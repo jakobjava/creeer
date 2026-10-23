@@ -69,6 +69,9 @@ pub enum Command {
         height: f64,
         started: f64,
     },
+    /// Fastens the two parts touching nearest the target with one of a fastener (G2.3: its
+    /// name in the catalogue, `data/fasteners.ron`).
+    Fasten { target: Target, fastener: String },
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -216,6 +219,11 @@ impl Encode for Command {
                 w.f64(*height);
                 w.f64(*started);
             }
+            Self::Fasten { target, fastener } => {
+                w.u8(25);
+                w.put(target);
+                w.put(fastener);
+            }
         }
     }
 }
@@ -274,6 +282,10 @@ impl Decode for Command {
                 tree: r.u64()?,
                 height: r.f64()?,
                 started: r.f64()?,
+            },
+            25 => Self::Fasten {
+                target: r.get()?,
+                fastener: r.get()?,
             },
             _ => return Err(r.error("unknown command")),
         })

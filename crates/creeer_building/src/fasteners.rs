@@ -43,6 +43,8 @@ pub struct Fastener {
     pub strength: Option<f64>,
     pub peak_slip: f64,
     pub failure_slip: f64,
+    /// How long fastening one takes by hand (s).
+    pub seconds: f64,
 }
 
 /// Room temperature (K): the strengths a joint is made with.
@@ -196,6 +198,9 @@ pub fn problems(fasteners: &[Fastener], materials: &MaterialTable) -> Vec<String
                 "fastener {at}: slips {} m at its peak, {} m at failure",
                 f.peak_slip, f.failure_slip
             ));
+        }
+        if !(f.seconds > 0.0 && f.seconds < 600.0) {
+            out.push(format!("fastener {at}: takes {} s", f.seconds));
         }
         if f.strength.is_some_and(|s| !(1e6..5e9).contains(&s)) {
             out.push(format!("fastener {at}: strength {:?} Pa", f.strength));

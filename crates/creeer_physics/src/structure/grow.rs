@@ -135,3 +135,25 @@ impl Structure {
         self.elements.len() - 1
     }
 }
+
+impl Structure {
+    /// Element `e` if it is a member (not a joint, not broken): its two nodes and its thickness
+    /// (twice its section's least extent: what a fastener goes through).
+    pub fn member(&self, e: usize) -> Option<(NodeId, NodeId, f64)> {
+        let el = self.elements.get(e)?;
+        (!el.is_joint() && !el.broken).then(|| {
+            (
+                el.a,
+                el.b,
+                2.0 * el.section.extent[0].min(el.section.extent[1]),
+            )
+        })
+    }
+}
+
+impl Structure {
+    /// How many of its members and joints are broken.
+    pub fn elements_broken(&self) -> usize {
+        self.elements.iter().filter(|e| e.broken).count()
+    }
+}

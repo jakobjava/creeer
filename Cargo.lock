@@ -760,6 +760,7 @@ dependencies = [
 name = "creeer_server"
 version = "0.0.1"
 dependencies = [
+ "creeer_building",
  "creeer_core",
  "creeer_data",
  "creeer_materials",

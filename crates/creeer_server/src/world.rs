@@ -98,6 +98,7 @@ pub struct ServerWorld {
     /// What was done to its trees (G1.7, `trees.rs`) and dug from its ground (G1.5, `digging.rs`).
     trees: trees::Trees,
     digging: digging::Digging,
+    building: building::Building,
     /// A creative (or test) server: its players may drop crates, frames and machines and dig
     /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
     pub creative: bool,
@@ -127,6 +128,7 @@ impl ServerWorld {
         let tools = creeer_sim::tools::Tool::all(&data).unwrap_or_default();
         let items = items::Items::from_data(&data, &terrain);
         let trees = trees::Trees::from_data(&data, &terrain, spawn);
+        let building = building::Building::from_data(&data);
         Self {
             data,
             terrain,
@@ -158,6 +160,7 @@ impl ServerWorld {
             items,
             trees,
             digging: digging::Digging::default(),
+            building,
             creative: false,
         }
     }
@@ -305,43 +308,13 @@ impl ServerWorld {
             character::steer(&mut self.world, i, act, (up, water), &mut self.reactions);
         }
     }
-
-    /// One step.
-    pub fn step(&mut self) {
-        let scope = profile::scope("machines");
-        self.tick_machines();
-        drop(scope);
-        let scope = profile::scope("surroundings");
-        self.surroundings.push(&mut self.world);
-        drop(scope);
-        self.people_before();
-        self.carry_before();
-        self.world.step();
-        // (What the legs pushed with, for the people's injuries: before their struts come off.)
-        let pushes = self.world.strut_pushes();
-        character::release(&mut self.world, &mut self.reactions);
-        self.carry_after();
-        let scope = profile::scope("people");
-        self.people_after(&pushes);
-        drop(scope);
-        let scope = profile::scope("surroundings");
-        self.surroundings.settle(&mut self.world, DT);
-        drop(scope);
-        self.tick += 1;
-        let scope = profile::scope("history");
-        self.remember();
-        drop(scope);
-        self.blows_fall();
-        self.lay_resting();
-        let scope = profile::scope("trees");
-        self.trees_after_step();
-        drop(scope);
-        let _scope = profile::scope("ageing");
-        self.age_after_step();
-    }
 }
 
 mod bucking;
+mod building;
+mod building_parts;
+#[cfg(test)]
+mod building_tests;
 mod carry;
 mod digging;
 mod felling;
@@ -357,6 +330,7 @@ pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
 mod spawn;
+mod step;
 mod survival;
 #[cfg(test)]
 mod survival_tests;

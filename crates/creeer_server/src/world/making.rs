@@ -224,6 +224,14 @@ impl ServerWorld {
             })
     }
 
+    /// A strip in avatar `by`'s pockets (its pocket and place): to lash with (G2.3).
+    pub(super) fn find_pocket_strip(&self, by: EntityId) -> Option<(usize, usize)> {
+        match self.find_strip(by)? {
+            (_, StripAt::Pocket(p, k)) => Some((p, k)),
+            (_, StripAt::Lying(_)) => None,
+        }
+    }
+
     /// What avatar `by` holds, made into `item`: the old put down, the new taken in the hands.
     fn swap_held(&mut self, by: EntityId, item: Item) -> Result<(), String> {
         let held = self.carried(by).ok_or("nothing in hand")?;

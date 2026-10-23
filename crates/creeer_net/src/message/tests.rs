@@ -129,6 +129,7 @@ fn server_messages_read_back() {
         nodes: vec![DVec3::ZERO, DVec3::X, DVec3::Y],
         members: vec![[0, 1], [1, 2]],
         radius: 0.05,
+        radii: vec![0.05, 0.0],
     };
     let matter = Matter {
         mass: 80.0,

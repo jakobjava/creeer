@@ -264,8 +264,11 @@ impl PlanetSession {
                         };
                         #[allow(clippy::cast_possible_truncation)] // fewer than 4 billion
                         let gone = broken.is_some_and(|set| set.contains(&(k as u32)));
-                        out.beams
-                            .push((p + q * *na, p + q * *nb, frame.radius, 0.0, gone));
+                        // Each member at its own radius; fastened joints are not drawn (G2.3).
+                        let radius = frame.radii.get(k).copied().unwrap_or(frame.radius);
+                        if radius > 0.0 {
+                            out.beams.push((p + q * *na, p + q * *nb, radius, 0.0, gone));
+                        }
                     }
                 }
             }

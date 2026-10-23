@@ -31,6 +31,8 @@ pub struct Frame {
     pub members: Vec<[u32; 2]>,
     /// The members' radius as drawn (m).
     pub radius: f64,
+    /// Each member's radius as drawn (m; 0 for a fastened joint, G2.3).
+    pub radii: Vec<f64>,
 }
 
 /// How a player's character looks (G1.3e, ADR-0026 decisions 7 and 8): the player's colour,
@@ -222,6 +224,10 @@ impl Encode for Kind {
                     w.varint(u64::from(*a));
                     w.varint(u64::from(*b));
                 }
+                // Each member's own radius (G2.3), to a tenth of a millimetre: 0 a joint, not drawn.
+                for radius in &frame.radii {
+                    w.varint(tenths(*radius));
+                }
             }
             Self::Tree(t) => {
                 w.u8(6);
@@ -274,10 +280,14 @@ impl Decode for Kind {
                 let members = (0..count)
                     .map(|_| Ok([node(r, nodes.len())?, node(r, nodes.len())?]))
                     .collect::<Result<_, DecodeError>>()?;
+                let radii = (0..count)
+                    .map(|_| Ok(r.varint()? as f64 * 1e-4))
+                    .collect::<Result<_, DecodeError>>()?;
                 Self::Structure(Frame {
                     nodes,
                     members,
                     radius,
+                    radii,
                 })
             }
             6 => Self::Tree(TreePart {
@@ -324,4 +334,10 @@ fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
         predicted,
         colour,
     })
+}
+
+/// A radius in tenths of a millimetre (what a member is drawn to).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // under 400 km, not negative
+fn tenths(radius: f64) -> u64 {
+    (radius.max(0.0) * 1e4).round() as u64
 }

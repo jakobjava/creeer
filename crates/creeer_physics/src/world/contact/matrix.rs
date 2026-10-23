@@ -119,21 +119,82 @@ impl Contacts {
         out
     }
 
-    /// The translation blocks of a structure's nodes.
-    pub(super) fn node_blocks(&self, member: usize) -> Vec<(usize, DMat3)> {
+    /// The blocks of a structure's nodes (member `member` of `nodes` nodes): each contact's
+    /// translation block, and a face's corners' rotation blocks Jᵀ·H·J at their lever arms
+    /// (with `nodes` 0, translations only).
+    ///
+    /// A node's ball meets things at no lever arm worth the name. A face (a hull or a box on a
+    /// member's node, G2.3) presses at corners up to half a member's length away, on a node
+    /// whose own turning inertia is a beam end's: without their turning stiffness the step's
+    /// matrix knew nothing of it, and the first step of a pole on the ground ran off to 10¹⁵⁰ m.
+    pub(super) fn node_blocks(&self, member: usize, nodes: usize) -> Vec<(usize, DMat3)> {
         let mut blocks = Vec::new();
         for c in &self.list {
-            for side in [c.a, c.b] {
+            for (side, arm) in [(c.a, c.arm_a), (c.b, c.arm_b)] {
                 if let Side::Node {
                     member: m, node, ..
                 } = side
                     && m == member
                 {
-                    blocks.push((node, self.stiffness(c)));
+                    // A face's lifted corner pulls (λ < 0, ADR-0005): its friction's stiffness
+                    // μ·λ/slip is negative, and a node's own block made the matrix indefinite
+                    // (rigid bodies take a face's corners together, in their 6×6 blocks). The
+                    // matrix is the step's preconditioner: such a corner gives its normal part
+                    // alone.
+                    let block = if c.lambda < 0.0 {
+                        self.stiffness_parts(c).0
+                    } else {
+                        self.stiffness(c)
+                    };
+                    blocks.push((node, block));
+                    if nodes > 0 && matches!(c.law, Law::Patch { .. }) {
+                        let s = skew(arm);
+                        blocks.push((nodes + node, s.transpose() * block * s));
+                    }
                 }
             }
         }
+        self.patch_node_blocks(member, nodes, &mut blocks);
         blocks
+    }
+
+    /// A face's own stiffness on a structure's node (its corners' are none alone, `own`):
+    /// Σₖₗ K_kl·gₖ·gₗᵀ over its corners on the node, as `rigid_blocks` takes it for rigid
+    /// bodies, its translations' and (with `nodes`) its turns' parts (the cross terms left
+    /// out of this preconditioner).
+    fn patch_node_blocks(&self, member: usize, nodes: usize, out: &mut Vec<(usize, DMat3)>) {
+        let outer = |u: &[f64], v: &[f64]| {
+            DMat3::from_cols_array(&std::array::from_fn(|i| u[i % 3] * v[i / 3]))
+        };
+        for (p, stiffness) in self.patches.iter().zip(&self.pairs) {
+            let Some(stiffness) = stiffness else { continue };
+            for on_a in [true, false] {
+                let levers = self.levers(p.first, on_a);
+                let node_of = |k: usize| {
+                    let c = &self.list[p.first + k];
+                    match if on_a { c.a } else { c.b } {
+                        Side::Node {
+                            member: m, node, ..
+                        } if m == member => Some(node),
+                        _ => None,
+                    }
+                };
+                for (k, row) in stiffness.iter().enumerate() {
+                    let Some(node) = node_of(k) else { continue };
+                    let (mut t, mut r) = (DMat3::ZERO, DMat3::ZERO);
+                    for (l, &kl) in row.iter().enumerate() {
+                        if node_of(l) == Some(node) {
+                            t += outer(&levers[k][..3], &levers[l][..3]) * kl;
+                            r += outer(&levers[k][3..], &levers[l][3..]) * kl;
+                        }
+                    }
+                    out.push((node, t));
+                    if nodes > 0 {
+                        out.push((nodes + node, r));
+                    }
+                }
+            }
+        }
     }
 
     /// The 6×6 blocks of the rigid bodies (by member; zero for members without contacts),

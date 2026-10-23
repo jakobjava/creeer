@@ -34,6 +34,10 @@ impl Server {
             },
             Command::Open(t) => Command::Open(seen(t)),
             Command::Bind(t) => Command::Bind(seen(t)),
+            Command::Fasten { target, fastener } => Command::Fasten {
+                target: seen(target),
+                fastener: fastener.clone(),
+            },
             Command::StrikeLoose { loose, started } => Command::StrikeLoose {
                 loose: *loose,
                 started: self.world_tick(*started),

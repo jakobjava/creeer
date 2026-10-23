@@ -124,6 +124,7 @@ fn frame(s: &Structure, nodes: &[Quantised]) -> Frame {
         nodes: nodes.iter().map(|q| q.value(POSITION_SCALE)).collect(),
         members,
         radius,
+        radii: s.members().iter().map(|m| m.2).collect(),
     }
 }
 

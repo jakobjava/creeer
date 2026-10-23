@@ -17,18 +17,21 @@
 //   entries here.
 // - `peak_slip`, `failure_slip`: how far the joint slips at its peak force and when it fails
 //   (m). Estimates where marked; test data (load–slip curves) refine them.
+// - `seconds`: how long fastening one takes by hand, its tool at hand (estimates: two or three
+//   hammer blows of a 2 s swing a nail, boring and driving a peg a minute, four turns of a
+//   lashing drawn tight half a minute).
 [
     // A 3.1 × 75 mm round wire nail (EN 10230), its head 7 mm. Slips: smooth nails in softwood
     // reach their peak near 8 mm and fail near 15 mm in lateral tests (Foschi 1974's curves;
     // estimates to be refined against EN 1380 test data).
-    (name: "nail_75", kind: Nail(diameter: 0.0031, length: 0.075, head: 0.007), material: "steel_s235", strength: Some(600.0e6), peak_slip: 0.008, failure_slip: 0.015),
+    (name: "nail_75", kind: Nail(diameter: 0.0031, length: 0.075, head: 0.007), material: "steel_s235", strength: Some(600.0e6), peak_slip: 0.008, failure_slip: 0.015, seconds: 4.0),
     // A 4.0 × 100 mm round wire nail, head 9 mm (same sources).
-    (name: "nail_100", kind: Nail(diameter: 0.004, length: 0.100, head: 0.009), material: "steel_s235", strength: Some(600.0e6), peak_slip: 0.010, failure_slip: 0.020),
+    (name: "nail_100", kind: Nail(diameter: 0.004, length: 0.100, head: 0.009), material: "steel_s235", strength: Some(600.0e6), peak_slip: 0.010, failure_slip: 0.020, seconds: 6.0),
     // A 25 mm birch peg, 200 mm long: a trenail, as timber framers drive (Sandberg, Bulleit &
     // Reid 2000 tested 25.4 mm oak pegs: ductile, failing past 10–20 mm of slip; estimates).
-    (name: "peg_25", kind: Peg(diameter: 0.025, length: 0.200), material: "birch_green", strength: None, peak_slip: 0.010, failure_slip: 0.020),
+    (name: "peg_25", kind: Peg(diameter: 0.025, length: 0.200), material: "birch_green", strength: None, peak_slip: 0.010, failure_slip: 0.020, seconds: 60.0),
     // A lashing of fresh spruce bast, a 12 × 2 mm strip, four turns drawn to a quarter of its
     // strength by hand (estimate), wood on wood μ 0.4 (Wood Handbook: 0.3–0.5). Lashed cross
     // joints slip far before they fail (BioResources 2024, lashed bamboo; estimates).
-    (name: "bast_lashing", kind: Lashing(width: 0.012, thickness: 0.002, wraps: 4, pretension: 0.25, friction: 0.4), material: "spruce_bast", strength: None, peak_slip: 0.010, failure_slip: 0.030),
+    (name: "bast_lashing", kind: Lashing(width: 0.012, thickness: 0.002, wraps: 4, pretension: 0.25, friction: 0.4), material: "spruce_bast", strength: None, peak_slip: 0.010, failure_slip: 0.030, seconds: 30.0),
 ]
