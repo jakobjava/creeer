@@ -125,3 +125,43 @@ impl Structure {
         }
     }
 }
+
+impl Structure {
+    /// Element `e`'s two nodes if it is a joint and holds (not broken).
+    pub fn joint_ends(&self, e: usize) -> Option<(NodeId, NodeId)> {
+        let el = self.elements.get(e)?;
+        (el.is_joint() && !el.broken).then_some((el.a, el.b))
+    }
+}
+
+impl Structure {
+    /// Cuts member `e` through at `t` of its length (0 < t < 1; a saw's or an axe's cut, G2.6):
+    /// a node there on each side of the cut, each piece of the member whole on its own side,
+    /// each node with its own piece's mass and turning inertia. Returns the two nodes.
+    ///
+    /// # Panics
+    /// If `t` is not within the member, or the member is a joint.
+    pub fn cut_at(&mut self, e: usize, t: f64) -> (NodeId, NodeId) {
+        let m = self.insert_node(e, t);
+        let second = self.element_count() - 1;
+        let (first, rest) = (self.elements[e], self.elements[second]);
+        let n = self.node_count();
+        self.position.push(self.position[m]);
+        self.orientation.push(self.orientation[m]);
+        self.velocity.push(self.velocity[m]);
+        self.angular_velocity.push(self.angular_velocity[m]);
+        self.load.push(creeer_math::glam::DVec3::ZERO);
+        self.torque.push(creeer_math::glam::DVec3::ZERO);
+        self.drag.push(0.0);
+        self.rest.push(self.rest[m]);
+        self.free_translation.push(creeer_math::glam::DVec3::ONE);
+        self.free_rotation.push(creeer_math::glam::DVec3::ONE);
+        // Each side's node lumps its own piece's half.
+        self.mass[m] = 0.5 * first.mass();
+        self.mass.push(0.5 * rest.mass());
+        self.inertia[m] = first.node_inertia();
+        self.inertia.push(rest.node_inertia());
+        self.elements[second].a = n;
+        (m, n)
+    }
+}

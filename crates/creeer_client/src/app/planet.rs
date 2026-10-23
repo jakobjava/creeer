@@ -83,6 +83,10 @@ impl Running {
                 planet.fasten(&self.camera);
                 return true;
             }
+            KeyCode::KeyU => {
+                planet.unfasten(&self.camera);
+                return true;
+            }
             KeyCode::KeyK => {
                 planet.fastening.next();
                 return true;

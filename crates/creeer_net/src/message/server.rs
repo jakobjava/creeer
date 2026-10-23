@@ -18,6 +18,10 @@ pub struct Plastic {
     pub members: Option<Vec<[u32; 2]>>,
     /// Members broken (in the members as they are now).
     pub broken: Vec<u32>,
+    /// How many nodes it has now (G2.5: pieces that fell apart took theirs with them).
+    pub node_count: u32,
+    /// Its members' radii as drawn, when its members changed (G2.3: 0 a joint).
+    pub radii: Option<Vec<f64>>,
 }
 
 /// From the server to a client.
@@ -188,6 +192,17 @@ impl Encode for ServerMessage {
                 for member in &plastic.broken {
                     w.varint(u64::from(*member));
                 }
+                w.varint(u64::from(plastic.node_count));
+                match &plastic.radii {
+                    None => w.u8(0),
+                    Some(radii) => {
+                        w.u8(1);
+                        w.varint(radii.len() as u64);
+                        for r in radii {
+                            w.varint(crate::entity::tenths(*r));
+                        }
+                    }
+                }
             }
             Self::Machines(list) => {
                 w.u8(7);
@@ -309,12 +324,25 @@ impl Decode for ServerMessage {
                 let broken = (0..r.count(1)?)
                     .map(|_| index(r))
                     .collect::<Result<_, DecodeError>>()?;
+                let node_count =
+                    u32::try_from(r.varint()?).map_err(|_| r.error("too many nodes"))?;
+                let radii = match r.u8()? {
+                    0 => None,
+                    1 => Some(
+                        (0..r.count(1)?)
+                            .map(|_| Ok(r.varint()? as f64 * 1e-4))
+                            .collect::<Result<_, DecodeError>>()?,
+                    ),
+                    _ => return Err(r.error("not a flag")),
+                };
                 Self::Plastic(
                     id,
                     Plastic {
                         nodes,
                         members,
                         broken,
+                        node_count,
+                        radii,
                     },
                 )
             }

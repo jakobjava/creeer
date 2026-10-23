@@ -206,6 +206,9 @@ impl Shapes {
                 .map(|(i, q)| (i as u32, *q))
                 .collect();
             let new_members = (members != told.members).then(|| members.clone());
+            let radii_if_new = new_members
+                .is_some()
+                .then(|| s.members().iter().map(|m| m.2).collect());
             #[allow(clippy::cast_possible_truncation)]
             let newly_broken: Vec<u32> = broken
                 .iter()
@@ -215,7 +218,8 @@ impl Shapes {
                 })
                 .map(|(i, _)| i as u32)
                 .collect();
-            if nodes.is_empty() && new_members.is_none() && newly_broken.is_empty() {
+            let shrunk = now.len() < told.nodes.len();
+            if nodes.is_empty() && new_members.is_none() && newly_broken.is_empty() && !shrunk {
                 continue;
             }
             told.nodes.resize(now.len(), Quantised::default());
@@ -231,6 +235,9 @@ impl Shapes {
                     nodes,
                     members: new_members,
                     broken: newly_broken,
+                    #[allow(clippy::cast_possible_truncation)] // fewer than 4 billion nodes
+                    node_count: now.len() as u32,
+                    radii: radii_if_new,
                 },
             ));
         }

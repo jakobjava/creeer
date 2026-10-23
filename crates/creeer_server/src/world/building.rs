@@ -29,6 +29,8 @@ pub(super) struct Building {
     pub(super) built: BTreeMap<EntityId, Built>,
     /// Fastenings under way, by the player at work.
     pub(super) under_way: BTreeMap<EntityId, UnderWay>,
+    /// Cuts into built members (G2.6): by structure and element, the wood taken out (m³).
+    pub(super) cuts: BTreeMap<(EntityId, usize), f64>,
 }
 
 /// A built structure's record: the items its parts and fasteners were (for salvage, G2.6),
@@ -47,6 +49,8 @@ pub(super) struct UnderWay {
     pub(super) at: DVec3,
     pub(super) fastener: usize,
     pub(super) done: u64,
+    /// Taking a joint apart (G2.6), not fastening.
+    pub(super) undo: bool,
 }
 
 impl Building {
@@ -88,6 +92,7 @@ impl ServerWorld {
                 at: self.in_frame(part, at),
                 fastener: k,
                 done,
+                undo: false,
             },
         );
         self.note(by, format!("fastening: {seconds:.0} s"));
@@ -139,6 +144,14 @@ impl ServerWorld {
             .collect();
         for (by, u) in due {
             self.building.under_way.remove(&by);
+            if u.undo {
+                let note = match self.unfasten_due(by, &u) {
+                    Ok(()) => "taken apart".to_owned(),
+                    Err(why) => format!("not taken apart: {why}"),
+                };
+                self.note(by, note);
+                continue;
+            }
             let outcome = self.fasten_due(by, &u);
             let note = match outcome {
                 Ok(()) => format!("fastened with {}", self.building.fasteners[u.fastener].name),
@@ -167,7 +180,7 @@ impl ServerWorld {
 
 impl ServerWorld {
     /// World point `at` in body `id`'s node frame (or as it is, if there is no such body).
-    fn in_frame(&self, id: EntityId, at: DVec3) -> DVec3 {
+    pub(super) fn in_frame(&self, id: EntityId, at: DVec3) -> DVec3 {
         self.index(id).map_or(at, |i| {
             let s = &self.world.bodies[i].structure;
             s.orientation[0].conjugate() * (at - s.position[0])
@@ -175,13 +188,13 @@ impl ServerWorld {
     }
 
     /// Point `local` of body `id`'s node frame in the world, now.
-    fn in_world(&self, id: EntityId, local: DVec3) -> Option<DVec3> {
+    pub(super) fn in_world(&self, id: EntityId, local: DVec3) -> Option<DVec3> {
         let s = &self.world.bodies[self.index(id)?].structure;
         Some(s.position[0] + s.orientation[0] * local)
     }
 
     /// Whether `at` is within reach of avatar `by`'s hands now.
-    fn within_reach(&self, by: EntityId, at: DVec3) -> Result<(), String> {
+    pub(super) fn within_reach(&self, by: EntityId, at: DVec3) -> Result<(), String> {
         let i = self.index(by).ok_or("no such avatar")?;
         let centre = self.world.bodies[i].structure.position[0];
         let up = character::plumb(&self.world, centre);

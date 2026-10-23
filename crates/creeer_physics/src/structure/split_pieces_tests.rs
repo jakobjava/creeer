@@ -43,3 +43,16 @@ fn a_broken_member_leaves_two_pieces_with_all_it_held() {
     // The fixed root stays with the first piece; the second is free.
     assert!(parts[0].0.is_anchored() && !parts[1].0.is_anchored());
 }
+
+/// A member cut through: two pieces, each member whole on its side, mass kept.
+#[test]
+fn a_member_cut_through_leaves_two_whole_pieces() {
+    let mut s = cantilever(2.0, 4, Section::solid_round(0.05), STEEL_S235);
+    let (mass, members) = (s.total_mass(), s.element_count());
+    let (m, n) = s.cut_at(1, 0.3);
+    assert!((s.total_mass() / mass - 1.0).abs() < 1e-12);
+    assert_eq!(s.element_count(), members + 1);
+    assert_eq!(s.pieces().len(), 2);
+    assert!((s.position[m] - s.position[n]).length() < 1e-15);
+    assert!(s.elements.iter().all(|e| !e.broken), "nothing broken: cut");
+}

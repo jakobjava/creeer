@@ -231,7 +231,9 @@ impl ServerWorld {
         // stops over the depth it cuts, as a dig's does (`dig::peak_force`): taken as its whole
         // impulse stopped in a millisecond, every blow on a felled trunk broke a made tool's
         // binding (G2.3, the user's play).
-        match self.chop_part(s.by, id, (at, way), (energy, s.tool)) {
+        let cut = (self.chop_part(s.by, id, (at, way), (energy, s.tool)))
+            .or_else(|| self.cut_member(s.by, id, at, (energy, s.tool)));
+        match cut {
             Some(cut) => {
                 let contact = super::making::CONTACT;
                 let force = creeer_sim::dig::peak_force(energy, cut, (j, contact));

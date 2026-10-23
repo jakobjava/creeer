@@ -338,6 +338,7 @@ mod survival_tests;
 pub mod trees;
 #[cfg(test)]
 mod trees_tests;
+mod unbuilding;
 use spawn::ground_under;
 pub use spawn::spawn_point;
 mod hands;

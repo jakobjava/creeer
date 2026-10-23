@@ -170,3 +170,56 @@ fn two_nailed_poles_whose_nail_is_pulled_are_two_again() {
     );
     wait(&mut w, ada, 120);
 }
+
+/// Taken apart where it was nailed, after the time it takes: two poles again.
+#[test]
+fn a_nailed_joint_taken_apart_leaves_the_poles_apart() {
+    let (mut w, ada, _, above, at) = crossed(true);
+    fasten(&mut w, ada, above, at, "nail_100").expect("begins");
+    wait(&mut w, ada, 400);
+    let bodies = w.world.bodies.len();
+    let target = Target {
+        body: Some(above),
+        at,
+        seen: w.tick as f64,
+    };
+    w.apply(&Command::Unfasten(target), Some(ada))
+        .expect("begins");
+    wait(&mut w, ada, 590);
+    assert_eq!(w.world.bodies.len(), bodies, "not before its time");
+    wait(&mut w, ada, 20);
+    assert_eq!(w.world.bodies.len(), bodies + 1, "{:?}", w.take_notes());
+}
+
+/// An axe cuts a pole of two nailed poles through, far from the nail: the structure falls
+/// apart (the cut-off end a body of its own).
+#[test]
+fn an_axe_cuts_a_built_pole_through() {
+    let (mut w, ada, _, above, at) = crossed(true);
+    fasten(&mut w, ada, above, at, "nail_100").expect("begins");
+    wait(&mut w, ada, 400);
+    w.apply(&Command::Wield { tool: Some(2) }, Some(ada))
+        .unwrap();
+    let bodies = w.world.bodies.len();
+    for _ in 0..60 {
+        let i = w.index(above).expect("built");
+        let s = &w.world.bodies[i].structure;
+        // A point on the first pole's top, 0.5 m from its middle.
+        let (a, b, thick) = s.member(0).expect("a member");
+        let (pa, pb) = (s.position[a], s.position[b]);
+        let up = pa.normalize();
+        let target = Target {
+            body: Some(above),
+            at: pa + (pb - pa) * 0.5 + up * (0.5 * thick),
+            seen: w.tick as f64,
+        };
+        let started = w.tick as f64;
+        w.apply(&Command::Strike { target, started }, Some(ada))
+            .unwrap();
+        wait(&mut w, ada, 125);
+        if w.world.bodies.len() > bodies {
+            return;
+        }
+    }
+    panic!("not cut through: {:?}", w.take_notes());
+}

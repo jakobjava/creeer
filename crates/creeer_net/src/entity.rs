@@ -338,6 +338,6 @@ fn matter(r: &mut Reader<'_>) -> Result<Matter, DecodeError> {
 
 /// A radius in tenths of a millimetre (what a member is drawn to).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // under 400 km, not negative
-fn tenths(radius: f64) -> u64 {
+pub(crate) fn tenths(radius: f64) -> u64 {
     (radius.max(0.0) * 1e4).round() as u64
 }

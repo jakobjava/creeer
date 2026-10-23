@@ -72,6 +72,8 @@ pub enum Command {
     /// Fastens the two parts touching nearest the target with one of a fastener (G2.3: its
     /// name in the catalogue, `data/fasteners.ron`).
     Fasten { target: Target, fastener: String },
+    /// Takes the fasteners out of the joint nearest the target on a built structure (G2.6).
+    Unfasten(Target),
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -224,6 +226,10 @@ impl Encode for Command {
                 w.put(target);
                 w.put(fastener);
             }
+            Self::Unfasten(target) => {
+                w.u8(26);
+                w.put(target);
+            }
         }
     }
 }
@@ -287,6 +293,7 @@ impl Decode for Command {
                 target: r.get()?,
                 fastener: r.get()?,
             },
+            26 => Self::Unfasten(r.get()?),
             _ => return Err(r.error("unknown command")),
         })
     }

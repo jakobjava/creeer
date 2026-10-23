@@ -61,6 +61,36 @@ impl Connection {
         let at_own = self.predicted.as_ref().and_then(|p| p.tick());
         let mut best: Option<Aimed> = None;
         for (id, pose) in self.poses() {
+            // A built structure (G2.3): its members as drawn, each a capsule round its axis.
+            if let Some(Kind::Structure(frame)) = self.kinds.get(&id)
+                && Some(id) != own
+            {
+                let hit = (frame.members.iter().zip(&frame.radii))
+                    .filter(|(_, r)| **r > 0.0)
+                    .filter_map(|([a, b], r)| {
+                        let node = |k: u32| {
+                            frame
+                                .nodes
+                                .get(k as usize)
+                                .map(|n| pose.position + pose.orientation * *n)
+                        };
+                        capsule_ray(origin, direction, (node(*a)?, node(*b)?), *r)
+                    })
+                    .fold(None, |best: Option<f64>, t| {
+                        Some(best.map_or(t, |b| b.min(t)))
+                    });
+                if let Some(t) = hit.filter(|t| *t <= length)
+                    && best.is_none_or(|b| t < b.distance)
+                {
+                    best = Some(Aimed {
+                        body: Some(id),
+                        point: origin + direction * t,
+                        distance: t,
+                        seen: self.drawn_at,
+                    });
+                }
+                continue;
+            }
             let Some(shape) = (Some(id) != own)
                 .then(|| self.kinds.get(&id))
                 .flatten()
@@ -225,5 +255,40 @@ impl Connection {
             height,
             started,
         }
+    }
+}
+
+/// Where the ray from `origin` along unit `direction` first meets the capsule of radius `r`
+/// round the segment `(a, b)` (m along the ray), if it does: the axis's point nearest the ray,
+/// the ray's point nearest that, less the half chord of the round side there.
+fn capsule_ray(origin: DVec3, direction: DVec3, (a, b): (DVec3, DVec3), r: f64) -> Option<f64> {
+    let axis = b - a;
+    let (l2, da) = (axis.length_squared(), direction.dot(axis));
+    let w = origin - a;
+    let denominator = l2 - da * da;
+    // The axis's parameter nearest the ray (parallel: its nearest end to the origin).
+    let s = if denominator.abs() < 1e-12 * l2 {
+        (w.dot(axis) / l2).clamp(0.0, 1.0)
+    } else {
+        ((w.dot(axis) - da * direction.dot(w)) / denominator).clamp(0.0, 1.0)
+    };
+    let on_axis = a + axis * s;
+    let t = (on_axis - origin).dot(direction);
+    let gap = (origin + direction * t - on_axis).length();
+    (gap <= r && t >= 0.0).then(|| (t - (r * r - gap * gap).sqrt()).max(0.0))
+}
+
+#[cfg(test)]
+mod capsule_tests {
+    use super::capsule_ray;
+    use creeer_math::glam::DVec3;
+
+    #[test]
+    fn a_ray_meets_a_members_round_side_and_misses_beside_it() {
+        let member = (DVec3::new(-1.0, 0.0, 0.0), DVec3::new(1.0, 0.0, 0.0));
+        let hit = capsule_ray(DVec3::new(0.3, 5.0, 0.0), DVec3::NEG_Y, member, 0.1);
+        assert!((hit.expect("meets it") - 4.9).abs() < 1e-12);
+        assert!(capsule_ray(DVec3::new(0.3, 5.0, 0.2), DVec3::NEG_Y, member, 0.1).is_none());
+        assert!(capsule_ray(DVec3::new(0.3, -5.0, 0.0), DVec3::NEG_Y, member, 0.1).is_none());
     }
 }
