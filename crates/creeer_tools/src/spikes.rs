@@ -57,11 +57,12 @@ impl Report {
 }
 
 /// The spike sections, by the names `--only` takes.
-pub const SECTIONS: [&str; 18] = [
+pub const SECTIONS: [&str; 19] = [
     "xpbd",
     "meshing",
     "solvers",
     "structures",
+    "many",
     "world",
     "terrain",
     "orbit",
@@ -99,6 +100,9 @@ pub fn run(metrics_out: Option<&Path>, report_only: bool, only: Option<&str>) ->
     }
     if section("structures") {
         crate::solvers::run_structures(&mut report);
+    }
+    if section("many") {
+        crate::many_bench::run_many(&mut report);
     }
     if section("world") {
         crate::world_bench::run(&mut report);

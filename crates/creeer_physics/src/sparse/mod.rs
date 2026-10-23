@@ -8,15 +8,20 @@
 //!   (depends only on which nodes are connected);
 //! - [`Cholesky::factor`]: the numbers (depends on stiffness, masses and the time step).
 //!
-//! **Deterministic by construction:** plain scalar arithmetic in a fixed order, no SIMD
-//! dispatch and no threads, so the result has the same bits on every platform. General-purpose
-//! libraries pick their summation order from the CPU's vector width, which would break the
-//! cross-platform golden hashes.
+//! **Deterministic by construction:** every value is computed by the same operations in a
+//! fixed order, so the result has the same bits on every platform and thread count. The
+//! block kernels (`kernels.rs`) put a block's three rows in SIMD lanes (AVX2 chosen at run
+//! time, NEON on aarch64), each lane doing the scalar expression's operations; nothing is
+//! summed across lanes and nothing is fused. General-purpose libraries pick their summation
+//! order from the CPU's vector width, which would break the cross-platform golden hashes.
 
 use creeer_math::glam::{DMat3, DVec3};
 use std::fmt;
 
 mod dense3;
+#[cfg(test)]
+mod kernel_tests;
+mod kernels;
 mod numeric;
 mod ordering;
 mod symbolic;
@@ -53,7 +58,10 @@ pub struct Cholesky {
     sym: SymbolicCholesky,
     /// Off-diagonal blocks of L, in the symbolic storage order.
     l: Vec<DMat3>,
-    /// The same blocks in row order, for the substitutions.
+    /// The same blocks in row order, for both substitutions. One copy for both (not a
+    /// transposed one for the backward pass): the backward pass then starts on the blocks
+    /// the forward one read last, still in the cache, and eight bridges solving at once
+    /// spent 5.4 ms a step in their solves against 7.0 with two copies (ADR-0035).
     rows: Vec<DMat3>,
     /// Inverses of the (lower-triangular) diagonal blocks of L.
     diag_inv: Vec<DMat3>,
