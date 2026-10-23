@@ -147,9 +147,11 @@ impl Fastened {
         );
         let slip = (vy * vy + vz * vz).sqrt();
         let e = self.interaction;
-        creeer_math::det::pow(pull / self.withdrawal, e)
-            + creeer_math::det::pow(slip / self.lateral, e)
-            >= 1.0
+        // Beyond the interaction, not on it: a joint slipping at its peak (its ratio 1, to
+        // rounding) holds until something pulls (a post's soil, which never pulls apart, broke
+        // at its full pressure on it).
+        let slipping = (slip / self.lateral).min(1.0);
+        creeer_math::det::pow(pull / self.withdrawal, e) + creeer_math::det::pow(slipping, e) > 1.0
     }
 }
 

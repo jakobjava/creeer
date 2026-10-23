@@ -6,5 +6,8 @@ pub mod assembly;
 mod assembly_tests;
 pub mod fasteners;
 pub mod law;
+pub mod soil;
+#[cfg(test)]
+mod soil_tests;
 #[cfg(test)]
 mod tests;

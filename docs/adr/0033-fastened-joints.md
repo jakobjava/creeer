@@ -128,3 +128,23 @@ The survey is in `docs/g2-plan.md` ("Prior work"); what decided this ADR:
 - **Status:** both are addressed in the structures' contact blocks, and the divergence remains. It is being worked on (`faces_on_structures_nodes_repro`). The tests that need it are ignored until then.
 
 Client: J fastens what the crosshair is on with the chosen fastener; K chooses the next.
+
+## G2.4: posts in the ground (2026-10-23, the law)
+
+`creeer_building::soil` makes a post's buried length a row of soil springs, one per node: each a joint to a fixed node in the ground beside it (`Structure::anchor`). This is the Winkler model of laterally loaded piles (Reese & Van Impe 2011).
+- **Across:** subgrade reaction n_h·z/d (Terzaghi 1955: 2.2 to 7.0 MN/m³ from 30° to 40°) plus 67·c/d (Davisson 1970). It yields at Broms' ultimate pressure 3·K_p·σ'_v·d, plus 9·c·d below 1.5·d, over the node's span.
+- **Along:** skin friction by Fellenius' β-method, β = (1 − sin φ)·tan(⅔φ), plus half the cohesion. Pressed, the foot bears N_q·σ' + N_c·c (Meyerhof; `tip`).
+- **Soil never snaps:** no brittle withdrawal, and a spring flows on at its pressure.
+
+**Found on the way, fixed for every joint:**
+- A joint's slip and its bearing do not share a section. The members' N–M interaction (N/N_p)² + |M/M_p| ≤ 1 had cut a soil spring's hold as soon as the post pressed along it: skin friction is far below the pressure across. Joints have their own interaction, the fasteners'.
+- A joint fails by its slip only. Its bearing crushing and its turning flow on; counted, a turned post's springs broke long before they slipped.
+- The withdrawal interaction breaks *beyond* 1, not on it. A joint at its peak slip (ratio 1 to rounding) broke at the first trace of pull.
+
+**Validation** (`soil_tests.rs`): a 150 mm timber post, 0.8 m in sand (1,800 kg/m³, 30°), loaded across 1.6 m above the ground.
+- The reference is the rigid short post's limit with the soil's pressure on both sides of where it turns (Brinch Hansen 1961), 548 N. Broms' toe force gives 848 N, the cruder bound.
+- At 0.9 of the limit it leans 15 cm and comes to rest; at 1.1 it is pushed over.
+
+**Measured and rejected:** a ground node 5 mm instead of 5 cm from its post node (to shrink any shear the turning post's node might cause in the equivalent member). No change in the collapse load; the cause was the three rules above.
+
+**Not yet:** setting a post in a dug hole and backfilling it, in the game.

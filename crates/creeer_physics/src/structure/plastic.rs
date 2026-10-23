@@ -86,7 +86,14 @@ impl Element {
         let n_p = sy * sec.area;
         let force = self.stiffness.apply(s);
         let axial = force[0];
-        let room = (1.0 - (axial / n_p) * (axial / n_p)).max(0.0);
+        // A joint's slip and its bearing do not share a section: its own interaction is the
+        // fasteners' (`Fastened::withdrawn`). (A soil spring's skin friction is far below its
+        // pressure across: shared, a post's turning lost its springs' hold, ADR-0033.)
+        let room = if self.is_joint() {
+            1.0
+        } else {
+            (1.0 - (axial / n_p) * (axial / n_p)).max(0.0)
+        };
         let (my, mz) = (
             sy * sec.plastic_modulus[0] * room,
             sy * sec.plastic_modulus[1] * room,
@@ -218,8 +225,12 @@ impl Element {
 
     /// Plastic strain represented by plastic increments `p`.
     pub(crate) fn strain_of(&self, p: &[f64; MEASURES]) -> f64 {
+        // A joint fails by its slip (`fastened.rs`): its bearing crushing and turning flow on
+        // (a post's soil, pressed and turned, broke its springs long before they slipped).
+        let from = if self.is_joint() { 2 } else { 0 };
         p.iter()
             .zip(self.per_unit())
+            .skip(from)
             .map(|(p, g)| (p * g).abs())
             .sum()
     }
