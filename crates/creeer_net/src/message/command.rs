@@ -74,6 +74,8 @@ pub enum Command {
     Fasten { target: Target, fastener: String },
     /// Takes the fasteners out of the joint nearest the target on a built structure (G2.6).
     Unfasten(Target),
+    /// Backfills round the part targeted where it stands in a hole: a post (G2.4).
+    SetPost(Target),
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -226,6 +228,10 @@ impl Encode for Command {
                 w.put(target);
                 w.put(fastener);
             }
+            Self::SetPost(target) => {
+                w.u8(27);
+                w.put(target);
+            }
             Self::Unfasten(target) => {
                 w.u8(26);
                 w.put(target);
@@ -294,6 +300,7 @@ impl Decode for Command {
                 fastener: r.get()?,
             },
             26 => Self::Unfasten(r.get()?),
+            27 => Self::SetPost(r.get()?),
             _ => return Err(r.error("unknown command")),
         })
     }

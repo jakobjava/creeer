@@ -179,3 +179,17 @@ All stress and play hashes are unchanged at both lengths: in those scenes, membe
 - Salvage gives no items back yet: a piece that fell apart stays a member body.
 - Cuts under way are not saved.
 - Undoing a joint takes the same 10 s whatever fastens it, and returns no fastener.
+
+## G2.4 in the game: setting a post (2026-10-23)
+
+`Command::SetPost` (protocol 28, the P key; `world/posts.rs`): a part standing with its foot in a dug hole is backfilled after 30 s (an estimate) if the hands still reach it. In survival this takes a scoop of dug ground from the pockets.
+- **Nodes:** every member reaching below the ground gets nodes along its buried length, every 0.1 m at most.
+- **Springs:** each buried node gets its soil spring (`Soil::spring`) for its depth, span and thickness. The deepest node also bears on its foot (`Soil::tip`).
+- **The soil:** the ground's own rock 0.6 m beside the post (a hole dug for a post is air; the backfill is that ground put back): its bulk density, cohesion and friction from `rocks.ron`. Solid rock holds no post this way.
+
+Test: a 100 mm green spruce pole stood 0.28 m down in a hole. Let go, it falls over (more than 30°). Set, it stands within 3° after 3 s.
+
+**Limits:**
+- The hole is still drawn open after backfilling. The fill is the springs, not the terrain: filling the terrain would push the post out of the ground.
+- The ground beside is judged in one direction only.
+- A post's soil springs lean on the post's axis taken as the plumb.

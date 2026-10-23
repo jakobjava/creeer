@@ -112,7 +112,7 @@ impl ServerWorld {
     }
 
     /// Body `id` made a structure where it lies (if it is not one yet), kept under its id.
-    fn make_built(&mut self, id: EntityId) -> Result<(), String> {
+    pub(super) fn make_built(&mut self, id: EntityId) -> Result<(), String> {
         let Some(g) = self.part_geometry(id)? else {
             return Ok(());
         };

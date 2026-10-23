@@ -34,7 +34,7 @@ impl ServerWorld {
             at,
             fastener: 0,
             done,
-            undo: true,
+            work: super::building::Work::Undo,
         };
         self.building.under_way.insert(by, u);
         self.note(by, format!("taking apart: {UNDOING:.0} s"));

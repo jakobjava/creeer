@@ -41,6 +41,17 @@ pub(super) struct Built {
     pub(super) woods: Vec<Option<String>>,
 }
 
+/// Work under way on a part.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Work {
+    /// Fastening it to what it touches (G2.3).
+    Fasten,
+    /// Taking a joint of it apart (G2.6).
+    Undo,
+    /// Backfilling round it where it stands in a hole (G2.4).
+    Post,
+}
+
 /// A fastening under way: the part aimed at, where, with which fastener, done at which tick.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct UnderWay {
@@ -49,8 +60,8 @@ pub(super) struct UnderWay {
     pub(super) at: DVec3,
     pub(super) fastener: usize,
     pub(super) done: u64,
-    /// Taking a joint apart (G2.6), not fastening.
-    pub(super) undo: bool,
+    /// What is being done.
+    pub(super) work: Work,
 }
 
 impl Building {
@@ -92,7 +103,7 @@ impl ServerWorld {
                 at: self.in_frame(part, at),
                 fastener: k,
                 done,
-                undo: false,
+                work: Work::Fasten,
             },
         );
         self.note(by, format!("fastening: {seconds:.0} s"));
@@ -144,11 +155,13 @@ impl ServerWorld {
             .collect();
         for (by, u) in due {
             self.building.under_way.remove(&by);
-            if u.undo {
-                let note = match self.unfasten_due(by, &u) {
-                    Ok(()) => "taken apart".to_owned(),
-                    Err(why) => format!("not taken apart: {why}"),
-                };
+            let undone = match u.work {
+                Work::Fasten => None,
+                Work::Undo => Some(self.unfasten_due(by, &u).map(|()| "taken apart")),
+                Work::Post => Some(self.post_due(by, &u).map(|()| "set in the ground")),
+            };
+            if let Some(outcome) = undone {
+                let note = outcome.map_or_else(|why| format!("not done: {why}"), str::to_owned);
                 self.note(by, note);
                 continue;
             }

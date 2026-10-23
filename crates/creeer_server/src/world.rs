@@ -330,6 +330,7 @@ mod loose_tests;
 pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
+mod posts;
 mod spawn;
 mod step;
 mod survival;
