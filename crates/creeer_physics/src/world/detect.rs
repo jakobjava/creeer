@@ -1,8 +1,11 @@
 //! Finding contacts: sort and sweep over bounding balls, then exact shape pairs.
 
+use super::anchor::SAME_BUMP;
+use super::ground::contacts_kept;
 use super::shape::{Pose, RawContact, Shape, StaticShape};
 use super::{World, narrow};
 use crate::structure::NodeId;
+use creeer_math::glam::DVec3;
 
 /// A contact found at the start of a step: body A, node A, body and node B (or fixed
 /// geometry), and its geometry.
@@ -68,6 +71,7 @@ impl World {
         // Bodies joined do not collide with each other, unless their joint says so; nor do
         // bodies let pass.
         let unjoined = self.unjoined_pairs();
+        let bumps = super::anchor::bumps(&self.anchors);
         let joined = |a: usize, b: usize| unjoined.binary_search(&(a.min(b), a.max(b))).is_ok();
         for (i, a) in items.iter().enumerate() {
             for b in &items[i + 1..] {
@@ -102,7 +106,16 @@ impl World {
                 }
             }
             if let Some(ground) = &self.ground {
-                for raw in super::ground::contacts(&**ground, a.pose, &a.shape, a.margin) {
+                // The bumps it had: kept as the last step left them (`ground_rise::bump`).
+                let had = bumps.get(&(a.body, a.node)).map_or(&[][..], Vec::as_slice);
+                let kept = |p: DVec3| {
+                    let local = a.pose.rotation.conjugate() * (p - a.pose.position);
+                    (had.iter())
+                        .find(|(at, _)| (*at - local).length() < SAME_BUMP)
+                        .map(|&(_, inset)| inset)
+                };
+                let shape = &a.shape;
+                for raw in contacts_kept(&**ground, a.pose, shape, a.margin, &kept) {
                     found.push((a.body, a.node, None, raw));
                 }
             }

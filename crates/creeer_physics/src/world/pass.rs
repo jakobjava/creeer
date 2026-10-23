@@ -329,6 +329,7 @@ impl World {
         };
         contact.radius_a = raw.radius_a;
         contact.radius_b = raw.radius_b;
+        contact.bump = super::ground_rise::is_bump(&raw);
         let kept = anchors.find((a, na), local_a, b);
         if contact.rolls() {
             // A contact with a sphere: the anchor lies under A's surface point, less the

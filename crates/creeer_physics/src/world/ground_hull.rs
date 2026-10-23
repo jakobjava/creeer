@@ -6,8 +6,8 @@
 //! size. (Inside the faces and along the edges apart: a point on an
 //! edge sampled with both its faces would press twice.)
 
-use super::ground::{BOX_SAMPLE_SPACING, BULGE, Ground, estimate, point_contact, project};
-use super::ground_rise::{Pressing, face_gap};
+use super::ground::{BOX_SAMPLE_SPACING, Ground, estimate, project};
+use super::ground_rise::{Kept, Pressing, bump, face_gap};
 use super::ground_sample::{Feet, measure_face};
 use super::hull::Hull;
 use super::hull_narrow::{Placed, domain};
@@ -15,8 +15,15 @@ use super::shape::{Pose, RawContact};
 use super::surface::Feature;
 use creeer_math::glam::DVec3;
 
-/// Contacts of a hull at `pose` with the ground (gap below `margin`).
-pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64) -> Vec<RawContact> {
+/// Contacts of a hull at `pose` with the ground (gap below `margin`; the bumps the last step
+/// had, `kept`).
+pub fn hull_contacts(
+    ground: &dyn Ground,
+    pose: Pose,
+    hull: &Hull,
+    margin: f64,
+    kept: Kept<'_>,
+) -> Vec<RawContact> {
     let placed = Placed::new(hull, pose);
     let gaps: Vec<f64> = placed
         .vertices
@@ -42,20 +49,14 @@ pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64) 
         let n = ((length / BOX_SAMPLE_SPACING).ceil() as u32).clamp(2, 16);
         n
     };
-    let mut bump = |p: DVec3, plane: f64, feature: Feature| {
+    let mut sample = |p: DVec3, plane: f64, feature: Feature| {
         // On a face pressing as a patch, the gap its patch sees there: a bump is what rises
         // beyond.
         let plane = face_gap(&patched, p).unwrap_or(plane);
         let Some(gap) = estimate(ground, p) else {
             return;
         };
-        if gap < margin && gap < plane - BULGE {
-            found.extend(point_contact(ground, p, 0.0, margin).map(|mut c| {
-                c.features = [feature, Feature::Round(BOX_SAMPLE_SPACING)];
-                c.inset = (plane - BULGE).min(0.0);
-                c
-            }));
-        }
+        found.extend(bump(ground, (p, feature), (gap, plane), margin, kept));
     };
     for f in 0..hull.faces().len() {
         let ring = placed.ring(f);
@@ -76,7 +77,7 @@ pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64) 
                 }
                 // The corners' gaps interpolated to p: the gap a flat ground would have.
                 let plane: f64 = (0..4).map(|k| corner_gaps[k] * w[k]).sum();
-                bump(p, plane, Feature::Face);
+                sample(p, plane, Feature::Face);
             }
         }
     }
@@ -86,7 +87,7 @@ pub fn hull_contacts(ground: &dyn Ground, pose: Pose, hull: &Hull, margin: f64) 
         let n = spacing((q - p).length());
         for k in 1..n {
             let t = f64::from(k) / f64::from(n);
-            bump(
+            sample(
                 p + (q - p) * t,
                 gaps[u] + (gaps[v] - gaps[u]) * t,
                 Feature::Edge,

@@ -126,6 +126,9 @@ pub struct Contact {
     /// Whether it touches at the start of the step or will within it (set when the step
     /// begins): its stiffness then counts in the step's matrix.
     touching: bool,
+    /// Whether it is a bump of the ground (`ground_rise::bump`): its offset is kept for the
+    /// next step (`anchor.rs`).
+    pub bump: bool,
     /// Coulomb friction coefficient μ.
     pub friction: f64,
     /// Coefficient of restitution for the impact law after the step.
@@ -179,6 +182,7 @@ impl Contact {
             damping: 0.0,
             dashpot: true,
             touching: false,
+            bump: false,
             friction,
             restitution: 0.0,
             approach: 0.0,

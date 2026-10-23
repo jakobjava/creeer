@@ -33,6 +33,8 @@ pub struct Anchor {
     pub(super) local_a: DVec3,
     pub(super) b: Option<(usize, NodeId)>,
     pub(super) kept: Kept,
+    /// A bump of the ground's inset (`ground_rise::bump`), kept for the next step's detection.
+    pub(super) bump: Option<f64>,
 }
 
 /// The bodies (and nodes) an anchor joins: A's, and B's or none for fixed geometry.
@@ -68,6 +70,23 @@ impl<'a> Index<'a> {
         )
     }
 }
+
+/// The bumps of the ground the last step had, by the body and node they are on: each one's
+/// point (in the node's frame) and inset (`ground_rise::bump`).
+pub fn bumps(anchors: &[Anchor]) -> HashMap<(usize, NodeId), Vec<(DVec3, f64)>> {
+    let mut out: HashMap<(usize, NodeId), Vec<(DVec3, f64)>> = HashMap::new();
+    for x in anchors.iter().filter(|x| x.b.is_none()) {
+        if let Some(inset) = x.bump {
+            out.entry(x.a).or_default().push((x.local_a, inset));
+        }
+    }
+    out
+}
+
+/// A bump's point found again within this distance (m, in its node's frame) is the same
+/// bump: its points lie where a face's or an edge's grid puts them, centimetres apart, and
+/// come back to within rounding.
+pub const SAME_BUMP: f64 = 1.0e-4;
 
 /// The anchor among `candidates` (of the contact's pair) nearest its point, if one is near.
 fn find<'a>(candidates: impl Iterator<Item = &'a Anchor>, local_a: DVec3) -> Option<Kept> {
@@ -130,6 +149,7 @@ pub fn after_step(bodies: &[&mut Body], group: &[usize], contacts: &Contacts) ->
                 local_a: local,
                 b,
                 kept,
+                bump: c.bump.then_some(c.offset),
             })
         })
         .collect()

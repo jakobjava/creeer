@@ -1,6 +1,9 @@
 //! Saves: a world on a planet as a file, and the files of earlier versions read as they are
 //! now (migration).
 //!
+//! **Version 13** (G2.0): as version 12, the physics world's friction anchors keeping the
+//! inset of each bump of the ground they belong to (`WRLD`; ADR-0024's "G2.0: rest").
+//!
 //! **Version 12** (G1.5): as version 11, with an optional section `PITS`: what was dug and not
 //! yet cut from the terrain (`save/pits.rs`).
 //!
@@ -73,7 +76,7 @@ pub use people::SavedPerson;
 pub use trees::SavedTrees;
 
 /// The version this game writes.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 /// The signature of a save.
 const MAGIC: &[u8; 8] = b"CREEERSV";
 /// The signature of a version 1 save (an edit log).

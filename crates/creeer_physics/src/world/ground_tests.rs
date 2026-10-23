@@ -92,3 +92,35 @@ fn a_ball_rolls_over_bumps_with_its_true_normal_force() {
         "it rolled"
     );
 }
+
+/// A bump of the ground found again holds what it held (G2.0, `ground_rise::bump`): pressed
+/// 20 µm in where its face's patch now sees the ground within 1 mm (found afresh it is not
+/// there: the felled trunk sank into it unopposed), it keeps its inset; not pressing, it
+/// follows the patch no deeper than touching; lifted over 1 mm off, it goes.
+#[test]
+fn a_bump_found_again_holds_what_it_held() {
+    use super::ground_rise::{bump, none_kept};
+    use super::surface::Feature;
+    let flat = FieldGround(|p: DVec3| p.y);
+    let at = |height: f64| (DVec3::new(0.3, height, -0.2), Feature::Face);
+    let margin = 0.005;
+    // 20 µm in, the patch seeing the ground 0.5 mm under its face there (within 1 mm).
+    let (deep, plane) = (-2.0e-5, 0.5e-3);
+    let afresh = bump(&flat, at(deep), (deep, plane), margin, &none_kept);
+    assert!(afresh.is_none(), "not a bump afresh: {afresh:?}");
+    let kept = bump(&flat, at(deep), (deep, plane), margin, &|_| Some(0.0)).expect("kept");
+    assert!(
+        (kept.gap() - deep).abs() < 1e-12,
+        "as deep as it was: {}",
+        kept.gap()
+    );
+    // Not pressing (its last inset 0.3 mm in, now 0.1 mm in): touching, not pressed in.
+    let free = bump(&flat, at(-1.0e-4), (-1.0e-4, 0.01), margin, &|_| {
+        Some(-3.0e-4)
+    });
+    let free = free.expect("kept while within a millimetre");
+    assert!(free.gap().abs() < 1e-12, "touching: {}", free.gap());
+    // 2 mm off: gone.
+    let off = bump(&flat, at(2.0e-3), (2.0e-3, 0.01), margin, &|_| Some(0.0));
+    assert!(off.is_none(), "{off:?}");
+}

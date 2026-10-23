@@ -13,9 +13,10 @@
 //!   what its patches see: a bump, a point contact of that size. It presses
 //!   with what it rises beyond the face that already presses there: it starts to touch where
 //!   it first counts. (Counted only from 1 mm above the plane, under a face resting on the
-//!   ground it began 1 mm deep, and a rock on a hump was kicked every few steps, F5.)
+//!   ground it began 1 mm deep, and a rock on a hump was kicked every few steps, F5.) A bump
+//!   found again keeps the inset it had while it presses (`ground_rise::bump`, G2.0).
 
-use super::ground_rise::{Pressing, face_gap};
+use super::ground_rise::{Kept, Pressing, bump, face_gap, none_kept};
 use super::ground_sample::{Feet, measure_face};
 use super::shape::{Domain, Follows, Pose, RawContact, Shape};
 use super::surface::Feature;
@@ -150,6 +151,18 @@ pub(super) fn point_contact(
 
 /// Contacts of a shape at `pose` with the ground (gap below `margin`).
 pub fn contacts(ground: &dyn Ground, pose: Pose, shape: &Shape, margin: f64) -> Vec<RawContact> {
+    contacts_kept(ground, pose, shape, margin, &none_kept)
+}
+
+/// Contacts of a shape at `pose` with the ground (gap below `margin`), keeping the bumps the
+/// last step had (`kept`, `ground_rise::bump`).
+pub(super) fn contacts_kept(
+    ground: &dyn Ground,
+    pose: Pose,
+    shape: &Shape,
+    margin: f64,
+    kept: Kept<'_>,
+) -> Vec<RawContact> {
     // Cheap rejection from the centre's distance. The first-order distance can
     // underestimate the true one on steep slopes, never by more than half.
     let Some(center) = estimate(ground, pose.position) else {
@@ -162,12 +175,18 @@ pub fn contacts(ground: &dyn Ground, pose: Pose, shape: &Shape, margin: f64) -> 
         Shape::Sphere { radius } => point_contact(ground, pose.position, *radius, margin)
             .into_iter()
             .collect(),
-        Shape::Box { half } => box_contacts(ground, pose, *half, margin),
-        Shape::Hull(hull) => super::ground_hull::hull_contacts(ground, pose, hull, margin),
+        Shape::Box { half } => box_contacts(ground, pose, *half, margin, kept),
+        Shape::Hull(hull) => super::ground_hull::hull_contacts(ground, pose, hull, margin, kept),
     }
 }
 
-fn box_contacts(ground: &dyn Ground, pose: Pose, half: DVec3, margin: f64) -> Vec<RawContact> {
+fn box_contacts(
+    ground: &dyn Ground,
+    pose: Pose,
+    half: DVec3,
+    margin: f64,
+    kept: Kept<'_>,
+) -> Vec<RawContact> {
     let r = DMat3::from_quat(pose.rotation);
     let at = |s: DVec3| pose.position + r * (half * s);
     // Gaps of the eight corners (s = ±1 per axis), corner c has bits x, y, z.
@@ -234,14 +253,7 @@ fn box_contacts(ground: &dyn Ground, pose: Pose, half: DVec3, margin: f64) -> Ve
                 let Some(gap) = estimate(ground, p) else {
                     continue;
                 };
-                if gap < margin && gap < plane - BULGE {
-                    let bump = Feature::Round(BOX_SAMPLE_SPACING);
-                    found.extend(point_contact(ground, p, 0.0, margin).map(|mut c| {
-                        c.features = [Feature::Face, bump];
-                        c.inset = (plane - BULGE).min(0.0);
-                        c
-                    }));
-                }
+                found.extend(bump(ground, (p, Feature::Face), (gap, plane), margin, kept));
             }
         }
     }
