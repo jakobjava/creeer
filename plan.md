@@ -343,7 +343,7 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
 
 #### G2: Building system
 
-Re-planned 2026-10-23, before G2, with the user (principle 13): building is by hand, as on a real site. Parts are carried, put in place and fastened; nothing snaps, previews or undoes. Blueprints and precise placement move to the tools that make them possible (G3, G6, G7/G10).
+Detailed plan: `docs/g2-plan.md`. Re-planned 2026-10-23, before G2, with the user (principle 13): building is by hand, as on a real site. Parts are carried, put in place and fastened; nothing snaps, previews or undoes. Blueprints and precise placement move to the tools that make them possible (G3, G6, G7/G10).
 
 - **G2.1 Parts and fasteners** (`creeer_building`), as one generic attribute system:
   - parts are the discrete items the player has (G1.5), with the material and dimensions they were made with: logs, sawn beams and planks, rods and bars, panels and plates. A part's mass, inertia and section properties are computed from its shape and material (lifts *the sandbox's built-in S235*), tested against section tables. Rolled sections (I, H, channels, angles, tubes) are the same system's data once G3's rolling mill makes them;
