@@ -69,7 +69,8 @@ pub(super) fn step(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
         contacts.set_left(None);
     }
     let deformable = bodies.iter().any(|b| b.structure.element_count() > 0);
-    if deformable && (impact || bodies.iter().any(|b| b.crushing)) {
+    let striking = impact && contacts.list.iter().any(|c| can_yield(bodies, c));
+    if deformable && (striking || bodies.iter().any(|b| b.crushing)) {
         crush(bodies, contacts, dt);
     } else {
         match joint_substeps(bodies, contacts, dt) {
@@ -88,6 +89,30 @@ pub(super) fn step(bodies: &mut [&mut Body], contacts: &mut Contacts, dt: f64) {
                 .push((node, super::shape::Shape::Sphere { radius }));
         }
     }
+}
+
+/// Of the energy that would yield a struck node's weakest member, the share an impact must
+/// bring for its step to be resolved in impact substeps: a hundredth (a crash brings many
+/// times it; a member landing on its next face, a millionth: a 12-sided pole rolling onto one
+/// brings about 1 mJ to members storing 34 J at yield, and its 0.5 ms substeps made building
+/// with poles ten times slower than with balls, G2.3).
+const YIELDING_SHARE: f64 = 0.01;
+
+/// Whether contact `c` is an impact that could make a structure's members at it flow: its
+/// approach energy ½·m·v² at least [`YIELDING_SHARE`] of the least yielding energy at its
+/// nodes (`Structure::yield_energy`). Rigid bodies need no substeps: the impact law is exact.
+fn can_yield(bodies: &[&mut Body], c: &super::contact::Contact) -> bool {
+    if !impact::is_impact(c) {
+        return false;
+    }
+    let energy = 0.5 * c.mass * c.approach * c.approach;
+    [c.a, c.b].into_iter().any(|side| match side {
+        Side::Node { member, node, .. } => {
+            let s = &bodies[member].structure;
+            s.element_count() > 0 && energy >= YIELDING_SHARE * s.yield_energy(node)
+        }
+        Side::Fixed(_) => false,
+    })
 }
 
 /// One step with the solvers' current time step. `resolved`: the step is short enough to

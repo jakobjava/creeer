@@ -82,3 +82,22 @@ impl Structure {
         (piece, kept)
     }
 }
+
+impl Structure {
+    /// The least elastic energy that yields a member or joint at node `node` (J): over its
+    /// members there, each measure's capacity c and stiffness k at c²/(2k) (none: infinite).
+    /// An impact bringing far less cannot make anything there flow (`stepping.rs`).
+    pub fn yield_energy(&self, node: NodeId) -> f64 {
+        (self.elements.iter())
+            .filter(|e| !e.broken && (e.a == node || e.b == node))
+            .flat_map(|e| {
+                let caps = e.capacities(&[0.0; super::element::MEASURES], 1.0);
+                (0..super::element::MEASURES).map(move |m| {
+                    let k = e.stiffness.entry(m, m);
+                    let c = caps[m].capacity;
+                    if k > 0.0 { c * c / (2.0 * k) } else { f64::INFINITY }
+                })
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+}

@@ -386,3 +386,19 @@ The same hashes, so the same work: the spread is the machine's (the crowd's wors
 ### Limits
 - **Wood's contact modulus is the one along the grain** (E_L, ν = ½); across it wood is 12–25 times softer. Below the step's resolvable stiffness this rarely matters: a pole's faces press at the cap's 0.8 MN/m, where its punch would give 10⁹ N/m. It does matter for a face pressed near a corner and for Hertz's edges. An anisotropic indentation modulus needs the transverse constants in `Material` (`docs/future-improvements.md`).
 - **Members as prisms cost far more than as balls** (open). The bench above (59,752 iterations, 1.2–2.9 s for 300 steps, worst step 54–109 ms) took 4,320 iterations and 23 ms with balls on the nodes. A tapered 12-sided pole rolls from face to face, each landing an impact, and impacts step structures in 0.5 ms substeps (`stepping.rs`): 3,536 impact substeps against 544, each with several faces.
+
+### Impact substeps only where an impact could make members flow (G2.3, 2026-10-23)
+
+Any impact (approach > 5 cm/s) on a group with a structure sent it into 0.5 ms impact substeps. A 12-sided pole rolling onto its next face is such an impact, and building with prism members ran ten times slower than with balls on the nodes.
+
+Impact substeps exist so a crash does its plastic work. Now a step is resolved in them only when an impact's approach energy ½·m·v² reaches a hundredth of the least energy that yields a member at the struck node, c²/(2k) over its measures (`Structure::yield_energy`). A pole landing on its face brings about 1 mJ to members that store 34 J at yield. A crash brings many times the threshold.
+
+| Measure | Before | After |
+|---|---|---|
+| Face bench (6 tapered poles and 2 boxed beams, 300 steps): total | 1.2–2.9 s | 242 ms |
+| Face bench: Newton iterations | 59,752 | 7,541 |
+| Face bench: impact substeps | 3,536 | 0 |
+| Face bench: worst step | 54–109 ms | 24.6 ms (one tick; typical 1–2 ms) |
+| All 8 bodies asleep | — | by 2 s |
+
+Every crush and impact test passes unchanged, and every stress and play hash is unchanged (no existing scene's impact was below the threshold).
