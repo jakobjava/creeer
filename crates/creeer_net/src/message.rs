@@ -375,6 +375,8 @@ pub fn from_bytes<T: Decode>(bytes: &[u8]) -> Result<T, DecodeError> {
 
 mod inputs;
 mod inventory;
+mod laid;
+pub use laid::Laid;
 pub(crate) mod profile;
 mod server;
 pub use profile::ProfileReport;

@@ -325,6 +325,7 @@ impl ServerWorld {
         self.remember();
         drop(scope);
         self.blows_fall();
+        self.lay_resting();
         let _scope = profile::scope("ageing");
         self.age_after_step();
     }
@@ -335,6 +336,7 @@ mod item_bodies;
 mod items;
 #[cfg(test)]
 mod items_tests;
+mod laid;
 mod loose;
 #[cfg(test)]
 mod loose_tests;

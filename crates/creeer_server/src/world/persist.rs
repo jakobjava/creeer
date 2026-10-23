@@ -59,6 +59,14 @@ impl ServerWorld {
             .collect();
         this.items.taken_set = save.items.taken.iter().copied().collect();
         this.items.taken = save.items.taken;
+        this.items.next_laid = (save.items.laid.iter())
+            .map(|l| (l.0 & !(1 << 63)) + 1)
+            .max()
+            .unwrap_or(0);
+        for (id, item, at, turn) in save.items.laid {
+            this.items.laid.insert(id, (item, at, turn));
+            this.items.laid_log.push(id);
+        }
         this.next_machine = save.machines.iter().map(|m| m.id + 1).max().unwrap_or(1);
         this.machines = (save.machines.iter())
             .map(|m| super::machines::Placed::restored(m, Powerhouse::new()))
@@ -114,6 +122,9 @@ impl ServerWorld {
                     .map(|(id, p)| (id.0, p.clone()))
                     .collect(),
                 taken: self.items.taken.clone(),
+                laid: (self.items.laid.iter())
+                    .map(|(id, (item, at, turn))| (*id, item.clone(), *at, *turn))
+                    .collect(),
             },
         }
     }

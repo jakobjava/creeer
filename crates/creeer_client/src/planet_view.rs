@@ -177,9 +177,10 @@ impl PlanetView {
         // What lies loose, as boxes in its colours (G1.6c).
         if let Some(loose) = &self.loose {
             let rocks = &self.terrain.planet().geology.rocks;
-            for (c, q, half, colour) in loose.boxes(&self.session.connection.taken, rocks) {
-                out.boxes.push((c, q, half));
-                out.box_look.push(Look::Colour(colour));
+            let c = &self.session.connection;
+            for t in loose.things(&c.taken, &c.laid, rocks) {
+                out.boxes.push((t.centre, t.turn, t.half));
+                out.box_look.push(Look::Colour(t.colour));
                 out.box_age.push((0.0, 0.0));
             }
         }

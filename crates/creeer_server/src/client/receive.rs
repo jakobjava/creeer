@@ -48,7 +48,17 @@ impl Connection {
             ServerMessage::Machines(list) => self.machines = list,
             ServerMessage::Profile(report) => self.profile = Some(report),
             ServerMessage::Inventory(inventory) => self.inventory = inventory,
-            ServerMessage::Taken(ids) => self.taken.extend(ids),
+            ServerMessage::Taken(ids) => {
+                for id in &ids {
+                    self.laid.remove(id);
+                }
+                self.taken.extend(ids);
+            }
+            ServerMessage::Laid(laid) => {
+                for l in laid {
+                    self.laid.insert(l.id, l);
+                }
+            }
             ServerMessage::Refusal(why) => self.refused = Some((why, std::time::Instant::now())),
             ServerMessage::Own {
                 gas,

@@ -120,6 +120,11 @@ impl ServerWorld {
         });
     }
 
+    /// Whether a swing on its way is aimed at body `id` (it must stay a body for the blow).
+    pub(super) fn aimed_at(&self, id: EntityId) -> bool {
+        (self.swings.iter()).any(|s| matches!(s.aim, Aim::Body(a, ..) if a == id))
+    }
+
     /// The swings started since last asked: who, and the world's tick.
     pub fn take_swings_started(&mut self) -> Vec<(EntityId, u64)> {
         std::mem::take(&mut self.started)

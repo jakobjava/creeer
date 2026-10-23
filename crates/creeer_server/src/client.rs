@@ -87,6 +87,8 @@ pub struct Connection {
     /// picked up from the ground (G1.6c: not drawn).
     pub inventory: creeer_net::message::Inventory,
     pub taken: BTreeSet<u64>,
+    /// The items laid at rest on the ground, by id (G1.6: drawn, not bodies).
+    pub laid: BTreeMap<u64, creeer_net::message::Laid>,
     /// Why the last command was refused, and when it was told (G1.6).
     pub refused: Option<(String, std::time::Instant)>,
     /// The terrain's edits, as the server has them.
@@ -136,6 +138,7 @@ impl Connection {
             fallen: false,
             inventory: creeer_net::message::Inventory::default(),
             taken: BTreeSet::new(),
+            laid: BTreeMap::new(),
             refused: None,
             edits: Edits::default(),
             edits_generation: 0,

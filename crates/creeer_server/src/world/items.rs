@@ -33,6 +33,11 @@ pub struct Items {
     pub(super) rocks: creeer_terrain::geology::rocks::RockTable,
     pub(super) taken: Vec<u64>,
     pub(super) taken_set: BTreeSet<u64>,
+    /// Items lying at rest on the ground as scenery (G1.6, `laid.rs`), by id: each where it
+    /// lies and how it is turned; the ids in the order laid, and the next id's count.
+    pub(super) laid: BTreeMap<u64, (Item, DVec3, creeer_math::glam::DQuat)>,
+    pub(super) laid_log: Vec<u64>,
+    pub(super) next_laid: u64,
 }
 
 impl Items {

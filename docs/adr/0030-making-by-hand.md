@@ -57,3 +57,18 @@ A blow's breaking is a few arithmetic operations and two bodies replaced. Nothin
 - Bindings do not loosen gradually: they hold or come apart.
 
 Each is in `docs/future-improvements.md`.
+
+## Amended after the user's play (2026-10-23): small things at rest are scenery
+
+The user's play: knapping made the game "incredibly laggy" and it froze after another strike. Measured: flakes of 1–3 cm as bodies settling on the terrain took 50–190 Newton iterations a tick each (the small-body contacts P1, G1.8, is to rework), 24–52 ms ticks with three flakes about.
+
+**Decided:** an item that lies still is no body but laid where it lies, as the scatter's stones are (`world/laid.rs`): no cost per tick, told to clients (`ServerMessage::Laid`, protocol 19), drawn and aimed at with the scatter's, picked up and struck alike (a struck one is a body for its blow's second). What a blow breaks off, and its core, are laid at once; a small item body (its longest edge at most 0.3 m) that falls asleep, held by nobody and aimed at by no swing, is laid. Saved with the items (`SavedItems.laid`). Larger things stay bodies, to be walked into.
+
+Measured after: three stones knapped in turn, the worst tick 2.1–4.7 ms and at most 43 Newton iterations (gated at 50 in `loose_tests.rs`); only the player and the hammerstone are bodies once each blow has fallen.
+
+| What | Measured | Why not |
+|---|---|---|
+| Flakes and cores as bodies | 50–190 Newton iterations a tick each settling; 52 ms ticks | Nothing at rest needs simulating; P1's contact work will make small bodies cheaper, but laying them costs nothing at all |
+| Laying a body asleep while a swing was aimed at it | The blow fell on nothing: the core lay unbroken | A body a swing is on its way to stays one until the blow |
+
+Found in the same play: carried sticks spun up (the hands pulled at the grip, off a stick's axis; now at the centre of mass, the turn held through the full inertia: ADR-0027 amended), and stones lying on the ground could not be struck (scenery is no body: `Command::StrikeLoose` makes one where it lies).

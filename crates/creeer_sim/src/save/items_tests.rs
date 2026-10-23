@@ -38,6 +38,21 @@ fn items_scene() -> Save {
         bodies: vec![(first, Item::Piece(crate_, held))],
         pockets: vec![(second, vec![pocket])],
         taken: vec![(1 << 40) | 7, 3],
+        laid: vec![(
+            (1 << 63) | 2,
+            Item::Piece(
+                Piece::solid(
+                    "chert",
+                    2580.0,
+                    Form::Lump {
+                        size: DVec3::new(0.04, 0.03, 0.008),
+                    },
+                ),
+                Vec::new(),
+            ),
+            DVec3::new(1.0, 2.0, 3.0),
+            creeer_math::glam::DQuat::from_rotation_z(0.3),
+        )],
     };
     save
 }

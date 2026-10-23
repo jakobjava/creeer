@@ -239,3 +239,7 @@ The probe now draws at 60 and at 144 a second, a jump from standing, and gates e
 ## Amended in G1.6c (2026-10-22): the hands move the arms too
 
 Picking up a 14 g stone (ADR-0029), the hands planned its lift to elbow height in two ticks (the strength over so small a mass) and tore it from their hold. The lift's acceleration is now half of what the hands' strength leaves over the load's weight, shared by the load and both arms (`carry::spare`; the arms 4.94 % of a man's mass each, de Leva 1996): a pebble rises in about 0.8 s, a 15 kg box a little slower than before. A load whose lift time is zero (already where the hands hold it) no longer divides 0 by 0 (`hands.rs`, found in G1.6a).
+
+## Amended after the user's play of G1.6 (2026-10-23): pulled at the centre of mass
+
+Carried sticks spun up to 33 rad/s as the player walked: the hands pulled the load at the point they gripped, a stick's grip lies off its axis, and it barely resists turning about that axis, so the pull's lever drove it. The hands now pull at the load's centre of mass, towards where it is when the grip is where they mean it and the load turned as they keep it, and hold its turn as an angular spring of one natural frequency on every axis through its full inertia (the torque its inertia tensor times the angular acceleration asked), softened to ring at most half a step: stable however unequal its moments. Tested: a picked-up branch carried walking stays under 1 rad/s (33 before). This replaces G1.6d's Gershgorin bound.

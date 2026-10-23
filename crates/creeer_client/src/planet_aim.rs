@@ -40,8 +40,11 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
     let length = (camera.position - hands).length() + reach::REACH + NAMED;
     let meant = connection.aim(camera.position, camera.forward(), length)?;
     // A stone or branch on the ground, if the ray meets one first (G1.6c).
-    let loose = (view.loose.as_ref())
-        .and_then(|l| l.aim(&connection.taken, camera.position, camera.forward(), length))
+    let rocks = &view.terrain.planet().geology.rocks;
+    let things = (view.loose.as_ref())
+        .map(|l| l.things(&connection.taken, &connection.laid, rocks))
+        .unwrap_or_default();
+    let loose = crate::loose_view::aim(&things, camera.position, camera.forward(), length)
         .filter(|(_, t)| *t < meant.distance);
     if let Some((l, t)) = loose {
         let point = camera.position + camera.forward() * t;
@@ -53,7 +56,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
                 distance: t,
                 seen: meant.seen,
             },
-            what: crate::loose_view::name(&l),
+            what: l.name(),
             from_hands,
             in_reach: from_hands <= reach::REACH,
             loose: Some(l.id),

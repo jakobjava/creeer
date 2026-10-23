@@ -4,6 +4,7 @@
 //! a strip from a pocket. Each is checked and done whole.
 
 use super::*;
+use creeer_math::glam::DQuat;
 use creeer_net::message::Target;
 use creeer_sim::items::{Form, Item, Piece};
 use creeer_sim::making::{self, Broken};
@@ -29,10 +30,12 @@ impl ServerWorld {
         let at = self.hands_point(by);
         self.let_go(by);
         if let Some(Item::Made(made)) = self.remove_item(held) {
+            let up = character::plumb(&self.world, at);
+            let (side, _) = creeer_terrain::geology::deposits::tangent_frame(up);
             for (k, piece) in making::apart(*made).into_iter().enumerate() {
                 #[allow(clippy::cast_precision_loss)] // a few
-                let up = at.normalize() * (0.1 * k as f64);
-                self.add_item(piece, at + up, true);
+                let along = side * (0.15 * k as f64);
+                self.lay(piece, at + along, DQuat::from_rotation_arc(DVec3::Z, up));
             }
         }
     }
@@ -60,12 +63,21 @@ impl ServerWorld {
         let Some(i) = self.index(id) else { return };
         let s = &self.world.bodies[i].structure;
         let (at, turn) = (s.position[0], s.orientation[0]);
+        // The core and what broke off both lie still: laid, not bodies (`laid.rs`).
         self.remove_item(id);
-        let new = self.add_item(Item::Piece(core, Vec::new()), at, false);
-        if let Some(k) = self.index(new) {
-            let b = &mut self.world.bodies[k];
-            b.structure.orientation[0] = turn;
-            b.solver.reset_history(&b.structure);
+        let core = Item::Piece(core, Vec::new());
+        if core
+            .extents()
+            .is_some_and(|e| e[0] <= super::laid::LAID_LARGEST)
+        {
+            self.lay(core, at, turn);
+        } else {
+            let new = self.add_item(core, at, false);
+            if let Some(k) = self.index(new) {
+                let b = &mut self.world.bodies[k];
+                b.structure.orientation[0] = turn;
+                b.solver.reset_history(&b.structure);
+            }
         }
         let off = match broken {
             Broken::Flake(p) => Item::Piece(p, Vec::new()),
@@ -73,7 +85,11 @@ impl ServerWorld {
         };
         let up = character::plumb(&self.world, at);
         let (side, _) = creeer_terrain::geology::deposits::tangent_frame(up);
-        self.add_item(off, at + side * 0.12 + up * 0.05, true);
+        self.lay(
+            off,
+            at + side * 0.12,
+            DQuat::from_rotation_arc(DVec3::Z, up),
+        );
     }
 
     /// Avatar `by` strips bark from the branch in its hands: the strip into the first pocket it
@@ -96,7 +112,8 @@ impl ServerWorld {
                 .change_pockets(by, |p| p[k].put(strip))
                 .map_err(|refused| refused.1),
             None => {
-                self.add_item(strip, at + at.normalize() * 0.2, true);
+                let up = character::plumb(&self.world, at);
+                self.lay(strip, at, DQuat::from_rotation_arc(DVec3::Z, up));
                 Ok(())
             }
         }

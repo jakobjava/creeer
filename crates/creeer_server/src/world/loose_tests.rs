@@ -250,10 +250,7 @@ fn a_stone_lying_struck_with_a_stone_in_hand_breaks_where_it_lies() {
         unreachable!()
     };
     let breaks = w.items.rocks.rocks[usize::from(rock)].breaks.is_some();
-    assert!(
-        !breaks || w.items.bodies.len() >= before + 2,
-        "{size:?} broke nothing"
-    );
+    assert!(!breaks || w.items.laid.len() >= 2, "{size:?} broke nothing");
     // Once struck it is taken: not struck again as lying (the swing's cycle over first).
     for _ in 0..60 {
         w.steer(ada, &AvatarInput::default());
@@ -269,4 +266,66 @@ fn a_stone_lying_struck_with_a_stone_in_hand_breaks_where_it_lies() {
         Some(ada),
     );
     assert!(again.unwrap_err().contains("taken"));
+}
+
+#[test]
+fn knapping_stones_lying_about_costs_the_world_next_to_nothing() {
+    // (Flakes as bodies settling on the terrain took 50–190 Newton iterations a tick each, and a
+    // few of them froze the game: what breaks off, and what lies still, is laid instead.)
+    let (mut w, ada) = ada();
+    let first = about(
+        &w,
+        ada,
+        40.0,
+        |l| matches!(l.what, Lying::Stone { size, .. } if size.x > 0.05),
+    );
+    walk_to(&mut w, ada, first[0].centre);
+    let hammer = creeer_sim::items::Item::Piece(
+        creeer_sim::items::Piece::solid(
+            "basalt",
+            2900.0,
+            creeer_sim::items::Form::Lump {
+                size: DVec3::new(0.10, 0.08, 0.06),
+            },
+        ),
+        Vec::new(),
+    );
+    w.put_in_hands(ada, hammer).unwrap();
+    let work = |w: &ServerWorld| -> u64 {
+        w.world
+            .bodies
+            .iter()
+            .map(|b| b.solver.iterations_total)
+            .sum()
+    };
+    let mut most = 0;
+    for _ in 0..3 {
+        let taken = w.taken_since(0).to_vec();
+        let near = about(&w, ada, 3.0, |l| {
+            !taken.contains(&l.id) && matches!(l.what, Lying::Stone { size, .. } if size.x > 0.04)
+        });
+        #[allow(clippy::cast_precision_loss)]
+        let now = w.tick as f64;
+        w.apply(
+            &Command::StrikeLoose {
+                loose: near[0].id,
+                started: now,
+            },
+            Some(ada),
+        )
+        .unwrap();
+        for _ in 0..180 {
+            let before = work(&w);
+            w.steer(ada, &AvatarInput::default());
+            w.step();
+            most = most.max(work(&w).saturating_sub(before));
+        }
+        assert_eq!(
+            w.world.bodies.len(),
+            2,
+            "all but the player and the hammerstone laid"
+        );
+    }
+    // Measured 43 (the struck stone a body for its blow's second); as bodies, flakes took 250.
+    assert!(most <= 50, "{most} Newton iterations in a tick");
 }

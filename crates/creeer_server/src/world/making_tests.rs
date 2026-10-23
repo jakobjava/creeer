@@ -68,7 +68,8 @@ fn aim(w: &ServerWorld, id: EntityId) -> Target {
 
 /// The mass of every item there is: bodies and pockets.
 fn items_mass(w: &ServerWorld, ada: EntityId) -> f64 {
-    w.items.bodies.values().map(Item::mass).sum::<f64>() + w.load(ada)
+    let laid: f64 = w.items.laid.values().map(|(i, ..)| i.mass()).sum();
+    w.items.bodies.values().map(Item::mass).sum::<f64>() + laid + w.load(ada)
 }
 
 /// Ada strikes `id` with what her hands hold, and the blow falls.
@@ -99,12 +100,12 @@ fn a_hammerstones_blow_knaps_a_chert_core_and_loses_no_mass() {
     let hammer = lump("basalt", 2900.0, DVec3::new(0.10, 0.08, 0.06));
     w.put_in_hands(ada, hammer).unwrap();
     wait(&mut w, ada, 60);
-    let (total, pieces) = (items_mass(&w, ada), w.items.bodies.len());
+    let total = items_mass(&w, ada);
     strike(&mut w, ada, core);
     assert!(w.index(core).is_none(), "the core was broken and made anew");
-    assert_eq!(w.items.bodies.len(), pieces + 1, "a flake came off");
+    assert_eq!(w.items.laid.len(), 2, "the core and a flake lie there");
     assert!((items_mass(&w, ada) - total).abs() < 1e-9 * total);
-    let edged = (w.items.bodies.values())
+    let edged = (w.items.laid.values().map(|(i, ..)| i))
         .filter(|i| matches!(i, Item::Piece(p, _) if p.edge.is_some()))
         .count();
     assert_eq!(edged, 2, "the flake and the core both have edges");
@@ -182,11 +183,11 @@ fn a_made_axe_whose_binding_gives_comes_apart() {
     let parts = made.parts.len() + made.bindings.len();
     w.put_in_hands(ada, Item::Made(Box::new(made))).unwrap();
     wait(&mut w, ada, 60);
-    let (total, before) = (items_mass(&w, ada), w.items.bodies.len());
+    let total = items_mass(&w, ada);
     strike(&mut w, ada, crate_);
     assert!(w.carried(ada).is_none(), "it fell apart in the hands");
     assert!(!w.items.bodies.values().any(|i| matches!(i, Item::Made(_))));
     // (The granite crumbled a little too, beside it.)
-    assert!(w.items.bodies.len() >= before - 1 + parts);
+    assert!(w.items.laid.len() >= parts, "its pieces lie there");
     assert!((items_mass(&w, ada) - total).abs() < 1e-9 * total);
 }

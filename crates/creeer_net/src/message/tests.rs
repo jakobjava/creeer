@@ -216,6 +216,14 @@ fn server_messages_read_back() {
     back(&ServerMessage::Age(EntityId(42), age));
     back(&ServerMessage::Swing(EntityId(7), 123_456));
     back(&ServerMessage::Refusal("fits no pocket".into()));
+    back(&ServerMessage::Laid(vec![crate::message::Laid {
+        id: (1 << 63) | 5,
+        centre: DVec3::new(1.0, 2.0, 3.0),
+        turn: creeer_math::glam::DQuat::from_rotation_z(0.5),
+        half: DVec3::new(0.02, 0.015, 0.004),
+        colour: [95, 90, 85],
+        word: "stone".into(),
+    }]));
     // Six hours of 60 Hz ticks later, a year more.
     assert!((age.exposure_at(1200.0 + 6.0 * 3600.0 * 60.0, 60) - 2.5).abs() < 1e-9);
     assert!(

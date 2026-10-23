@@ -84,6 +84,9 @@ pub enum ServerMessage {
     /// Why the player's last command was refused (G1.6: shown to them, so a refused act is not
     /// silent).
     Refusal(String),
+    /// Items laid at rest on the ground (G1.6: drawn and aimed at, no bodies); gone again by
+    /// [`ServerMessage::Taken`].
+    Laid(Vec<super::Laid>),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -237,6 +240,10 @@ impl Encode for ServerMessage {
                 w.u8(14);
                 text(w, why);
             }
+            Self::Laid(laid) => {
+                w.u8(15);
+                w.put(laid);
+            }
         }
     }
 }
@@ -324,6 +331,7 @@ impl Decode for ServerMessage {
                     .collect::<Result<_, _>>()?,
             ),
             14 => Self::Refusal(read_text(r)?),
+            15 => Self::Laid(r.get()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

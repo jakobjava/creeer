@@ -4,6 +4,7 @@
 //! them; nothing of it is simulated here.
 
 use creeer_math::glam::{DQuat, DVec3};
+use creeer_net::message::Laid;
 use creeer_sim::scatter::{Cell, Loose, Lying, Scatter};
 use creeer_terrain::Terrain;
 use std::collections::{BTreeMap, BTreeSet};
@@ -48,72 +49,90 @@ impl LooseView {
         }
     }
 
-    /// Everything drawn, less what was `taken`.
-    pub fn lying<'a>(&'a self, taken: &'a BTreeSet<u64>) -> impl Iterator<Item = &'a Loose> {
-        (self.cells.values().flatten()).filter(|l| !taken.contains(&l.id))
-    }
-
-    /// Each as a box: centre, frame, half extents and colour (`rocks` gives a stone's).
-    pub fn boxes(
+    /// Everything lying about: the scatter's, less what was `taken`, and the items the server
+    /// laid at rest (`laid`, G1.6). `rocks` gives a stone's colour.
+    pub fn things(
         &self,
         taken: &BTreeSet<u64>,
+        laid: &BTreeMap<u64, Laid>,
         rocks: &creeer_terrain::geology::rocks::RockTable,
-    ) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
-        (self.lying(taken))
+    ) -> Vec<Thing> {
+        let scattered = (self.cells.values().flatten())
+            .filter(|l| !taken.contains(&l.id))
             .map(|l| match l.what {
-                Lying::Stone { rock, size } => {
-                    let colour = rocks
-                        .rocks
-                        .get(usize::from(rock))
-                        .map_or([128; 3], |r| r.color);
-                    (l.centre, l.turn, size * 0.5, colour)
-                }
-                Lying::Branch { length, radius, .. } => {
-                    let half = DVec3::new(length * 0.5, radius, radius);
-                    (l.centre, l.turn, half, DEADWOOD)
-                }
-            })
-            .collect()
-    }
-
-    /// The first loose thing the ray from `origin` along unit `direction` meets within
-    /// `length` (m), and how far along: each as the ellipsoid in its box.
-    pub fn aim(
-        &self,
-        taken: &BTreeSet<u64>,
-        origin: DVec3,
-        direction: DVec3,
-        length: f64,
-    ) -> Option<(Loose, f64)> {
-        let mut best: Option<(Loose, f64)> = None;
-        for l in self.lying(taken) {
-            let half = match l.what {
-                Lying::Stone { size, .. } => size * 0.5,
-                Lying::Branch { length, radius, .. } => DVec3::new(length * 0.5, radius, radius),
-            };
-            // In the ellipsoid's own frame, scaled to a unit ball.
-            let back = l.turn.conjugate();
-            let o = (back * (origin - l.centre)) / half;
-            let d = (back * direction) / half;
-            let (a, b, c) = (d.dot(d), o.dot(d), o.dot(o) - 1.0);
-            let disc = b * b - a * c;
-            if disc < 0.0 {
-                continue;
-            }
-            let t = (-b - disc.sqrt()) / a;
-            if t >= 0.0 && t <= length && best.is_none_or(|(_, s)| t < s) {
-                best = Some((*l, t));
-            }
-        }
-        best
+                Lying::Stone { rock, size } => Thing {
+                    id: l.id,
+                    centre: l.centre,
+                    turn: l.turn,
+                    half: size * 0.5,
+                    colour: (rocks.rocks.get(usize::from(rock))).map_or([128; 3], |r| r.color),
+                    word: "stone",
+                },
+                Lying::Branch { length, radius, .. } => Thing {
+                    id: l.id,
+                    centre: l.centre,
+                    turn: l.turn,
+                    half: DVec3::new(length * 0.5, radius, radius),
+                    colour: DEADWOOD,
+                    word: "branch",
+                },
+            });
+        let laid = laid.values().map(|l| Thing {
+            id: l.id,
+            centre: l.centre,
+            turn: l.turn,
+            half: l.half,
+            colour: l.colour,
+            word: match l.word.as_str() {
+                "stone" => "stone",
+                "stick" => "stick",
+                "strip" => "strip",
+                "tool" => "tool",
+                "grit" => "grit",
+                _ => "thing",
+            },
+        });
+        scattered.chain(laid).collect()
     }
 }
 
-/// A word for what lies loose: a stone and its size (never its rock: telling flint from granite
-/// is the player's to learn, `docs/g1-plan.md` principle 9), or a branch.
-pub fn name(loose: &Loose) -> String {
-    match loose.what {
-        Lying::Stone { size, .. } => format!("stone, {:.0} cm", size.x * 100.0),
-        Lying::Branch { length, .. } => format!("branch, {:.1} m", length),
+/// Something lying on the ground, as drawn and aimed at: a box about an ellipsoid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Thing {
+    pub id: u64,
+    pub centre: DVec3,
+    pub turn: DQuat,
+    pub half: DVec3,
+    pub colour: [u8; 3],
+    pub word: &'static str,
+}
+
+impl Thing {
+    /// A word for it and its size (never its rock: telling flint from granite is the player's
+    /// to learn, `docs/g1-plan.md` principle 9).
+    pub fn name(&self) -> String {
+        format!("{}, {:.0} cm", self.word, self.half.max_element() * 200.0)
     }
+}
+
+/// The first of `things` the ray from `origin` along unit `direction` meets within `length` (m),
+/// and how far along: each as the ellipsoid in its box.
+pub fn aim(things: &[Thing], origin: DVec3, direction: DVec3, length: f64) -> Option<(Thing, f64)> {
+    let mut best: Option<(Thing, f64)> = None;
+    for l in things {
+        // In the ellipsoid's own frame, scaled to a unit ball.
+        let back = l.turn.conjugate();
+        let o = (back * (origin - l.centre)) / l.half;
+        let d = (back * direction) / l.half;
+        let (a, b, c) = (d.dot(d), o.dot(d), o.dot(o) - 1.0);
+        let disc = b * b - a * c;
+        if disc < 0.0 {
+            continue;
+        }
+        let t = (-b - disc.sqrt()) / a;
+        if t >= 0.0 && t <= length && best.is_none_or(|(_, s)| t < s) {
+            best = Some((*l, t));
+        }
+    }
+    best
 }

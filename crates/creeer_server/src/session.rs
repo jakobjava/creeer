@@ -60,6 +60,8 @@ pub struct Session {
     edits_told: usize,
     /// How many of the loose things picked up it has been told (G1.6c).
     taken_told: usize,
+    /// How much of the log of items laid on the ground it has been told (G1.6).
+    laid_told: usize,
     commands: f64,
 }
 
@@ -78,6 +80,7 @@ impl Session {
             pending: HashSet::new(),
             edits_told: 0,
             taken_told: 0,
+            laid_told: 0,
             commands: COMMAND_BURST,
         }
     }
@@ -117,6 +120,7 @@ impl Session {
         }
         self.edits_told = 0;
         self.taken_told = 0;
+        self.laid_told = 0;
         self.inputs = InputQueue::default();
     }
     /// Entity `id` became something else (a character fallen, or up again): if the client
@@ -216,7 +220,13 @@ impl Session {
                 log: part.to_bytes(),
             });
         }
-        // What was picked up from the ground (everyone's, as the terrain is).
+        // What was laid on the ground, then what was picked up (everyone's, as the terrain is;
+        // in that order, so what was laid and taken at once is gone).
+        let (laid, told) = world.laid_since(self.laid_told);
+        self.laid_told = told;
+        if !laid.is_empty() {
+            self.queue(&ServerMessage::Laid(laid));
+        }
         let taken = world.taken_since(self.taken_told);
         if !taken.is_empty() {
             self.taken_told += taken.len();
