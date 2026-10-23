@@ -1,7 +1,8 @@
 //! The physics world as a save holds it: its settings, fixed geometry, every body (its
 //! structure, solver history, shapes, surface and sleep), and what the next step continues
 //! from: the friction anchors, the energy the contacts held (from version 5) and the joints
-//! (from version 8, their constraint forces with them). The ground
+//! (from version 8, their constraint forces with them), and the bumps of the ground the
+//! contacts kept (from version 13, `ground_rise::bump`). The ground
 //! is not in it: it is the terrain's, which a save holds as its edits (`creeer_sim::save`);
 //! nor are the pairs of bodies let pass through each other (`World::let_pass`), its owner's;
 //! whoever loads a world gives it both again.
@@ -184,6 +185,8 @@ fn write_anchor(a: &Anchor, w: &mut Writer) {
             w.put(&s);
         }
     }
+    // (Version 13 on.)
+    w.put(&a.bump);
 }
 
 fn read_anchor(r: &mut Reader<'_>) -> Result<Anchor, DecodeError> {
@@ -199,11 +202,13 @@ fn read_anchor(r: &mut Reader<'_>) -> Result<Anchor, DecodeError> {
         1 => Kept::Slip(r.get()?),
         _ => return Err(r.error("unknown anchor")),
     };
+    let bump = if r.version() >= 13 { r.get()? } else { None };
     Ok(Anchor {
         a,
         local_a,
         b,
         kept,
+        bump,
     })
 }
 

@@ -14,7 +14,7 @@
 //! off a face with 5 kJ every third step, then kicked every few steps, crept, and turned on
 //! a bump past where its face pressed for seconds, F5.)
 
-use super::ground::BULGE;
+use super::ground::{BOX_SAMPLE_SPACING, BULGE, Ground, point_contact};
 use super::ground_sample::Feet;
 use super::shape::{Domain, Follows, PatchVertex, RawContact};
 use super::surface::Feature;
@@ -101,6 +101,67 @@ impl FaceGround {
             })
             .collect()
     }
+}
+
+/// The bumps the last step had on a shape: for a point of its surface (world), the inset its
+/// bump had there, if it had one (`World::detect` looks them up in the friction anchors).
+pub type Kept<'a> = &'a dyn Fn(DVec3) -> Option<f64>;
+
+/// No bumps kept (a shape seen afresh: a query, a test).
+pub fn none_kept(_: DVec3) -> Option<f64> {
+    None
+}
+
+/// The bump at the point `p` of a box's or a hull's surface (`feature` on it; `gap` its
+/// first-order distance to the ground) where the face pressing there as a patch sees the
+/// ground at `plane` (the corners' plane where none presses): a point contact pressing with
+/// what the ground rises more than [`BULGE`] beyond that (its inset), as `ground.rs` says.
+///
+/// **A bump the last step had (`kept`) is kept** while it presses or is within [`BULGE`] of
+/// pressing (and within `margin`), with the inset that step gave it while it presses (G2.0).
+/// Found afresh each step, a bump went with what the face's patch saw there, which moves as
+/// the patch is measured again: a felled trunk's bump 20 µm in was not found the next step
+/// (its patch now saw the ground within 1 mm there), the trunk sank 46 µm into it unopposed
+/// and found it again holding 37 mJ, which threw it 1–2 mm; the energy guard stopped it dead,
+/// the cycle began again, and the trunk crept downhill and never rested (ADR-0024). Kept, a
+/// bump holds at the next step's start just what it held at the last step's end. Where it
+/// does not press, its inset follows the patch again, no deeper than touching: no energy is
+/// found anew. A bump found for the first time is as before: an impact may find it pressed.
+pub(super) fn bump(
+    ground: &dyn Ground,
+    (p, feature): (DVec3, Feature),
+    (gap, plane): (f64, f64),
+    margin: f64,
+    kept: Kept<'_>,
+) -> Option<RawContact> {
+    let kept = kept(p);
+    if kept.is_none() && !(gap < margin && gap < plane - BULGE) {
+        return None;
+    }
+    let mut c = point_contact(ground, p, 0.0, f64::INFINITY)?;
+    c.features = [feature, Feature::Round(BOX_SAMPLE_SPACING)];
+    let touches = c.gap();
+    let follows = (plane - BULGE).min(0.0);
+    match kept {
+        Some(inset) => {
+            c.inset = if touches < inset {
+                inset
+            } else {
+                follows.min(touches)
+            };
+            (c.gap() < BULGE.min(margin)).then_some(c)
+        }
+        None => {
+            c.inset = follows;
+            (touches < margin).then_some(c)
+        }
+    }
+}
+
+/// Whether a contact is a bump ([`bump`]): the only contacts with the ground's round feature
+/// of the sample spacing.
+pub(super) fn is_bump(c: &RawContact) -> bool {
+    c.patch.is_none() && c.features[1] == Feature::Round(BOX_SAMPLE_SPACING)
 }
 
 /// How far the ground can rise above the plane through a face's corners `corners` (a
