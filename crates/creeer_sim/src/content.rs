@@ -71,7 +71,17 @@ const KNOWN: &[Known] = &[
 pub fn validate(data: &Data) -> Report {
     let mut report = Report::default();
     match MaterialTable::from_data(data) {
-        Ok(t) => report.counts.push(("materials", t.all().len())),
+        Ok(t) => {
+            report.counts.push(("materials", t.all().len()));
+            // The fasteners (G2.2): each of a known material, of sizes and slips in reason.
+            match creeer_building::fasteners::Fastener::all(data) {
+                Ok(f) => {
+                    report.counts.push(("fasteners", f.len()));
+                    (report.errors).extend(creeer_building::fasteners::problems(&f, &t));
+                }
+                Err(e) => report.errors.push(e),
+            }
+        }
         Err(e) => report.errors.push(e),
     }
     let species = match SpeciesTable::from_data(data) {

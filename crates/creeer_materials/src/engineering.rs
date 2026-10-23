@@ -76,6 +76,9 @@ pub struct Material {
     /// Wood's compressive strength across the grain (Pa): what an edge driven into it crushes
     /// (G1.7, chopping).
     pub across: Option<f64>,
+    /// A green wood's density seasoned to 12 % moisture (kg/m³), as EN 1995-1-1's rules take
+    /// it (`density` holds its water too).
+    pub seasoned: Option<f64>,
     /// Plastic strain at break.
     pub elongation: f64,
     /// Plastic strain where strain hardening starts (after a yield plateau).
@@ -174,6 +177,8 @@ pub(crate) struct MaterialDef {
     compressive_strength: Option<String>,
     #[serde(default)]
     across: Option<String>,
+    #[serde(default)]
+    seasoned: Option<String>,
     elongation: f64,
     hardening_start: f64,
     uniform_elongation: f64,
@@ -229,6 +234,9 @@ impl MaterialDef {
                 .transpose()?,
             across: (self.across)
                 .map(|s| quantity(&s, Dimension::PRESSURE))
+                .transpose()?,
+            seasoned: (self.seasoned)
+                .map(|s| quantity(&s, Dimension::DENSITY))
                 .transpose()?,
             elongation: self.elongation,
             hardening_start: self.hardening_start,

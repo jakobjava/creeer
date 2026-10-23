@@ -21,6 +21,7 @@ creeer_physics = { path = "crates/creeer_physics" }
 creeer_rates = { path = "crates/creeer_rates" }
 creeer_terrain = { path = "crates/creeer_terrain" }
 creeer_orbit = { path = "crates/creeer_orbit" }
+creeer_building = { path = "crates/creeer_building" }
 creeer_materials = { path = "crates/creeer_materials" }
 creeer_sim = { path = "crates/creeer_sim" }
 creeer_net = { path = "crates/creeer_net" }

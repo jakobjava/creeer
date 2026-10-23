@@ -568,6 +568,13 @@ version = "0.0.1"
 [[package]]
 name = "creeer_building"
 version = "0.0.1"
+dependencies = [
+ "creeer_data",
+ "creeer_materials",
+ "creeer_math",
+ "creeer_physics",
+ "serde",
+]
 
 [[package]]
 name = "creeer_chem"
@@ -771,6 +778,7 @@ name = "creeer_sim"
 version = "0.0.1"
 dependencies = [
  "creeer_art",
+ "creeer_building",
  "creeer_chem",
  "creeer_data",
  "creeer_electric",

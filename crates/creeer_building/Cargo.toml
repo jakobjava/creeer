@@ -1,12 +1,17 @@
 [package]
 name = "creeer_building"
-description = "Parametric parts, structure-to-physics conversion and blueprints."
+description = "Building: fasteners, joint laws and parts as members (G2)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_data.workspace = true
+creeer_materials.workspace = true
+creeer_math.workspace = true
+creeer_physics.workspace = true
+serde.workspace = true
 
 [lints]
 workspace = true

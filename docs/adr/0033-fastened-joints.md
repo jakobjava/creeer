@@ -69,3 +69,33 @@ The survey is in `docs/g2-plan.md` ("Prior work"); what decided this ADR:
 - A joint's rotation about its lateral axes (members rocking on each other) is resisted by its equivalent bending stiffness and capped at F_y·L/2, not by the members bearing on each other. Members colliding with each other come in G2.5.
 - The backbone is piecewise linear (elastic, linear hardening, plateau), not Foschi's exponential, and has no falling branch (failure at the last slip). There is no cyclic pinching (CASHEW).
 - Withdrawal is brittle at its capacity, with no slip before it.
+
+## G2.2: the laws from the fasteners (2026-10-23)
+
+`creeer_building` (`fasteners.rs`, `law.rs`; tests `tests.rs`) works out each joint's `JointLaw` from its catalogue entry (`data/fasteners.ron`) and the two parts' woods:
+
+- **Nails and pegs** (dowel-type, EN 1995-1-1):
+  - **Embedment:** f_h = 0.082·ρ·d^−0.3 driven, 0.082·(1 − 0.01·d)·ρ bored.
+  - **Yield moment:** M_y = 0.3·f_u·d^2.6 for a nail; a peg's plastic moment, f_m·d³/6.
+  - **Lateral yield:** the least of Johansen's six modes (eq. 8.6, without its 1.05 and 1.15).
+  - **Rope effect** (smooth nails, modes c–f): min(F_ax/4, 15 %).
+  - **Withdrawal:** 20·10⁻⁶·ρ²·d·t_pen, scaled from 8·d to full at 12·d, capped by head pull-through 70·10⁻⁶·ρ²·d_h². Pegs: a tenth of their slip capacity (an estimate).
+  - **Slip moduli:** ρ_m^1.5·d^0.8/30 and ρ_m^1.5·d/23 (Table 7.1), with ρ_m = √(ρ₁ρ₂).
+  - **Penetration:** a nail must reach 6·d into the second part. A peg, which runs through, must reach past the shear plane by its own diameter.
+- **Lashings** (derived; no published law was found):
+  - n turns press the parts together with 2n times their tension, and they slip by friction on that. The slip starts at the hand-drawn tension (a quarter of the cord's strength) and peaks at the cord's strength as slipping draws it tight.
+  - Pulled apart, the 2n strands break.
+  - Stiffness: the strands' E·A over a turn's length.
+- **Shared by all:** bearing as compression across the grain over the contact area, f_c,90·A. Axial stiffness from the two woods' E₉₀ = E₀/30 (EN 338) in series over the distance between the axes.
+- **Wood's density** is EN 1995's: at 12 % moisture. Green woods' `density` holds their water (800 kg/m³ for spruce), so they now carry a `seasoned` density: red spruce 450, red pine 515, paper birch 620 kg/m³ (Wood Handbook Table 5-3a, specific gravity at 12 % × 1.12).
+- **The catalogue:** `nail_75` (3.1 × 75 mm), `nail_100` (4 × 100 mm), `peg_25` (birch), `bast_lashing` (spruce bast, four turns). Its header says how to add entries; `creeer_tools validate` checks them.
+
+| Test | Reference | Result |
+|---|---|---|
+| 3.1 mm nail in C24, slip modulus | 708.7 N/mm (Table 7.1) | within 0.1 % |
+| 4 × 100 mm nail through 50 + 50 mm C24 | mode (f) 1,097 N; withdrawal 706 N (head 1,000 N); rope 165 N | within 0.2 % |
+| 75 mm nail with 15 mm in the second part | under 6·d | refused |
+| Two nails 4 cm off the middle | twice the slip capacity; twist (2·0.04² + 2·d²)/d² = 202 × one | exact |
+| Bast lashing, four turns | breaks at 3,840 N apart; slips at 0.25 to 1 × 0.4 × that | exact |
+| Every catalogue entry on green spruce | valid, and its law builds an equivalent member | all |
+| Green spruce's density for fastening | 450 kg/m³ seasoned | exact |
