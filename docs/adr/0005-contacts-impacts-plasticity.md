@@ -391,7 +391,7 @@ The same hashes, so the same work: the spread is the machine's (the crowd's wors
 
 Any impact (approach > 5 cm/s) on a group with a structure sent it into 0.5 ms impact substeps. A 12-sided pole rolling onto its next face is such an impact, and building with prism members ran ten times slower than with balls on the nodes.
 
-Impact substeps exist so a crash does its plastic work. Now a step is resolved in them only when an impact's approach energy ½·m·v² reaches a hundredth of the least energy that yields a member at the struck node, c²/(2k) over its measures (`Structure::yield_energy`). A pole landing on its face brings about 1 mJ to members that store 34 J at yield. A crash brings many times the threshold.
+Impact substeps exist so a crash does its plastic work. Now, for a face's landing (a patch: a member's prism), a step is resolved in them only when the impact's approach energy ½·m·v² reaches a hundredth of the least energy that yields a member at the struck node, c²/(2k) over its measures (`Structure::yield_energy`). A pole landing on its face brings about 1 mJ to members that store 34 J at yield. A crash brings many times the threshold.
 
 | Measure | Before | After |
 |---|---|---|
@@ -401,4 +401,4 @@ Impact substeps exist so a crash does its plastic work. Now a step is resolved i
 | Face bench: worst step | 54–109 ms | 24.6 ms (one tick; typical 1–2 ms) |
 | All 8 bodies asleep | — | by 2 s |
 
-Every crush and impact test passes unchanged, and every stress and play hash is unchanged (no existing scene's impact was below the threshold).
+A ball's impact keeps its substeps as before. They also resolve a light joint ringing against what it strikes, and the saved fixtures hold that motion bit for bit. Measured and rejected: the same rule for every impact. A steel frame dropped 10 cm on its node balls (the save fixtures' scene) then skipped its landing's substeps. It settled to the same rest, but by another path, and seven fixture tests failed. Every crush and impact test passes unchanged, and every stress and play hash is unchanged.

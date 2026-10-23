@@ -11,11 +11,8 @@ use crate::planet_net::PlanetSession;
 use creeer_math::det;
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_net::message::Command;
-use creeer_render::{
-    Atmosphere, Camera, Renderer, SeaSurface, Sky, TerrainMeshData, TerrainVertex,
-};
+use creeer_render::{Atmosphere, Camera, Renderer, SeaSurface, Sky, TerrainMeshData};
 use creeer_terrain::Terrain;
-use creeer_terrain::chunk::ChunkKey;
 use creeer_terrain::stream::{StreamSettings, Streamer};
 use std::sync::Arc;
 
@@ -100,35 +97,7 @@ impl std::fmt::Debug for PlanetView {
     }
 }
 
-/// A chunk mesh for the GPU: rock colours, openness, roughness.
-pub fn render_mesh(terrain: &Terrain, key: ChunkKey) -> Option<TerrainMeshData> {
-    let mesh = terrain.mesh_chunk(key)?;
-    let rocks = &terrain.planet().geology.rocks.rocks;
-    let vertices = mesh
-        .positions
-        .iter()
-        .zip(&mesh.normals)
-        .zip(&mesh.materials)
-        .zip(&mesh.openness)
-        .zip(mesh.coarse_normals.iter().zip(&mesh.morph))
-        .map(|((((p, n), &m), &open), (coarse, &morph))| {
-            let color = rocks.get(usize::from(m)).map_or([128; 3], |r| r.color);
-            TerrainVertex::new(*p, *n, open, color, 0.88).with_coarser(*coarse, morph)
-        })
-        .collect();
-    let index = |i: usize| u32::try_from(i).expect("chunk mesh too large");
-    Some(TerrainMeshData {
-        vertices,
-        surface_indices: index(mesh.surface_indices),
-        caps: mesh
-            .cap_faces
-            .clone()
-            .map(|r| (index(r.start), index(r.end))),
-        indices: mesh.indices,
-        #[allow(clippy::cast_possible_truncation)] // chunk sizes fit f32
-        chunk_size: key.size() as f32,
-    })
-}
+pub use crate::terrain_mesh::render_mesh;
 
 impl PlanetView {
     /// A singleplayer game on the reference planet (its server hosted in this process),

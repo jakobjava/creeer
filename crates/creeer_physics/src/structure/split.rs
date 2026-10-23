@@ -95,7 +95,11 @@ impl Structure {
                 (0..super::element::MEASURES).map(move |m| {
                     let k = e.stiffness.entry(m, m);
                     let c = caps[m].capacity;
-                    if k > 0.0 { c * c / (2.0 * k) } else { f64::INFINITY }
+                    if k > 0.0 {
+                        c * c / (2.0 * k)
+                    } else {
+                        f64::INFINITY
+                    }
                 })
             })
             .fold(f64::INFINITY, f64::min)

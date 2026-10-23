@@ -105,6 +105,13 @@ fn can_yield(bodies: &[&mut Body], c: &super::contact::Contact) -> bool {
     if !impact::is_impact(c) {
         return false;
     }
+    // A face landing (a member's prism, G2.3) is judged by what it brings. A ball's impact
+    // keeps its substeps as before: they also resolve a light joint's ringing against what it
+    // strikes (the module docs, `crush_tests.rs`), and the saved fixtures hold that motion bit
+    // for bit (`creeer_sim::save` tests).
+    if !matches!(c.law, super::contact::Law::Patch { .. }) {
+        return true;
+    }
     let energy = 0.5 * c.mass * c.approach * c.approach;
     [c.a, c.b].into_iter().any(|side| match side {
         Side::Node { member, node, .. } => {

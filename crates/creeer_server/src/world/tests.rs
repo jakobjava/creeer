@@ -141,15 +141,19 @@ fn a_frame_stands_where_it_is_put_unstrained() {
         "strained {}",
         s.max_axial_strain()
     );
-    // Upright: its base on the ground, its top 2 m above it.
-    let base = s.position[0];
-    let top = s
-        .position
-        .iter()
-        .map(|p| p.dot(base.normalize()))
-        .fold(f64::MIN, f64::max);
-    let rise = top - base.dot(base.normalize());
-    assert!((rise - 2.0).abs() < 0.05, "{rise} m tall");
+    // Upright: its corner column (nodes 0, 3, 6) 2 m from its base to its top, standing within
+    // 5° of the plumb. (The ground here slopes 2–3 %: the frame settles flat on it, its top
+    // corners up to 6 cm above its base corner's plumb; measured along the plumb, as this did
+    // before G2.3, it read the slope as height.)
+    let (base, top) = (s.position[0], s.position[6]);
+    let column = top - base;
+    assert!(
+        (column.length() - 2.0).abs() < 0.01,
+        "{} m tall",
+        column.length()
+    );
+    let lean = creeer_math::det::acos(column.normalize().dot(base.normalize())).to_degrees();
+    assert!(lean < 5.0, "leaning {lean}°");
 }
 
 #[test]
