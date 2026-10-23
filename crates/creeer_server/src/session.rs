@@ -62,6 +62,8 @@ pub struct Session {
     taken_told: usize,
     /// How much of the log of items laid on the ground it has been told (G1.6).
     laid_told: usize,
+    /// How much of the log of trees changed it has been told (G1.7).
+    trees_told: usize,
     commands: f64,
 }
 
@@ -81,6 +83,7 @@ impl Session {
             edits_told: 0,
             taken_told: 0,
             laid_told: 0,
+            trees_told: 0,
             commands: COMMAND_BURST,
         }
     }
@@ -121,6 +124,7 @@ impl Session {
         self.edits_told = 0;
         self.taken_told = 0;
         self.laid_told = 0;
+        self.trees_told = 0;
         self.inputs = InputQueue::default();
     }
     /// Entity `id` became something else (a character fallen, or up again): if the client
@@ -238,6 +242,12 @@ impl Session {
         if !taken.is_empty() {
             self.taken_told += taken.len();
             self.queue(&ServerMessage::Taken(taken.to_vec()));
+        }
+        // Trees cut into or felled (everyone's).
+        let (trees, told) = world.trees_since(self.trees_told);
+        self.trees_told = told;
+        if !trees.is_empty() {
+            self.queue(&ServerMessage::Trees(trees));
         }
     }
 

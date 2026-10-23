@@ -91,6 +91,7 @@ impl LooseView {
                 "strip" => "strip",
                 "tool" => "tool",
                 "grit" => "grit",
+                "chips" => "chips",
                 _ => "thing",
             },
         });

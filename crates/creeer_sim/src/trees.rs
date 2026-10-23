@@ -51,6 +51,8 @@ const CHECKED_EVERY: f64 = 0.5;
 pub struct Forest {
     cells: crate::scatter::Cells,
     pub species: Vec<Species>,
+    /// A clearing no tree stands in: its centre and radius (m).
+    clearing: Option<(DVec3, f64)>,
 }
 
 /// A tree standing: its id, its base, its frame (+z up its stem), and what grows it again.
@@ -71,6 +73,14 @@ impl Forest {
     /// If a species does not load (`species.rs`).
     pub fn from_data(data: &Data, terrain: &Terrain) -> Result<Self, String> {
         Ok(Self::new(species::load(data)?, terrain))
+    }
+
+    /// The same forest with a clearing of `radius` (m) about `centre`, where no tree stands (the
+    /// spawn's: a player starts in the open).
+    #[must_use]
+    pub fn with_clearing(mut self, centre: DVec3, radius: f64) -> Self {
+        self.clearing = Some((centre, radius));
+        self
     }
 
     /// `standing`, grown.
@@ -138,12 +148,14 @@ impl Tree {
         most
     }
 
-    /// How a cut into its stem is used (≥ 1: it goes over) under its weight and `wind`, and the
-    /// point (tree frame, in the cut's plane) it pivots on as it goes; none if nothing is left.
-    pub fn at_cut(&self, species: &Species, cut: &Cut, wind: DVec3) -> Option<(f64, DVec2)> {
+    /// How a cut into its stem is used (≥ 1: it goes over) under its weight and `wind`, the point
+    /// (tree frame, in the cut's plane) it pivots on as it goes (its hinge's middle) and the way
+    /// it goes (unit); none if nothing is left.
+    pub fn at_cut(&self, species: &Species, cut: &Cut, wind: DVec3) -> Option<(f64, DVec2, DVec2)> {
         let section = section::Section::cut(self.radius(cut.z), &cut.notches(self.radius(cut.z)))?;
         let (weight, at) = self.load_at(species, cut.z, wind);
         let used = section.utilisation(weight, at, species.bending, species.compression);
-        Some((used, section.bearing(at)))
+        let (pivot, way) = section.hinge(at);
+        Some((used, pivot, way))
     }
 }

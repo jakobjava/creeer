@@ -94,6 +94,8 @@ pub enum ServerMessage {
     /// strip, tool…: by its shape, never its material) and, if made of pieces, the pieces it is
     /// drawn as, about its centre.
     Item(EntityId, String, Vec<super::Part>),
+    /// Standing trees cut into or felled since last told (G1.7; everyone's, as the terrain is).
+    Trees(Vec<super::TreeCut>),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -261,6 +263,10 @@ impl Encode for ServerMessage {
                 text(w, word);
                 w.put(parts);
             }
+            Self::Trees(cuts) => {
+                w.u8(18);
+                w.put(cuts);
+            }
         }
     }
 }
@@ -351,6 +357,7 @@ impl Decode for ServerMessage {
             15 => Self::Laid(r.get()?),
             16 => Self::Note(read_text(r)?),
             17 => Self::Item(r.get()?, read_text(r)?, r.get()?),
+            18 => Self::Trees(r.get()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

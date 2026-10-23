@@ -107,6 +107,23 @@ pub enum Kind {
     },
     /// A structure.
     Structure(Frame),
+    /// A felled tree's part (G1.7): grown again from its species, seed and size.
+    Tree(TreePart),
+}
+
+/// A felled tree's part as a client draws it (`creeer_sim::trees::Part`): its tree (to grow it
+/// again), the span of its stem (m from its base), how many branches are off each node, where
+/// its centre of mass is in the tree's frame (the body's node), and its stem's hull about that.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TreePart {
+    pub species: u16,
+    pub seed: u64,
+    pub dbh: f64,
+    pub from: f64,
+    pub to: f64,
+    pub cut: Vec<u8>,
+    pub centre: DVec3,
+    pub hull: Vec<DVec3>,
 }
 
 impl Encode for EntityId {
@@ -206,6 +223,17 @@ impl Encode for Kind {
                     w.varint(u64::from(*b));
                 }
             }
+            Self::Tree(t) => {
+                w.u8(6);
+                w.u16(t.species);
+                w.u64(t.seed);
+                for v in [t.dbh, t.from, t.to] {
+                    w.f64(v);
+                }
+                w.bytes_with_length(&t.cut);
+                w.put(&t.centre);
+                w.put(&t.hull);
+            }
         }
     }
 }
@@ -252,6 +280,16 @@ impl Decode for Kind {
                     radius,
                 })
             }
+            6 => Self::Tree(TreePart {
+                species: r.u16()?,
+                seed: r.u64()?,
+                dbh: r.finite()?,
+                from: r.finite()?,
+                to: r.finite()?,
+                cut: r.bytes_with_length()?.to_vec(),
+                centre: r.get()?,
+                hull: r.get()?,
+            }),
             _ => return Err(r.error("unknown kind of entity")),
         })
     }

@@ -238,11 +238,58 @@ pub fn draw(
             },
         );
     }
+    coloured(scene, meshes, origin, current);
     if let Some(fire) = current.fire {
         fire_bed(scene, meshes, origin, fire);
     }
     for &wall in &current.walls {
         add_box(scene, meshes, origin, wall, CONCRETE, None);
+    }
+}
+
+/// The snapshot's coloured rods and ellipsoids (G1.7: trees, drawn plainly).
+fn coloured(scene: &mut Scene, meshes: &DemoMeshes, origin: DVec3, current: &PhysicsSnapshot) {
+    let paint = |[r, g, b]: [u8; 3], rough: f32| {
+        Material::dielectric(
+            [
+                f32::from(r) / 255.0,
+                f32::from(g) / 255.0,
+                f32::from(b) / 255.0,
+            ],
+            rough,
+        )
+    };
+    for &(a, b, radius, colour) in &current.rods {
+        let along = b - a;
+        let length = along.length();
+        if length < 1e-9 {
+            continue;
+        }
+        #[allow(clippy::cast_possible_truncation)] // render-space sizes
+        let scale = Vec3::new(2.0 * radius as f32, length as f32, 2.0 * radius as f32);
+        scene.add(
+            meshes.cylinder,
+            Instance {
+                frame: Frame64::new(
+                    origin + (a + b) * 0.5,
+                    DQuat::from_rotation_arc(DVec3::Y, along / length),
+                ),
+                scale,
+                material: paint(colour, 0.9),
+                heat: None,
+            },
+        );
+    }
+    for &(c, q, half, colour) in &current.blobs {
+        scene.add(
+            meshes.sphere,
+            Instance {
+                frame: Frame64::new(origin + c, q),
+                scale: (half * 2.0).as_vec3(),
+                material: paint(colour, 0.85),
+                heat: None,
+            },
+        );
     }
 }
 

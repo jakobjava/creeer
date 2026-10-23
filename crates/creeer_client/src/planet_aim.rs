@@ -27,6 +27,8 @@ pub struct Target {
     pub in_reach: bool,
     /// The loose thing it is on, if any (G1.6c: a stone or a branch, by its id).
     pub loose: Option<u64>,
+    /// The standing tree it is on, if any (G1.7: its id, and the height up its stem).
+    pub tree: Option<(u64, f64)>,
 }
 
 /// What the crosshair of `camera` is on, while the engineer walks: a thing within reach, or just
@@ -60,6 +62,31 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
             from_hands,
             in_reach: from_hands <= reach::REACH,
             loose: Some(l.id),
+            tree: None,
+        });
+    }
+    // A standing tree's stem (G1.7), if the ray meets one first.
+    let tree = (view.trees.as_ref())
+        .and_then(|v| {
+            v.aim(connection, camera.position, camera.forward(), length)
+                .map(|a| (v, a))
+        })
+        .filter(|(_, (_, _, t))| *t < meant.distance);
+    if let Some((v, (t, z, s))) = tree {
+        let point = camera.position + camera.forward() * s;
+        let from_hands = (point - hands).length();
+        return (from_hands <= reach::REACH + NAMED).then(|| Target {
+            aimed: Aimed {
+                body: None,
+                point,
+                distance: s,
+                seen: meant.seen,
+            },
+            what: v.name(connection, &t),
+            from_hands,
+            in_reach: from_hands <= reach::REACH,
+            loose: None,
+            tree: Some((t.id, z)),
         });
     }
     // From his eye: what is in the way, if anything.
@@ -76,6 +103,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
         from_hands,
         in_reach: from_hands <= reach::REACH,
         loose: None,
+        tree: None,
     })
 }
 
@@ -94,6 +122,7 @@ fn name(aimed: Aimed, connection: &creeer_server::Connection) -> String {
         Some(Kind::Body(Shape::Sphere(_), _)) => "ball".into(),
         Some(Kind::Body(Shape::Hull(_), _)) => "rock".into(),
         Some(Kind::Structure(_)) => "frame".into(),
+        Some(Kind::Tree(t)) => format!("log, {:.0} m", t.to - t.from),
         None => "something".into(),
     }
 }
@@ -173,6 +202,7 @@ mod tests {
             from_hands: 1.94,
             in_reach: true,
             loose: None,
+            tree: None,
         };
         assert_eq!(label(&t), "box · 1.9 m");
         t.in_reach = false;

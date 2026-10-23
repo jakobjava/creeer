@@ -95,6 +95,8 @@ pub struct ServerWorld {
     carrying: std::collections::BTreeMap<EntityId, carry::Carry>,
     /// The bodies that are items, and what each player carries (G1.6a, `items.rs`).
     items: items::Items,
+    /// What was done to its trees (G1.7, `trees.rs`).
+    trees: trees::Trees,
     /// A creative (or test) server: its players may drop crates, frames and machines and dig
     /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
     pub creative: bool,
@@ -123,6 +125,7 @@ impl ServerWorld {
             .expect("the planet's air is of known gases");
         let tools = creeer_sim::tools::Tool::all(&data).unwrap_or_default();
         let items = items::Items::from_data(&data, &terrain);
+        let trees = trees::Trees::from_data(&data, &terrain, spawn);
         Self {
             data,
             terrain,
@@ -152,6 +155,7 @@ impl ServerWorld {
             blows: Vec::new(),
             carrying: std::collections::BTreeMap::new(),
             items,
+            trees,
             creative: false,
         }
     }
@@ -326,12 +330,17 @@ impl ServerWorld {
         drop(scope);
         self.blows_fall();
         self.lay_resting();
+        let scope = profile::scope("trees");
+        self.trees_after_step();
+        drop(scope);
         let _scope = profile::scope("ageing");
         self.age_after_step();
     }
 }
 
+mod bucking;
 mod carry;
+mod felling;
 mod item_bodies;
 mod items;
 #[cfg(test)]
@@ -347,6 +356,9 @@ mod spawn;
 mod survival;
 #[cfg(test)]
 mod survival_tests;
+pub mod trees;
+#[cfg(test)]
+mod trees_tests;
 use spawn::ground_under;
 pub use spawn::spawn_point;
 mod hands;

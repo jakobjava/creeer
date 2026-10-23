@@ -25,6 +25,7 @@ impl Forest {
         Self {
             cells: Cells::new(TREE_CELL, planet.radius, planet.seed),
             species,
+            clearing: None,
         }
     }
 
@@ -35,6 +36,14 @@ impl Forest {
             return Vec::new();
         };
         let up = mid.direction();
+        // A cell wholly in the clearing has none (and needs no ground found).
+        let cleared = |d: DVec3, margin: f64| {
+            self.clearing
+                .is_some_and(|(c, r)| (d * c.length() - c).length() + margin < r)
+        };
+        if cleared(up, TREE_CELL) {
+            return Vec::new();
+        }
         let height = terrain.surface_height(up);
         let ground = cells::on_ground(terrain, up);
         let Some(rock) = terrain.rock_at(ground - up * 0.3) else {
@@ -49,15 +58,19 @@ impl Forest {
                 && (species.elevation.0..=species.elevation.1).contains(&height)
                 && slope <= species.slope
                 && species.grounds.contains(&rock);
-            // (Drawn whether it grows or not, so one species' range leaves the others' trees.)
+            // (Drawn whether it grows or not, so one species' range leaves the others' trees;
+            // the ground found only for those that may stand.)
             let n = rng.poisson(species.per_m2 * area);
             for _ in 0..n {
-                let base = self.cells.place(terrain, cell, &mut rng);
+                let at = self.cells.draw(cell, &mut rng);
                 let dbh = size(species, rng.unit());
                 let seed = rng.unit().to_bits();
                 let yaw = rng.unit() * std::f64::consts::TAU;
-                let crowded = (out.iter()).any(|t| (t.base - base).length() < APART);
-                if !grows || crowded || self.cells.cell_of(base) != cell {
+                if !grows || cleared(at, 0.0) || self.cells.cell_of(at) != cell {
+                    continue;
+                }
+                let base = cells::on_ground(terrain, at);
+                if (out.iter()).any(|t| (t.base - base).length() < APART) {
                     continue;
                 }
                 let up = base.normalize();
@@ -88,6 +101,11 @@ impl Forest {
     /// The cells within `radius` (m) of `p`.
     pub fn cells_near(&self, p: DVec3, radius: f64) -> Vec<Cell> {
         self.cells.cells_near(p, radius)
+    }
+
+    /// The cells about `p` within `radius` (m), sampled lightly (`Cells::cells_about`).
+    pub fn cells_about(&self, p: DVec3, radius: f64) -> Vec<Cell> {
+        self.cells.cells_about(p, radius)
     }
 }
 

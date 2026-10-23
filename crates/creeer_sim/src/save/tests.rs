@@ -87,6 +87,7 @@ pub(super) fn scene() -> Save {
         people: Vec::new(),
         ages: Vec::new(),
         items: crate::save::SavedItems::default(),
+        trees: crate::save::SavedTrees::default(),
     }
 }
 

@@ -103,12 +103,20 @@ impl Section {
         (sc / compression) * (sc / compression) + sm / bending
     }
 
-    /// The corner bearing most under a load through `at`: where it pivots when it goes.
-    pub fn bearing(&self, at: DVec2) -> DVec2 {
+    /// Where it pivots when it goes under a load through `at`: the middle of its edge bearing
+    /// most (its hinge: the corners within 2 % of the most stressed, of the stress's range), and
+    /// the way it goes over (unit, in its plane: the way the stress rises).
+    pub fn hinge(&self, at: DVec2) -> (DVec2, DVec2) {
         let g = self.slope(at);
-        (self.corners.iter().copied())
-            .max_by(|a, b| g.dot(*a).total_cmp(&g.dot(*b)))
-            .unwrap_or(self.centre)
+        let stress: Vec<f64> = self.corners.iter().map(|q| g.dot(*q)).collect();
+        let most = stress.iter().copied().fold(f64::MIN, f64::max);
+        let least = stress.iter().copied().fold(f64::MAX, f64::min);
+        let edge = most - 0.02 * (most - least);
+        let (sum, n) = (self.corners.iter().zip(&stress))
+            .filter(|(_, s)| **s >= edge)
+            .fold((DVec2::ZERO, 0.0), |(sum, n), (q, _)| (sum + *q, n + 1.0));
+        let point = if n > 0.0 { sum / n } else { self.centre };
+        (point, g.normalize_or(DVec2::X))
     }
 }
 

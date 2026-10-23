@@ -236,6 +236,8 @@ impl PlanetSession {
                         out.spheres.push((p, radius));
                     }
                 }
+                // Drawn as their trees (`tree_view.rs`).
+                Kind::Tree(_) => {}
                 Kind::Structure(frame) => {
                     let broken = c.broken.get(id);
                     for (k, [a, b]) in frame.members.iter().enumerate() {

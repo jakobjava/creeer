@@ -64,6 +64,11 @@ impl Connection {
                     self.laid.insert(l.id, l);
                 }
             }
+            ServerMessage::Trees(cuts) => {
+                for c in cuts {
+                    self.trees.insert(c.id, c);
+                }
+            }
             ServerMessage::Refusal(why) => self.refused = Some((why, std::time::Instant::now())),
             ServerMessage::Own {
                 gas,

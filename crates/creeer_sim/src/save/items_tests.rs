@@ -70,7 +70,9 @@ fn write_v10_fixture() {
 #[test]
 fn the_version_10_fixture_keeps_its_items_exactly() {
     let save = Save::from_bytes(V10).unwrap();
-    assert_eq!(save.to_bytes(), V10);
+    // Re-saved, it is the current version of what the scene writes (version 11 on: the same
+    // sections, its header the newer version).
+    assert_eq!(save.to_bytes(), items_scene().to_bytes());
     assert_eq!(save.items, items_scene().items);
     // Saves of earlier versions have no items.
     assert!(

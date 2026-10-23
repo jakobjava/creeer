@@ -1,11 +1,11 @@
 # Stress scenarios' state hashes (`creeer_tools stress --save-golden`): name, ticks, FNV-1a hash.
-beams 60 2b518d0c6470bd21
-cars 120 2af52b3c14c76821
-factory 60 ec3242e4eccd4f55
-flyover 240 5937ab06d64307fe
 beams 600 c07ba6c8b231499e
 cars 300 8c438a261fb0e382
 factory 600 c17a25c927ab0539
+server 1200 28a742fce537d9ba
 flyover 1200 5937ab06d64307fe
-server 120 8babd6c6ece54645
-server 1200 018b7e4b3867d842
+beams 60 2b518d0c6470bd21
+cars 120 2af52b3c14c76821
+factory 60 ec3242e4eccd4f55
+server 120 8b5bc4527ec54f2e
+flyover 240 5937ab06d64307fe

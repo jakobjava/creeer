@@ -96,6 +96,7 @@ mod system_shot;
 mod system_sim;
 mod system_ui;
 mod system_view;
+mod tree_view;
 mod water_bench;
 
 use app::App;

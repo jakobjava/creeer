@@ -120,10 +120,22 @@ impl ServerWorld {
 
     /// Drops the ages of entities gone from the world (not those parked: they weather on).
     fn prune_ages(&mut self) {
-        let parked =
-            (self.parked.iter()).flat_map(|island| island.bodies.iter().map(|(_, tag)| tag.id));
-        let alive: HashSet<EntityId> = self.ids.iter().copied().chain(parked).collect();
-        self.ages.by_entity.retain(|id, _| alive.contains(id));
-        self.ages.velocity.retain(|id, _| alive.contains(id));
+        // Only the aged not in the world are looked for among the parked (a set of every parked
+        // id, 100,000 of them in the stress scene, took 14 ms each time: G1.7).
+        let mut missing: HashSet<EntityId> = (self.ages.by_entity.keys())
+            .chain(self.ages.velocity.keys())
+            .filter(|id| self.index(**id).is_none())
+            .copied()
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        for island in self.parked.iter() {
+            for (_, tag) in &island.bodies {
+                missing.remove(&tag.id);
+            }
+        }
+        self.ages.by_entity.retain(|id, _| !missing.contains(id));
+        self.ages.velocity.retain(|id, _| !missing.contains(id));
     }
 }

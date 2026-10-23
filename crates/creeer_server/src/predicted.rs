@@ -124,6 +124,11 @@ impl Predicted {
         }
     }
 
+    /// The fixed shapes it meets (G1.7: trunks), in place of the last.
+    pub fn set_statics(&mut self, statics: Vec<creeer_physics::world::shape::StaticShape>) {
+        self.world.statics = statics;
+    }
+
     /// A new input (one a tick): kept, applied to the avatar at once, and returned to be sent.
     pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         let input = self.log.push(walk, jump, thrust);

@@ -16,6 +16,18 @@ pub struct Cell {
     pub j: i32,
 }
 
+impl Cell {
+    /// Its key: its face and grid place, packed (as a thing's id holds it, above its index).
+    pub fn key(self) -> u64 {
+        key(self)
+    }
+
+    /// The cell of key `k`.
+    pub fn from_key(k: u64) -> Self {
+        cell_of_id(k << INDEX_BITS)
+    }
+}
+
 /// Bits for a cell's index on its face, and for a thing's in its cell.
 const AXIS_BITS: u32 = 22;
 pub(crate) const INDEX_BITS: u32 = 12;
@@ -72,6 +84,24 @@ impl Cells {
         out.into_iter().collect()
     }
 
+    /// The cells about `p` within `radius` (m), sampled lightly: its own and those at eight
+    /// points round it at the radius and half of it (for a radius under a cell, each cell a disc
+    /// that size touches but at the slimmest corners).
+    pub fn cells_about(&self, p: DVec3, radius: f64) -> Vec<Cell> {
+        let up = p.normalize();
+        let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
+        let mut out = vec![self.cell_of(p)];
+        for k in 0..8 {
+            let (s, c) = creeer_math::det::sin_cos(f64::from(k) * std::f64::consts::FRAC_PI_4);
+            for r in [0.5 * radius, radius] {
+                out.push(self.cell_of(p + (east * c + north * s) * r));
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// The generator for what `cell` holds, apart for each `salt` (0: the loose things').
     pub(crate) fn rng(&self, cell: Cell, salt: u64) -> Rng {
         Rng::new(self.seed ^ salt ^ key(cell).wrapping_mul(0x9e37_79b9_7f4a_7c15))
@@ -107,17 +137,19 @@ impl Cells {
 
     /// A random point of `cell` on the ground.
     pub(crate) fn place(&self, terrain: &Terrain, cell: Cell, rng: &mut Rng) -> DVec3 {
+        on_ground(terrain, self.draw(cell, rng))
+    }
+
+    /// A random direction in `cell` (the draws `place` makes, without finding the ground).
+    pub(crate) fn draw(&self, cell: Cell, rng: &mut Rng) -> DVec3 {
         let s = (f64::from(cell.i) + rng.unit()) * self.step;
         let t = (f64::from(cell.j) + rng.unit()) * self.step;
-        on_ground(
-            terrain,
-            CubeCoord {
-                face: cell.face,
-                s,
-                t,
-            }
-            .direction(),
-        )
+        CubeCoord {
+            face: cell.face,
+            s,
+            t,
+        }
+        .direction()
     }
 }
 

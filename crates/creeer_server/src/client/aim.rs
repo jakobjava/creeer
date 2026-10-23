@@ -37,6 +37,11 @@ fn shape(kind: &Kind) -> Option<Shape> {
         // A fallen character's pelvis is among its segments; structures' members are not
         // aimed at yet.
         Kind::Character { .. } | Kind::Structure(_) => return None,
+        // A felled tree's stem (G1.7): its hull about its centre of mass, as the server has it.
+        Kind::Tree(t) => {
+            let (hull, centroid) = Hull::new(&t.hull).ok()?;
+            return Some(Shape::Hull(Arc::new(hull.about(-centroid))));
+        }
     };
     Some(match net {
         NetShape::Box(half) => Shape::Box { half: *half },
@@ -186,5 +191,26 @@ impl Connection {
             pose.position = predicted.position + predicted.orientation * at;
             pose.orientation = (predicted.orientation * turn).normalize();
         }
+    }
+}
+
+impl Connection {
+    /// The fixed shapes the avatar's prediction meets (G1.7: the trunks about it, as the server
+    /// lays them).
+    pub fn set_statics(&mut self, statics: Vec<creeer_physics::world::shape::StaticShape>) {
+        if let Some(p) = self.predicted.as_mut() {
+            p.set_statics(statics);
+        }
+    }
+
+    /// Strikes standing tree `tree` at `height` up its stem (G1.7), as `strike` a body.
+    pub fn strike_tree(&mut self, tree: u64, height: f64) {
+        let own = self.predicted.as_ref().and_then(|p| p.tick());
+        let started = own.map_or(self.drawn_at, f64::from);
+        self.command_swing(creeer_net::message::Command::StrikeTree {
+            tree,
+            height,
+            started,
+        });
     }
 }

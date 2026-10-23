@@ -15,7 +15,7 @@ const SKINS: u8 = 10;
 const HAIRS: u8 = 9;
 
 /// What a client draws a body as.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Drawn {
     /// A thing, as its shape is.
     Thing,
@@ -33,6 +33,8 @@ pub enum Drawn {
     Segment { person: EntityId, index: u8 },
     /// An item (G1.6c), in its material's colour.
     Item { colour: [u8; 3] },
+    /// A felled tree's part (G1.7), grown again by the client.
+    Tree(creeer_net::entity::TreePart),
 }
 
 /// A name's hash (FNV-1a): the same on every machine.
@@ -107,6 +109,9 @@ impl ServerWorld {
                     index: u8::try_from(k).expect("fifteen segments"),
                 };
             }
+        }
+        if let Some(part) = self.tree_part(index) {
+            return Drawn::Tree(part);
         }
         self.item_colour(id)
             .map_or(Drawn::Thing, |colour| Drawn::Item { colour })

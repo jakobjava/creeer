@@ -225,6 +225,7 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
 fn hint(hands: Option<&str>, aimed: Option<&crate::planet_aim::Target>) -> String {
     let aimed = aimed.filter(|t| t.in_reach);
     let on_thing = aimed.is_some_and(|t| t.loose.is_some() || t.aimed.body.is_some());
+    let on_tree = aimed.is_some_and(|t| t.tree.is_some());
     let on_stone = aimed.is_some_and(|t| {
         ["stone", "flake", "worked stone", "rock"]
             .iter()
@@ -238,7 +239,7 @@ fn hint(hands: Option<&str>, aimed: Option<&crate::planet_aim::Target>) -> Strin
             }
         }
         Some(word) => {
-            if on_thing {
+            if on_thing || on_tree {
                 keys.push("click: strike it");
             }
             if word == "stick" {

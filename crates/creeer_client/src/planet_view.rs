@@ -72,6 +72,8 @@ pub struct PlanetView {
     /// Whether the inventory window is shown (G1.6a), and what lies loose about (G1.6c).
     pub inventory: bool,
     pub loose: Option<crate::loose_view::LooseView>,
+    /// The trees about (G1.7).
+    pub trees: Option<crate::tree_view::TreeView>,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -155,6 +157,7 @@ impl PlanetView {
             wielding: None,
             inventory: false,
             loose: crate::loose_view::LooseView::new(&terrain),
+            trees: crate::tree_view::TreeView::new(&terrain),
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),
@@ -179,6 +182,9 @@ impl PlanetView {
             let rocks = &self.terrain.planet().geology.rocks;
             loose.draw(&mut out, &self.session.connection, rocks);
         }
+        if let Some(trees) = &self.trees {
+            trees.draw(&mut out, &self.session.connection);
+        }
         out
     }
 
@@ -195,6 +201,7 @@ impl PlanetView {
             let edits = (generation, self.session.connection.edits.log().len());
             loose.update(&self.terrain, camera, edits);
         }
+        self.update_trees(camera);
         if generation != self.seen_edits.0 {
             // All edits were replaced: rebuild everything that is cached.
             self.streamer
@@ -326,9 +333,10 @@ impl PlanetView {
     pub fn use_tool(&mut self, camera: &Camera) {
         if self.walking && (self.wielding.is_some() || self.carrying()) {
             if let Some(target) = crate::planet_aim::target(self, camera).filter(|t| t.in_reach) {
-                match target.loose {
-                    Some(loose) => self.session.connection.strike_loose(loose),
-                    None => self.session.connection.strike(target.aimed),
+                match (target.loose, target.tree) {
+                    (Some(loose), _) => self.session.connection.strike_loose(loose),
+                    (_, Some((tree, z))) => self.session.connection.strike_tree(tree, z),
+                    _ => self.session.connection.strike(target.aimed),
                 }
             }
             return;

@@ -456,6 +456,16 @@ Re-planned 2026-10-22 (principle 11; the user: "make a generic system and then t
   - placement deterministic;
   - a species added as data only, with no code changed.
 - **Budget:** 100,000 standing trees in the loaded 2 km² cost nothing per tick and draw at 60 FPS on min-spec (impostors). A tree turning into a structure takes ≤ 1 ms, spread so that no tick takes more than 2 ms extra.
+- **Done** (2026-10-23, ADR-0031):
+  - species as data (`flora/*.ron`): spruce, pine and birch, their green woods from the Wood Handbook and their crowns' biomass from Repola; the example mod adds an oak with no code;
+  - one generator: a tapered stem, branch nodes sharing its section (Leonardo's rule), the crown's biomass shared by the pipe model; trees placed cell by cell where their ranges allow, scenery until struck;
+  - a blow takes out V = k·E/(σ⊥·(tan(θ/2) + μ)) by its edge and energy, k calibrated so a steel axe fells 30 cm of spruce in about 150 blows; a made stone axe is then 3.2–3.4 times slower, as measured (2.5–4.4);
+  - a cut is the stem's section less its notches, checked by EN 1995's rule with green strengths; it goes over towards the notch, a rigid body on a hinge joint along its hinge's edge, let go when the notch closes;
+  - limbing (branches off thinnest first, laid as pieces of their wood: hafts, firewood) and bucking (cut through, two bodies), mass kept exactly with the chips;
+  - trunks are boxes about what moves (walked into, a falling tree lands on its stump), laid the same in the avatar's prediction;
+  - drawn plainly (rods and rough masses, finer the nearer, to 160 m); the crosshair says a tree's girth and how far it is cut; protocol 22, save version 11 (`TREE`).
+- **Not built** (ADR-0031, Limits; `docs/future-improvements.md`): felled parts as beam structures (they are rigid hulls), branches touching the ground, standing trees moved or broken by what hits them, wind on the planet, impostors (the forest costs 2.7 ms a frame).
+- **Next:** the user plays G1.7; then G1.5 (digging) or G1.8.
 
 ### G1.8 P1: piles (ADR-0024; performance track)
 

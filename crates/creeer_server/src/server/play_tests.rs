@@ -40,7 +40,11 @@ fn scene() -> ServerWorld {
         } else {
             Command::Crate(at + at.normalize() * 0.6)
         };
-        w.apply(&command, None).unwrap();
+        // (Since G1.7, beyond the spawn's clearing, none is put into a trunk.)
+        match w.apply(&command, None) {
+            Err(e) if e != "a tree stands there" => panic!("{e}"),
+            _ => {}
+        }
     }
     for east in [15.0, -20.0] {
         let (at, ..) = frame_at(&w, east, 10.0);

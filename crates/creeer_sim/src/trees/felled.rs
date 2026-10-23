@@ -6,7 +6,7 @@
 
 use super::grow::{Node, Tree, combine};
 use creeer_math::det;
-use creeer_math::glam::{DMat3, DQuat, DVec3};
+use creeer_math::glam::{DMat3, DQuat, DVec2, DVec3};
 use creeer_physics::world::shape::StaticShape;
 
 /// Corners of a ring of the stem's hull.
@@ -91,6 +91,18 @@ impl Tree {
                 let (s, cs) = det::sin_cos(std::f64::consts::TAU * c as f64 / RING as f64);
                 points.push(DVec3::new(r * cs, r * s, z));
             }
+        }
+        points
+    }
+
+    /// `part`'s hull with its base as the notch left it: rising from `pivot` (where it went
+    /// over, in the cut's plane) towards `toward` (unit) at the notch's opening, so it turns on
+    /// its hinge until the notch closes.
+    pub fn notched_hull(&self, part: &Part, pivot: DVec2, toward: DVec2) -> Vec<DVec3> {
+        let rise = det::tan(super::chop::OPENING);
+        let mut points = self.part_hull(part);
+        for p in points.iter_mut().filter(|p| p.z <= part.from) {
+            p.z += (p.truncate() - pivot).dot(toward).max(0.0) * rise;
         }
         points
     }

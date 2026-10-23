@@ -210,6 +210,48 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         view.altitude(camera.position),
         snapshot.counts.0,
     );
+    // `--frames n`: the same view drawn n times more, each from the snapshot on (G1.7: what a
+    // forest costs a frame).
+    let frames = (args.iter().position(|a| a == "--frames"))
+        .and_then(|i| args.get(i + 1)?.parse::<usize>().ok());
+    if let Some(n) = frames {
+        let mut stats = creeer_core::TimingStats::new(n);
+        for _ in 0..n {
+            let started = Instant::now();
+            let snapshot = view.snapshot();
+            let mut scene = Scene::default();
+            let pair = (&snapshot, &snapshot, 1.0);
+            physics_view::draw(
+                &mut scene,
+                &meshes,
+                DVec3::ZERO,
+                pair,
+                crate::demo::Overlay::Off,
+            );
+            people.draw(&snapshot.people, 0.0, &ground, &mut scene);
+            renderer.render_offscreen(Frame {
+                camera: &camera,
+                scene: &scene,
+                terrain: &view.draw,
+                terrain_frames: &[],
+                lighting: &lighting,
+                lines: &DebugLines::default(),
+                sky: Some(&sky),
+                heatmap: None,
+                overlay: None,
+                clear_color: crate::BACKGROUND,
+            });
+            stats.push(started.elapsed());
+        }
+        let p = |q| stats.percentile_ms(q).unwrap_or(0.0);
+        println!(
+            "{n} frames: p50 {:.2} ms, p99 {:.2} ms; {} rods, {} blobs",
+            p(50.0),
+            p(99.0),
+            snapshot.rods.len(),
+            snapshot.blobs.len()
+        );
+    }
     Ok(())
 }
 

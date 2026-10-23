@@ -124,7 +124,7 @@ fn blows_to_fell(
     for blow in 1..100_000 {
         cut.chop(0.0, per_blow);
         match tree.at_cut(species, &cut, DVec3::ZERO) {
-            Some((used, _)) if used < 1.0 => {}
+            Some((used, ..)) if used < 1.0 => {}
             _ => return (blow, cut.notches(tree.radius(0.5))[0].depth),
         }
     }
@@ -147,7 +147,8 @@ fn chopped_from_one_side_it_goes_over_towards_the_notch() {
         );
         let mut cut = Cut::at(0.5);
         cut.chop(0.0, chop::notch_volume(tree.radius(0.5), depth));
-        let (_, pivot) = tree.at_cut(species, &cut, DVec3::ZERO).unwrap();
+        let (_, pivot, way) = tree.at_cut(species, &cut, DVec3::ZERO).unwrap();
+        assert!(way.x > 0.99, "it goes over towards the notch: {way}");
         let left = Section::cut(tree.radius(0.5), &cut.notches(tree.radius(0.5))).unwrap();
         // It pivots on what is left's edge towards the notch, the weight beyond it.
         assert!(
@@ -213,11 +214,11 @@ fn the_wind_decides_which_way_a_balanced_cut_goes() {
         cut.chop(side, chop::notch_volume(r, 0.8 * r));
     }
     let still = tree.at_cut(spruce, &cut, DVec3::ZERO).unwrap().0;
-    let (windy, pivot) = tree
+    let (windy, _, way) = tree
         .at_cut(spruce, &cut, DVec3::new(0.0, 15.0, 0.0))
         .unwrap();
     assert!(windy > still, "{windy} {still}");
-    assert!(pivot.y > 0.0, "it goes with the wind: {pivot}");
+    assert!(way.y > 0.9, "it goes with the wind: {way}");
 }
 
 #[test]

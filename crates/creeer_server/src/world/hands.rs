@@ -199,12 +199,54 @@ impl ServerWorld {
     /// After the step: a load the hands have given their most for, or have had out of their
     /// reach, over a tenth of a second, drops.
     pub(super) fn carry_after(&mut self) {
+        self.grip_holds_twist();
         let dropped: Vec<EntityId> = (self.carrying.iter())
             .filter(|(_, c)| c.straining >= OVER || c.torn >= OVER)
             .map(|(by, _)| *by)
             .collect();
         for by in dropped {
             self.let_go(by);
+        }
+    }
+}
+
+/// Below this share of its largest moment, a load's least is a handle's own axis: the fist
+/// closes round it (a stick, a haft).
+const SLENDER: f64 = 0.1;
+
+impl ServerWorld {
+    /// After the step: a slender load does not turn in the fist about its own axis beyond what
+    /// the grip's friction lets (`grip`, as an impulse over the step: Coulomb's, it only takes
+    /// spin away). The arms' spring cannot hold that axis (its moment is a few hundredths of a
+    /// percent of the others: a stick's), and a stick pressed against a trunk or a crate by the
+    /// hands was spun about it by its contact's friction, to 450–525 rad/s (G1.7).
+    fn grip_holds_twist(&mut self) {
+        let held: Vec<(usize, usize, DVec3)> = (self.carrying.iter())
+            .filter_map(|(by, c)| {
+                let (i, b) = (self.index(*by)?, self.index(c.load)?);
+                let centre = self.world.bodies[i].structure.position[0];
+                let up = character::plumb(&self.world, centre);
+                Some((b, c.node, up * c.spin))
+            })
+            .collect();
+        for (b, node, spin) in held {
+            let mass = self.mass_of(b);
+            let Some(inertia) = (self.world.bodies[b].shapes.first()).map(|(_, s)| s.inertia(mass))
+            else {
+                continue;
+            };
+            let moments = [inertia.x_axis.x, inertia.y_axis.y, inertia.z_axis.z];
+            let largest = moments.iter().copied().fold(0.0, f64::max);
+            let (k, least) = (moments.iter().copied().enumerate())
+                .fold((0, f64::MAX), |m, (k, v)| if v < m.1 { (k, v) } else { m });
+            if !(least > 0.0 && least < SLENDER * largest) {
+                continue;
+            }
+            let s = &mut self.world.bodies[b].structure;
+            let axis = s.orientation[node] * DVec3::AXES[k];
+            let twist = (s.angular_velocity[node] - spin).dot(axis);
+            let most = grip() * DT / least;
+            s.angular_velocity[node] -= axis * twist.clamp(-most, most);
         }
     }
 }

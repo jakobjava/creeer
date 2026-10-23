@@ -67,6 +67,7 @@ impl ServerWorld {
             this.items.laid.insert(id, (item, at, turn));
             this.items.laid_log.push(id);
         }
+        this.restore_trees(save.trees);
         this.next_machine = save.machines.iter().map(|m| m.id + 1).max().unwrap_or(1);
         this.machines = (save.machines.iter())
             .map(|m| super::machines::Placed::restored(m, Powerhouse::new()))
@@ -126,6 +127,7 @@ impl ServerWorld {
                     .map(|(id, (item, at, turn))| (*id, item.clone(), *at, *turn))
                     .collect(),
             },
+            trees: self.saved_trees(),
         }
     }
 }

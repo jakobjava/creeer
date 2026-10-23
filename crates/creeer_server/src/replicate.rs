@@ -51,6 +51,7 @@ pub fn kind(body: &Body, drawn: &Drawn, joined: bool) -> Kind {
                 };
             }
         }
+        Drawn::Tree(part) => return Kind::Tree(part.clone()),
         Drawn::Thing | Drawn::Item { .. } => {}
     }
     let colour = match drawn {

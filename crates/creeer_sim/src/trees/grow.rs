@@ -152,6 +152,19 @@ impl Tree {
         tree
     }
 
+    /// Only its stem: no branches (what a trunk's boxes need, `felled.rs`).
+    pub fn stem_only(species: &Species, dbh: f64) -> Self {
+        let height = species.height_at(dbh);
+        Self {
+            dbh,
+            height,
+            crown_base: height * (1.0 - species.crown.ratio),
+            taper: species.taper,
+            density: species.density,
+            nodes: Vec::new(),
+        }
+    }
+
     /// The stem's radius at height `z` (m; none above the top).
     pub fn radius(&self, z: f64) -> f64 {
         let r = 0.5 * self.dbh;
@@ -165,6 +178,8 @@ impl Tree {
     /// inertia about that centre (kg·m², tree frame axes).
     pub fn stem(&self, from: f64, to: f64) -> (f64, DVec3, DMat3) {
         let to = to.min(self.height);
+        let (mass, centre) = self.stem_exact(from, to);
+        // The inertia from slices (discs), about the exact centre.
         let mut lumps = Vec::with_capacity(SLICES);
         #[allow(clippy::cast_precision_loss)]
         let dz = (to - from) / SLICES as f64;
@@ -178,7 +193,30 @@ impl Tree {
             let own = DMat3::from_diagonal(DVec3::new(across, across, 0.5 * m * r * r));
             lumps.push((m, DVec3::new(0.0, 0.0, z), own));
         }
-        combine(&lumps)
+        let (sliced, at, inertia) = combine(&lumps);
+        // Moved from the slices' centre to the exact one, scaled to the exact mass.
+        let r = DVec3::new(0.0, 0.0, at.z - centre.z);
+        let shift = (DMat3::IDENTITY * r.dot(r) - outer(r, r)) * sliced;
+        let inertia = (inertia + shift) * (mass / sliced.max(f64::MIN_POSITIVE));
+        (mass, centre, inertia)
+    }
+
+    /// The stem's mass between `from` and `to` and its centre, exactly: with u = H − z,
+    /// r² = r₁.₃²·(u/(H − 1.3))^(2·taper), so ∫u^k·r² dz is a power of u (so the masses of
+    /// spans add up, to rounding: a cut's chips and its two pieces are the whole).
+    pub fn stem_exact(&self, from: f64, to: f64) -> (f64, DVec3) {
+        let (h, p2) = (self.height, 2.0 * self.taper);
+        let r = 0.5 * self.dbh;
+        let scale = self.density * std::f64::consts::PI * r * r / det::pow(h - 1.3, p2);
+        let (ua, ub) = ((h - from).max(0.0), (h - to).max(0.0));
+        let power = |k: f64| (det::pow(ua, p2 + k) - det::pow(ub, p2 + k)) / (p2 + k);
+        let mass = scale * power(1.0);
+        if mass <= 0.0 {
+            return (0.0, DVec3::new(0.0, 0.0, from));
+        }
+        // ∫ z·r² dz = ∫ (H − u)·r² du.
+        let moment = scale * (h * power(1.0) - power(2.0));
+        (mass, DVec3::new(0.0, 0.0, moment / mass))
     }
 
     /// Branch `b` of node `node`'s mass at its centre (tree frame) and its inertia there: its

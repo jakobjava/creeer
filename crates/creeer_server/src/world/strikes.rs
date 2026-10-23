@@ -16,6 +16,8 @@ use creeer_sim::{reach, strike};
 pub(super) enum Aim {
     Ground(DVec3),
     Body(EntityId, usize, DVec3),
+    /// A standing tree (G1.7, `felling.rs`), by its id, at its cut's height up its stem.
+    Tree(u64, f64),
 }
 
 /// A swing on its way.
@@ -161,8 +163,20 @@ impl ServerWorld {
                 strike::swing_of(held.mass, held.gyration, held.carry, held.strike)
             }
         };
+        if let Aim::Tree(tree, z) = s.aim {
+            let at = self.chop_tree(s.by, tree, z, (&swing, s.tool))?;
+            return Some(Blow {
+                by: s.by,
+                tool: s.tool,
+                on: None,
+                at,
+                impulse: DVec3::ZERO,
+                energy: swing.energy,
+            });
+        }
         let (on, at) = match s.aim {
             Aim::Ground(at) => (None, at),
+            Aim::Tree(..) => return None,
             Aim::Body(id, node, local) => {
                 let b = &self.world.bodies[self.index(id)?].structure;
                 (
@@ -203,7 +217,10 @@ impl ServerWorld {
         self.world.apply_impulse(index, node, way * j, at);
         // What the blow breaks (G1.6d, `making.rs`): its collision's energy into the struck.
         let reduced = swing.mass * mass / (swing.mass + mass);
-        self.broken_by(s.by, id, 0.5 * reduced * swing.speed * swing.speed, j);
+        let energy = 0.5 * reduced * swing.speed * swing.speed;
+        self.broken_by(s.by, id, energy, j);
+        // What it cuts, if it is a felled tree's part (G1.7, `bucking.rs`).
+        self.chop_part(s.by, id, (at, way), (energy, s.tool));
         Some(Blow {
             by: s.by,
             tool: s.tool,

@@ -259,6 +259,8 @@ pub fn word(item: &Item) -> &'static str {
             Form::Block { .. } => "block",
         },
         Item::Made(_) => "tool",
+        // By its grain: crumbs of rock, or chips (G1.7: an axe's, a few centimetres).
+        Item::Bulk(b) if b.grain >= 0.01 => "chips",
         Item::Bulk(_) => "grit",
     }
 }

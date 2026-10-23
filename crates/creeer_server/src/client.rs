@@ -89,6 +89,8 @@ pub struct Connection {
     pub taken: BTreeSet<u64>,
     /// The items laid at rest on the ground, by id (G1.6: drawn, not bodies).
     pub laid: BTreeMap<u64, creeer_net::message::Laid>,
+    /// Standing trees cut into or felled, by id (G1.7).
+    pub trees: BTreeMap<u64, creeer_net::message::TreeCut>,
     /// Why the last command was refused, and when it was told (G1.6).
     pub refused: Option<(String, std::time::Instant)>,
     /// What came of the last thing done, and when it was told (G1.6).
@@ -143,6 +145,7 @@ impl Connection {
             inventory: creeer_net::message::Inventory::default(),
             taken: BTreeSet::new(),
             laid: BTreeMap::new(),
+            trees: BTreeMap::new(),
             refused: None,
             noted: None,
             items: BTreeMap::new(),

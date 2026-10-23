@@ -38,6 +38,15 @@ impl Server {
                 loose: *loose,
                 started: self.world_tick(*started),
             },
+            Command::StrikeTree {
+                tree,
+                height,
+                started,
+            } => Command::StrikeTree {
+                tree: *tree,
+                height: *height,
+                started: self.world_tick(*started),
+            },
             other => other.clone(),
         };
         self.world.apply(&command, Some(avatar))

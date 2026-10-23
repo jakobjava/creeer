@@ -30,6 +30,7 @@ impl ServerWorld {
                 | Command::Bind(_)
                 | Command::BindLying(_)
                 | Command::StrikeLoose { .. }
+                | Command::StrikeTree { .. }
         );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
@@ -86,8 +87,16 @@ impl ServerWorld {
             Command::StrikeLoose { loose, started } => {
                 self.strike_loose(by.ok_or("only a player")?, *loose, *started)?;
             }
+            Command::StrikeTree {
+                tree,
+                height,
+                started,
+            } => {
+                self.strike_tree(by.ok_or("only a player")?, *tree, *height, *started)?;
+            }
             Command::Kit { item, at } => {
                 within(*at)?;
+                self.clear_of_trunks(*at, 0.3)?;
                 self.drop_kit(*item, *at)?;
             }
             Command::Wield { tool } => {
@@ -98,6 +107,7 @@ impl ServerWorld {
             }
             Command::Crate(at) => {
                 within(*at)?;
+                self.clear_of_trunks(*at, 0.71)?;
                 let mut body = Body::rigid(
                     Shape::Box {
                         half: DVec3::splat(0.5),
@@ -112,6 +122,7 @@ impl ServerWorld {
             }
             Command::Box(at) => {
                 within(*at)?;
+                self.clear_of_trunks(*at, 0.29)?;
                 // As the play scene's: 0.4 m of wood, 15 kg (G1.4f: one to carry).
                 let half = DVec3::splat(0.2);
                 let mut body = Body::rigid(Shape::Box { half }, 15.0, *at, DT);
@@ -121,6 +132,7 @@ impl ServerWorld {
             }
             Command::Ball(at) => {
                 within(*at)?;
+                self.clear_of_trunks(*at, 0.4)?;
                 let mut body = Body::rigid(Shape::Sphere { radius: 0.4 }, 300.0, *at, DT);
                 body.friction = 0.7;
                 body.restitution = 0.3;
@@ -128,6 +140,7 @@ impl ServerWorld {
             }
             Command::Frame(at) => {
                 within(*at)?;
+                self.clear_of_trunks(*at, 1.5)?;
                 self.add(frame(*at), None);
             }
             Command::Powerhouse(at) => {

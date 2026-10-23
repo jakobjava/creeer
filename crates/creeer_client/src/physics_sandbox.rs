@@ -117,6 +117,10 @@ pub struct PhysicsSnapshot {
     pub heat: Option<String>,
     pub drive: Option<String>,
     pub fluids: Option<String>,
+    /// Coloured rods (G1.7: stems and branches): ends, radius, colour.
+    pub rods: Vec<(DVec3, DVec3, f64, [u8; 3])>,
+    /// Coloured ellipsoids (G1.7: crowns): centre, orientation, half axes, colour.
+    pub blobs: Vec<(DVec3, DQuat, DVec3, [u8; 3])>,
     /// Cost of the last physics step (ms).
     pub step_ms: f64,
 }

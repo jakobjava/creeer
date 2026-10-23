@@ -57,7 +57,11 @@ pub(crate) fn world() -> (ServerWorld, Vec<EntityId>) {
         for c in 0..50 {
             let (x, y) = (f64::from(c % 10) * 1.5, f64::from(c / 10) * 1.5);
             let at = place(&w, east + 5.0 + x, 5.0 + y, 0.6);
-            w.apply(&Command::Crate(at), None).expect("a crate");
+            // (Since G1.7 the yards are in the forest: none is put into a trunk.)
+            match w.apply(&Command::Crate(at), None) {
+                Err(e) if e != "a tree stands there" => panic!("a crate: {e}"),
+                _ => {}
+            }
         }
     }
     (w, players)
