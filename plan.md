@@ -84,7 +84,7 @@ creeer/
     creeer_thermal/          # lumped thermal network (conduction, convection, radiation)
     creeer_fluids/           # pipe networks, atmospheres, aerodynamics, buoyancy
     creeer_logic/            # signals, gates, sensors, Lua controllers
-    creeer_building/         # parametric parts -> physics structures, blueprints
+    creeer_building/         # parts and fasteners -> physics structures; design files later
     creeer_sim/              # composes everything: world, sim LOD, save/load
     creeer_net/              # protocol, replication, interest management
     creeer_render/           # wgpu renderer
@@ -148,7 +148,7 @@ creeer/
 
 **Building (`creeer_building`):**
 - A parametric part catalog: structural members (I-beams, tubes, rods, plates with chosen profile, dimensions and material), joints (welded, bolted, hinge, bearing), and mechanical, electrical, fluid, logic and propulsion parts.
-- Free placement with optional snapping, grids, symmetry and numeric input. Blueprints.
+- Building by hand: parts are held, put in place and fastened with tools. Precision (measuring, drawings, CAD and design files) comes from tools the player has made (Phase B, principle 13).
 - A part's physics data (mass, inertia, beam stiffness) is computed from its geometry and material.
 
 **Player:** a physics-based character with real mass and friction, gravity towards the planet's centre, a jetpack or EVA RCS in zero-g, ragdoll on big impacts and impulse-based fall damage. Survival covers health, hunger, thirst, O₂ and suit pressure, temperature and radiation.
@@ -286,7 +286,8 @@ Revised 2026-10-18, before G1, with the user's answers: the physics' deferred sp
 9. **Nothing given** (the user, 2026-10-22). Survival gives the clothes worn and nothing else: no landing pod, no kit, no free refills, no endless sources. Handouts belong to creative and test servers.
 10. **Fundamentals first, and development time is limited** (the user, 2026-10-22: "basic and fundamental gameplay mechanics and systems and not spend hours on little polish things"; "i DO NOT have unlimited usage and want to get to the fun part of designing production, buildings, vehicles, etc. soon"). Each milestone builds the smallest version of its loop that is real and fast, tested where its physics and gates need it, and the user plays it as soon as it is playable. Story, staging, decoratives, UI themes, golden images of the UI and other polish go to G11 through `docs/future-improvements.md`. Performance is a fundamental, never polish. In the user's words: "good quality but focused and research driven; no faffing about; the game can always be fleshed out later to make it look more flashy".
 11. **Generic systems, few designed parts** (pillars above). A milestone builds the system with its attributes and a few data entries that prove it is generic, not a catalogue of hand-made content.
-. **Foundations now, refinement later** (the user, 2026-10-22: "you (opus 5.5) lay the foundations of the game and make the actual important design and architecture decisions; and then later one can refine it easily because everything is flexible and data driven (so i can use cheaper models for that)"). Each milestone builds the architecture and the generic systems, with a few data entries that prove them. More content, tuning and polish come later and are data work. Every data file says in its header how to add to it, the validator catches bad entries, and the tests check every entry generically.
+12. **Foundations now, refinement later** (the user, 2026-10-22: "you (opus 5.5) lay the foundations of the game and make the actual important design and architecture decisions; and then later one can refine it easily because everything is flexible and data driven (so i can use cheaper models for that)"). Each milestone builds the architecture and the generic systems, with a few data entries that prove them. More content, tuning and polish come later and are data work. Every data file says in its header how to add to it, the validator catches bad entries, and the tests check every entry generically.
+13. **Precision is technology** (the user, 2026-10-23: "one should only be able to build precise things if one has the technology to do so, visually it should not really be more than what you see in real life"; "proper things like vehicles and rockets will need a pen and paper, tape measure, cad-software etc"). The build interface shows only what a person on site would see: no ghost previews, snapping, grids, symmetry, numeric input, undo or "will it hold?" preview. A part goes where hands put it and is as straight as the eye judges it. Precision comes from tools the player has made, on a ladder: **by eye** (G2: cut where you point, copy a length by marking against another part) → **measuring and marking tools** (G3: tape measure, steel rule, square, spirit level, jigs and templates, with the lathe's tolerances) → **paper drawings** with dimensions, followed with those tools (before G6's vehicles) → **CAD, CNC and design files** shared between players (computers, G7/G10). Each tool's accuracy is data. Debug views such as the stress overlay exist on creative and test servers as information, not as a survival tool; creative gives free materials, not conveniences.
 
 #### When the physics gets faster: the performance track
 
@@ -342,21 +343,17 @@ Detailed plan: `docs/g1-plan.md` (its sub-milestone numbering supersedes the out
 
 #### G2: Building system
 
-- **G2.1 Part catalog** (`creeer_building`). Parametric parts from the data packs:
-  - members: I and H sections, channels, angles, tubes, box sections, rods, plates, with profile dimensions from standard tables or free;
-  - materials from the packs (lifts *the sandbox's built-in S235*);
-  - joints: welded (rigid), bolted (bolt count and grade → slip and shear limits), pins and hinges, bearings;
-  - foundations anchored into terrain, with a pull-out strength from the rock.
-  
-  Each part's mass, inertia and section properties are computed, and tested against section tables.
-- **G2.2 Placement.** Build mode with ghost previews, snapping to nodes, members and grids, symmetry (mirror, radial), numeric input (lengths, angles), cut to length, undo. A **"will it hold?" preview** solves the structure quasi-statically before a part is placed, with the stress overlay.
-- **G2.3 Construction costs.** Placing a part takes its item from the inventory; welding and bolting are tool actions that take time. In survival a part is made from the player's own material: logs, stone and lashings at first, their own metal from G3. Creative servers build freely.
-- **G2.4 Structure → physics.** A building is a structure (ADR-0004) anchored to the ground. It is quasi-static at rest and collapses when overloaded (yield, buckling, fracture). Lifts *lateral-torsional buckling* (beams in buildings are bent about their strong axis) and *members colliding with each other* (a collapse must not fold through itself).
-- **G2.5 Blueprints.** A selection is saved as a blueprint (a data file, validated like a pack), placed as ghosts, and shared as a file.
-- **G2.6 Damage and deconstruction.** Cutting members (torch, saw); salvage returns the material less the cut's waste; bent parts keep their plastic deformation.
+Re-planned 2026-10-23, before G2, with the user (principle 13): building is by hand, as on a real site. Parts are carried, put in place and fastened; nothing snaps, previews or undoes. Blueprints and precise placement move to the tools that make them possible (G3, G6, G7/G10).
+
+- **G2.1 Parts and fasteners** (`creeer_building`), as one generic attribute system:
+  - parts are the discrete items the player has (G1.5), with the material and dimensions they were made with: logs, sawn beams and planks, rods and bars, panels and plates. A part's mass, inertia and section properties are computed from its shape and material (lifts *the sandbox's built-in S235*), tested against section tables. Rolled sections (I, H, channels, angles, tubes) are the same system's data once G3's rolling mill makes them;
+  - fasteners are data with physical attributes: a joint's stiffness, slip and strength come from its fastener's count, size and material and the parts it joins (Eurocode 5's dowel-type rules for nails and pegs; friction and rope strength for lashings). G2 proves the system with **lashings, wooden pegs and nails**. **Welds and bolts** must later be data entries and one joint law each, with no change to the system. Nails need iron, so survival players get them with G3; creative servers have them from the start.
+- **G2.2 Building by hand.** A part is held by the grab constraint (G1.2), so its weight is real: a heavy or overhead beam needs props, rope, scaffolding or a second player, and a brace holds a part still against the body. It is put against another part by hand, as straight as the player judges it, and fastened with a tool action that takes time (lash, drill and peg, hammer a nail). The joint forms where the parts touch. Cutting to length is a saw cut where the player points, or along a mark made against another part to copy its length. Fastening takes the fastener items from the inventory; creative servers give materials freely. Taking a structure apart means pulling the nails, cutting the lashing or sawing the member.
+- **G2.3 Structure → physics.** Fastened parts are a structure (ADR-0004): resting on the ground by friction, or anchored by a post dug in and backfilled (its pull-out and lateral strength from the soil). It is quasi-static at rest and collapses when overloaded (yield, buckling, fracture, joints that slip and pull out). Lifts *lateral-torsional buckling* (beams in buildings are bent about their strong axis) and *members colliding with each other* (a collapse must not fold through itself). In survival a structure shows only what a real one does: sag, sway, cracks and failure. The stress overlay is a debug view on creative and test servers.
+- **G2.4 Damage and deconstruction.** Cutting members (saw now, torch later); salvage returns the material less the cut's waste; bent parts keep their plastic deformation; pulled fasteners can be reused when undamaged.
 - **P2: the structure solve, P3: struck structures** (performance track).
-- **Play scenes:** *tower* (a 20-storey steel frame of about 20,000 beams under wind, at rest); *collapse* (the tower loses a ground-floor column); *drop* (the sandbox's 10 t block on a 40 m bridge); *builders* (8 players building at once).
-- **Demo:** build a bridge across a gorge, load it with crates, watch the stresses, overload it until it collapses.
+- **Play scenes:** *tower* (a 20-storey steel frame of about 20,000 beams under wind, at rest); *collapse* (the tower loses a ground-floor column); *drop* (the sandbox's 10 t block on a 40 m bridge); *builders* (8 players building by hand at once). The tower and the bridge are assembled by script, as play scenes are.
+- **Demo:** in survival, build a log bridge across a gorge by hand with lashings and pegs, load it with crates, watch it sag, overload it until it collapses; on a creative server, the same with nailed timber and the stress overlay.
 
 #### G3: Mechanical power & first production chains
 
@@ -368,7 +365,7 @@ Re-planned 2026-10-22 in outline (the full plan comes at G3's start): the player
 - **G3.3 First machines and bulk handling.** A jaw crusher and a ball mill (energy from the Bond work index, the product's size distribution), screens, a sawmill (logs → planks and timber members), a trip hammer. Conveyors driven by shafts, chutes, hoppers and bins; material on a belt is a bulk flow, not bodies. A simple arm with taught positions (programmed in G7).
 - **G3.4 Concentration.** Gravity concentration (jigs, shaking tables) and magnetic separation first; froth flotation with a collector from the chemistry (recovery against particle size and reagent).
 - **G3.5 Heat and smelting.** Charcoal from wood (pyrolysis), coal; a bloomery, crucible furnaces and a blast furnace, with temperatures from the thermal network and reactions from `creeer_chem` (carbothermic reduction of iron oxides; roasting and smelting copper sulfides to matte and copper). Lifts *activity models* as far as smelting needs: a slag model (FeO–SiO₂–CaO) for slags and the metal they leave.
-- **G3.6 Shaping.** Casting (solidification time from the heat flow), forging, a rolling mill, wire drawing, a lathe and a mill with tolerances. A part's microstructure (carbon content, grain size, heat treatment) sets its E, yield strength and UTS, so **a beam rolled from your steel has your steel's strength**.
+- **G3.6 Shaping.** Casting (solidification time from the heat flow), forging, a rolling mill, wire drawing, a lathe and a mill with tolerances; measuring and marking tools (tape measure, steel rule, square, spirit level, jigs and templates), the second step of principle 13's ladder. A part's microstructure (carbon content, grain size, heat treatment) sets its E, yield strength and UTS, so **a beam rolled from your steel has your steel's strength**.
 - **G3.7 Steel.** Pig iron fined to steel with air (Bessemer; oxygen comes in G5), carbon controlled by the chemistry.
 - **G3.8 Progression and statistics.** No tech tree: an engineering notebook records what the player has identified and made (minerals, reactions, alloys), and the Codex opens by observation, not by unlocks. Production statistics per machine and network, from their ledgers. The player's machines go abstract when nobody is near (ADR-0020); lifts *machines sharing stocks*.
 - **P4: networks beside the tick**, for drivetrains (performance track).
@@ -401,7 +398,7 @@ Re-planned 2026-10-22 in outline (the full plan comes at G3's start): the player
 
 - **G6.1 Wheels.** A tyre model (Pacejka or a brush model fitted to the rubber's properties: load sensitivity, slip, heat); springs and dampers as parts; steering geometry.
 - **G6.2 Engines and drivetrains.** Combustion engines (Otto and Diesel cycles from G5's fuels: torque, consumption, exhaust composition), clutches, gearboxes and differentials; electric drive from G4. Lifts *a drivetrain feeling its body's linear acceleration*.
-- **G6.3 Building and driving vehicles.** Vehicles are free structures built with G2's tools; they deform and tear in crashes. Seats and controls: the character drives.
+- **G6.3 Building and driving vehicles.** Vehicles are free structures built with G2's tools, made precise with G3's measuring tools and paper drawings (principle 13: paper from wood pulp, a drawing board, dimensions written on the drawing and followed with the tape measure); they deform and tear in crashes. Seats and controls: the character drives.
 - **G6.4 Water.** Boats and propellers. Lifts *waves* (a sea state, roll damping by radiation), *water over the deck*, *sloshing in hulls*, *added mass as a tensor* and *hull drag*.
 - **G6.5 Air.** Aircraft from aero panels, lifts *aero interference* (downwash on tailplanes, panels' pitching moments).
 - **G6.6 Vehicles in multiplayer.** A driver predicts their own vehicle; others are interpolated; plastic deltas of crashed vehicles within the bandwidth budget.
@@ -441,7 +438,7 @@ Re-planned 2026-10-22 in outline (the full plan comes at G3's start): the player
 
 #### G10: Advanced tech
 
-- **G10.1 Semiconductors.** Quartz → metallurgical silicon → the Siemens process → Czochralski → wafers → lithography → chips. Lifts *transistors* and electronic components, and chips feed G7's controllers (the optional RISC-V CPU is decided here).
+- **G10.1 Semiconductors.** Quartz → metallurgical silicon → the Siemens process → Czochralski → wafers → lithography → chips. Lifts *transistors* and electronic components, and chips feed G7's controllers (the optional RISC-V CPU is decided here). Computers run CAD and drive CNC machines, the last step of principle 13's ladder: design files (data files validated like a pack) are shared between players, and machines and robot arms build from them exactly. Whether a simpler CAD comes earlier on G7's controllers is decided at G7.
 - **G10.2 Fission.** Uranium deposits (ADR-0006) → enrichment → reactors with kinetics and decay heat, shielding, radiation.
 - **G10.3 Materials.** Stainless steels, superalloys, titanium (Kroll), carbon-fibre composites. Lifts *local buckling of thin walls* (shell elements) if thin aerospace structures need it.
 - **Demo:** a chip made from sand running a controller; a fission plant on the grid.
