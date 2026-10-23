@@ -2,9 +2,9 @@ crowd 300 dc6466d2276fa901
 work 300 31b59c717035bbb6
 lumberjack 300 6b14970c8213afe4
 quarry 300 8e325c645252e565
-toolmaking 1100 ef606953a119ff44
+toolmaking 1100 adb36b86730b35b8
 crowd 1800 22a7a8eedd04cded
 work 1800 9c2aad3b5de6e48d
 lumberjack 1800 46b11fef2b81899d
 quarry 1800 9683b4efed81c62c
-toolmaking 1800 52d21042b815f93d
+toolmaking 1800 16cdd839eb3c095d

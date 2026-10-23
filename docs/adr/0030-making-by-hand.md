@@ -80,3 +80,20 @@ The user: a made tool was "a square" (drawn as the box about it, in its head's c
 - **Drawn as pieces:** a made thing's body is told to clients with its pieces (`ServerMessage::Parts`, after its spawn) and a laid one with them (`Laid.parts`): the haft a stick and the head a stone, each in its material's colour.
 - **Told, not found by trying:** under the crosshair, what the hands hold (its size, mass and edge: "an edge 4 cm long, 30°, sharp"), the keys that would act on it and on what the crosshair is on ("click: strike it · R: strip bark · B: bind it on as a head"), and what came of the last act (`ServerMessage::Note`: "a flake came off: …", "it crumbled: 12 g of grit", "it only bruised", "bound: …; it holds 2,400 N") or why it was refused. The keys, not recipes: which stone makes a good head stays the player's to know.
 - **Binding checks its parts:** the haft a stick of 25 cm or more, the head a stone (a rock, not a strip), the strip from a pocket or lying in reach; a lying head is bound by its id (`Command::BindLying`, protocol 20).
+
+## Amended in G2.3 (2026-10-23): split hafts, and every cutting blow's load alike
+
+The user's play: "when i strike a felled tree the tool breaks".
+
+**Found:** the three ways a made tool cuts loaded its binding three ways.
+- A dig loaded it with the edge stopping over the depth it went in (`dig::peak_force`, G1.5).
+- Felling a standing tree loaded it with nothing.
+- A blow on a felled part loaded it with its whole impulse stopped in 2 ms. On a trunk of 100 kg that is several kN, so every blow broke the tool.
+
+**Now** all three load it with `dig::peak_force`: the energy over the depth it cut, never more than the impulse in 2 ms. Measured: a 69.5 J blow cutting 3.7 cm³ of green spruce, about 1.5 cm deep, gives 3.0 kN. A flake only lashed across a stick's end holds 2.4 kN.
+
+**The user chose split hafts.** `making::bind_split`: a head thinner than the haft's radius goes into the haft's split end, as Neolithic axes were hafted (the Ötzi axe's forked yew; split-hafted adzes). A blow drives it against the split's two walls, which bear across the grain over about the haft's diameter squared each: f_c,90·2·d². That comes on top of the lashing's friction, which keeps the split closed. A thicker head is only lashed on, as before.
+- A 12 mm chert flake in a 36 mm green spruce haft (1.8 MPa across) holds 2.4 + 4.7 kN.
+- It cuts a felled crown's stem through in 221 blows, its binding holding all the while (`trees_tests.rs`, 20 blows in CI).
+
+Toolmaking's play hashes changed: its tools' saved holds include the wedge.

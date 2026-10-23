@@ -92,6 +92,11 @@ impl ServerWorld {
         let energy = 0.5 * swing.mass * swing.speed * swing.speed;
         let edge = self.striking_edge(by, tool);
         let volume = chop::chopped(energy, edge, species.across);
+        // What a made tool's binding bears: the edge stopping over the depth it cuts, as when
+        // limbing and digging (G2.3: felling had loaded it with nothing).
+        let impulse = swing.mass * swing.speed;
+        let force = creeer_sim::dig::peak_force(energy, volume, (impulse, super::making::CONTACT));
+        self.binding_bears(by, force);
         let r = grown.radius(z);
         let at = axis + standing.turn * (DVec3::new(det::cos(azimuth), det::sin(azimuth), 0.0) * r);
         if volume <= 0.0 {

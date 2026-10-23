@@ -227,9 +227,18 @@ impl ServerWorld {
         // What the blow breaks (G1.6d, `making.rs`): its collision's energy into the struck.
         let reduced = swing.mass * mass / (swing.mass + mass);
         let energy = 0.5 * reduced * swing.speed * swing.speed;
-        self.broken_by(s.by, id, energy, j);
-        // What it cuts, if it is a felled tree's part (G1.7, `bucking.rs`).
-        self.chop_part(s.by, id, (at, way), (energy, s.tool));
+        // What it cuts, if it is a felled tree's part (G1.7, `bucking.rs`). An edge cutting in
+        // stops over the depth it cuts, as a dig's does (`dig::peak_force`): taken as its whole
+        // impulse stopped in a millisecond, every blow on a felled trunk broke a made tool's
+        // binding (G2.3, the user's play).
+        match self.chop_part(s.by, id, (at, way), (energy, s.tool)) {
+            Some(cut) => {
+                let contact = super::making::CONTACT;
+                let force = creeer_sim::dig::peak_force(energy, cut, (j, contact));
+                self.binding_bears(s.by, force);
+            }
+            None => self.broken_by(s.by, id, energy, j),
+        }
         Some(Blow {
             by: s.by,
             tool: s.tool,

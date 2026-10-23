@@ -177,7 +177,8 @@ impl ServerWorld {
         let strength = densities
             .strength(&binding.material)
             .ok_or("a binding of what?")?;
-        let made = making::bind(haft, stone.clone(), binding, strength)?;
+        let across = densities.across(&haft.material);
+        let made = making::bind_split(haft, stone.clone(), binding, strength, across)?;
         match from {
             StripAt::Pocket(pocket, k) => {
                 self.change_pockets(by, |p| p[pocket].take(k));

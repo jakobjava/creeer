@@ -11,7 +11,8 @@
 //!
 //! **Bark** peels off a fresh branch by hand as a strip of inner bark (bast), its mass the
 //! branch's loss. **Binding** sets a head across a haft's end and winds a strip about the joint;
-//! what it holds is the strip's strength times its wraps and friction.
+//! what it holds is the strip's strength times its wraps and friction, and a head wedged into
+//! the haft's split end the wood's bearing across its grain besides (G2.3, `bind_split`).
 
 use crate::items::{Assembly, Bulk, Edge, Form, Item, Part, Piece};
 use creeer_math::det;
@@ -138,6 +139,21 @@ pub fn strip(branch: &mut Piece, bast: (&str, f64)) -> Option<Piece> {
 /// # Errors
 /// If the haft is no rod, or the binding no strip long enough for two wraps.
 pub fn bind(haft: Piece, head: Piece, binding: Piece, strength: f64) -> Result<Assembly, String> {
+    bind_split(haft, head, binding, strength, None)
+}
+
+/// As [`bind`], the haft's wood `across` its grain this strong (Pa): a head thinner than the
+/// haft's radius goes into its split end (the split haft of Neolithic axes: the Ötzi axe's
+/// forked yew, split-hafted adzes), and a blow drives it against the split's two walls. They
+/// bear across the grain over about the haft's diameter squared each, on top of what the
+/// lashing holds by friction (it keeps the split closed). A thicker head is only lashed on.
+pub fn bind_split(
+    haft: Piece,
+    head: Piece,
+    binding: Piece,
+    strength: f64,
+    across: Option<f64>,
+) -> Result<Assembly, String> {
     let Form::Rod { radius, length } = haft.form else {
         return Err("a haft is a stick".into());
     };
@@ -152,7 +168,13 @@ pub fn bind(haft: Piece, head: Piece, binding: Piece, strength: f64) -> Result<A
         return Err(format!("too short a binding: {wraps} wraps"));
     }
     let tension = strength * strip.y * strip.z;
-    let hold = 2.0 * wraps * tension * FRICTION;
+    let lashed = 2.0 * wraps * tension * FRICTION;
+    let diameter = 2.0 * radius;
+    let wedged = match across {
+        Some(across) if thin < radius => across * 2.0 * diameter * diameter,
+        _ => 0.0,
+    };
+    let hold = lashed + wedged;
     // The head's longest axis across the haft (along y), its edge outward.
     let turn = match head.form {
         Form::Block { size } | Form::Lump { size } if size.y > size.x => DQuat::IDENTITY,

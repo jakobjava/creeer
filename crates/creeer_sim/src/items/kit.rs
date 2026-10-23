@@ -91,6 +91,11 @@ impl Densities {
         self.rocks.rocks[usize::from(self.rocks.rock(material)?)].breaks
     }
 
+    /// A wood's compressive strength across its grain (Pa), if `material` is one (G2.3).
+    pub fn across(&self, material: &str) -> Option<f64> {
+        self.materials.get(material)?.across
+    }
+
     /// The tensile strength of engineering material `material` at 20 °C (Pa).
     pub fn strength(&self, material: &str) -> Option<f64> {
         Some(self.materials.get(material)?.ultimate_strength.at(20.0))

@@ -27,18 +27,12 @@ impl ServerWorld {
         id: EntityId,
         (at, way): (DVec3, DVec3),
         (energy, tool): (f64, Option<u8>),
-    ) {
-        let Some(part) = self.trees.parts.get(&id).cloned() else {
-            return;
-        };
-        let Some(forest) = self.trees.forest.clone() else {
-            return;
-        };
-        let Some(tree) = forest.grow_part(&part) else {
-            return;
-        };
+    ) -> Option<f64> {
+        let part = self.trees.parts.get(&id).cloned()?;
+        let forest = self.trees.forest.clone()?;
+        let tree = forest.grow_part(&part)?;
         let species = &forest.species[usize::from(part.species)];
-        let Some(i) = self.index(id) else { return };
+        let i = self.index(id)?;
         let s = &self.world.bodies[i].structure;
         let (position, turn) = (s.position[0], s.orientation[0]);
         let (_, centre, _) = tree.part_mass(&part);
@@ -47,7 +41,7 @@ impl ServerWorld {
         let volume = chop::chopped(energy, self.striking_edge(by, tool), species.across);
         if volume <= 0.0 {
             self.note(by, "it only bruised the bark: nothing sharp".into());
-            return;
+            return Some(0.0);
         }
         // Limbing: the nearest node within a spacing whose branches are still on.
         let spacing = species.branching.spacing;
@@ -65,11 +59,12 @@ impl ServerWorld {
             });
         if let Some(k) = node {
             self.limb(by, id, (&part, &tree), k, volume);
-            return;
+            return Some(volume);
         }
         let from = turn.conjugate() * -way;
         let azimuth = det::atan2(from.y, from.x);
         self.buck(by, id, (&part, &tree), (z, azimuth), volume);
+        Some(volume)
     }
 
     /// `volume` m³ of wood taken out of node `k`'s branches on part `id`.
@@ -107,7 +102,9 @@ impl ServerWorld {
         let mut limbed = part.clone();
         limbed.cut.resize(tree.nodes.len(), 0);
         limbed.cut[k] = u8::try_from(off).unwrap_or(u8::MAX);
-        let Some(i) = self.index(id) else { return };
+        let Some(i) = self.index(id) else {
+            return;
+        };
         let s = &self.world.bodies[i].structure;
         let (position, turn) = (s.position[0], s.orientation[0]);
         let (_, centre, _) = tree.part_mass(part);
@@ -166,7 +163,9 @@ impl ServerWorld {
             self.note(by, format!("{:.0} % through", 100.0 * (1.0 - left / whole)));
             return;
         }
-        let Some(i) = self.index(id) else { return };
+        let Some(i) = self.index(id) else {
+            return;
+        };
         let s = &self.world.bodies[i].structure;
         let (position, turn) = (s.position[0], s.orientation[0]);
         let (_, centre, _) = tree.part_mass(part);
