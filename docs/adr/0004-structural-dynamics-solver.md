@@ -171,3 +171,7 @@ Found by a flywheel spun up in a free-floating, tumbling frame (ADR-0012): the f
 ## Amended in F7.6 (2026-10-18): the step moves less memory
 
 With several structures stepping at once a step waits on memory, the factor's solves most (eight bridges, one per core: 2.2 times slower each than one alone; ADR-0021). Without changing a bit: the substitutions read compact `u32` column indices, a member's plastic flows are built only when a measure passes its limit (`step_flows.rs`), and `Element` keeps the fields every evaluation reads first. The reference tick's 20,000 beams: 4.9 → 3.4–3.9 ms. An f32 factor stays rejected (it changes trajectories). The minimum-degree ordering (`creeer_math::sparse::order`) is linear at hubs now, with the same order.
+
+## Amended in G2.7 (2026-10-23): SIMD block kernels
+
+The factorisation's and the substitutions' 3×3 block products run lane by lane in SIMD registers (AVX2 chosen at run time, NEON on aarch64), each lane glam's expression, so every bit is unchanged on every CPU. The welded block's solve is 9 % faster and its factorisation 15 %; the bridge's solve is unchanged, bound by the bandwidth its factor is read with. Details, and why the many-structures and struck-structure targets of P2 and P3 are not met: ADR-0035.
