@@ -100,6 +100,10 @@ fn client_messages_read_back() {
         Command::Open(target),
         Command::Strip,
         Command::Bind(target),
+        Command::StrikeLoose {
+            loose: 77,
+            started: 1200.5,
+        },
         Command::Pick {
             loose: 1 << 50,
             pocket: true,

@@ -165,3 +165,108 @@ fn a_save_keeps_what_was_taken() {
     );
     assert!(again.is_err());
 }
+
+#[test]
+fn a_branch_picked_up_is_carried_steadily_walking() {
+    // (Pulled at their grip, off their axis, branches spun up to 33 rad/s as the player walked.)
+    let (mut w, ada) = ada();
+    let branch = about(&w, ada, 60.0, |l| matches!(l.what, Lying::Branch { .. }))[0];
+    walk_to(&mut w, ada, branch.centre);
+    w.apply(
+        &Command::Pick {
+            loose: branch.id,
+            pocket: false,
+        },
+        Some(ada),
+    )
+    .unwrap();
+    let up = character::plumb(&w.world, centre(&w, ada));
+    let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
+    let mut most: f64 = 0.0;
+    for t in 0..300 {
+        let walk = if t > 60 { east * 1.3 } else { DVec3::ZERO };
+        w.steer(
+            ada,
+            &AvatarInput {
+                walk,
+                ..AvatarInput::default()
+            },
+        );
+        w.step();
+        let i = w.carried(ada).and_then(|c| w.index(c)).expect("still held");
+        // Once the body has turned the way it walks.
+        if t > 150 {
+            most = most.max(w.world.bodies[i].structure.angular_velocity[0].length());
+        }
+    }
+    assert!(most < 1.0, "spins at {most} rad/s");
+}
+
+#[test]
+fn a_stone_lying_struck_with_a_stone_in_hand_breaks_where_it_lies() {
+    let (mut w, ada) = ada();
+    // The nearest stone of a few centimetres, struck with a hammerstone.
+    let stone = about(
+        &w,
+        ada,
+        40.0,
+        |l| matches!(l.what, Lying::Stone { size, .. } if size.x > 0.05),
+    )[0];
+    walk_to(&mut w, ada, stone.centre);
+    let hammer = creeer_sim::items::Item::Piece(
+        creeer_sim::items::Piece::solid(
+            "basalt",
+            2900.0,
+            creeer_sim::items::Form::Lump {
+                size: DVec3::new(0.10, 0.08, 0.06),
+            },
+        ),
+        Vec::new(),
+    );
+    w.put_in_hands(ada, hammer).unwrap();
+    for _ in 0..60 {
+        w.steer(ada, &AvatarInput::default());
+        w.step();
+    }
+    let before = w.items.bodies.len();
+    #[allow(clippy::cast_precision_loss)]
+    let now = w.tick as f64;
+    w.apply(
+        &Command::StrikeLoose {
+            loose: stone.id,
+            started: now,
+        },
+        Some(ada),
+    )
+    .unwrap();
+    assert_eq!(w.taken_since(0), [stone.id], "lying no longer: an item");
+    assert_eq!(w.items.bodies.len(), before + 1);
+    for _ in 0..70 {
+        w.steer(ada, &AvatarInput::default());
+        w.step();
+    }
+    // The blow fell on it: what broke off lies beside it (a flake, or grit), or it bruised.
+    let Lying::Stone { size, rock } = stone.what else {
+        unreachable!()
+    };
+    let breaks = w.items.rocks.rocks[usize::from(rock)].breaks.is_some();
+    assert!(
+        !breaks || w.items.bodies.len() >= before + 2,
+        "{size:?} broke nothing"
+    );
+    // Once struck it is taken: not struck again as lying (the swing's cycle over first).
+    for _ in 0..60 {
+        w.steer(ada, &AvatarInput::default());
+        w.step();
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let later = w.tick as f64;
+    let again = w.apply(
+        &Command::StrikeLoose {
+            loose: stone.id,
+            started: later,
+        },
+        Some(ada),
+    );
+    assert!(again.unwrap_err().contains("taken"));
+}

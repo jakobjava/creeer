@@ -111,6 +111,18 @@ impl Connection {
     /// is for the others).
     pub fn strike(&mut self, aimed: Aimed) {
         let command = self.strike_command(aimed);
+        self.command_swing(command);
+    }
+
+    /// Strikes loose thing `loose` lying on the ground (G1.6), as `strike` a body.
+    pub fn strike_loose(&mut self, loose: u64) {
+        let own = self.predicted.as_ref().and_then(|p| p.tick());
+        let started = own.map_or(self.drawn_at, f64::from);
+        self.command_swing(creeer_net::message::Command::StrikeLoose { loose, started });
+    }
+
+    /// Sends a swing's `command`, its swing drawn from now.
+    fn command_swing(&mut self, command: creeer_net::message::Command) {
         self.command(command);
         let own = self.predicted.as_ref().and_then(|p| p.tick());
         if let (Some(w), Some(tick)) = (&self.welcome, own) {

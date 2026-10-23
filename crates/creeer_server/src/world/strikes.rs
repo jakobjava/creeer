@@ -13,7 +13,7 @@ use creeer_sim::{reach, strike};
 
 /// What a swing will strike: the ground at a point, or a point on a body's node (in its frame).
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Aim {
+pub(super) enum Aim {
     Ground(DVec3),
     Body(EntityId, usize, DVec3),
 }
@@ -57,6 +57,27 @@ impl ServerWorld {
         target: &Target,
         started: f64,
     ) -> Result<(), String> {
+        let ready = self.ready_to_swing(by, started)?;
+        let reached = self.reached(by, target.body, target.at, target.seen)?;
+        let aim = match (target.body, reached.body) {
+            (Some(id), Some((index, node))) => {
+                let s = &self.world.bodies[index].structure;
+                let local = s.orientation[node].conjugate() * (reached.point - s.position[node]);
+                Aim::Body(id, node, local)
+            }
+            _ => Aim::Ground(reached.point),
+        };
+        self.begin_swing(by, ready, aim);
+        Ok(())
+    }
+
+    /// Whether avatar `by` may begin a swing at its tick `started`: what it strikes with (the
+    /// catalogue's tool, or none: what its hands hold) and the world's tick it begins at.
+    pub(super) fn ready_to_swing(
+        &self,
+        by: EntityId,
+        started: f64,
+    ) -> Result<(Option<u8>, u64), String> {
         let i = self.index(by).ok_or("no such avatar")?;
         let player = self.players[i].clone().ok_or("only a player strikes")?;
         // The catalogue's tool in hand, or what the hands hold (G1.6d): a stone, a made axe.
@@ -80,15 +101,16 @@ impl ServerWorld {
         if busy {
             return Err("still swinging".into());
         }
-        let reached = self.reached(by, target.body, target.at, target.seen)?;
-        let aim = match (target.body, reached.body) {
-            (Some(id), Some((index, node))) => {
-                let s = &self.world.bodies[index].structure;
-                let local = s.orientation[node].conjugate() * (reached.point - s.position[node]);
-                Aim::Body(id, node, local)
-            }
-            _ => Aim::Ground(reached.point),
-        };
+        Ok((tool, started))
+    }
+
+    /// Avatar `by`'s swing begins, `ready` as `ready_to_swing` found it, aimed at `aim`.
+    pub(super) fn begin_swing(
+        &mut self,
+        by: EntityId,
+        (tool, started): (Option<u8>, u64),
+        aim: Aim,
+    ) {
         self.started.push((by, started));
         self.swings.push(Swinging {
             by,
@@ -96,7 +118,6 @@ impl ServerWorld {
             started,
             aim,
         });
-        Ok(())
     }
 
     /// The swings started since last asked: who, and the world's tick.

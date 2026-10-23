@@ -330,7 +330,10 @@ impl PlanetView {
     pub fn use_tool(&mut self, camera: &Camera) {
         if self.walking && (self.wielding.is_some() || self.carrying()) {
             if let Some(target) = crate::planet_aim::target(self, camera).filter(|t| t.in_reach) {
-                self.session.connection.strike(target.aimed);
+                match target.loose {
+                    Some(loose) => self.session.connection.strike_loose(loose),
+                    None => self.session.connection.strike(target.aimed),
+                }
             }
             return;
         }

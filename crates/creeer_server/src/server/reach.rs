@@ -34,6 +34,10 @@ impl Server {
             },
             Command::Open(t) => Command::Open(seen(t)),
             Command::Bind(t) => Command::Bind(seen(t)),
+            Command::StrikeLoose { loose, started } => Command::StrikeLoose {
+                loose: *loose,
+                started: self.world_tick(*started),
+            },
             other => other.clone(),
         };
         self.world.apply(&command, Some(avatar))

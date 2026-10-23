@@ -13,7 +13,7 @@
 
 use super::carry::{TURNING, facing_frame};
 use super::*;
-use creeer_math::glam::DQuat;
+use creeer_math::glam::{DMat3, DQuat};
 use creeer_sim::carry;
 
 /// The arms' stiffness (N/m) and damping ratio.
@@ -138,8 +138,13 @@ impl ServerWorld {
             l.velocity[node],
             l.angular_velocity[node],
         );
-        let point = lc + lq * held_at;
-        let point_v = lv + lw.cross(point - lc);
+        // Pulled at its centre of mass towards where it is when the grip is where the hands mean
+        // it and the load turned as they keep it (G1.6d: pulled at the grip, a stick, whose grip
+        // is off its axis and which barely resists turning about it, was spun up by the pull's
+        // own lever).
+        let grip_arm = keep * held_at;
+        let (point, point_v) = (lc, lv);
+        let (target, target_v) = (target - grip_arm, target_v - spin.cross(grip_arm));
         let (k, damp) = spring(STIFFNESS, mass);
         let mut force =
             mass * (rel_a - gravity) + (target - point) * k + (target_v - point_v) * damp;
@@ -147,25 +152,19 @@ impl ServerWorld {
         if strong {
             force *= carry::STRENGTH / force.length();
         }
-        // Its turn kept to the way the body faces, as firmly as the grip.
-        // (Its least moment of inertia: about the axis it turns fastest on. Its least diagonal
-        // entry only where its axes are principal: a made tool's are not, its head off its
-        // haft, and the turn held too stiffly spun it up (G1.6d). Gershgorin's bound is never
-        // above the least principal moment.)
-        let inertia = (self.world.bodies[b].shapes.iter())
-            .map(|(_, shape)| {
-                let i = shape.inertia(mass);
-                let row = |k: usize| {
-                    let r = i.row(k);
-                    r[k] - (r.abs().element_sum() - r[k].abs())
-                };
-                let trace = i.x_axis.x + i.y_axis.y + i.z_axis.z;
-                row(0).min(row(1)).min(row(2)).max(1e-3 * trace)
-            })
-            .fold(f64::INFINITY, f64::min);
-        let (kr, cr) = spring(grip() / GIVE_TURN, inertia);
+        // Its turn kept to the way the body faces, as firmly as the grip: an angular spring of
+        // one natural frequency on every axis, so the torque is the load's inertia (in the
+        // world's frame) times the angular acceleration it asks. Its frequency is the grip's on
+        // the load's largest moment, softened to ring at most `RING` a step: stable on every
+        // axis however unequal they are (a stick's).
+        let inertia = (self.world.bodies[b].shapes.first())
+            .map_or(DMat3::IDENTITY * (mass * 0.01), |(_, s)| s.inertia(mass));
+        let world_inertia = DMat3::from_quat(lq) * inertia * DMat3::from_quat(lq).transpose();
+        let largest = inertia.x_axis.x.max(inertia.y_axis.y).max(inertia.z_axis.z);
+        let omega = (grip() / GIVE_TURN / largest).sqrt().min(RING / DT);
         let off_turn = creeer_physics::so3::log(keep * lq.conjugate());
-        let torque = (off_turn * kr + (spin - lw) * cr).clamp_length_max(grip());
+        let asked = off_turn * (omega * omega) + (spin - lw) * (2.0 * DAMPING * omega);
+        let torque = (world_inertia * asked).clamp_length_max(grip());
         let c = self.carrying.get_mut(&by).expect("a carrier");
         c.straining = if strong { c.straining + 1 } else { 0 };
         c.torn = if (target - point).length() > GIVE {
@@ -174,7 +173,7 @@ impl ServerWorld {
             0
         };
         // On the load at the hands, and back on the body there: loads for this step alone.
-        let on_load = (force, (point - lc).cross(force) + torque);
+        let on_load = (force, torque);
         // On the body at its centre: its weight and its pull, not their moment about it (given as
         // the step's load, the moment of a load held out set the body turning against its
         // balance, and the load with it: a limit).

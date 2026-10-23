@@ -49,6 +49,34 @@ impl ServerWorld {
         self.take_hold(by, (i, 0), loose.centre + up * top)
     }
 
+    /// Avatar `by` strikes loose thing `id` with what it holds (its swing begun at the world's
+    /// tick `started`): it is made an item where it lies, and the swing aimed at its top.
+    pub(super) fn strike_loose(
+        &mut self,
+        by: EntityId,
+        id: u64,
+        started: f64,
+    ) -> Result<(), String> {
+        let ready = self.ready_to_swing(by, started)?;
+        let loose = self.loose_in_reach(by, id)?;
+        let scatter = self.items.loose.as_ref().ok_or("nothing lies loose here")?;
+        let densities = self.items.densities.as_ref().ok_or("no materials")?;
+        let item = (scatter.item(&loose, &self.items.rocks, densities)).ok_or("unknown matter")?;
+        self.take_loose(id);
+        let body = self.add_item(item, loose.centre, false);
+        let i = self.index(body).expect("just added");
+        let b = &mut self.world.bodies[i];
+        b.structure.orientation[0] = loose.turn;
+        b.solver.reset_history(&b.structure);
+        let up = loose.centre.normalize();
+        let top = (b.shapes.iter())
+            .map(|(_, s)| s.extent(loose.turn, up))
+            .fold(0.0, f64::max);
+        let local = loose.turn.conjugate() * (up * top);
+        self.begin_swing(by, ready, super::strikes::Aim::Body(body, 0, local));
+        Ok(())
+    }
+
     /// Loose thing `id`, if it lies there untaken within reach of avatar `by`'s hands.
     fn loose_in_reach(&self, by: EntityId, id: u64) -> Result<Loose, String> {
         if self.items.taken_set.contains(&id) {

@@ -28,6 +28,7 @@ impl ServerWorld {
                 | Command::Pick { .. }
                 | Command::Strip
                 | Command::Bind(_)
+                | Command::StrikeLoose { .. }
         );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
@@ -73,6 +74,9 @@ impl ServerWorld {
             }
             Command::Strip => self.strip(by.ok_or("only a player")?)?,
             Command::Bind(target) => self.bind(by.ok_or("only a player")?, target)?,
+            Command::StrikeLoose { loose, started } => {
+                self.strike_loose(by.ok_or("only a player")?, *loose, *started)?;
+            }
             Command::Kit { item, at } => {
                 within(*at)?;
                 self.drop_kit(*item, *at)?;

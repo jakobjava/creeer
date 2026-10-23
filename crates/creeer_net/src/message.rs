@@ -82,6 +82,9 @@ pub enum Command {
     Strip,
     /// Bind the head the player reaches for to the haft in the hands, with a strip from a pocket.
     Bind(Target),
+    /// Strike loose thing `loose` on the ground (G1.6: a stone lying there, by its id) with what
+    /// the hands hold, the swing begun at the player's own tick `started`.
+    StrikeLoose { loose: u64, started: f64 },
 }
 
 /// What a player aims at, as they saw it (G1.4d): a point on a body (none: the ground), in the
@@ -261,6 +264,11 @@ impl Encode for ClientMessage {
                         w.u8(21);
                         w.put(target);
                     }
+                    Command::StrikeLoose { loose, started } => {
+                        w.u8(22);
+                        w.u64(*loose);
+                        w.f64(*started);
+                    }
                 }
             }
             Self::Profile(on) => {
@@ -326,6 +334,10 @@ impl Decode for ClientMessage {
                 },
                 20 => Command::Strip,
                 21 => Command::Bind(r.get()?),
+                22 => Command::StrikeLoose {
+                    loose: r.u64()?,
+                    started: r.f64()?,
+                },
                 _ => return Err(r.error("unknown command")),
             }),
             3 => Self::Profile(match r.u8()? {
