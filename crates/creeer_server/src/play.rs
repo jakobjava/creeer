@@ -12,6 +12,7 @@ mod lumberjack;
 mod quarry;
 pub mod record;
 pub mod scenes;
+mod steel;
 mod toolmaking;
 mod work;
 
