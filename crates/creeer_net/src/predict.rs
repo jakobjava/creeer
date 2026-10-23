@@ -54,22 +54,31 @@ impl AvatarInput {
     }
 }
 
+/// For this many inputs after the last that asked to walk, the avatar is stopping (a second).
+const STOPPING: u32 = 60;
+
 /// The client's inputs not yet known to be applied, oldest first.
 #[derive(Debug, Default)]
 pub struct InputLog {
     inputs: VecDeque<AvatarInput>,
     next: u32,
+    /// The number of the last input that asked to walk.
+    walked: Option<u32>,
 }
 
 impl InputLog {
     /// A new input: walk at `walk` (m/s), jump or not. Numbered, quantised and kept.
     pub fn push(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         self.next += 1;
+        if walk != DVec3::ZERO {
+            self.walked = Some(self.next);
+        }
         let input = AvatarInput {
             seq: self.next,
             walk,
             jump,
             thrust,
+            stopping: walk == DVec3::ZERO && self.walked.is_some_and(|w| self.next - w <= STOPPING),
         }
         .quantised();
         self.inputs.push_back(input);

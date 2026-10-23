@@ -300,6 +300,7 @@ impl ServerWorld {
                 jump: input.jump,
                 thrust: input.thrust,
                 load: self.items.load(id),
+                stopping: input.stopping,
             };
             character::steer(&mut self.world, i, act, (up, water), &mut self.reactions);
         }

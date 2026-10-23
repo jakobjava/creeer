@@ -36,6 +36,7 @@ fn a_survival_player_has_no_jetpack_and_no_tools() {
     let before = at(&w, ada);
     let thrust = AvatarInput {
         thrust: up,
+        stopping: false,
         ..AvatarInput::default()
     };
     wait(&mut w, ada, 60, &thrust);

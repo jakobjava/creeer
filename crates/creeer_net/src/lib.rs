@@ -22,4 +22,4 @@ pub mod udp;
 pub use renet;
 
 /// The protocol's version: a client and server speak only if theirs are equal.
-pub const PROTOCOL_VERSION: u32 = 24;
+pub const PROTOCOL_VERSION: u32 = 25;

@@ -156,3 +156,9 @@ With G1.2d, crates and characters running into each other knock them down. The s
 - an iteration costs about 80 µs.
 
 That is P1's work (the large group's contact solve), brought forward from G1.8 to come next.
+
+## Amended after the user's play (2026-10-23): stopping and jumping held
+
+- **Stopping brakes at the legs' most.** Letting go of the keys, the walk eased to a stop with its own response (0.25 s), creeping on for 1.3 s and 1.4 m from a 3 m/s walk while the legs stepped on (the user: "walks way too long after stopping"). People stop in about a step (Ridge et al. 2013). The client marks the inputs of the second after the last walk as stopping (`AvatarInput::stopping`, protocol 25), and the legs then close the gap in 0.05 s, within their 420 N: from 3 m/s it stands within 0.9 s and 1.2 m (`it_stops_from_a_walk_or_a_run_within_a_second`). A body pushed while standing is not braked so: braking every slowing (and standing still) stiffly toppled a player struck by a rolling trunk and worsened prediction against crates.
+- **A held jump waits for the landing.** Held, the key jumped again at the legs' first touch, still falling, so the push only cancelled part of the fall and the character bounced in 0.2 m hops on its legs' tips. A jump now needs the legs to bear half the weight and the fall stopped (`running_with_jump_held_it_lands_between_full_jumps`).
+- **The drawn stop** (`creeer_client::animate::stop`) finishes the step in hand and the other foot's closing step, then stands; a foot steps into place only past 15 cm once the body is at rest. The hips give a landing leg a stance's bent knee through late swing (it snapped 13° in the landing frame).

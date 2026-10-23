@@ -24,6 +24,9 @@ pub struct AvatarInput {
     /// The thrusters' push asked for (G1.2c), in the physics world's frame, as a fraction of
     /// the most they push (its length at most 1).
     pub thrust: DVec3,
+    /// Stopping (G1.10): no walk asked, but one was within the last second: the legs brake at
+    /// their most (a body pushed while standing is not braked so).
+    pub stopping: bool,
 }
 
 /// No tool, as a wielded tool's index is sent.

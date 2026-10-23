@@ -14,6 +14,7 @@ pub(super) const JUMP: u8 = 1;
 pub(super) const SAME_WALK: u8 = 2;
 const NEXT: u8 = 4;
 const THRUST: u8 = 8;
+const STOPPING: u8 = 16;
 
 /// Writes inputs, each against the one before it: its number only if it is not the next, and
 /// its walk and thrust only if they changed (a byte for an input that goes on as before).
@@ -27,7 +28,8 @@ pub(super) fn write_inputs(w: &mut Writer, inputs: &[AvatarInput]) {
         let flags = if input.jump { JUMP } else { 0 }
             | if now == walk { SAME_WALK } else { 0 }
             | if next { NEXT } else { 0 }
-            | if push == thrust { 0 } else { THRUST };
+            | if push == thrust { 0 } else { THRUST }
+            | if input.stopping { STOPPING } else { 0 };
         w.u8(flags);
         if !next {
             w.varint(u64::from(input.seq.wrapping_sub(seq)));
@@ -47,7 +49,7 @@ pub(super) fn read_inputs(r: &mut Reader<'_>) -> Result<Vec<AvatarInput>, Decode
     (0..r.count(1)?)
         .map(|_| {
             let flags = r.u8()?;
-            if flags & !(JUMP | SAME_WALK | NEXT | THRUST) != 0 {
+            if flags & !(JUMP | SAME_WALK | NEXT | THRUST | STOPPING) != 0 {
                 return Err(r.error("unknown input flags"));
             }
             let step = if flags & NEXT != 0 {
@@ -70,6 +72,7 @@ pub(super) fn read_inputs(r: &mut Reader<'_>) -> Result<Vec<AvatarInput>, Decode
                 walk: walk.value(WALK_SCALE),
                 jump: flags & JUMP != 0,
                 thrust: thrust.value(THRUST_SCALE),
+                stopping: flags & STOPPING != 0,
             })
         })
         .collect()

@@ -27,6 +27,8 @@ pub(super) struct Carry {
     pub(super) grip: DVec3,
     /// Its turn from the way the body faced (`facing_frame`) when taken: kept as it turns.
     pub(super) turn: DQuat,
+    /// Its turn as taken, which the hands bring it from to `turn` along the lift.
+    pub(super) taken: DQuat,
     /// Where the hands took it, in the body's frame, how long they take to lift it (s), and
     /// the ticks since.
     pub(super) from: DVec3,
@@ -135,6 +137,7 @@ impl ServerWorld {
                 load: id,
                 node,
                 grip,
+                taken: facing_frame(facing, up).conjugate() * q,
                 // (A tool's haft, its x, the way the body faces.)
                 turn: match tool {
                     Some(_) => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),

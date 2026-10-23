@@ -132,7 +132,14 @@ impl ServerWorld {
             };
         c.path = [Some(at), c.path[0]];
         let (target, target_v) = (centre + off, v + w.cross(off) + rel_v);
-        let (held_at, keep) = (c.grip, facing_frame(c.facing, up) * c.turn);
+        // Turned from as taken to as held along the lift too (turned at once, a tool taken in one
+        // hand spun at 30–60 rad/s about its target and a long one struck the ground).
+        let turned = if c.one_hand {
+            c.taken.slerp(c.turn, smooth(0.5 * x))
+        } else {
+            c.turn
+        };
+        let (held_at, keep) = (c.grip, facing_frame(c.facing, up) * turned);
         let spin = up * c.spin;
         let node = c.node;
         // The load where the hands hold it.

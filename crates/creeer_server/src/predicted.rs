@@ -111,6 +111,7 @@ impl Predicted {
             jump: input.jump,
             thrust: input.thrust,
             load,
+            stopping: input.stopping,
         };
         let up = character::plumb(world, at);
         character::steer(world, 0, act, (up, water), &mut reactions);

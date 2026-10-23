@@ -55,14 +55,13 @@ const LEG_DAMPING: f64 = 1.2 * 1774.8;
 pub const LEG_MOST: f64 = 3600.0;
 /// The most the legs push sideways for walking (N): about 4 m/s² of this mass.
 const STRIDE_MOST: f64 = 420.0;
-/// The time a walk closes the difference to the velocity asked for in (s).
-const RESPONSE: f64 = 0.25;
+/// The time a walk closes the gap to the velocity asked for (s); stopping, at the legs' most.
+const RESPONSE: (f64, f64) = (0.25, 0.05);
 /// The fastest it may be asked to move (m/s: a run in a suit).
 pub const MOST_SPEED: f64 = 4.0;
 /// Boot soles' friction (rubber on rock, dry).
 const BOOTS: f64 = 0.9;
-/// Balance: stiffness and damping of the torque towards upright (N·m/rad, N·m·s/rad), and
-/// the most of it (N·m): a strong person's ankles and hips (beyond, it topples).
+/// Balance: the torque upright's stiffness, damping and most (N·m/rad, N·m·s/rad, N·m): ankles, hips.
 const BALANCE: (f64, f64, f64) = (5000.0, 640.0, 600.0);
 /// Damping of spin about the vertical (N·m·s/rad): the feet hold it.
 const YAW_DAMPING: f64 = 200.0;
@@ -138,9 +137,10 @@ pub struct Intent {
     pub jump: bool,
     /// The jetpack's push, as a fraction of its most (world frame; length at most 1).
     pub thrust: DVec3,
-    /// What the body carries beyond its dry mass that is not the jetpack's gas (kg: its
-    /// pockets, G1.6a): not spent by the jets.
+    /// What it carries beyond its dry mass besides the jets' gas (kg: its pockets, G1.6a).
     pub load: f64,
+    /// Stopping its walk (G1.10, `AvatarInput::stopping`): its legs brake at their most.
+    pub stopping: bool,
 }
 
 impl Intent {
@@ -149,8 +149,7 @@ impl Intent {
         Self {
             walk,
             jump,
-            thrust: DVec3::ZERO,
-            load: 0.0,
+            ..Self::default()
         }
     }
 }
@@ -252,11 +251,12 @@ pub fn steer(
         // Walking: towards the velocity asked for, along the ground, relative to it.
         let n = hit.normal;
         let along = |u: DVec3| u - up * u.dot(up);
-        let mut wanted = along(walk);
+        let (mut wanted, going) = (along(walk), along(v - ground_v));
         if wanted.length() > MOST_SPEED {
             wanted = wanted.normalize() * MOST_SPEED;
         }
-        let mut stride = (wanted - along(v - ground_v)) * (MASS / RESPONSE);
+        let stop = usize::from(intent.stopping && wanted == DVec3::ZERO);
+        let mut stride = (wanted - going) * (MASS / [RESPONSE.0, RESPONSE.1][stop]);
         if stride.length() > STRIDE_MOST {
             stride = stride.normalize() * STRIDE_MOST;
         }
@@ -311,7 +311,7 @@ pub fn steer(
         // Swimming: towards the velocity asked for, up while asked to rise, within a
         // swimmer's thrust; the sea's buoyancy and drag are its own (`surroundings.rs`).
         let along = |u: DVec3| u - up * u.dot(up);
-        let mut stroke = (along(walk) - along(v)) * (MASS / RESPONSE);
+        let mut stroke = (along(walk) - along(v)) * (MASS / RESPONSE.0);
         if jump {
             stroke += up * SWIM_MOST;
         }

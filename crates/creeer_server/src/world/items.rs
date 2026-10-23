@@ -322,7 +322,7 @@ impl ServerWorld {
     }
 
     /// `item` into avatar `by`'s hands: a body where the hands hold a load, held.
-    pub(super) fn put_in_hands(&mut self, by: EntityId, item: Item) -> Result<(), String> {
+    pub(crate) fn put_in_hands(&mut self, by: EntityId, item: Item) -> Result<(), String> {
         self.index(by).ok_or("no such avatar")?;
         let at = self.hands_point(by);
         let id = self.add_item(item, at, false);

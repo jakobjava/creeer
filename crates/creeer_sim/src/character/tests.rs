@@ -200,3 +200,50 @@ fn an_idle_character_falls_asleep_and_stays_so() {
     run(&mut world, c, 30, |_| (DVec3::X, false));
     assert!(world.bodies[c].structure.velocity[0].x > 0.3);
 }
+
+#[test]
+fn it_stops_from_a_walk_or_a_run_within_a_second() {
+    // Letting go of the keys, it brakes at its legs' most (about 4 m/s²) until all but stopped:
+    // people stop in about a step (Ridge et al. 2013). Easing to a stop with the walk's own
+    // response, it crept on for 1.4 s from a walk (the user: "walks way too long after stopping").
+    for speed in [3.0, MOST_SPEED] {
+        let mut world = ground(DVec3::Y, 0.6);
+        let c = world.add(body(DVec3::ZERO, DVec3::Y, DT));
+        run(&mut world, c, 120, |_| (DVec3::Z * speed, false));
+        let from = world.bodies[c].structure.position[0];
+        let mut stopped = None;
+        let mut reactions = Vec::new();
+        // Let go of the keys: stopping (as the client marks the second after the last walk).
+        let stopping = Intent {
+            stopping: true,
+            ..Intent::default()
+        };
+        for k in 0..120 {
+            steer(&mut world, c, stopping, (DVec3::Y, None), &mut reactions);
+            world.step();
+            release(&mut world, &mut reactions);
+            let v = world.bodies[c].structure.velocity[0];
+            if stopped.is_none() && v.reject_from(DVec3::Y).length() < 0.03 {
+                stopped = Some(k);
+            }
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let seconds = stopped.expect("it stopped") as f64 * DT;
+        let went = (world.bodies[c].structure.position[0] - from)
+            .reject_from(DVec3::Y)
+            .length();
+        // At about 4 m/s² from v: v/a seconds and v²/2a metres, and a little settling.
+        assert!(
+            seconds < speed / 4.0 + 0.15,
+            "from {speed} m/s: {seconds} s"
+        );
+        assert!(
+            went < speed * speed / 8.0 + 0.1,
+            "from {speed} m/s: {went} m"
+        );
+        assert!(
+            world.bodies[c].structure.velocity[0].length() < 0.01,
+            "at rest"
+        );
+    }
+}

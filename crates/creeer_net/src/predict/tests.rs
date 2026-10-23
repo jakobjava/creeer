@@ -229,9 +229,28 @@ fn an_input_is_predicted_with_what_the_server_is_told() {
         walk: DVec3::new(1.234_567_89, 0.0, -2.0 / 3.0),
         jump: true,
         thrust: DVec3::new(0.123_4, -1.0 / 3.0, 0.0),
+        stopping: false,
     };
     let sent: AvatarInput =
         crate::message::from_bytes(&crate::message::to_bytes(&input.quantised())).unwrap();
     assert_eq!(sent, input.quantised());
     assert_eq!(sent.quantised(), sent);
+}
+
+#[test]
+fn inputs_after_walking_are_marked_stopping_for_a_second() {
+    let mut log = InputLog::default();
+    // Never walked: standing, not stopping.
+    assert!(!log.push(DVec3::ZERO, false, DVec3::ZERO).stopping);
+    assert!(!log.push(DVec3::X, false, DVec3::ZERO).stopping);
+    let after: Vec<bool> = (0..70)
+        .map(|_| log.push(DVec3::ZERO, false, DVec3::ZERO).stopping)
+        .collect();
+    assert!(after[..60].iter().all(|s| *s) && after[60..].iter().all(|s| !s));
+    // Sent and read back, the flag stays.
+    let mut stopping = log.push(DVec3::ZERO, false, DVec3::ZERO);
+    stopping.stopping = true;
+    let bytes = crate::message::to_bytes(&stopping);
+    let back: AvatarInput = crate::message::from_bytes(&bytes).unwrap();
+    assert!(back.stopping);
 }

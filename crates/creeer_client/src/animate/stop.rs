@@ -40,8 +40,11 @@ pub(super) fn track(up: &mut [bool; 2], feet: &[Foot; 2]) {
 }
 
 /// Whether a stop is over: both feet down, and a foot in the air since it began has landed (the
-/// step in hand finished), or both already stand in place.
+/// step in hand finished) with neither left far off (else the other closes up in the same stop,
+/// as people take a little more than a step: standing a frame between, it flickered), or both
+/// already stand in place.
 pub(super) fn over(feet: &[Foot; 2], rest: &[(DVec3, DVec3); 2], up: [bool; 2]) -> bool {
     let landed = (0..2).any(|s| feet[s].down && up[s]);
-    feet.iter().all(|f| f.down) && (landed || settled(feet, rest))
+    let near = (feet.iter().zip(rest)).all(|(f, (g, _))| (f.plant - *g).length() <= STRAY);
+    feet.iter().all(|f| f.down) && ((landed && near) || settled(feet, rest))
 }
