@@ -184,6 +184,13 @@ impl Structure {
         self.position[node] - self.rest[node]
     }
 
+    /// Holds `node` by `support` from now on (its solver must be made again, or reset).
+    pub fn set_support(&mut self, node: NodeId, support: Support) {
+        let (t, r) = support.masks();
+        self.free_translation[node] = t;
+        self.free_rotation[node] = r;
+    }
+
     /// Whether any node is held by a support (then the structure cannot rotate as a whole).
     pub fn is_anchored(&self) -> bool {
         self.free_translation
