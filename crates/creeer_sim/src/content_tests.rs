@@ -30,7 +30,8 @@ fn the_base_pack_validates_with_only_nasas_two_known_steps() {
     assert!(report.warnings.iter().any(|w| w.contains("ALN(L)")));
     let count = |kind| report.counts.iter().find(|(k, _)| *k == kind).map(|c| c.1);
     assert_eq!(count("species"), Some(1798));
-    assert_eq!(count("materials"), Some(10));
+    assert_eq!(count("materials"), Some(13));
+    assert_eq!(count("tree species"), Some(3));
     assert_eq!(count("planets"), Some(4));
     assert_eq!(count("systems"), Some(1));
     // The palette (G1.3a; the eyes' and the worn coverall's tokens since, G1.3f), with no
@@ -63,12 +64,13 @@ fn the_example_mod_replaces_adds_and_validates() {
     assert!(report.ok(), "{:#?}", report.errors);
     assert_ne!(data.hash(), Data::base().hash());
     let materials = MaterialTable::from_data(&data).unwrap();
-    assert_eq!(materials.all().len(), 11);
+    assert_eq!(materials.all().len(), 15);
     // Replaced in place (same position), new ones after.
     let granite = materials.get("granite").unwrap();
     assert!((granite.youngs_modulus.at(20.0) - 60e9).abs() < 1.0);
     assert_eq!(materials.all()[8].id, "granite");
-    assert_eq!(materials.all()[10].id, "basalt");
+    assert_eq!(materials.all()[13].id, "oak_green");
+    assert_eq!(materials.all()[14].id, "basalt");
     // A new rock goes after the base's, so the base's rocks keep their terrain ids.
     let base_rocks = RockTable::from_data(&Data::base()).unwrap();
     let rocks = RockTable::from_data(&data).unwrap();

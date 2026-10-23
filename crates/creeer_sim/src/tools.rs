@@ -45,6 +45,9 @@ pub struct Tool {
     /// from there it strikes (m).
     pub gyration: f64,
     pub strike: f64,
+    /// Its edge, if it has one (G1.7): its included angle (°) and its length (m).
+    #[serde(default)]
+    pub edge: Option<(f64, f64)>,
 }
 
 impl Tool {
@@ -140,6 +143,7 @@ mod tests {
             carry_radius: 0.005,
             gyration: 0.2,
             strike: 0.3,
+            edge: None,
         };
         assert_eq!(problems(&[bad], &[]).len(), 7);
     }

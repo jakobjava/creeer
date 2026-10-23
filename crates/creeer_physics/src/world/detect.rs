@@ -1,6 +1,6 @@
 //! Finding contacts: sort and sweep over bounding balls, then exact shape pairs.
 
-use super::shape::{Pose, RawContact, Shape};
+use super::shape::{Pose, RawContact, Shape, StaticShape};
 use super::{World, narrow};
 use crate::structure::NodeId;
 
@@ -85,6 +85,13 @@ impl World {
                 continue;
             }
             for fixed in &self.statics {
+                // A box whose ball is apart from the shape's reach meets nothing (G1.7: the
+                // trunks of the trees about the players).
+                if let StaticShape::Box { center, half, .. } = fixed
+                    && (*center - a.pose.position).length() > a.reach + half.length()
+                {
+                    continue;
+                }
                 for raw in narrow::with_static((a.pose, &a.shape), fixed, a.margin) {
                     found.push((a.body, a.node, None, raw));
                 }

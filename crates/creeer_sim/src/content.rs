@@ -137,6 +137,13 @@ fn art(data: &Data, rocks: &RockTable, report: &mut Report) {
         }
         (Err(e), _) | (_, Err(e)) => report.errors.push(e),
     }
+    // Trees (G1.7): every species' wood, grounds, colours and numbers (a broken material is
+    // told once, by the materials' check).
+    match crate::trees::species::load(data) {
+        Ok(species) => report.counts.push(("tree species", species.len())),
+        Err(e) if creeer_materials::MaterialTable::from_data(data).is_ok() => report.errors.push(e),
+        Err(_) => {}
+    }
 }
 
 /// Every model in the manifests (G1.3b): it must load, its materials palette tokens; what

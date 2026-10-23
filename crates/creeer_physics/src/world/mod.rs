@@ -67,7 +67,7 @@ use crate::gravity::PlanetGravity;
 use crate::profile::{self, Slot};
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
 use contact::{Contact, Contacts};
-use creeer_math::glam::{DQuat, DVec3};
+use creeer_math::glam::{DMat3, DQuat, DVec3};
 use ground::Ground;
 use left::Left;
 pub use query::{Support, Touch};
@@ -112,6 +112,14 @@ impl Body {
     /// A rigid body of the given shape and mass at `position`.
     pub fn rigid(shape: Shape, mass: f64, position: DVec3, dt: f64) -> Self {
         let structure = StructureBuilder::rigid_body(position, mass, shape.inertia(mass));
+        Self::new(structure, vec![(0, shape)], dt)
+    }
+
+    /// A rigid body of the given shape, mass and rotational inertia (kg·m², about its node,
+    /// in its own frame) at `position`: a body whose mass is not spread evenly through its
+    /// shape (a felled tree: its crown's mass hangs on its stem).
+    pub fn rigid_with(shape: Shape, mass: f64, inertia: DMat3, position: DVec3, dt: f64) -> Self {
+        let structure = StructureBuilder::rigid_body(position, mass, inertia);
         Self::new(structure, vec![(0, shape)], dt)
     }
 

@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::items::kit::Densities;
+use cells::on_ground;
 use creeer_terrain::Planet;
 
 fn data() -> Data {
@@ -34,25 +35,8 @@ fn around(
     let radius = terrain.planet().radius;
     (scatter.cells_near(p, r).into_iter())
         .map(|cell| {
-            let corner = |i: i32, j: i32| {
-                CubeCoord {
-                    face: cell.face,
-                    s: f64::from(i) * scatter.step,
-                    t: f64::from(j) * scatter.step,
-                }
-                .direction()
-            };
-            let (a, b, c) = (
-                corner(cell.i, cell.j),
-                corner(cell.i + 1, cell.j),
-                corner(cell.i, cell.j + 1),
-            );
-            let area = (b - a).cross(c - a).length() * radius * radius;
-            let mid = CubeCoord {
-                face: cell.face,
-                s: (f64::from(cell.i) + 0.5) * scatter.step,
-                t: (f64::from(cell.j) + 0.5) * scatter.step,
-            };
+            let area = scatter.cells.area(cell, radius);
+            let mid = scatter.cells.mid(cell).unwrap();
             let ground = on_ground(terrain, mid.direction());
             let rock = terrain.rock_at(ground - ground.normalize() * 0.3);
             (area, scatter.in_cell(terrain, cell), rock)

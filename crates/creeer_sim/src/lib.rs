@@ -58,6 +58,7 @@ pub mod surroundings;
 #[cfg(test)]
 mod surroundings_tests;
 pub mod tools;
+pub mod trees;
 pub mod universe;
 
 pub use planet::{TerrainGround, planet_gravity};

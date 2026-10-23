@@ -3,10 +3,10 @@
 use creeer_math::det;
 
 /// A small deterministic generator (SplitMix64): the same numbers on every machine.
-pub(super) struct Rng(u64);
+pub(crate) struct Rng(u64);
 
 impl Rng {
-    pub(super) fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         Self(seed)
     }
 
@@ -19,14 +19,14 @@ impl Rng {
     }
 
     /// In [0, 1).
-    pub(super) fn unit(&mut self) -> f64 {
+    pub(crate) fn unit(&mut self) -> f64 {
         #[allow(clippy::cast_precision_loss)] // 53 bits
         let x = (self.next() >> 11) as f64;
         x / (1u64 << 53) as f64
     }
 
     /// A Poisson draw of mean `mean` (Knuth's, by products: means here are small).
-    pub(super) fn poisson(&mut self, mean: f64) -> usize {
+    pub(crate) fn poisson(&mut self, mean: f64) -> usize {
         let limit = det::exp(-mean);
         let (mut k, mut p) = (0, 1.0);
         loop {

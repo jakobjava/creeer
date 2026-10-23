@@ -20,6 +20,7 @@ fn tool(mass: f64, inertia: f64, balance: f64, strike: f64) -> Tool {
         carry_radius: 0.016,
         gyration: (inertia / mass).sqrt(),
         strike,
+        edge: None,
     }
 }
 

@@ -1,0 +1,28 @@
+// The example mod's oak wood (G1.7), green: about the Wood Handbook's white oak (FPL-GTR-282,
+// Table 5-3a), for the example.
+[
+    (
+        id: "oak_green",
+        name: "Oak, green",
+        kind: Wood,
+        density: "1000 kg/m^3",
+        youngs_modulus: "8.6 GPa",
+        shear_modulus: "0.54 GPa",
+        yield_strength: "57 MPa",
+        ultimate_strength: "57 MPa",
+        compressive_strength: Some("24 MPa"),
+        across: Some("4.6 MPa"),
+        elongation: 0.0,
+        hardening_start: 0.0,
+        uniform_elongation: 0.0,
+        damping: 0.02,
+        conductivity: "0.3 W/(m·K)",
+        specific_heat: "2500 J/(kg·K)",
+        expansion: "4e-6 K^-1",
+        resistivity: "1e5 Ω·m",
+        emissivity: 0.9,
+        absorptivity: 0.7,
+        decomposes: Some("300 °C"),
+        sources: "About the Wood Handbook's white oak, green (an example)",
+    ),
+]

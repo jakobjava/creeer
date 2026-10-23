@@ -105,12 +105,11 @@ impl Scatter {
         }
         let planet = terrain.planet();
         Ok(Self {
-            step: def.cell / planet.radius,
+            cells: super::Cells::new(def.cell, planet.radius, planet.seed),
             smallest: def.smallest,
             stones,
             branches,
             woods,
-            seed: planet.seed,
         })
     }
 }

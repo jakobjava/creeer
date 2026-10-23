@@ -1,8 +1,8 @@
 //! What lies loose on the ground (G1.6c, ADR-0029): stones and fallen branches, from
 //! `geology/loose.ron`. The ground is divided into cells on the cube-sphere's faces (about
-//! `cell` metres a side), each surface point in one cell. What lies in a cell is made from the
-//! planet's seed and the cell's key alone, so every machine makes the same, and nothing of it is
-//! simulated or sent: it is scenery until a player picks something up (the server then makes
+//! `cell` metres a side, `cells.rs`), each surface point in one. What lies in a cell is made from
+//! the planet's seed and the cell's key alone, so every machine makes the same, and nothing of it
+//! is simulated or sent: it is scenery until a player picks something up (the server then makes
 //! that one an item, and remembers it taken).
 //!
 //! A cell's stones are of the rock its ground is (or the bedrock beneath, `from_below`), with a
@@ -14,19 +14,12 @@ use crate::items::{Form, Item, Piece};
 use creeer_data::Data;
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_terrain::Terrain;
-use creeer_terrain::cube::CubeCoord;
 use creeer_terrain::geology::rocks::RockTable;
+
+pub use cells::{Cell, Cells};
 
 /// Where the rules are kept in a pack.
 pub const LOOSE: &str = "geology/loose.ron";
-
-/// A cell: its face and its place on the face's grid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Cell {
-    pub face: u8,
-    pub i: i32,
-    pub j: i32,
-}
 
 /// What lies there.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -53,20 +46,15 @@ pub struct Loose {
 /// The rules, resolved against a planet's rocks.
 #[derive(Clone, Debug)]
 pub struct Scatter {
-    /// Cell side in face coordinates, and the smallest stone (m).
-    step: f64,
+    cells: Cells,
+    /// The smallest stone (m).
     smallest: f64,
     /// By ground rock (terrain material id).
     stones: Vec<Option<StoneRule>>,
     branches: Vec<Option<BranchRule>>,
     /// The woods branches are of, by index (engineering material ids).
     pub woods: Vec<String>,
-    seed: u64,
 }
-
-/// Bits for a cell's index on its face, and for a thing's in its cell.
-const AXIS_BITS: u32 = 22;
-const INDEX_BITS: u32 = 12;
 
 impl Scatter {
     /// The packs' rules for `terrain`'s planet.
@@ -83,67 +71,22 @@ impl Scatter {
 
     /// The cell direction `d` lies in.
     pub fn cell_of(&self, d: DVec3) -> Cell {
-        let c = CubeCoord::from_direction(d);
-        #[allow(clippy::cast_possible_truncation)] // within the face: a few hundred thousand
-        let index = |s: f64| (s / self.step).floor() as i32;
-        Cell {
-            face: c.face,
-            i: index(c.s),
-            j: index(c.t),
-        }
+        self.cells.cell_of(d)
     }
 
-    /// The cells within `radius` (m) of point `p`: every cell some point of the disc about `p`
-    /// lies in. The disc is sampled at a third of the smallest cell (the warp makes a cell
-    /// 1/1.35 of `cell` across at the least, between a face's middle and its edge), so none is
-    /// missed (G1.6c: sampled at a cell's size, cells were skipped, and stones came and went as
-    /// the camera moved).
+    /// The cells within `radius` (m) of point `p` (`Cells::cells_near`).
     pub fn cells_near(&self, p: DVec3, radius: f64) -> Vec<Cell> {
-        let up = p.normalize();
-        let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
-        let spacing = self.step * p.length() / 1.35 / 3.0;
-        #[allow(clippy::cast_possible_truncation)] // a few dozen
-        let n = (radius / spacing).ceil() as i32;
-        let mut out = std::collections::BTreeSet::new();
-        for a in -n..=n {
-            for b in -n..=n {
-                let off = (east * f64::from(a) + north * f64::from(b)) * spacing;
-                if off.length() <= radius + spacing {
-                    out.insert(self.cell_of(p + off));
-                }
-            }
-        }
-        out.into_iter().collect()
+        self.cells.cells_near(p, radius)
     }
 
     /// What lies in `cell`.
     pub fn in_cell(&self, terrain: &Terrain, cell: Cell) -> Vec<Loose> {
-        let mut rng = Rng::new(self.seed ^ key(cell).wrapping_mul(0x9e37_79b9_7f4a_7c15));
-        let corner = |i: i32, j: i32| {
-            CubeCoord {
-                face: cell.face,
-                s: f64::from(i) * self.step,
-                t: f64::from(j) * self.step,
-            }
-            .direction()
-        };
-        // Its middle, its area and its ground.
-        let mid = CubeCoord {
-            face: cell.face,
-            s: (f64::from(cell.i) + 0.5) * self.step,
-            t: (f64::from(cell.j) + 0.5) * self.step,
-        };
-        if mid.s.abs() > 1.0 || mid.t.abs() > 1.0 {
+        let mut rng = self.cells.rng(cell, 0);
+        let Some(mid) = self.cells.mid(cell) else {
             return Vec::new();
-        }
-        let radius = terrain.planet().radius;
-        let (a, b, c) = (
-            corner(cell.i, cell.j),
-            corner(cell.i + 1, cell.j),
-            corner(cell.i, cell.j + 1),
-        );
-        let area = (b - a).cross(c - a).length() * radius * radius;
-        let ground = on_ground(terrain, mid.direction());
+        };
+        let area = self.cells.area(cell, terrain.planet().radius);
+        let ground = cells::on_ground(terrain, mid.direction());
         let up = ground.normalize();
         let Some(rock) = terrain.rock_at(ground - up * 0.3) else {
             return Vec::new();
@@ -162,7 +105,7 @@ impl Scatter {
                 let host_rule = self.stones[usize::from(host)].as_ref().unwrap_or(rule);
                 let n = rng.poisson(rule.per_m2 * area);
                 for _ in 0..n {
-                    let at = self.place(terrain, cell, &mut rng);
+                    let at = self.cells.place(terrain, cell, &mut rng);
                     let mut stone = host;
                     let pick = rng.unit();
                     let mut sum = 0.0;
@@ -193,7 +136,7 @@ impl Scatter {
         }
         if let Some(rule) = &self.branches[usize::from(rock)] {
             for _ in 0..rng.poisson(rule.per_m2 * area) {
-                let at = self.place(terrain, cell, &mut rng);
+                let at = self.cells.place(terrain, cell, &mut rng);
                 let length = rule.length.0 + rng.unit() * (rule.length.1 - rule.length.0);
                 let radius = rule.radius.0 + rng.unit() * (rule.radius.1 - rule.radius.0);
                 let turn = lying(at, &mut rng);
@@ -209,9 +152,9 @@ impl Scatter {
         (out.into_iter())
             .filter(|(centre, ..)| self.cell_of(*centre) == cell)
             .enumerate()
-            .filter(|(k, _)| *k < 1 << INDEX_BITS)
+            .filter(|(k, _)| *k < 1 << cells::INDEX_BITS)
             .map(|(k, (centre, turn, what))| Loose {
-                id: (key(cell) << INDEX_BITS) | k as u64,
+                id: (cells::key(cell) << cells::INDEX_BITS) | k as u64,
                 centre,
                 turn,
                 what,
@@ -221,30 +164,7 @@ impl Scatter {
 
     /// The loose thing `id`, if there is one.
     pub fn find(&self, terrain: &Terrain, id: u64) -> Option<Loose> {
-        let k = id >> INDEX_BITS;
-        let mask = (1u64 << AXIS_BITS) - 1;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // as packed
-        let cell = Cell {
-            face: (k >> (2 * AXIS_BITS)) as u8,
-            i: ((k >> AXIS_BITS) & mask) as i32 - (1 << (AXIS_BITS - 1)),
-            j: (k & mask) as i32 - (1 << (AXIS_BITS - 1)),
-        };
-        self.in_cell(terrain, cell).into_iter().find(|l| l.id == id)
-    }
-
-    /// A random point of `cell` on the ground.
-    fn place(&self, terrain: &Terrain, cell: Cell, rng: &mut Rng) -> DVec3 {
-        let s = (f64::from(cell.i) + rng.unit()) * self.step;
-        let t = (f64::from(cell.j) + rng.unit()) * self.step;
-        on_ground(
-            terrain,
-            CubeCoord {
-                face: cell.face,
-                s,
-                t,
-            }
-            .direction(),
-        )
+        (self.in_cell(terrain, cells::cell_of_id(id)).into_iter()).find(|l| l.id == id)
     }
 
     /// `loose` as an item, its materials' densities from `densities`.
@@ -272,22 +192,6 @@ impl Scatter {
     }
 }
 
-/// A cell's key: its face and grid place, packed.
-fn key(cell: Cell) -> u64 {
-    let offset = |x: i32| (i64::from(x) + (1 << (AXIS_BITS - 1))) as u64 & ((1 << AXIS_BITS) - 1);
-    (u64::from(cell.face) << (2 * AXIS_BITS)) | (offset(cell.i) << AXIS_BITS) | offset(cell.j)
-}
-
-/// The ground along direction `d`: from the heights, then onto the terrain's density
-/// (edits included).
-fn on_ground(terrain: &Terrain, d: DVec3) -> DVec3 {
-    let mut p = d * (terrain.planet().radius + terrain.surface_height(d));
-    for _ in 0..3 {
-        p -= d * terrain.density(p);
-    }
-    p
-}
-
 /// A frame lying flat at `at` (its z up), turned at random about the vertical.
 fn lying(at: DVec3, rng: &mut Rng) -> DQuat {
     let up = at.normalize();
@@ -295,9 +199,10 @@ fn lying(at: DVec3, rng: &mut Rng) -> DQuat {
     DQuat::from_axis_angle(up, rng.unit() * std::f64::consts::TAU) * flat
 }
 
+pub(crate) mod cells;
 mod rng;
 mod rules;
-use rng::Rng;
+pub(crate) use rng::Rng;
 use rules::{BranchRule, LooseDef, StoneRule};
 
 #[cfg(test)]

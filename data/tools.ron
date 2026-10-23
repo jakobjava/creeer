@@ -17,8 +17,9 @@
     // 220 × 300 mm; its head (blade and socket) from the model's volumes, 0.93 + 0.45 kg.
     (name: "shovel", model: "shovel", kind: Shovel, mass: 2.2, head: 1.38, length: 1.485, grip: 0.10, radius: 0.019, carry: 0.964, carry_radius: 0.0185, gyration: 1.047, strike: 1.479),
     // A felling axe: Gränsfors Bruk's American felling axe, 81 cm, 2.1 kg in all (Highland
-    // Woodworking); its head 1.6 kg here, the listings disagreeing (1.8–2.4).
-    (name: "axe", model: "axe", kind: Axe, mass: 2.1, head: 1.6, length: 0.80, grip: 0.06, radius: 0.016, carry: 0.685, carry_radius: 0.014, gyration: 0.711, strike: 0.812),
+    // Woodworking); its head 1.6 kg here, the listings disagreeing (1.8–2.4). Its edge (G1.7): 9 cm,
+    // ground to 25° (an estimate: no measured felling axe's angle was found; ADR-0031).
+    (name: "axe", model: "axe", kind: Axe, mass: 2.1, head: 1.6, length: 0.80, grip: 0.06, radius: 0.016, carry: 0.685, carry_radius: 0.014, gyration: 0.711, strike: 0.812, edge: Some((25.0, 0.09))),
     // A 24 in bow saw: Bahco's 10-24-51, a 607 mm blade, 743 g; its blade from the model's volume.
     (name: "bow_saw", model: "bow_saw", kind: Saw, mass: 0.743, head: 0.116, length: 0.62, grip: 0.055, radius: 0.017, carry: 0.092, carry_radius: 0.0175, gyration: 0.330, strike: 0.615),
 ]
