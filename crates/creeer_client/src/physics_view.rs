@@ -298,7 +298,7 @@ fn is_crate(half: DVec3) -> bool {
     (half - DVec3::splat(0.5)).abs().max_element() < 1e-3
 }
 
-fn add_box(
+pub(crate) fn add_box(
     scene: &mut Scene,
     meshes: &DemoMeshes,
     origin: DVec3,

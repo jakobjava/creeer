@@ -98,7 +98,7 @@ pub struct Connection {
     /// What came of the last thing done, and when it was told (G1.6).
     pub noted: Option<(String, std::time::Instant)>,
     /// What item bodies are (G1.6), by entity: a word, and a made thing's pieces.
-    pub items: BTreeMap<EntityId, (String, Vec<creeer_net::message::Part>, f64)>,
+    pub items: BTreeMap<EntityId, creeer_net::message::ItemLook>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.

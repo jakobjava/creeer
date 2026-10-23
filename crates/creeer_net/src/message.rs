@@ -138,7 +138,7 @@ mod inputs;
 pub use command::{Command, Target};
 mod inventory;
 mod laid;
-pub use laid::{Laid, Part};
+pub use laid::{ItemLook, Laid, Part};
 pub(crate) mod profile;
 mod server;
 mod trees;

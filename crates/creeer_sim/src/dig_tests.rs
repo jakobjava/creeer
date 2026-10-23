@@ -166,3 +166,19 @@ fn a_dug_ores_composition_follows_its_grade() {
         rocks.composition(granite, 1.0)
     );
 }
+
+#[test]
+fn a_blow_into_soil_loads_a_binding_less_than_one_on_rock() {
+    let rocks = rocks();
+    let energy = pick_blow();
+    let impulse = (2.0 * energy * 2.0, 0.002);
+    let force = |name: &str| {
+        let (hard, e_s, solid) = ground(&rocks, name);
+        let v = dug(energy, efficiency(0.003, STEEL, hard, solid), e_s);
+        peak_force(energy, v, impulse)
+    };
+    // In soil the head goes in about a tool's bite: the energy over 10 cm, a few kN; a stone
+    // axe's bark binding holds about 7 kN (ADR-0030).
+    assert!(force("soil") < 4e3, "{} N", force("soil"));
+    assert!(force("granite") > 10.0 * force("soil"));
+}

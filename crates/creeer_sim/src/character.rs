@@ -68,6 +68,8 @@ const BALANCE: (f64, f64, f64) = (5000.0, 640.0, 600.0);
 const YAW_DAMPING: f64 = 200.0;
 /// How fast it leaves the ground in a jump (m/s: 0.4 m high).
 pub const JUMP_SPEED: f64 = 2.8;
+/// Landed, it may jump again: its legs bearing this (N: half its weight), falling under this (m/s).
+const LANDED: (f64, f64) = (0.5 * MASS * 9.806_65, 0.3);
 /// A swimmer's thrust at most (N): a person's, about 60–100 N sprinting.
 const SWIM_MOST: f64 = 80.0;
 /// The torque a swimmer keeps upright with at most (N·m).
@@ -295,7 +297,10 @@ pub fn steer(
                 mass: None,
             });
         }
-        if jump && v.dot(up) < 0.5 * JUMP_SPEED && legs > 0.0 {
+        // Once landed (held, the key jumped again at the legs' first touch, still falling: hops).
+        let spring = LEG_STIFFNESS * (LEG_LENGTH - hit.distance);
+        let landed = spring >= LANDED.0 && (v - ground_v).dot(up) > -LANDED.1;
+        if jump && v.dot(up) < 0.5 * JUMP_SPEED && legs > 0.0 && landed {
             let impulse = up * (MASS * (JUMP_SPEED - v.dot(up).max(0.0)));
             world.apply_impulse(index, 0, impulse, x);
             if let Some((other, node)) = hit.body {

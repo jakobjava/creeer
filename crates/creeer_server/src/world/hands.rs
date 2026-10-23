@@ -97,7 +97,12 @@ impl ServerWorld {
         c.facing = (DQuat::from_axis_angle(up, c.spin * DT) * c.facing).normalize();
         // Where the hands mean to have it: lifted to their height first, then brought in (not
         // dragged along the ground), in the body's frame.
-        let held = turn.conjugate() * (carry::held_out(centre, up, c.facing, c.ahead) - centre);
+        let hold = if c.one_hand {
+            carry::at_side(centre, up, c.facing)
+        } else {
+            carry::held_out(centre, up, c.facing, c.ahead)
+        };
+        let held = turn.conjugate() * (hold - centre);
         let up_here = turn.conjugate() * up;
         let raised = c.from + up_here * (held - c.from).dot(up_here);
         let smooth = |x: f64| {

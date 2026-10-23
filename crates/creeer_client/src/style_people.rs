@@ -170,6 +170,7 @@ pub fn tools_sheet(
             wields: Some(tool),
             swing: None,
             carrying: false,
+            made: None,
         };
         people.draw(&[person], 1.0 / 60.0, &Flat, &mut scene);
         images.push(renderer.capture(Frame {

@@ -47,6 +47,21 @@ pub fn held_out(centre: DVec3, up: DVec3, facing: DVec3, ahead: f64) -> DVec3 {
     centre + up.normalize() * hold().0 + facing.normalize_or_zero() * ahead
 }
 
+/// Where the right hand holds a tool at the body's side (a tool is carried in one hand, as the
+/// catalogue's are drawn: the hand hanging as the skeleton stands), from the body's centre at
+/// `centre`, upright along `up`, facing `facing` (horizontal).
+pub fn at_side(centre: DVec3, up: DVec3, facing: DVec3) -> DVec3 {
+    let z = facing
+        .reject_from(up)
+        .normalize_or(up.any_orthonormal_vector());
+    let y = up.normalize();
+    let x = y.cross(z);
+    // The right hand's centre standing, from the body's centre (the model's frame: y up, z
+    // forward).
+    let hand = bones::centres()[5] - DVec3::Y * character::heights().0;
+    centre + x * hand.x + y * hand.y + z * hand.z
+}
+
 /// How far before the body's axis the hands hold a load at least (m): a forearm.
 pub fn forearm() -> f64 {
     hold().1

@@ -52,8 +52,20 @@ fn item_messages_read_back_as_written() {
     back(&ServerMessage::Note("a flake came off".into()));
     back(&ServerMessage::Item(
         EntityId(4),
-        "flake".into(),
-        Vec::new(),
-        0.05,
+        crate::message::ItemLook {
+            word: "flake".into(),
+            parts: Vec::new(),
+            mass: 0.05,
+            grip: None,
+        },
+    ));
+    back(&ServerMessage::Item(
+        EntityId(5),
+        crate::message::ItemLook {
+            word: "tool".into(),
+            parts: Vec::new(),
+            mass: 0.4,
+            grip: Some(DVec3::new(0.1, -0.02, 0.0)),
+        },
     ));
 }

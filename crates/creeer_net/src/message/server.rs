@@ -92,10 +92,8 @@ pub enum ServerMessage {
     /// What came of something the player did (G1.6: a flake came off, a tool was bound), told to
     /// them as the refusals are.
     Note(String),
-    /// What an item body is (G1.6), sent after its spawn: a word for it (stone, flake, stick,
-    /// strip, tool…: by its shape, never its material) and, if made of pieces, the pieces it is
-    /// drawn as, about its centre; and its mass (kg, G1.9).
-    Item(EntityId, String, Vec<super::Part>, f64),
+    /// What an item body is (G1.6, [`super::ItemLook`]), sent after its spawn.
+    Item(EntityId, super::ItemLook),
     /// Standing trees cut into or felled since last told (G1.7; everyone's, as the terrain is).
     Trees(Vec<super::TreeCut>),
 }
@@ -263,12 +261,10 @@ impl Encode for ServerMessage {
                 w.u8(16);
                 text(w, note);
             }
-            Self::Item(id, word, parts, mass) => {
+            Self::Item(id, look) => {
                 w.u8(17);
                 w.put(id);
-                text(w, word);
-                w.put(parts);
-                w.f64(*mass);
+                w.put(look);
             }
             Self::Trees(cuts) => {
                 w.u8(18);
@@ -364,7 +360,7 @@ impl Decode for ServerMessage {
             14 => Self::Refusal(read_text(r)?),
             15 => Self::Laid(r.get()?),
             16 => Self::Note(read_text(r)?),
-            17 => Self::Item(r.get()?, read_text(r)?, r.get()?, r.finite()?),
+            17 => Self::Item(r.get()?, r.get()?),
             18 => Self::Trees(r.get()?),
             _ => return Err(r.error("unknown server message")),
         })

@@ -56,8 +56,8 @@ impl Connection {
                 self.taken.extend(ids);
             }
             ServerMessage::Note(note) => self.noted = Some((note, std::time::Instant::now())),
-            ServerMessage::Item(id, word, parts, mass) => {
-                self.items.insert(id, (word, parts, mass));
+            ServerMessage::Item(id, look) => {
+                self.items.insert(id, look);
             }
             ServerMessage::Laid(laid) => {
                 for l in laid {

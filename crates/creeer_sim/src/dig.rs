@@ -91,6 +91,15 @@ pub fn dug(energy: f64, efficiency: f64, excavation: f64) -> f64 {
     (energy * efficiency / excavation).max(0.0)
 }
 
+/// The peak force on a head (N) whose blow of `energy` (J) broke out `volume` (m³): the energy
+/// spent over the depth it went in (the side of what it broke out, from a millimetre on hard
+/// rock to a tool's bite in soil), never more than its whole impulse `impulse` (N·s) stopped in
+/// `contact` seconds (on rock that does not give).
+pub fn peak_force(energy: f64, volume: f64, (impulse, contact): (f64, f64)) -> f64 {
+    let depth = det::cbrt(volume.max(0.0)).clamp(1e-3, BITE);
+    (energy / depth).min(impulse / contact)
+}
+
 /// How much one mineral of hardness `mineral` abrades a head of hardness `head` (0.02–1).
 pub fn abrasion(mineral: f64, head: f64) -> f64 {
     let r = mineral / head;

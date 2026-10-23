@@ -110,7 +110,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
         tree: None,
         mass: (aimed.body)
             .and_then(|id| connection.items.get(&id))
-            .map(|i| i.2),
+            .map(|i| i.mass),
     })
 }
 
@@ -119,7 +119,7 @@ fn name(aimed: Aimed, connection: &creeer_server::Connection) -> String {
     let Some(id) = aimed.body else {
         return "ground".into();
     };
-    if let Some((word, ..)) = connection.items.get(&id) {
+    if let Some(creeer_net::message::ItemLook { word, .. }) = connection.items.get(&id) {
         return word.clone();
     }
     match connection.kinds.get(&id) {

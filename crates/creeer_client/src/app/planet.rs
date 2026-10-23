@@ -148,7 +148,21 @@ impl Running {
             let ground = crate::people_ground::PlanetGround {
                 terrain: &planet.terrain,
             };
-            people.draw(&snapshot.people, dt, &ground, &mut self.scene);
+            // The made tools in hands as their pieces, as the world's made things are drawn.
+            for (c, q, half, [r, g, b]) in
+                people.draw(&snapshot.people, dt, &ground, &mut self.scene)
+            {
+                let colour = [r, g, b].map(|x| f32::from(x) / 255.0);
+                let material = creeer_render::Material::dielectric(colour, 0.85);
+                physics_view::add_box(
+                    &mut self.scene,
+                    &self.meshes,
+                    DVec3::ZERO,
+                    (c, q, half),
+                    material,
+                    None,
+                );
+            }
         }
         self.scene_build_times.push(build_start.elapsed());
 

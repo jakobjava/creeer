@@ -11,7 +11,7 @@ use creeer_sim::making::{self, Broken};
 
 /// How long a blow's contact lasts (s): a few milliseconds for stone or steel on wood or stone,
 /// so its peak force is about its impulse over this.
-const CONTACT: f64 = 0.002;
+pub(super) const CONTACT: f64 = 0.002;
 /// The bast stripped from wood: its material, as the packs have it.
 const BAST: &str = "spruce_bast";
 /// The shortest haft (m).
@@ -29,17 +29,17 @@ impl ServerWorld {
     /// there breaks; the made thing that struck, if its binding gives, comes apart.
     pub(super) fn broken_by(&mut self, by: EntityId, on: EntityId, energy: f64, j: f64) {
         self.break_item(by, on, energy);
-        self.binding_bears(by, j);
+        self.binding_bears(by, j / CONTACT);
     }
 
-    /// A blow of impulse `j` (N·s) by what avatar `by` holds: if a made thing's binding gives, it
-    /// comes apart.
-    pub(super) fn binding_bears(&mut self, by: EntityId, j: f64) {
+    /// A blow whose peak force on the head is `force` (N) by what avatar `by` holds: if a made
+    /// thing's binding gives, it comes apart.
+    pub(super) fn binding_bears(&mut self, by: EntityId, force: f64) {
         let Some(held) = self.carried(by) else { return };
         let Some(Item::Made(made)) = self.items.bodies.get(&held) else {
             return;
         };
-        if j / CONTACT <= made.hold {
+        if force <= made.hold {
             return;
         }
         let at = self.hands_point(by);

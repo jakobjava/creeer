@@ -89,3 +89,47 @@ fn falls_onto_rock_hurt_as_a_persons_do() {
     assert!(twenty.iter().all(|&h| h >= 0.95), "20 m: harms {twenty:?}");
     eprintln!("falls onto rock: 3 m {three:.3?}, 10 m {ten:.3?}, 20 m {twenty:.3?}");
 }
+
+/// Running with the jump key held, it lands between jumps and each jump rises its full height
+/// (G1.10, the user: it hopped on its legs' tips and went down; held, the key jumped again at
+/// the legs' first touch, still falling, 12–23 cm up).
+#[test]
+fn running_with_jump_held_it_lands_between_full_jumps() {
+    let mut world = World::new(DT);
+    world.statics.push(StaticShape::Plane {
+        normal: DVec3::Y,
+        offset: 0.0,
+    });
+    world.static_friction = 0.9;
+    let c = world.add(body(DVec3::ZERO, DVec3::Y, DT));
+    let mut reactions = Vec::new();
+    let (mut highest, mut lowest, mut peaks, mut knocked_down) =
+        (0.0f64, f64::INFINITY, Vec::new(), false);
+    let mut rising = false;
+    for k in 0..360 {
+        let intent = Intent::walk(DVec3::Z * 6.5, k >= 60);
+        steer(&mut world, c, intent, (DVec3::Y, None), &mut reactions);
+        let before = world.bodies[c].structure.velocity[0];
+        world.step();
+        let motion = (before, pushed_on(&world.strut_pushes(), c));
+        release(&mut world, &mut reactions);
+        knocked_down |= knocked(&world, c, DVec3::Y, motion);
+        let s = &world.bodies[c].structure;
+        let feet = s.position[0].y - CENTRE;
+        if k > 60 {
+            if rising && s.velocity[0].y <= 0.0 {
+                peaks.push(highest);
+            }
+            rising = s.velocity[0].y > 0.0;
+            highest = if rising { highest.max(feet) } else { feet };
+            if !rising {
+                lowest = lowest.min(feet);
+            }
+        }
+    }
+    assert!(!knocked_down);
+    assert!(peaks.len() >= 5, "{peaks:?}");
+    // Each jump its legs' full push (0.4 m), less what the legs' springs still held: over 0.3 m.
+    assert!(peaks.iter().all(|p| *p > 0.3), "{peaks:?}");
+    assert!(lowest < 0.03, "never landed: lowest {lowest} m");
+}

@@ -59,7 +59,13 @@ pub(super) fn needed(root: &Frame64, going: &Going, feet: &[Reached; 2], steppin
             let (g, n) = foot.aimed;
             let (lands, _) = feet::rolled(side, g, n, going.forward, Through::Stance(0.0), false);
             let then = need(side, lands, foot.lands_in);
-            drop = drop.max(then * s * s * (3.0 - 2.0 * s));
+            let ramp = s * s * (3.0 - 2.0 * s);
+            // And reached now with a stance's bent knee as it comes down (reaching straight to the
+            // last, the knee bent 13° in the frame it landed: near straight, a knee's bend goes as
+            // the square root of the leg's shortfall).
+            drop = drop
+                .max(then * ramp)
+                .max(need(side, foot.ankle, 0.0) * ramp);
         } else {
             drop = drop.max(need(side, foot.ankle, 0.0));
         }

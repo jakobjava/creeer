@@ -106,27 +106,30 @@ impl ServerWorld {
 }
 
 impl ServerWorld {
-    /// What item body `id` is, if it is one: a word for it, and the pieces it is drawn as if it
-    /// is made of pieces (about its centre), and its mass (kg).
-    pub fn item_look(&self, id: EntityId) -> Option<(String, Vec<creeer_net::message::Part>, f64)> {
+    /// What item body `id` is, if it is one (`ItemLook`): a made thing's pieces about its centre,
+    /// and where a hand holds it there (at its balance on the haft: G1.10).
+    pub fn item_look(&self, id: EntityId) -> Option<creeer_net::message::ItemLook> {
         let item = self.items.bodies.get(&id)?;
-        let word = creeer_sim::items::kit::word(item).to_owned();
-        let mass = item.mass();
-        let Item::Made(a) = item else {
-            return Some((word, Vec::new(), mass));
+        let mut look = creeer_net::message::ItemLook {
+            word: creeer_sim::items::kit::word(item).to_owned(),
+            parts: Vec::new(),
+            mass: item.mass(),
+            grip: None,
         };
-        let (_, centroid) = super::item_bodies::made_hull(a);
-        let d = self.items.densities.as_ref();
-        Some((
-            word,
-            super::item_bodies::parts(a, centroid, |m| d?.colour(m)),
-            mass,
-        ))
+        if let Item::Made(a) = item {
+            let (_, centroid) = super::item_bodies::made_hull(a);
+            let d = self.items.densities.as_ref();
+            look.parts = super::item_bodies::parts(a, centroid, |m| d?.colour(m));
+            look.grip = Some(DVec3::X * a.swinging().carry - centroid);
+        }
+        Some(look)
     }
 
     /// The pieces item body `id` is drawn as, if it is made of pieces.
     pub fn drawn_parts(&self, id: EntityId) -> Option<Vec<creeer_net::message::Part>> {
-        self.item_look(id).map(|l| l.1).filter(|p| !p.is_empty())
+        self.item_look(id)
+            .map(|l| l.parts)
+            .filter(|p| !p.is_empty())
     }
 
     /// Tells avatar `by`'s player what came of what they did.

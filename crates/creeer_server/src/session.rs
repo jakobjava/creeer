@@ -200,9 +200,9 @@ impl Session {
                 spawns: Some(id),
             });
             // What an item is, and a made thing's pieces, right after it (G1.6).
-            if let Some((word, parts, mass)) = world.item_look(id) {
+            if let Some(look) = world.item_look(id) {
                 self.outbox.push_back(Queued {
-                    bytes: to_bytes(&ServerMessage::Item(id, word, parts, mass)),
+                    bytes: to_bytes(&ServerMessage::Item(id, look)),
                     spawns: Some(id),
                 });
             }

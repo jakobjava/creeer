@@ -146,6 +146,17 @@ impl Bulk {
         self.mass / self.bulk_density
     }
 
+    /// `mass` (kg, at most all of it) taken out as a bulk of its own, of the same matter: what is
+    /// left keeps the rest exactly.
+    pub fn split(&mut self, mass: f64) -> Self {
+        let taken = mass.clamp(0.0, self.mass);
+        self.mass -= taken;
+        Self {
+            mass: taken,
+            ..self.clone()
+        }
+    }
+
     /// `other` mixed in: mass and each species' mass conserved exactly, and the heat (the
     /// temperature from the heat capacities); the volumes add, so the bulk density follows.
     pub fn merge(&mut self, other: &Self) {

@@ -139,9 +139,9 @@ fn ten_thousand_blows_cut_pits_and_keep_the_mass() {
         total / 10.0,
         slowest * 1e3
     );
-    // Budget: a strike 0.2 ms on average; the rare one that cuts a pit within a few ms.
-    assert!(total / 1e4 < 0.2e-3, "{} ms a strike", total / 10.0);
-    assert!(slowest < 5e-3, "{} ms at worst", slowest * 1e3);
+    // Timed, not gated here: shared CI machines are slow and noisy. The budgets (0.2 ms a
+    // strike, the rare cut within the tick's) are measured on the development machine
+    // (ADR-0032, Cost; `creeer_tools play --gate` on *quarry*).
 }
 
 #[test]
@@ -214,4 +214,89 @@ fn a_stone_heads_edge_wears_and_blunts() {
     let edge = p.edge.unwrap();
     assert!(p.wear > 0.0 && p.wear < 0.1, "{}", p.wear);
     assert!(edge.radius > 5e-6, "the edge blunted: {}", edge.radius);
+}
+
+#[test]
+fn a_heap_runs_through_the_fingers_and_is_scooped_a_pocketful_at_a_time() {
+    let (mut w, ada, at) = ada(true);
+    let swing = creeer_sim::strike::swing(&w.tools[0]);
+    for _ in 0..40 {
+        w.dig(ada, at, (&swing, Some(0)));
+    }
+    let (&heap, (Item::Bulk(b), ..)) = w.items.laid.iter().next().expect("a heap") else {
+        panic!("a heap of loose matter");
+    };
+    let before = b.mass;
+    assert!(w.pick(ada, heap, false).is_err(), "not in the hands");
+    w.pick(ada, heap, true).unwrap();
+    let left = w.items.laid.get(&heap).map_or(0.0, |(i, ..)| i.mass());
+    let pocketed = w.load(ada);
+    assert!(
+        pocketed > 0.0 && left > 0.0,
+        "a pocketful taken, the rest lying"
+    );
+    assert!((pocketed + left - before).abs() < 1e-9 * before);
+}
+
+#[test]
+fn a_made_tool_is_held_in_one_hand_at_the_side() {
+    let (mut w, ada, _) = ada(false);
+    let haft = Piece::solid(
+        "spruce_c24",
+        420.0,
+        Form::Rod {
+            radius: 0.015,
+            length: 0.6,
+        },
+    );
+    let head = Piece::solid(
+        "chert",
+        2580.0,
+        Form::Lump {
+            size: DVec3::new(0.12, 0.07, 0.03),
+        },
+    );
+    let strip = Piece::solid(
+        "spruce_bast",
+        600.0,
+        Form::Block {
+            size: DVec3::new(0.6, 0.047, 0.0015),
+        },
+    );
+    let made = creeer_sim::making::bind(haft, head, strip, 20e6).unwrap();
+    w.put_in_hands(ada, Item::Made(Box::new(made))).unwrap();
+    wait(&mut w, ada, 120);
+    assert!(w.carrying[&ada].one_hand);
+    // Its balance at the right hand hanging at the side.
+    let i = w.index(ada).unwrap();
+    let centre = w.world.bodies[i].structure.position[0];
+    let up = character::plumb(&w.world, centre);
+    let c = &w.carrying[&ada];
+    let l = &w.world.bodies[w.index(c.load).unwrap()].structure;
+    let grip = l.position[0] + l.orientation[0] * c.grip;
+    let side = creeer_sim::carry::at_side(centre, up, c.facing);
+    assert!(
+        (grip - side).length() < 0.1,
+        "{:.3} m from the hand",
+        (grip - side).length()
+    );
+    // A blow into soil does not tear its binding (a strip as stripping makes one: 2.8 kN; the
+    // blow's impulse over 2 ms, as on stone, is 3.8 kN: it tore at every blow before).
+    let held = w.items.bodies[&c.load].swinging().unwrap();
+    let swing = creeer_sim::strike::swing_of(held.mass, held.gyration, held.carry, held.strike);
+    let at = w.ground_under(centre + c.facing * 1.2);
+    let hold = match &w.items.bodies[&c.load] {
+        Item::Made(a) => a.hold,
+        _ => 0.0,
+    };
+    let energy = 0.5 * swing.mass * swing.speed * swing.speed;
+    let rigid = 2.0 * energy / swing.speed / 0.002;
+    assert!(
+        hold < rigid,
+        "as stone, it would tear: {hold:.0} N, {rigid:.0} N"
+    );
+    for _ in 0..20 {
+        w.dig(ada, at, (&swing, None));
+    }
+    assert!(w.carried(ada).is_some(), "it held together in soil");
 }

@@ -44,6 +44,9 @@ pub(super) struct Carry {
     /// The ticks running the hands have given their most, and have had it beyond their give.
     pub(super) straining: u32,
     pub(super) torn: u32,
+    /// Held in the right hand at the body's side, as a tool is carried (a made thing: G1.6d),
+    /// not in both hands before it.
+    pub(super) one_hand: bool,
 }
 
 /// The frame of a body facing `facing` (horizontal) about `up`: z the way it faces, y up.
@@ -101,12 +104,27 @@ impl ServerWorld {
             .normalize_or(up.any_orthonormal_vector());
         let l = &self.world.bodies[load].structure;
         let (c, q) = (l.position[node], l.orientation[node]);
-        let grip = q.conjugate() * (point - c);
+        // A made tool in one hand at its balance, its haft forward; anything else in both.
+        let tool = match self.items.bodies.get(&id) {
+            Some(creeer_sim::items::Item::Made(a)) => {
+                let (_, centroid) = super::item_bodies::made_hull(a);
+                Some(DVec3::X * a.swinging().carry - centroid)
+            }
+            _ => None,
+        };
+        let grip = tool.unwrap_or(q.conjugate() * (point - c));
         let from = turn.conjugate() * (point - centre);
-        let ahead = self.ahead((load, node), point, i, facing);
+        let ahead = match tool {
+            Some(_) => carry::forearm(),
+            None => self.ahead((load, node), point, i, facing),
+        };
         // Each half of the way (up, then in) as fast as the spare strength lets: smoothly,
         // its most acceleration 24·d/T².
-        let held = turn.conjugate() * (carry::held_out(centre, up, facing, ahead) - centre);
+        let held = turn.conjugate()
+            * (match tool {
+                Some(_) => carry::at_side(centre, up, facing),
+                None => carry::held_out(centre, up, facing, ahead),
+            } - centre);
         let up_here = turn.conjugate() * up;
         let rise = (held - from).dot(up_here).abs();
         let inward = (held - from).reject_from(up_here).length();
@@ -117,7 +135,11 @@ impl ServerWorld {
                 load: id,
                 node,
                 grip,
-                turn: facing_frame(facing, up).conjugate() * q,
+                // (A tool's haft, its x, the way the body faces.)
+                turn: match tool {
+                    Some(_) => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),
+                    None => facing_frame(facing, up).conjugate() * q,
+                },
                 from,
                 lift,
                 since: 0,
@@ -128,6 +150,7 @@ impl ServerWorld {
                 path: [None; 2],
                 straining: 0,
                 torn: 0,
+                one_hand: tool.is_some(),
             },
         );
         // The load in the hands passes the body's box (as a joint's sides did; the box is no

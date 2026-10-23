@@ -73,6 +73,6 @@ fn a_sphere_is_found_that_takes_no_more_than_was_dug() {
     let spent = t.elapsed();
     assert!(r > 0.5 && r < 0.8);
     assert!(took <= want && took > 0.999 * want, "{took} of {want}");
-    // Off the tick's budget only on the rare blow that cuts (debug builds are slower).
-    assert!(spent.as_secs_f64() < 0.02, "{spent:?}");
+    // Timed, not gated: shared CI machines are slow and noisy (ADR-0032's Cost measures it).
+    println!("the ball found in {spent:?}");
 }

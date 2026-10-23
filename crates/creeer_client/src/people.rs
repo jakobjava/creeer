@@ -10,11 +10,15 @@ use creeer_art::Palette;
 use creeer_art::model::{Entry, Model};
 use creeer_art::wearable::{Wearable, visible};
 use creeer_math::Frame64;
+use creeer_math::glam::{DQuat, DVec3};
 use creeer_net::entity::Look;
 use creeer_render::skin::{OutfitId, SkinnedId, SkinnedMeshData};
 use creeer_render::{Character, Material, Renderer, Scene};
 use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT, finger_bones};
 use std::collections::HashMap;
+
+/// The catalogue's axe (`tools.ron`), whose swing a made tool's is drawn with.
+const AXE: u8 = 2;
 
 /// The grey the player's colour is laid on at half strength (`art-style.md` §3.3, FFF-218;
 /// `art/engineer/outfit.py`).
@@ -33,6 +37,9 @@ pub struct DrawnPerson {
     pub swing: Option<f64>,
     /// Whether it carries a load in both hands (G1.4f).
     pub carrying: bool,
+    /// A made tool in its right hand (G1.10): its pieces about its centre, and where the hand
+    /// holds it there.
+    pub made: Option<(Vec<creeer_net::message::Part>, DVec3)>,
 }
 
 /// Where a bone of the model is drawn from: a segment of the ragdoll, or a finger bone
@@ -133,25 +140,41 @@ impl People {
 
     /// The people into `scene` as the renderer draws them this frame, `dt` seconds after the
     /// last, animated on `ground`, with the tools they hold (those no longer drawn are
-    /// forgotten).
+    /// forgotten). Returns the pieces of the made tools in their hands (G1.10), as boxes (centre,
+    /// turn, half extents, colour) for the caller to draw with the world's.
     pub fn draw(
         &mut self,
         people: &[DrawnPerson],
         dt: f64,
         ground: &dyn Ground,
         scene: &mut Scene,
-    ) {
+    ) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
+        let mut in_hands = Vec::new();
         let keys: Vec<u32> = people.iter().map(|p| p.key).collect();
         self.animator.retain(&keys);
         for p in people {
             // A tool carried in the right hand: the fingers closed on its handle at its balance.
             let tool =
                 (p.wields).and_then(|t| self.held.tool(t).map(|tool| (t, tool.carry_radius)));
-            let swing = (p.wields.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
+            // A made tool swung as the catalogue's axe is timed (its own swing is the server's).
+            let swung = p.wields.or(p.made.as_ref().map(|_| AXE));
+            let swing = (swung.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
             self.animator.swing(p.key, swing);
             self.animator.carrying(p.key, p.carrying);
             let bones = self.animator.bones(p.key, &p.body, dt, ground);
-            let right = tool.map_or(Hold::Relaxed, |(_, radius)| Hold::Grip(radius));
+            let made = p
+                .made
+                .as_ref()
+                .map(|(parts, grip)| (parts, *grip, haft(parts)));
+            let right = match (tool, &made) {
+                (Some((_, radius)), _) => Hold::Grip(radius),
+                (None, Some((.., radius))) => Hold::Grip(*radius),
+                _ => Hold::Relaxed,
+            };
+            if let (Some((parts, grip, radius)), Some(hands)) = (made, &self.hands) {
+                let frame = bones[5] * hands.grip(0, radius);
+                in_hands.extend(in_hand(parts, grip, frame));
+            }
             scene
                 .characters
                 .push(self.holding(&p.look, &bones, [right, Hold::Relaxed]));
@@ -161,6 +184,7 @@ impl People {
                 scene.add(mesh, instance);
             }
         }
+        in_hands
     }
 
     /// Someone looking `look` with `bones` (the ragdoll's order) as the renderer draws them. An
@@ -212,4 +236,33 @@ impl People {
             narrow(pick(&self.palette.hair, look.hair)),
         ]
     }
+}
+
+/// A made tool's haft's radius (m): its longest piece's thinnest half extent (a hand's grip
+/// closes on it), 16 mm if it has none.
+fn haft(parts: &[creeer_net::message::Part]) -> f64 {
+    (parts.iter())
+        .max_by(|a, b| a.half.max_element().total_cmp(&b.half.max_element()))
+        .map_or(0.016, |p| p.half.min_element())
+}
+
+/// A made tool's pieces (about its centre, `grip` where the hand holds it) placed in a hand's
+/// grip `frame` (`Hands::grip`: +y along the handle, +z towards the working end): its haft (its
+/// x) along the handle, its head (its +y) the working end.
+fn in_hand(
+    parts: &[creeer_net::message::Part],
+    grip: DVec3,
+    frame: Frame64,
+) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
+    let r = DQuat::from_mat3(&creeer_math::glam::DMat3::from_cols(
+        DVec3::Y,
+        DVec3::Z,
+        DVec3::X,
+    ));
+    (parts.iter())
+        .map(|p| {
+            let at = frame.transform_point(r * (p.at - grip));
+            (at, frame.rotation * r * p.turn, p.half, p.colour)
+        })
+        .collect()
 }

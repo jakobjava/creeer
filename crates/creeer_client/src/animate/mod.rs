@@ -17,6 +17,7 @@ mod inertial;
 mod pose;
 pub mod skeleton;
 mod stand;
+mod stop;
 mod upper;
 
 use creeer_math::Frame64;
@@ -65,6 +66,8 @@ struct State {
     /// Stepping (not standing still), and stopping (the last step on, at `pace`, m/s).
     stepping: bool,
     stopping: bool,
+    /// Stopping: each foot has been in the air since the stop began (one landing ends it).
+    stop_up: [bool; 2],
     pace: f64,
     /// How the arms carry themselves: 0 walking, 1 running.
     carriage: f64,
@@ -188,6 +191,7 @@ impl State {
             lowering: 0.0,
             swing: None,
             carrying: false,
+            stop_up: [false; 2],
             mode: Mode::Standing,
             smoother: Smoother::default(),
         }

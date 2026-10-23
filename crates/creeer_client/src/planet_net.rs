@@ -169,6 +169,14 @@ impl PlanetSession {
         let c = &self.connection;
         let mut out = PhysicsSnapshot::default();
         let poses = c.poses();
+        // The made tools in hands, drawn in them, not as bodies (G1.10).
+        let in_hand: std::collections::BTreeSet<EntityId> = (c.kinds.values())
+            .filter_map(|k| match k {
+                Kind::Character { carries, .. } => *carries,
+                _ => None,
+            })
+            .filter(|t| c.items.get(t).is_some_and(|l| l.grip.is_some()))
+            .collect();
         for (id, kind) in &c.kinds {
             let Some(pose) = poses.get(id) else { continue };
             let (p, q) = (pose.position, pose.orientation);
@@ -200,6 +208,9 @@ impl PlanetSession {
                     } else {
                         Some(Body::Standing(p, q))
                     };
+                    // A made tool in one hand (G1.10), drawn there, not as its body.
+                    let made = (carries.and_then(|t| c.items.get(&t)))
+                        .and_then(|l| Some((l.parts.clone(), l.grip?)));
                     if let Some(body) = body {
                         let look = look.clone();
                         out.people.push(DrawnPerson {
@@ -208,7 +219,8 @@ impl PlanetSession {
                             body,
                             wields: *wields,
                             swing: c.swinging(*id),
-                            carrying: carries.is_some(),
+                            carrying: carries.is_some() && made.is_none(),
+                            made,
                         });
                     }
                 }
@@ -217,7 +229,11 @@ impl PlanetSession {
                 // An item's hull (a stone, a stick: G1.6c) as the box about it in its colour; the
                 // sandbox's other hulls as the ball around them.
                 Kind::Body(Shape::Hull(corners), matter) => {
-                    if let Some((_, parts, _)) = c.items.get(id).filter(|(_, p, _)| !p.is_empty()) {
+                    if in_hand.contains(id) {
+                        continue;
+                    }
+                    let parts = c.items.get(id).map(|l| &l.parts).filter(|p| !p.is_empty());
+                    if let Some(parts) = parts {
                         // A made thing as its pieces (G1.6).
                         for part in parts {
                             out.boxes.push((p + q * part.at, q * part.turn, part.half));

@@ -7,16 +7,13 @@
 use super::feet::{self, Foot, Ground, Through};
 use super::pose::free;
 use super::pose::{Mode, Pose};
-use super::{State, gait, hips, skeleton, upper};
+use super::{State, gait, hips, skeleton, stop, upper};
 use creeer_math::Frame64;
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_sim::character::{JUMP_SPEED, bones};
 
 /// Below this speed a person stands (m/s).
 const STILL: f64 = 0.15;
-/// A foot this far from where it would stand still steps there (m): about half a boot's
-/// length, an offset that shows; nearer, the person stands as the feet came to rest.
-const SETTLE: f64 = 0.12;
 /// The speed stepping into place goes at (m/s).
 const SHUFFLE: f64 = 0.6;
 /// How much faster than its gait a stride may hurry.
@@ -215,10 +212,10 @@ impl State {
         let feet = self
             .feet
             .get_or_insert_with(|| rest.map(|(g, n)| Foot::planted(g, n)));
-        let settled = feet
-            .iter()
-            .zip(&rest)
-            .all(|(f, (g, _))| f.down && (f.plant - *g).length() < SETTLE);
+        let (settled, strayed) = (
+            stop::settled(feet, &rest),
+            stop::strayed(feet, &rest, speed),
+        );
         let moving = speed > STILL;
         if moving {
             self.stopping = false;
@@ -231,6 +228,10 @@ impl State {
         } else if self.stepping && !self.stopping {
             // Stopping: the stride goes on, slowing, until the swinging foot lands beside the other.
             self.stopping = true;
+            self.stop_up = [false; 2];
+        }
+        if self.stopping {
+            stop::track(&mut self.stop_up, feet);
         }
         let (pace, aim) = if moving {
             (self.pace, along)
@@ -238,7 +239,7 @@ impl State {
             // The last steps walked, both feet down between them (a run in place never has both
             // down to end on).
             (self.pace.clamp(SHUFFLE, STOP_PACE), DVec3::ZERO)
-        } else if settled {
+        } else if settled || (!self.stepping && !strayed) {
             self.stepping = false;
             (0.0, DVec3::ZERO)
         } else {
@@ -336,12 +337,8 @@ impl State {
                 targets[side] = (feet[side].plant, feet[side].normal);
             }
         }
-        // Stopped once both feet stand where they would: the stride that brought them together is
-        // done. A foot set down before the stop was asked for (ahead, as the body went on) steps
-        // back in the same stride (an unplanned stop takes a little more than a step: Ridge et
-        // al.), not after the body has stood.
-        let placed = |(f, (g, _)): (&Foot, &(DVec3, DVec3))| (f.plant - *g).length() < SETTLE;
-        if self.stopping && feet.iter().all(|f| f.down) && feet.iter().zip(&rest).all(placed) {
+        // Stopped once the step in hand has landed, or the feet stand in place (`stop.rs`).
+        if self.stopping && stop::over(feet, &rest, self.stop_up) {
             self.stopping = false;
             self.stepping = false;
         }

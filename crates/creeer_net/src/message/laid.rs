@@ -81,3 +81,38 @@ impl Decode for Laid {
         })
     }
 }
+
+/// What an item body is (G1.6, `ServerMessage::Item`): a word for it (by its shape, never its
+/// material), the pieces it is drawn as if it is made of them (about its centre), its mass
+/// (kg), and, a made tool, where a hand holds it, about its centre (G1.10: carried in one hand
+/// at its balance; drawn there in the hand).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ItemLook {
+    pub word: String,
+    pub parts: Vec<Part>,
+    pub mass: f64,
+    pub grip: Option<DVec3>,
+}
+
+impl Encode for ItemLook {
+    fn encode(&self, w: &mut Writer) {
+        text(w, &self.word);
+        w.put(&self.parts);
+        w.f64(self.mass);
+        w.put(&self.grip.is_some());
+        w.put(&self.grip.unwrap_or_default());
+    }
+}
+
+impl Decode for ItemLook {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let (word, parts, mass) = (read_text(r)?, r.get()?, r.finite()?);
+        let (held, grip): (bool, DVec3) = (r.get()?, r.get()?);
+        Ok(Self {
+            word,
+            parts,
+            mass,
+            grip: held.then_some(grip),
+        })
+    }
+}

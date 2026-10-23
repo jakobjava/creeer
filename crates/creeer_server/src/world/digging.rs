@@ -111,8 +111,11 @@ impl ServerWorld {
         );
         let lost = dig::wear(energy, hardness, rocks.hardnesses(rock), excavation);
         self.wear_head(by, tool, lost);
-        // The head's binding takes the blow's whole impulse: the ground does not move.
-        self.binding_bears(by, 2.0 * energy / swing.speed.max(1e-9));
+        // The head's binding takes the blow's force over the depth it went in (soil gives: a
+        // blow into it is no blow on stone).
+        let impulse = 2.0 * energy / swing.speed.max(1e-9);
+        let force = dig::peak_force(energy, volume, (impulse, super::making::CONTACT));
+        self.binding_bears(by, force);
         self.dug(by, (at, inside), rock, volume);
     }
 

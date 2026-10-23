@@ -25,6 +25,9 @@ impl ServerWorld {
     /// fits (`pocket`).
     pub(super) fn pick(&mut self, by: EntityId, id: u64, pocket: bool) -> Result<(), String> {
         let (item, centre, turn) = self.lying_in_reach(by, id)?;
+        if let Item::Bulk(heap) = item {
+            return self.scoop(by, id, heap, pocket);
+        }
         if pocket {
             let pockets = self.items.pockets.get(&by).unwrap_or(&self.items.outfit);
             let k = (pockets.iter().position(|p| p.refuses(&item).is_none()))
@@ -121,4 +124,40 @@ fn too_large(item: &Item) -> String {
         e[1] * 100.0,
         e[2] * 100.0
     )
+}
+
+impl ServerWorld {
+    /// Avatar `by` takes from heap `heap` lying at `id` (G1.10): loose matter runs through the
+    /// fingers, so not in the hands; into a pocket, as much as the first pocket with room holds,
+    /// the rest lying on (mass kept exactly).
+    fn scoop(
+        &mut self,
+        by: EntityId,
+        id: u64,
+        mut heap: creeer_sim::items::Bulk,
+        pocket: bool,
+    ) -> Result<(), String> {
+        if !pocket {
+            return Err("loose matter runs through the fingers: E scoops a pocketful".into());
+        }
+        let pockets = self.items.pockets.get(&by).unwrap_or(&self.items.outfit);
+        let (k, room, name) = (pockets.iter().enumerate())
+            .map(|(k, p)| (k, p.volume() - p.used(), p.name.clone()))
+            .find(|(_, room, _)| *room > 1e-5)
+            .ok_or("no pocket has room")?;
+        let scoop = heap.split(room * heap.bulk_density);
+        if heap.mass > 1e-9 {
+            if let Some((lying, ..)) = self.items.laid.get_mut(&id) {
+                *lying = Item::Bulk(heap);
+                self.items.laid_log.push(id);
+            }
+        } else {
+            self.take_lying(id);
+        }
+        let mass = scoop.mass;
+        self.change_pockets(by, |p| p[k].put(Item::Bulk(scoop)))
+            .map_err(|refused| refused.1)?;
+        self.note(by, format!("{mass:.2} kg into {name}"));
+        Ok(())
+    }
 }
