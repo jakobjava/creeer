@@ -3,8 +3,16 @@ work 300 31b59c717035bbb6
 lumberjack 300 6b14970c8213afe4
 quarry 300 8e325c645252e565
 toolmaking 1100 adb36b86730b35b8
+tower 60 c92b3b6c2f8b4219
+collapse 120 1619ae59cd5f2f39
+drop 120 1e01c56522084d45
+builders 600 ee8b152887f0754d
 crowd 1800 22a7a8eedd04cded
 work 1800 9c2aad3b5de6e48d
 lumberjack 1800 46b11fef2b81899d
 quarry 1800 9683b4efed81c62c
 toolmaking 1800 16cdd839eb3c095d
+tower 600 85abe5ed0779e155
+collapse 600 351e14cb0c5f5dd2
+drop 300 02c13905a0bbc460
+builders 1800 0009f21836d686fa

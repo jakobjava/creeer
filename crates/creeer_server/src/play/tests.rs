@@ -96,12 +96,19 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// spawn moved to level ground at a temperate latitude (2026-10-22): 127-248 (median 166), and
 /// 4,994 where a crate lands on a fallen player at tick 299. The median a tenth above; the worst
 /// keeps the ceiling above.
-const WORK: [(&str, u64, u64); 5] = [
+const WORK: [(&str, u64, u64); 9] = [
     ("crowd", 183, 7_300),
     ("work", 216, 216),
     ("lumberjack", 50, 50),
     ("quarry", 185, 185),
     ("toolmaking", 135, 135),
+    // G2.8, measured 2026-10-23 (a tenth above): the towers' Newton works little, their
+    // factorisations much; the builders' loose poles never rest (ADR-0024, G2.0's open hull
+    // contacts).
+    ("tower", 6, 6),
+    ("collapse", 6, 6),
+    ("drop", 427, 427),
+    ("builders", 4_792, 4_792),
 ];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).

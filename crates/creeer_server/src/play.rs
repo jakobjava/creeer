@@ -8,6 +8,8 @@
 //! (`creeer_tools play --gate`, the development machine), its most work in a tick and its
 //! bandwidth in CI (`play/tests.rs`).
 
+mod builders;
+mod log_bridge;
 mod lumberjack;
 mod quarry;
 pub mod record;
