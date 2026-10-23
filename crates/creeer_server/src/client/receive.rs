@@ -56,8 +56,8 @@ impl Connection {
                 self.taken.extend(ids);
             }
             ServerMessage::Note(note) => self.noted = Some((note, std::time::Instant::now())),
-            ServerMessage::Item(id, word, parts) => {
-                self.items.insert(id, (word, parts));
+            ServerMessage::Item(id, word, parts, mass) => {
+                self.items.insert(id, (word, parts, mass));
             }
             ServerMessage::Laid(laid) => {
                 for l in laid {
@@ -73,10 +73,12 @@ impl Connection {
             ServerMessage::Own {
                 gas,
                 health,
+                hurt,
                 fallen,
                 load,
             } => {
                 (self.gas, self.health, self.fallen) = (gas, health, fallen);
+                self.hurt = hurt;
                 if let Some(p) = &mut self.predicted {
                     p.set_gas(gas);
                     p.set_load(load);

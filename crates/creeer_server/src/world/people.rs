@@ -28,6 +28,9 @@ const STILL_SPIN: f64 = 0.3;
 pub struct Person {
     /// Its health (a share: 1 whole, 0 dead).
     pub health: f64,
+    /// What of it each of the body's parts has taken (`ragdoll::PARTS`; G1.9): shares of a
+    /// whole health, healing as it heals. Not saved: a loaded person's loss is its torso's.
+    pub hurt: [f64; 4],
     strikes: Strikes,
     /// Fallen: its segments' entities, the avatar (the pelvis) first; standing: none.
     pub parts: Vec<EntityId>,
@@ -44,6 +47,7 @@ impl Default for Person {
     fn default() -> Self {
         Self {
             health: 1.0,
+            hurt: [0.0; 4],
             strikes: Strikes::default(),
             parts: Vec::new(),
             still: 0,
@@ -55,6 +59,17 @@ impl Default for Person {
 }
 
 impl Person {
+    /// Its parts' hurt brought to what its health lacks: each healed in its share.
+    fn healed(&mut self) {
+        let lacks = 1.0 - self.health.clamp(0.0, 1.0);
+        let total: f64 = self.hurt.iter().sum();
+        if total > lacks && total > 0.0 {
+            for h in &mut self.hurt {
+                *h *= lacks / total;
+            }
+        }
+    }
+
     /// Whether it is down (its ragdoll for its body).
     pub fn fallen(&self) -> bool {
         !self.parts.is_empty()
@@ -141,18 +156,23 @@ impl ServerWorld {
         if p.fallen() {
             for (k, (&b, &v)) in parts.iter().zip(&p.before).enumerate() {
                 let motion = (v, pushed_on(pushes, b));
-                harm += (p.strikes).after_step(&self.world, (k + 1, b), motion, ragdoll::region(k));
+                let h = (p.strikes).after_step(&self.world, (k + 1, b), motion, ragdoll::region(k));
+                p.hurt[ragdoll::part(k)] += h;
+                harm += h;
             }
         } else {
             let (b, v) = (parts[0], p.before[0]);
             let motion = (v, pushed_on(pushes, b));
-            harm += (p.strikes).after_step(&self.world, (0, b), motion, Region::Torso);
+            let h = (p.strikes).after_step(&self.world, (0, b), motion, Region::Torso);
+            p.hurt[1] += h;
+            harm += h;
         }
         let alive = p.health > 0.0;
         p.health = (p.health - harm).max(0.0);
         if p.health > 0.0 {
             p.health = (p.health + HEALING * DT).min(1.0);
         }
+        p.healed();
         if !p.fallen() {
             let i = parts[0];
             let up = character::plumb(&self.world, self.world.bodies[i].structure.position[0]);
@@ -164,6 +184,7 @@ impl ServerWorld {
             if p.health <= 0.0 || (p.struck && !p.strikes.striking(0)) {
                 // (An impact it is in so far is the body's; its segments take the rest.)
                 let harm = (p.strikes).end(&self.world, (0, i), Region::Torso);
+                p.hurt[1] += harm;
                 p.health = (p.health - harm).max(0.0);
                 self.fall(id, p);
             }
@@ -181,6 +202,7 @@ impl ServerWorld {
                 let feet = self.spawn;
                 self.rise(id, p, Some(feet));
                 p.health = 1.0;
+                p.hurt = [0.0; 4];
                 self.respawned(id, lay);
             }
         } else if p.still >= RISES_AFTER {
@@ -268,6 +290,7 @@ impl ServerWorld {
                 parts: s.parts.iter().map(|&e| EntityId(e)).collect(),
                 still: s.still,
                 dead_for: s.dead_for,
+                hurt: [0.0, 1.0 - s.health.clamp(0.0, 1.0), 0.0, 0.0],
                 ..Person::default()
             };
             self.people.insert(EntityId(s.id), person);

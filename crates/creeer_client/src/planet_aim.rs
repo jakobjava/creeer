@@ -29,6 +29,8 @@ pub struct Target {
     pub loose: Option<u64>,
     /// The standing tree it is on, if any (G1.7: its id, and the height up its stem).
     pub tree: Option<(u64, f64)>,
+    /// Its mass if it is a thing one may lift (kg, G1.9).
+    pub mass: Option<f64>,
 }
 
 /// What the crosshair of `camera` is on, while the engineer walks: a thing within reach, or just
@@ -63,6 +65,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
             in_reach: from_hands <= reach::REACH,
             loose: Some(l.id),
             tree: None,
+            mass: Some(l.mass),
         });
     }
     // A standing tree's stem (G1.7), if the ray meets one first.
@@ -87,6 +90,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
             in_reach: from_hands <= reach::REACH,
             loose: None,
             tree: Some((t.id, z)),
+            mass: None,
         });
     }
     // From his eye: what is in the way, if anything.
@@ -104,6 +108,9 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
         in_reach: from_hands <= reach::REACH,
         loose: None,
         tree: None,
+        mass: (aimed.body)
+            .and_then(|id| connection.items.get(&id))
+            .map(|i| i.2),
     })
 }
 
@@ -112,7 +119,7 @@ fn name(aimed: Aimed, connection: &creeer_server::Connection) -> String {
     let Some(id) = aimed.body else {
         return "ground".into();
     };
-    if let Some((word, _)) = connection.items.get(&id) {
+    if let Some((word, ..)) = connection.items.get(&id) {
         return word.clone();
     }
     match connection.kinds.get(&id) {
@@ -203,6 +210,7 @@ mod tests {
             in_reach: true,
             loose: None,
             tree: None,
+            mass: None,
         };
         assert_eq!(label(&t), "box · 1.9 m");
         t.in_reach = false;

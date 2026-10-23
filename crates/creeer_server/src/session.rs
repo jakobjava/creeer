@@ -200,9 +200,9 @@ impl Session {
                 spawns: Some(id),
             });
             // What an item is, and a made thing's pieces, right after it (G1.6).
-            if let Some((word, parts)) = world.item_look(id) {
+            if let Some((word, parts, mass)) = world.item_look(id) {
                 self.outbox.push_back(Queued {
-                    bytes: to_bytes(&ServerMessage::Item(id, word, parts)),
+                    bytes: to_bytes(&ServerMessage::Item(id, word, parts, mass)),
                     spawns: Some(id),
                 });
             }
@@ -275,6 +275,7 @@ impl Session {
         let own = to_bytes(&ServerMessage::Own {
             gas: world.gas(avatar),
             health: person.map_or(1.0, |p| p.health),
+            hurt: person.map_or([0.0; 4], |p| p.hurt),
             fallen: person.is_some_and(crate::world::people::Person::fallen),
             load: world.load(avatar),
         });

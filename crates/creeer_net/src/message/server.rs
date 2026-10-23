@@ -62,10 +62,12 @@ pub enum ServerMessage {
     /// The player's own character as only the server knows it (G1.2): its jetpack's gas (kg),
     /// its health (a share of a whole one), whether it is down (its ragdoll: not predicted),
     /// what its pockets hold (kg, G1.6a: on its body, beyond its dry mass and gas),
-    /// for the HUD and the prediction. Sent with every snapshot round.
+    /// and what each of the body's parts has taken (head, torso, arms, legs: shares of a whole
+    /// health, G1.9), for the HUD and the prediction. Sent with every snapshot round.
     Own {
         gas: f64,
         health: f64,
+        hurt: [f64; 4],
         fallen: bool,
         load: f64,
     },
@@ -92,8 +94,8 @@ pub enum ServerMessage {
     Note(String),
     /// What an item body is (G1.6), sent after its spawn: a word for it (stone, flake, stick,
     /// strip, tool…: by its shape, never its material) and, if made of pieces, the pieces it is
-    /// drawn as, about its centre.
-    Item(EntityId, String, Vec<super::Part>),
+    /// drawn as, about its centre; and its mass (kg, G1.9).
+    Item(EntityId, String, Vec<super::Part>, f64),
     /// Standing trees cut into or felled since last told (G1.7; everyone's, as the terrain is).
     Trees(Vec<super::TreeCut>),
 }
@@ -208,12 +210,16 @@ impl Encode for ServerMessage {
             Self::Own {
                 gas,
                 health,
+                hurt,
                 fallen,
                 load,
             } => {
                 w.u8(9);
                 w.f64(*gas);
                 w.f64(*health);
+                for h in hurt {
+                    w.f64(*h);
+                }
                 w.put(fallen);
                 w.f64(*load);
             }
@@ -257,11 +263,12 @@ impl Encode for ServerMessage {
                 w.u8(16);
                 text(w, note);
             }
-            Self::Item(id, word, parts) => {
+            Self::Item(id, word, parts, mass) => {
                 w.u8(17);
                 w.put(id);
                 text(w, word);
                 w.put(parts);
+                w.f64(*mass);
             }
             Self::Trees(cuts) => {
                 w.u8(18);
@@ -334,6 +341,7 @@ impl Decode for ServerMessage {
             9 => Self::Own {
                 gas: r.finite()?,
                 health: r.finite()?,
+                hurt: [r.finite()?, r.finite()?, r.finite()?, r.finite()?],
                 fallen: r.get()?,
                 load: r.finite()?,
             },
@@ -356,7 +364,7 @@ impl Decode for ServerMessage {
             14 => Self::Refusal(read_text(r)?),
             15 => Self::Laid(r.get()?),
             16 => Self::Note(read_text(r)?),
-            17 => Self::Item(r.get()?, read_text(r)?, r.get()?),
+            17 => Self::Item(r.get()?, read_text(r)?, r.get()?, r.finite()?),
             18 => Self::Trees(r.get()?),
             _ => return Err(r.error("unknown server message")),
         })

@@ -217,7 +217,7 @@ impl PlanetSession {
                 // An item's hull (a stone, a stick: G1.6c) as the box about it in its colour; the
                 // sandbox's other hulls as the ball around them.
                 Kind::Body(Shape::Hull(corners), matter) => {
-                    if let Some((_, parts)) = c.items.get(id).filter(|(_, p)| !p.is_empty()) {
+                    if let Some((_, parts, _)) = c.items.get(id).filter(|(_, p, _)| !p.is_empty()) {
                         // A made thing as its pieces (G1.6).
                         for part in parts {
                             out.boxes.push((p + q * part.at, q * part.turn, part.half));

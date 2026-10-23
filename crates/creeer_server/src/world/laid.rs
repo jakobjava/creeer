@@ -89,6 +89,7 @@ impl ServerWorld {
                     half: half(item),
                     colour,
                     word: creeer_sim::items::kit::word(item).into(),
+                    mass: item.mass(),
                     parts: match item {
                         Item::Made(a) => {
                             let (lo, hi) = a.bounds();
@@ -106,18 +107,20 @@ impl ServerWorld {
 
 impl ServerWorld {
     /// What item body `id` is, if it is one: a word for it, and the pieces it is drawn as if it
-    /// is made of pieces (about its centre).
-    pub fn item_look(&self, id: EntityId) -> Option<(String, Vec<creeer_net::message::Part>)> {
+    /// is made of pieces (about its centre), and its mass (kg).
+    pub fn item_look(&self, id: EntityId) -> Option<(String, Vec<creeer_net::message::Part>, f64)> {
         let item = self.items.bodies.get(&id)?;
         let word = creeer_sim::items::kit::word(item).to_owned();
+        let mass = item.mass();
         let Item::Made(a) = item else {
-            return Some((word, Vec::new()));
+            return Some((word, Vec::new(), mass));
         };
         let (_, centroid) = super::item_bodies::made_hull(a);
         let d = self.items.densities.as_ref();
         Some((
             word,
             super::item_bodies::parts(a, centroid, |m| d?.colour(m)),
+            mass,
         ))
     }
 

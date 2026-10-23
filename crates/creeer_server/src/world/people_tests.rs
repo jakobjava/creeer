@@ -55,6 +55,13 @@ fn a_character_dropped_from_high_falls_hurt_and_stands_up_again() {
     assert!(w.take_changed().contains(&ada));
     let health = p.health;
     assert!((0.0..0.9).contains(&health), "health {health} after 10 m");
+    // What her parts took is what her health lost (G1.9), healed in their shares.
+    let lost: f64 = p.hurt.iter().sum();
+    assert!(
+        (lost - (1.0 - health)).abs() < 1e-9,
+        "parts {:?}, health {health}",
+        p.hurt
+    );
     // Still for two seconds: up again, her segments gone, healing.
     let mut ticks = 0;
     while w.person(ada).unwrap().fallen() {

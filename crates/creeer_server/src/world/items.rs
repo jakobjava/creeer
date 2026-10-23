@@ -72,6 +72,9 @@ fn item_view(i: &Item, densities: Option<&Densities>) -> ItemView {
         colour: densities.and_then(|d| d.colour(&i.head()?.material)),
         mass: i.mass(),
         room: i.room(),
+        swing: i.swinging().map_or(0.0, |s| {
+            creeer_sim::strike::swing_of(s.mass, s.gyration, s.carry, s.strike).energy
+        }),
     }
 }
 

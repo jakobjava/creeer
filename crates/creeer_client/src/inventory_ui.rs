@@ -191,10 +191,7 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
     let hands = c.inventory.hands.as_ref();
     let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
     line(&held, egui::Color32::from_white_alpha(200));
-    line(
-        &hint(hands.map(|h| h.word.as_str()), aimed),
-        egui::Color32::from_rgb(160, 200, 230),
-    );
+    line(&hint(hands, aimed), egui::Color32::from_rgb(160, 200, 230));
     let recent = |told: &Option<(String, std::time::Instant)>| {
         told.as_ref()
             .filter(|(_, when)| when.elapsed().as_secs_f64() < 5.0)
@@ -219,10 +216,13 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
     }
 }
 
-/// What the keys would do now, with what the hands hold (its word: stone, stick, tool…) and what
-/// the crosshair is on in reach. The keys, not recipes: what makes a good tool is the player's
-/// to know.
-fn hint(hands: Option<&str>, aimed: Option<&crate::planet_aim::Target>) -> String {
+/// What the keys would do now, with what the hands hold and what the crosshair is on in reach,
+/// with what can be felt (G1.9): a thing's mass, a blow's energy. The keys, not recipes: what
+/// makes a good tool is the player's to know.
+fn hint(
+    hands: Option<&creeer_net::message::ItemView>,
+    aimed: Option<&crate::planet_aim::Target>,
+) -> String {
     let aimed = aimed.filter(|t| t.in_reach);
     let on_thing = aimed.is_some_and(|t| t.loose.is_some() || t.aimed.body.is_some());
     let on_tree = aimed.is_some_and(|t| t.tree.is_some());
@@ -232,31 +232,81 @@ fn hint(hands: Option<&str>, aimed: Option<&crate::planet_aim::Target>) -> Strin
             .iter()
             .any(|w| t.what.starts_with(w))
     });
-    let mut keys: Vec<&str> = Vec::new();
+    let lift = match aimed.and_then(|t| t.mass) {
+        Some(m) => format!("G: take in the hands ({m:.1} kg)"),
+        None => "G: take in the hands".into(),
+    };
+    let mut keys: Vec<String> = Vec::new();
     match hands {
         None => {
             if on_thing {
-                keys.extend(["G: take in the hands", "E: into a pocket"]);
+                keys.extend([lift, "E: into a pocket".into()]);
             }
             if on_ground {
-                keys.push("click: dig with the hands");
+                keys.push("click: dig with the hands".into());
             }
         }
-        Some(word) => {
+        Some(h) => {
+            let blow = format!("{}, {:.1} kg, {:.0} J", h.word, h.mass, h.swing);
             if on_thing || on_tree {
-                keys.push("click: strike it");
+                keys.push(format!("click: strike ({blow})"));
             } else if on_ground {
-                keys.push("click: dig");
+                keys.push(format!("click: dig ({blow})"));
             }
-            if word == "stick" {
-                keys.push("R: strip bark");
+            if h.word == "stick" {
+                keys.push("R: strip bark".into());
                 if on_stone {
-                    keys.push("B: bind it on as a head");
+                    keys.push("B: bind it on as a head".into());
                 }
             }
-            keys.extend(["G: put down", "T: throw", "E: into a pocket"]);
+            keys.extend(["G: put down", "T: throw", "E: into a pocket"].map(String::from));
         }
     }
-    keys.push("I: what you carry");
+    keys.push("I: what you carry".into());
     keys.join("  ·  ")
+}
+
+/// The vitals (G1.9), at the bottom left: health, what each of the body's parts has taken, and
+/// the jetpack's gas while there is one (survival players have none).
+pub fn vitals(ctx: &egui::Context, c: &creeer_server::Connection) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("vitals"),
+    ));
+    let corner = ctx.content_rect().left_bottom() + egui::vec2(16.0, -16.0);
+    painter.text(
+        corner,
+        egui::Align2::LEFT_BOTTOM,
+        vitals_text(c.health, c.hurt, c.fallen, c.gas),
+        egui::FontId::proportional(14.0),
+        egui::Color32::from_white_alpha(210),
+    );
+}
+
+/// The vitals as a line: health, each hurt part's loss (a part unhurt is left out), down, gas.
+fn vitals_text(health: f64, hurt: [f64; 4], fallen: bool, gas: f64) -> String {
+    let mut parts = vec![format!("Health {:.0} %", health * 100.0)];
+    for (name, h) in creeer_sim::character::ragdoll::PARTS.iter().zip(hurt) {
+        if h >= 0.005 {
+            parts.push(format!("{name} −{:.0} %", h * 100.0));
+        }
+    }
+    if fallen {
+        parts.push("down".into());
+    }
+    if gas > 0.0 {
+        parts.push(format!("jetpack gas {gas:.2} kg"));
+    }
+    parts.join("  ·  ")
+}
+
+#[cfg(test)]
+mod vitals_tests {
+    #[test]
+    fn the_vitals_name_only_hurt_parts_and_gas_only_with_a_jetpack() {
+        let text = super::vitals_text(0.7, [0.0, 0.25, 0.05, 0.0], false, 0.0);
+        assert_eq!(text, "Health 70 %  ·  torso −25 %  ·  arms −5 %");
+        let flying = super::vitals_text(1.0, [0.0; 4], true, 1.5);
+        assert_eq!(flying, "Health 100 %  ·  down  ·  jetpack gas 1.50 kg");
+    }
 }

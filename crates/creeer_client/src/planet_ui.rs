@@ -124,9 +124,13 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
             ));
             let c = &view.session.connection;
             ui.label(format!(
-                "health {:.0} % · jetpack gas {:.2} kg{}",
+                "health {:.0} %{}{}",
                 c.health * 100.0,
-                c.gas,
+                if c.gas > 0.0 {
+                    format!(" · jetpack gas {:.2} kg", c.gas)
+                } else {
+                    String::new()
+                },
                 if c.fallen { " · down" } else { "" }
             ));
             let (bodies, asleep, _) = snapshot.counts;

@@ -185,6 +185,7 @@ fn server_messages_read_back() {
     back(&ServerMessage::Own {
         gas: 2.25,
         health: 0.75,
+        hurt: [0.0, 0.2, 0.05, 0.0],
         fallen: true,
         load: 0.71,
     });

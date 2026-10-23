@@ -134,6 +134,20 @@ pub fn region(k: usize) -> super::injury::Region {
     }
 }
 
+/// The body's parts as the HUD shows their hurt (G1.9).
+pub const PARTS: [&str; 4] = ["head", "torso", "arms", "legs"];
+
+/// Which of [`PARTS`] segment `k` is: an arm's three segments (upper arm, forearm, hand) come
+/// before a leg's three in each side's six.
+pub fn part(k: usize) -> usize {
+    match k {
+        HEAD => 0,
+        0 | 1 => 1,
+        _ if (k - 3) % 6 < 3 => 2,
+        _ => 3,
+    }
+}
+
 /// A box's inertia (kg·m²) of `mass` and `half` extents, in its frame.
 fn box_inertia(mass: f64, half: DVec3) -> DMat3 {
     Shape::Box { half }.inertia(mass)

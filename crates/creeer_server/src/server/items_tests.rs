@@ -51,7 +51,7 @@ fn a_client_knows_a_tool_as_a_tool_and_a_flake_as_a_flake() {
     );
     game.run(120, still);
     let client = &game.clients[0].0;
-    let (word, parts) = client.items.get(&tool).expect("told what the tool is");
+    let (word, parts, _) = client.items.get(&tool).expect("told what the tool is");
     assert_eq!((word.as_str(), parts.len()), ("tool", 2));
     let laid = client.laid.get(&lying).expect("told what lies there");
     assert_eq!(laid.word, "flake");

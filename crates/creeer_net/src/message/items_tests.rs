@@ -17,6 +17,7 @@ fn item_messages_read_back_as_written() {
         colour: Some([95, 90, 85]),
         mass: 0.04,
         room: 2.7e-5,
+        swing: 12.5,
     };
     back(&ServerMessage::Inventory(crate::message::Inventory {
         pockets: vec![
@@ -46,11 +47,13 @@ fn item_messages_read_back_as_written() {
             half: DVec3::new(0.3, 0.015, 0.015),
             colour: [200, 160, 100],
         }],
+        mass: 0.2,
     }]));
     back(&ServerMessage::Note("a flake came off".into()));
     back(&ServerMessage::Item(
         EntityId(4),
         "flake".into(),
         Vec::new(),
+        0.05,
     ));
 }

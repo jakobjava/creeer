@@ -16,6 +16,8 @@ pub struct Laid {
     pub colour: [u8; 3],
     pub word: String,
     pub parts: Vec<Part>,
+    /// Its mass (kg, G1.9: told as it is lifted).
+    pub mass: f64,
 }
 
 /// A piece of a made thing as drawn: where it sits in the thing's frame (about its centre), how
@@ -59,6 +61,7 @@ impl Encode for Laid {
         w.raw(&self.colour);
         text(w, &self.word);
         w.put(&self.parts);
+        w.f64(self.mass);
     }
 }
 
@@ -74,6 +77,7 @@ impl Decode for Laid {
             colour: [c[0], c[1], c[2]],
             word: read_text(r)?,
             parts: r.get()?,
+            mass: r.finite()?,
         })
     }
 }

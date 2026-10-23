@@ -518,6 +518,8 @@ G1's scenes make piles: logs on logs, boulders, dropped bags, crates. The rock p
 
 Re-planned 2026-10-22 (principle 10).
 
+- **Done** (2026-10-23): the vitals at the bottom left (`inventory_ui::vitals`): health, what each of the body's parts has taken (head, torso, arms, legs: the server keeps each impact's harm on the part its segment belongs to, `ragdoll::part`, healed in their shares; `ServerMessage::Own { hurt }`), down, and the jetpack's gas only while there is gas. The crosshair's keys carry what can be felt: "G: take in the hands (0.4 kg)" (laid things, item bodies and loose stones and branches have their mass), "click: strike (tool, 1.6 kg, 160 J)" and "click: dig (…)" with the held thing's swing energy (`ItemView::swing`). Protocol 23. Hands, pockets and the crosshair were G1.6's; transfers are tested there (`server/items_tests.rs`). A loaded person's loss is put on its torso (the parts are not saved).
+
 - **Shown:**
   - health per body region;
   - what is in the hands and in the pockets;

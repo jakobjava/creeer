@@ -18,6 +18,8 @@ const DEADWOOD: [u8; 3] = [0x5e, 0x4f, 0x3f];
 #[derive(Debug)]
 pub struct LooseView {
     scatter: Scatter,
+    /// The branches' woods' densities (kg/m³), by the scatter's index.
+    woods: Vec<f64>,
     cells: BTreeMap<Cell, Vec<Loose>>,
     /// The terrain's edits the cells were made with (dug ground moves what lies on it).
     edits: (u64, usize),
@@ -27,8 +29,13 @@ impl LooseView {
     /// For `terrain`, from the packs; none if they have no scatter rules.
     pub fn new(terrain: &Terrain) -> Option<Self> {
         let scatter = Scatter::from_data(&crate::content::data(), terrain).ok()?;
+        let materials = creeer_materials::MaterialTable::from_data(&crate::content::data()).ok()?;
+        let woods = (scatter.woods.iter())
+            .map(|w| materials.get(w).map_or(0.0, |m| m.density))
+            .collect();
         Some(Self {
             scatter,
+            woods,
             cells: BTreeMap::new(),
             edits: (0, 0),
         })
@@ -67,14 +74,29 @@ impl LooseView {
                     half: size * 0.5,
                     colour: (rocks.rocks.get(usize::from(rock))).map_or([128; 3], |r| r.color),
                     word: "stone",
+                    mass: (rocks.rocks.get(usize::from(rock))).map_or(0.0, |r| r.density)
+                        * std::f64::consts::PI
+                        / 6.0
+                        * size.x
+                        * size.y
+                        * size.z,
                 },
-                Lying::Branch { length, radius, .. } => Thing {
+                Lying::Branch {
+                    wood,
+                    length,
+                    radius,
+                } => Thing {
                     id: l.id,
                     centre: l.centre,
                     turn: l.turn,
                     half: DVec3::new(length * 0.5, radius, radius),
                     colour: DEADWOOD,
                     word: "branch",
+                    mass: self.woods.get(wood).copied().unwrap_or(0.0)
+                        * std::f64::consts::PI
+                        * radius
+                        * radius
+                        * length,
                 },
             });
         let laid = laid.values().map(|l| Thing {
@@ -83,6 +105,7 @@ impl LooseView {
             turn: l.turn,
             half: l.half,
             colour: l.colour,
+            mass: l.mass,
             word: match l.word.as_str() {
                 "stone" => "stone",
                 "flake" => "flake",
@@ -108,6 +131,8 @@ pub struct Thing {
     pub half: DVec3,
     pub colour: [u8; 3],
     pub word: &'static str,
+    /// Its mass (kg: what lifting it tells).
+    pub mass: f64,
 }
 
 impl Thing {

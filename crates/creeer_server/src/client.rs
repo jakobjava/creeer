@@ -83,6 +83,8 @@ pub struct Connection {
     /// server has it: not predicted), as the server last told them.
     pub health: f64,
     pub fallen: bool,
+    /// What each of the body's parts has taken (head, torso, arms, legs; G1.9).
+    pub hurt: [f64; 4],
     /// What the player carries, as the server last told it (G1.6a), and the loose things
     /// picked up from the ground (G1.6c: not drawn).
     pub inventory: creeer_net::message::Inventory,
@@ -96,7 +98,7 @@ pub struct Connection {
     /// What came of the last thing done, and when it was told (G1.6).
     pub noted: Option<(String, std::time::Instant)>,
     /// What item bodies are (G1.6), by entity: a word, and a made thing's pieces.
-    pub items: BTreeMap<EntityId, (String, Vec<creeer_net::message::Part>)>,
+    pub items: BTreeMap<EntityId, (String, Vec<creeer_net::message::Part>, f64)>,
     /// The terrain's edits, as the server has them.
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
@@ -141,6 +143,7 @@ impl Connection {
             profile: None,
             gas: creeer_sim::character::TANK,
             health: 1.0,
+            hurt: [0.0; 4],
             fallen: false,
             inventory: creeer_net::message::Inventory::default(),
             taken: BTreeSet::new(),

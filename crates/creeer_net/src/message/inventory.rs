@@ -7,7 +7,8 @@ use crate::entity::EntityId;
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 
 /// An item as shown: what it looks like, its colour (sRGB, if it has one: G1.6c), its mass (kg)
-/// and the room it takes (m³).
+/// and the room it takes (m³); swung at full effort, its blow's energy (J; 0: it is not
+/// swung; G1.9).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ItemView {
     pub text: String,
@@ -16,6 +17,7 @@ pub struct ItemView {
     pub colour: Option<[u8; 3]>,
     pub mass: f64,
     pub room: f64,
+    pub swing: f64,
 }
 
 /// A store as shown: its name, its volume (m³), and what is in it.
@@ -48,6 +50,7 @@ impl Encode for ItemView {
         }
         w.f64(self.mass);
         w.f64(self.room);
+        w.f64(self.swing);
     }
 }
 
@@ -66,6 +69,7 @@ impl Decode for ItemView {
             },
             mass: r.finite()?,
             room: r.finite()?,
+            swing: r.finite()?,
         })
     }
 }
