@@ -58,6 +58,9 @@ pub mod section;
 mod settle;
 pub mod shapes;
 mod solver;
+mod split;
+#[cfg(test)]
+mod split_pieces_tests;
 #[cfg(test)]
 mod split_tests;
 pub mod statics;
