@@ -51,6 +51,10 @@ impl Connection {
             }
             frame.nodes[node] = at.value(POSITION_SCALE);
         }
+        frame.nodes.truncate(plastic.node_count as usize);
+        if let Some(radii) = &plastic.radii {
+            frame.radii.clone_from(radii);
+        }
         if let Some(members) = &plastic.members {
             frame.members.clone_from(members);
             self.broken.remove(&id);

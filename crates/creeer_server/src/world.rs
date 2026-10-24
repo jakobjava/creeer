@@ -310,6 +310,7 @@ impl ServerWorld {
     }
 }
 
+mod apart;
 mod bucking;
 mod building;
 mod building_parts;
@@ -329,6 +330,7 @@ mod loose_tests;
 pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
+mod posts;
 mod spawn;
 mod step;
 mod survival;
@@ -337,6 +339,7 @@ mod survival_tests;
 pub mod trees;
 #[cfg(test)]
 mod trees_tests;
+mod unbuilding;
 use spawn::ground_under;
 pub use spawn::spawn_point;
 mod hands;

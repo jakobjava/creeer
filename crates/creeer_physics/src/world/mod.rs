@@ -6,6 +6,7 @@
 //! into groups, and step every group as one implicit minimisation, the groups in parallel.
 
 mod anchor;
+mod apart;
 pub mod contact;
 #[cfg(test)]
 mod crush_tests;
@@ -70,6 +71,7 @@ mod turn_tests;
 use crate::gravity::PlanetGravity;
 use crate::profile::{self, Slot};
 use crate::structure::{ImplicitSolver, NodeId, Scheme, Structure, StructureBuilder};
+pub use apart::Apart;
 use contact::{Contact, Contacts};
 use creeer_math::glam::{DMat3, DQuat, DVec3};
 use detect::Found;

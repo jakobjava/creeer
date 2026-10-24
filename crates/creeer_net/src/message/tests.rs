@@ -220,6 +220,8 @@ fn server_messages_read_back() {
             nodes: nodes.clone(),
             members: None,
             broken: vec![3],
+            node_count: 41,
+            radii: None,
         },
     ));
     back(&ServerMessage::Plastic(
@@ -228,6 +230,8 @@ fn server_messages_read_back() {
             nodes,
             members: Some(vec![[0, 41], [41, 1]]),
             broken: vec![],
+            node_count: 42,
+            radii: Some(vec![0.05, 0.0]),
         },
     ));
     back(&ServerMessage::Snapshot(vec![1, 2, 3]));

@@ -148,3 +148,48 @@ Client: J fastens what the crosshair is on with the chosen fastener; K chooses t
 **Measured and rejected:** a ground node 5 mm instead of 5 cm from its post node (to shrink any shear the turning post's node might cause in the equivalent member). No change in the collapse load; the cause was the three rules above.
 
 **Not yet:** setting a post in a dug hole and backfilling it, in the game.
+
+## G2.5 and G2.6: falling apart, taking apart, cutting (2026-10-23)
+
+**Falling apart** (`World::fall_apart`, server `world/apart.rs`).
+- After each step, a structure whose broken members or joints leave pieces no longer held together (`Structure::pieces`) becomes one body per piece, as it is: moving, bent, loaded. Its first piece keeps its body and entity; the others are new.
+- Mass and momentum are kept exactly (tested). One body's shapes never collide with each other, so this is how a collapse's pieces meet.
+- What the world kept for the body is renumbered (joints) or dropped and found again next step (anchors, contacts, contact energies). Air and water forget it (`Surroundings::forget`).
+- Pieces that are only fixed nodes are dropped.
+- Each piece's record takes its elements' woods. The items stay with the first piece.
+
+**Replication:** Plastic deltas now carry a structure's node count (a split shrinks it; before, the client kept drawing the nodes that had left) and, when its members change, their radii.
+
+**Taking apart** (`Command::Unfasten`, protocol 27; `world/unbuilding.rs`): the joint nearest the aim on a built structure has its fasteners taken out after 10 s (an estimate), if the hands still reach it. It is severed (`Structure::sever`), and what it held may fall apart.
+
+**Cutting a built member:** an edged blow on a built member cuts into the one nearest the point as wood is cut (`chop::chopped`, with the wood's strength across the grain). Its binding bears the cutting force, as for trees. Once the notch reaches through the member's thickness (`chop::notch_volume`), the member is cut there: `Structure::cut_at` makes a node on each side of the cut, each piece of the member whole on its own side with its own mass and turning inertia.
+
+**Aiming at a built structure** (client): the ray meets each member as a capsule round its axis.
+
+**Tests:**
+- The joint pulled from two nailed poles: two bodies, mass and momentum to 10⁻¹²; in the server, two entities each with its record.
+- Taken apart by command after 10 s: two poles.
+- An axe cuts a built pole through: it falls apart.
+- `cut_at`: two pieces, mass kept, nothing broken.
+- The crash scene's frame: either drawn broken or in pieces, and drawn as the server has it.
+
+All stress and play hashes are unchanged at both lengths: in those scenes, members break but nothing comes fully apart.
+
+**Limits:**
+- Salvage gives no items back yet: a piece that fell apart stays a member body.
+- Cuts under way are not saved.
+- Undoing a joint takes the same 10 s whatever fastens it, and returns no fastener.
+
+## G2.4 in the game: setting a post (2026-10-23)
+
+`Command::SetPost` (protocol 28, the P key; `world/posts.rs`): a part standing with its foot in a dug hole is backfilled after 30 s (an estimate) if the hands still reach it. In survival this takes a scoop of dug ground from the pockets.
+- **Nodes:** every member reaching below the ground gets nodes along its buried length, every 0.1 m at most.
+- **Springs:** each buried node gets its soil spring (`Soil::spring`) for its depth, span and thickness. The deepest node also bears on its foot (`Soil::tip`).
+- **The soil:** the ground's own rock 0.6 m beside the post (a hole dug for a post is air; the backfill is that ground put back): its bulk density, cohesion and friction from `rocks.ron`. Solid rock holds no post this way.
+
+Test: a 100 mm green spruce pole stood 0.28 m down in a hole. Let go, it falls over (more than 30°). Set, it stands within 3° after 3 s.
+
+**Limits:**
+- The hole is still drawn open after backfilling. The fill is the springs, not the terrain: filling the terrain would push the post out of the ground.
+- The ground beside is judged in one direction only.
+- A post's soil springs lean on the post's axis taken as the plumb.

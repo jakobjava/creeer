@@ -32,6 +32,8 @@ impl ServerWorld {
                 | Command::StrikeLoose { .. }
                 | Command::StrikeTree { .. }
                 | Command::Fasten { .. }
+                | Command::Unfasten(_)
+                | Command::SetPost(_)
         );
         if sandbox && by.is_some() && !self.creative {
             return Err("only on a creative server".into());
@@ -87,6 +89,18 @@ impl ServerWorld {
                 self.reached(by, target.body, target.at, target.seen)?;
                 let part = target.body.ok_or("nothing there to fasten")?;
                 self.begin_fastening(by, part, target.at, fastener)?;
+            }
+            Command::SetPost(target) => {
+                let by = by.ok_or("only a player")?;
+                self.reached(by, target.body, target.at, target.seen)?;
+                let part = target.body.ok_or("nothing there to set")?;
+                self.begin_post(by, part, target.at)?;
+            }
+            Command::Unfasten(target) => {
+                let by = by.ok_or("only a player")?;
+                self.reached(by, target.body, target.at, target.seen)?;
+                let built = target.body.ok_or("nothing there to take apart")?;
+                self.begin_unfastening(by, built, target.at)?;
             }
             Command::BindLying(id) => {
                 self.bind(by.ok_or("only a player")?, making::Head::Lying(*id))?

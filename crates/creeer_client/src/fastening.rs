@@ -46,3 +46,21 @@ impl PlanetView {
         }
     }
 }
+
+impl PlanetView {
+    /// Takes apart the joint of the built structure nearest where the crosshair is (G2.6).
+    pub fn unfasten(&mut self, camera: &Camera) {
+        if let Some(target) = self.reached(camera) {
+            self.send(Command::Unfasten(target));
+        }
+    }
+}
+
+impl PlanetView {
+    /// Backfills round the part the crosshair is on where it stands in a hole: a post (G2.4).
+    pub fn set_post(&mut self, camera: &Camera) {
+        if let Some(target) = self.reached(camera) {
+            self.send(Command::SetPost(target));
+        }
+    }
+}

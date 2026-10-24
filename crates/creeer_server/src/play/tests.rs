@@ -101,12 +101,19 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// faces' friction now keeps what each step built (before, a patch with its corners on B forgot
 /// it every step, and a crate on a crate crept down a ramp it should have held). 24 iterations
 /// for each of the two at 0.35 ms; a tenth above. (To be confirmed by the parent: a gate raised.)
-const WORK: [(&str, u64, u64); 5] = [
+const WORK: [(&str, u64, u64); 9] = [
     ("crowd", 183, 7_300),
     ("work", 216, 216),
     ("lumberjack", 57, 57),
     ("quarry", 185, 185),
     ("toolmaking", 135, 135),
+    // G2.8, measured 2026-10-23 (a tenth above): the towers' Newton works little, their
+    // factorisations much; the builders' loose poles never rest (ADR-0024, G2.0's open hull
+    // contacts).
+    ("tower", 6, 6),
+    ("collapse", 6, 6),
+    ("drop", 427, 427),
+    ("builders", 4_792, 4_792),
 ];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).

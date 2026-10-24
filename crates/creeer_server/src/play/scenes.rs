@@ -49,7 +49,7 @@ impl std::fmt::Debug for Scene {
 pub const PLANET: &str = "planets/home.ron";
 
 /// The scenes.
-pub const SCENES: [Scene; 5] = [
+pub const SCENES: [Scene; 10] = [
     Scene {
         name: "crowd",
         what: "8 players walking, jumping and dropping crates in one place",
@@ -93,6 +93,51 @@ pub const SCENES: [Scene; 5] = [
         ticks: (1800, 1100),
         build: super::toolmaking::toolmaking_world,
         script: super::toolmaking::toolmaking,
+        turned: false,
+    },
+    Scene {
+        name: "tower",
+        what: "a 20-storey steel frame of about 20,000 beams standing at rest (G2)",
+        players: &["ada"],
+        ticks: (600, 60),
+        build: super::steel::tower_world,
+        script: idle,
+        turned: false,
+    },
+    Scene {
+        name: "collapse",
+        what: "the tower with a ground-floor column gone: its load finds other paths",
+        players: &["ada"],
+        ticks: (600, 120),
+        build: super::steel::collapse_world,
+        script: idle,
+        turned: false,
+    },
+    Scene {
+        name: "drop",
+        what: "a 10 t block falling 3 m onto the middle of a 40 m steel bridge",
+        players: &["ada"],
+        ticks: (300, 120),
+        build: super::steel::drop_world,
+        script: idle,
+        turned: false,
+    },
+    Scene {
+        name: "builders",
+        what: "8 players nailing crossed poles and taking them apart again, by hand",
+        players: &["ada", "ben", "cai", "dee", "eli", "fay", "gus", "hal"],
+        ticks: (1800, 600),
+        build: super::builders::builders_world,
+        script: super::builders::builders,
+        turned: false,
+    },
+    Scene {
+        name: "log_bridge",
+        what: "2 players nailing a pole across two others, then crates on it until it breaks",
+        players: &["ada", "ben"],
+        ticks: (1800, 600),
+        build: super::log_bridge::log_bridge_world,
+        script: super::log_bridge::log_bridge,
         turned: false,
     },
 ];
@@ -198,4 +243,9 @@ fn crowd(tick: u32, play: &Play) -> Vec<Act> {
             act
         })
         .collect()
+}
+
+/// Players standing by (the structures' scenes: what they do is what the structures do).
+fn idle(_: u32, play: &Play) -> Vec<Act> {
+    vec![Act::default(); play.players()]
 }

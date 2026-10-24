@@ -29,6 +29,8 @@ pub(super) struct Building {
     pub(super) built: BTreeMap<EntityId, Built>,
     /// Fastenings under way, by the player at work.
     pub(super) under_way: BTreeMap<EntityId, UnderWay>,
+    /// Cuts into built members (G2.6): by structure and element, the wood taken out (m³).
+    pub(super) cuts: BTreeMap<(EntityId, usize), f64>,
 }
 
 /// A built structure's record: the items its parts and fasteners were (for salvage, G2.6),
@@ -39,6 +41,17 @@ pub(super) struct Built {
     pub(super) woods: Vec<Option<String>>,
 }
 
+/// Work under way on a part.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Work {
+    /// Fastening it to what it touches (G2.3).
+    Fasten,
+    /// Taking a joint of it apart (G2.6).
+    Undo,
+    /// Backfilling round it where it stands in a hole (G2.4).
+    Post,
+}
+
 /// A fastening under way: the part aimed at, where, with which fastener, done at which tick.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct UnderWay {
@@ -47,6 +60,8 @@ pub(super) struct UnderWay {
     pub(super) at: DVec3,
     pub(super) fastener: usize,
     pub(super) done: u64,
+    /// What is being done.
+    pub(super) work: Work,
 }
 
 impl Building {
@@ -88,6 +103,7 @@ impl ServerWorld {
                 at: self.in_frame(part, at),
                 fastener: k,
                 done,
+                work: Work::Fasten,
             },
         );
         self.note(by, format!("fastening: {seconds:.0} s"));
@@ -139,6 +155,16 @@ impl ServerWorld {
             .collect();
         for (by, u) in due {
             self.building.under_way.remove(&by);
+            let undone = match u.work {
+                Work::Fasten => None,
+                Work::Undo => Some(self.unfasten_due(by, &u).map(|()| "taken apart")),
+                Work::Post => Some(self.post_due(by, &u).map(|()| "set in the ground")),
+            };
+            if let Some(outcome) = undone {
+                let note = outcome.map_or_else(|why| format!("not done: {why}"), str::to_owned);
+                self.note(by, note);
+                continue;
+            }
             let outcome = self.fasten_due(by, &u);
             let note = match outcome {
                 Ok(()) => format!("fastened with {}", self.building.fasteners[u.fastener].name),
@@ -167,7 +193,7 @@ impl ServerWorld {
 
 impl ServerWorld {
     /// World point `at` in body `id`'s node frame (or as it is, if there is no such body).
-    fn in_frame(&self, id: EntityId, at: DVec3) -> DVec3 {
+    pub(super) fn in_frame(&self, id: EntityId, at: DVec3) -> DVec3 {
         self.index(id).map_or(at, |i| {
             let s = &self.world.bodies[i].structure;
             s.orientation[0].conjugate() * (at - s.position[0])
@@ -175,13 +201,13 @@ impl ServerWorld {
     }
 
     /// Point `local` of body `id`'s node frame in the world, now.
-    fn in_world(&self, id: EntityId, local: DVec3) -> Option<DVec3> {
+    pub(super) fn in_world(&self, id: EntityId, local: DVec3) -> Option<DVec3> {
         let s = &self.world.bodies[self.index(id)?].structure;
         Some(s.position[0] + s.orientation[0] * local)
     }
 
     /// Whether `at` is within reach of avatar `by`'s hands now.
-    fn within_reach(&self, by: EntityId, at: DVec3) -> Result<(), String> {
+    pub(super) fn within_reach(&self, by: EntityId, at: DVec3) -> Result<(), String> {
         let i = self.index(by).ok_or("no such avatar")?;
         let centre = self.world.bodies[i].structure.position[0];
         let up = character::plumb(&self.world, centre);

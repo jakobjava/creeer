@@ -21,6 +21,10 @@ impl ImplicitSolver {
         mut blocks: Vec<(usize, DMat3)>,
         exempt: &[usize],
     ) -> bool {
+        // A block of a node held fast is masked out of the matrix (`factor_inner`): it changes
+        // nothing, and changing, it refactorised a 20,000-beam tower standing on its clamped
+        // columns every few ticks, 2.2 s each (G2.8).
+        blocks.retain(|(block, _)| structure.block_mask(*block) != DVec3::ZERO);
         blocks.sort_by_key(|b| b.0);
         let mut merged: Vec<(usize, DMat3)> = Vec::with_capacity(blocks.len());
         for (node, h) in blocks {
@@ -37,10 +41,31 @@ impl ImplicitSolver {
                 .collect()
         };
         let (now, then) = (judged(&merged), judged(&self.contact_blocks));
-        let same = now.len() == then.len()
-            && now.iter().zip(&then).all(|((a, ha), (b, hb))| {
-                a == b && norm(*ha - *hb) <= 0.5 * norm(*ha).max(norm(*hb))
-            });
+        // A change is material if it is half the block's own and more than a hundredth of the
+        // node's inertia in the matrix (the blocks enter it times β²): air's dashpots on a
+        // standing tower's 6,000 nodes, each a few newton-seconds a metre that double and halve
+        // with the breeze, refactorised it every few ticks (G2.8).
+        let beta2 = self.beta() * self.beta();
+        let n = structure.node_count();
+        let inertial = |block: usize| {
+            let own = if block < n {
+                DMat3::IDENTITY * structure.mass[block]
+            } else {
+                structure.inertia[block - n]
+            };
+            0.01 * norm(own) / beta2
+        };
+        let block_of = |list: &[(usize, DMat3)], k: usize| {
+            (list.binary_search_by_key(&k, |b| b.0)).map_or(DMat3::ZERO, |i| list[i].1)
+        };
+        let mut keys: Vec<usize> = now.iter().chain(&then).map(|b| b.0).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        let same = keys.iter().all(|&k| {
+            let (ha, hb) = (block_of(&now, k), block_of(&then, k));
+            let change = norm(ha - hb);
+            change <= 0.5 * norm(ha).max(norm(hb)) || change <= inertial(k)
+        });
         if same {
             return false;
         }

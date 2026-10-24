@@ -240,7 +240,7 @@ fn a_frame_bent_in_a_crash_is_drawn_bent() {
 }
 
 #[test]
-fn a_frame_broken_in_a_crash_is_drawn_broken() {
+fn a_frame_broken_in_a_crash_is_drawn_broken_or_in_pieces() {
     let mut w = world();
     let (at, ..) = frame_at(&w, 6.0, 0.0);
     w.apply(&Command::Frame(at), None).unwrap();
@@ -260,6 +260,7 @@ fn a_frame_broken_in_a_crash_is_drawn_broken() {
     );
     block.structure.orientation[0] = creeer_math::glam::DQuat::from_rotation_arc(DVec3::Y, up);
     game.server.world.add_body(block, None);
+    let bodies = game.server.world.world.bodies.len();
     game.run(300, |_| (DVec3::ZERO, false));
     let i = game.server.world.index(frame).unwrap();
     let s = &game.server.world.world.bodies[i].structure;
@@ -271,7 +272,10 @@ fn a_frame_broken_in_a_crash_is_drawn_broken() {
         .filter(|(_, m)| m.3)
         .map(|(k, _)| k as u32)
         .collect();
-    assert!(!broken.is_empty(), "nothing broke");
+    // What broke either stays in the frame, drawn broken, or (G2.5) left it in pieces of their
+    // own: bodies more than the frame and the block.
+    let pieces = game.server.world.world.bodies.len() - bodies;
+    assert!(!broken.is_empty() || pieces > 0, "nothing broke");
     let client = &game.clients[0].0;
     let Kind::Structure(drawn) = &client.kinds[&frame] else {
         panic!("not a structure")
@@ -280,5 +284,15 @@ fn a_frame_broken_in_a_crash_is_drawn_broken() {
     #[allow(clippy::cast_possible_truncation)]
     let pairs: Vec<[u32; 2]> = members.iter().map(|m| [m.0 as u32, m.1 as u32]).collect();
     assert_eq!(drawn.members, pairs);
-    assert_eq!(client.broken.get(&frame), Some(&broken));
+    if broken.is_empty() {
+        assert_eq!(
+            client
+                .broken
+                .get(&frame)
+                .map_or(0, std::collections::BTreeSet::len),
+            0
+        );
+    } else {
+        assert_eq!(client.broken.get(&frame), Some(&broken));
+    }
 }
