@@ -186,7 +186,6 @@ impl ServerWorld {
         }
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // half a minute
         let done = self.tick + (BACKFILLING * 60.0).ceil() as u64;
-        let at = self.in_frame(id, at);
         let u = super::building::UnderWay {
             part: id,
             at,
@@ -206,7 +205,8 @@ impl ServerWorld {
         by: EntityId,
         u: &super::building::UnderWay,
     ) -> Result<(), String> {
-        let at = self.in_world(u.part, u.at).ok_or("it is gone")?;
+        self.index(u.part).ok_or("it is gone")?;
+        let at = u.at;
         self.within_reach(by, at)?;
         let from = if self.creative {
             None

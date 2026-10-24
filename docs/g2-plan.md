@@ -152,3 +152,17 @@ G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.
 - The contact core first (G2.0).
 - Panels as grillages of strips.
 - Survival wood: logs, poles and riven boards. Sawn timber comes from creative or G3's sawmill.
+
+## Status (2026-10-24)
+
+| Step | State |
+|---|---|
+| G2.0 Rest | Part done: ground bumps keep their identity, and a lone felled trunk rests (ADR-0024). Hull–hull contacts still hop, so logs on logs never rest: being fixed (persistent hull contacts) |
+| G2.1 Joints | Done (ADR-0033) |
+| G2.2 Parts and fasteners | Done: nails, pegs and lashings from EN 1995-1-1; panels are boards fastened side by side (a grillage). Riven boards: not yet |
+| G2.3 Building by hand | Done: fasten (J/K), timed, survival rules, parts as members, records saved (v14) |
+| G2.4 Ground | Done: soil springs (Broms), set a post (P) |
+| G2.5 Collapse | Partly done: lateral-torsional buckling validated, and structures fall apart into bodies. Members of one structure colliding with each other: being built |
+| G2.6 Taking apart | Done: undo a joint (U), cut members. Salvage gives no items back yet |
+| G2.7 P2/P3 | Measured: targets not met (ADR-0035). SIMD kernels kept (bit-exact). The user decided (2026-10-24): record the gaps and move on, as for G1. The speed work continues in a later package (members' evaluation in SIMD, sub-cycling struck regions) |
+| G2.8 Scenes | tower, collapse, drop, builders and log bridge exist, with goldens and work ceilings. Gates not met (tower p50 28 ms, worst ≈ 0.5 s; builders p50 26 ms from the loose poles) |

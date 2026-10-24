@@ -193,3 +193,13 @@ Test: a 100 mm green spruce pole stood 0.28 m down in a hole. Let go, it falls o
 - The hole is still drawn open after backfilling. The fill is the springs, not the terrain: filling the terrain would push the post out of the ground.
 - The ground beside is judged in one direction only.
 - A post's soil springs lean on the post's axis taken as the plumb.
+
+## G2.8's log bridge: what it found (2026-10-24)
+
+The *log bridge* scene (`play/log_bridge.rs`: two players nail a plank across two sills, then crates fall on its middle until it fails) found four things before it held:
+- **A pole laid across two poles rolls off one, and round logs under a plank are rollers.** On ground sloping 2–3 % they rolled out from under it. Real builders hew sills square or chock them, so the scene uses squared sills and a sawn plank. That's a play matter, not a bug.
+- **Work under way kept its point in the part's node-0 frame.** When the other end's nail made the part a built structure, its node 0 moved from the plank's middle to its end, and the second nail's point went astray. Points are now kept in the world: parts settle by millimetres in the seconds the work takes.
+- **Faces lying on each other touch over their whole overlap,** and the contact's point can be anywhere in it: up to 16.5 cm from where the player aimed, on a 15 cm plank on a 15 cm sill. Fastening now takes the touching parts nearest the aim within 30 cm (was 15 cm).
+- **Parts resting on each other rock by millimetres,** so they count as touching within 1 cm (was 5 mm): as near as a nail draws them together.
+
+The scene's test (both ends nailed by tick 899; under the crates, the bridge breaks or comes apart) passes. At full length it takes 35 s in release, so it is run by hand.

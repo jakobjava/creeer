@@ -15,10 +15,12 @@ use std::collections::BTreeMap;
 
 /// Ticks a second.
 const TICKS: f64 = 60.0;
-/// How far from the point aimed at two parts may touch to be fastened there (m).
-const NEAR: f64 = 0.15;
-/// A gap two parts may have and still be fastened (m: they must touch).
-const TOUCHING: f64 = 0.005;
+/// How far from the point aimed at two parts may touch to be fastened there (m): faces lying on
+/// each other touch over their whole overlap, its contact's point anywhere in it.
+const NEAR: f64 = 0.3;
+/// A gap two parts may have and still be fastened (m: they must touch, as near as a nail draws
+/// them together; a part resting on another rocks by millimetres).
+const TOUCHING: f64 = 0.01;
 
 /// What is being built, and what was.
 #[derive(Debug, Default)]
@@ -56,7 +58,8 @@ pub(super) enum Work {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct UnderWay {
     pub(super) part: EntityId,
-    /// Where, in the part's node frame (it may settle a little while the work goes on).
+    /// Where (the world's frame: parts settle by millimetres while the work goes on, and a part
+    /// made a structure meanwhile has another node 0, so a point in its frame went astray).
     pub(super) at: DVec3,
     pub(super) fastener: usize,
     pub(super) done: u64,
@@ -100,7 +103,7 @@ impl ServerWorld {
             by,
             UnderWay {
                 part,
-                at: self.in_frame(part, at),
+                at,
                 fastener: k,
                 done,
                 work: Work::Fasten,
@@ -175,7 +178,8 @@ impl ServerWorld {
     }
 
     fn fasten_due(&mut self, by: EntityId, u: &UnderWay) -> Result<(), String> {
-        let at = self.in_world(u.part, u.at).ok_or("that part is gone")?;
+        self.index(u.part).ok_or("that part is gone")?;
+        let at = u.at;
         self.within_reach(by, at)?;
         let (other, point) = self.touching_part(u.part, at)?;
         let from = self.fastener_at_hand(by, u.fastener)?;
@@ -192,20 +196,6 @@ impl ServerWorld {
 }
 
 impl ServerWorld {
-    /// World point `at` in body `id`'s node frame (or as it is, if there is no such body).
-    pub(super) fn in_frame(&self, id: EntityId, at: DVec3) -> DVec3 {
-        self.index(id).map_or(at, |i| {
-            let s = &self.world.bodies[i].structure;
-            s.orientation[0].conjugate() * (at - s.position[0])
-        })
-    }
-
-    /// Point `local` of body `id`'s node frame in the world, now.
-    pub(super) fn in_world(&self, id: EntityId, local: DVec3) -> Option<DVec3> {
-        let s = &self.world.bodies[self.index(id)?].structure;
-        Some(s.position[0] + s.orientation[0] * local)
-    }
-
     /// Whether `at` is within reach of avatar `by`'s hands now.
     pub(super) fn within_reach(&self, by: EntityId, at: DVec3) -> Result<(), String> {
         let i = self.index(by).ok_or("no such avatar")?;

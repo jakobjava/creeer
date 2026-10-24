@@ -28,7 +28,6 @@ impl ServerWorld {
         // (Ten seconds: a few hundred ticks.)
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let done = self.tick + (UNDOING * 60.0).ceil() as u64;
-        let at = self.in_frame(built, at);
         let u = UnderWay {
             part: built,
             at,
@@ -55,7 +54,8 @@ impl ServerWorld {
 
     /// A joint taken apart, its time up: if its maker still reaches it.
     pub(super) fn unfasten_due(&mut self, by: EntityId, u: &UnderWay) -> Result<(), String> {
-        let at = self.in_world(u.part, u.at).ok_or("it is gone")?;
+        self.index(u.part).ok_or("it is gone")?;
+        let at = u.at;
         self.within_reach(by, at)?;
         let e = self.joint_near(u.part, at)?;
         let i = self.index(u.part).ok_or("it is gone")?;

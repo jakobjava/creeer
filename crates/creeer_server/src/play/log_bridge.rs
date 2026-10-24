@@ -1,6 +1,7 @@
 //! *log bridge* (G2.8): a small bridge built by hand and loaded until it fails. Two green
-//! spruce poles lie on the ground 2 m apart (its abutments), a third across them (its
-//! stringer); two players nail the stringer down, one at each end; then crates fall on its
+//! spruce sills lie on the ground 2 m apart (its abutments), a plank across them (its
+//! stringer, a plank 150 × 50 mm: a pole would roll off them); two players nail the stringer
+//! down, one at each end; then crates fall on its
 //! middle one by one until it breaks.
 
 use super::Play;
@@ -26,20 +27,6 @@ const LOAD: u32 = 900;
 const EVERY: u32 = 120;
 const AGAIN: u32 = 600;
 
-fn pole(length: f64) -> Item {
-    Item::Piece(
-        Piece::solid(
-            "spruce_green",
-            800.0,
-            Form::Rod {
-                radius: 0.025,
-                length,
-            },
-        ),
-        Vec::new(),
-    )
-}
-
 /// The world: the abutments (entities 1 and 2, across the span's way) and the stringer (3).
 pub fn log_bridge_world(terrain: Arc<Terrain>) -> ServerWorld {
     let mut w = world(terrain);
@@ -47,22 +34,54 @@ pub fn log_bridge_world(terrain: Arc<Terrain>) -> ServerWorld {
     let (east, north) = tangent_frame(spawn.normalize());
     let middle = w.ground_under(spawn + east * OUT);
     let up = middle.normalize();
-    // Rods lie along their x: the abutments turned to lie north–south, the stringer east–west.
-    let across = DQuat::from_rotation_arc(DVec3::X, north);
+    // Rods lie along their x: the abutments north–south, the stringer east–west, their y up.
+    let lying = |along: DVec3| {
+        let x = along.reject_from(up).normalize();
+        DQuat::from_mat3(&creeer_math::glam::DMat3::from_cols(x, up, x.cross(up)))
+    };
+    // Squared sills 150 mm under a plank 50 mm thick: they clear a sloping ground between, and
+    // do not roll (round logs under a plank are rollers: they rolled out from under it).
+    let (log_radius, half_plank) = (0.075, 0.025);
+    let mut top: f64 = f64::MIN;
     for side in [-0.5, 0.5] {
-        let at = w.ground_under(middle + east * (side * SPAN));
-        let id = w.add_item(pole(1.2), at + up * 0.03, true);
-        if let Some(i) = w.index(id) {
-            let s = &mut w.world.bodies[i].structure;
-            s.orientation[0] = across * s.orientation[0];
-        }
+        let at = w.ground_under(middle + east * (side * SPAN)) + up * (log_radius + 0.001);
+        top = top.max((at - middle).dot(up) + log_radius);
+        let sill = Item::Piece(
+            Piece::solid(
+                "spruce_green",
+                800.0,
+                Form::Block {
+                    size: DVec3::new(1.2, 2.0 * log_radius, 2.0 * log_radius),
+                },
+            ),
+            Vec::new(),
+        );
+        lay(&mut w, sill, at, lying(north));
     }
-    let id = w.add_item(pole(SPAN + 0.6), middle + up * 0.09, true);
-    if let Some(i) = w.index(id) {
-        let s = &mut w.world.bodies[i].structure;
-        s.orientation[0] = DQuat::from_rotation_arc(DVec3::X, east) * s.orientation[0];
-    }
+    // On the higher abutment's top (the ground slopes), a millimetre clear.
+    let at = middle + up * (top + half_plank + 0.001);
+    let plank = Item::Piece(
+        Piece::solid(
+            "spruce_green",
+            800.0,
+            Form::Block {
+                size: DVec3::new(SPAN + 0.6, 2.0 * half_plank, 0.15),
+            },
+        ),
+        Vec::new(),
+    );
+    lay(&mut w, plank, at, lying(east));
     w
+}
+
+/// `item` added at `at` turned `turn`, as placed (not lifted clear: it is placed clear).
+fn lay(w: &mut ServerWorld, item: Item, at: DVec3, turn: DQuat) {
+    let id = w.add_item(item, at, false);
+    if let Some(i) = w.index(id) {
+        let body = &mut w.world.bodies[i];
+        body.structure.orientation[0] = turn;
+        body.solver.reset_history(&body.structure);
+    }
 }
 
 /// Where body `a` touches body `b`, if it does.
@@ -84,7 +103,7 @@ pub fn log_bridge(tick: u32, play: &Play) -> Vec<Act> {
             let abutment = EntityId(k as u32 + 1);
             if let Some(at) = touch(w, stringer, abutment) {
                 act.walk = super::work::towards(play.avatar(k), at, NEAR);
-                if tick >= NAIL && (tick - NAIL) % AGAIN == 0 {
+                if tick >= NAIL && (tick - NAIL).is_multiple_of(AGAIN) {
                     let target = Target {
                         body: Some(stringer),
                         at,
@@ -98,7 +117,7 @@ pub fn log_bridge(tick: u32, play: &Play) -> Vec<Act> {
                 }
             }
             // The first builder drops the crates (a creative server's).
-            if k == 0 && tick >= LOAD && (tick - LOAD) % EVERY == 0 {
+            if k == 0 && tick >= LOAD && (tick - LOAD).is_multiple_of(EVERY) {
                 let middle = w.index(stringer).map(|i| {
                     let s = &w.world.bodies[i].structure;
                     #[allow(clippy::cast_precision_loss)] // a few nodes
@@ -125,7 +144,7 @@ mod tests {
     /// breaks or comes apart (a piece a body of its own: more entities than the two players,
     /// the bridge and the crates' first two).
     #[test]
-    #[ignore = "WIP: the stringer never touches its abutments (touching() finds no contact): to fix"]
+    #[ignore = "the scene at full length (35 s in release): run by hand"]
     fn the_log_bridge_is_built_and_fails_under_its_crates() {
         let s = scene("log_bridge").expect("the scene");
         let terrain = terrain();
@@ -135,7 +154,6 @@ mod tests {
             let acts = (s.script)(tick, &play);
             play.tick(&acts);
             let w = &play.server.world;
-            if false {}
             if tick == LOAD - 1 {
                 joined = w.index(EntityId(1)).is_none() && w.index(EntityId(2)).is_none();
             }
