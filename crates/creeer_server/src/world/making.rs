@@ -42,6 +42,11 @@ impl ServerWorld {
         if force <= made.hold {
             return;
         }
+        let why = format!(
+            "the binding gave: a blow of {:.1} kN on its {:.1} kN",
+            force / 1e3,
+            made.hold / 1e3
+        );
         let at = self.hands_point(by);
         self.let_go(by);
         if let Some(Item::Made(made)) = self.remove_item(held) {
@@ -53,7 +58,7 @@ impl ServerWorld {
                 self.lay(piece, at + along, DQuat::from_rotation_arc(DVec3::Z, up));
             }
         }
-        self.note(by, "the binding gave: it came apart".into());
+        self.note(by, format!("{why}: it came apart"));
     }
 
     /// Item body `id`, if a brittle piece, struck by avatar `by` with `energy` (J): what breaks

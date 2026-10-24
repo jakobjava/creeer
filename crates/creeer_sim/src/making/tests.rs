@@ -249,3 +249,55 @@ fn what_a_blow_leaves_is_named_by_its_shape() {
     let made = bind(haft, flake, strip, 20e6).unwrap();
     assert_eq!(word(&Item::Made(Box::new(made))), "tool");
 }
+
+/// A split-hafted flake as knapping gives it (L × 0.8 L × L/5), 6–15 cm on hafts of 0.4–1.2 m,
+/// holds its own blows into hard green wood (5 MPa across): a bigger head holds more, as it is
+/// swung harder (over the diameter squared, a 15 cm one on a 1 m haft did not, G2.8).
+#[test]
+fn a_split_hafted_flake_holds_its_own_blows_into_a_tree() {
+    for (length, radius) in [
+        (0.4, 0.012),
+        (0.5, 0.015),
+        (0.6, 0.018),
+        (1.0, 0.02),
+        (1.2, 0.03),
+    ] {
+        for long in [0.06, 0.10, 0.15] {
+            let haft = Piece::solid("spruce_green", 800.0, Form::Rod { radius, length });
+            let mut flake = Piece::solid(
+                "chert",
+                2580.0,
+                Form::Lump {
+                    size: DVec3::new(long, 0.8 * long, 0.2 * long),
+                },
+            );
+            if 0.2 * long >= 2.0 * radius {
+                continue;
+            }
+            flake.edge = Some(Edge {
+                angle: FLAKE_ANGLE,
+                length: long,
+                radius: 2e-5,
+            });
+            let bast = Piece::solid(
+                "spruce_bast",
+                600.0,
+                Form::Block {
+                    size: DVec3::new(0.9, 0.02, BARK),
+                },
+            );
+            let edge = flake.edge;
+            let made = bind_split(haft, flake, bast, 20e6, Some(1.8e6)).expect("binds");
+            let s = made.swinging();
+            let swing = strike::swing_of(s.mass, s.gyration, s.carry, s.strike);
+            let energy = 0.5 * swing.mass * swing.speed * swing.speed;
+            let cut = crate::trees::chop::chopped(energy, edge, 5e6);
+            let force = crate::dig::peak_force(energy, cut, (swing.mass * swing.speed, 0.002));
+            assert!(
+                force < made.hold,
+                "{long} m on {length} m: {force:.0} N on {:.0}",
+                made.hold
+            );
+        }
+    }
+}

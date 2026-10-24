@@ -145,10 +145,13 @@ pub fn bind(haft: Piece, head: Piece, binding: Piece, strength: f64) -> Result<A
 /// As [`bind`], the haft's wood `across` its grain this strong (Pa): a head no thicker than the
 /// haft goes into its split end, the two halves sprung apart about it and lashed shut (a knapped
 /// flake is a fifth as thick as long: thinner than the haft's radius only up to 9 cm, and every
-/// blow broke a 10 cm one off its stick, G2.8, the user's play) (the split haft of Neolithic axes: the Ötzi axe's
-/// forked yew, split-hafted adzes), and a blow drives it against the split's two walls. They
-/// bear across the grain over about the haft's diameter squared each, on top of what the
-/// lashing holds by friction (it keeps the split closed). A thicker head is only lashed on.
+/// blow broke a 10 cm one off its stick, G2.8, the user's play): the split haft of Neolithic
+/// axes (the Ötzi axe's forked yew, split-hafted adzes). A blow drives it against the split's
+/// two walls, which bear across the grain over the face of the head they hold: the haft's
+/// diameter across, its width along the haft. That comes on top of what the lashing holds by
+/// friction (it keeps the split closed). A thicker head is only lashed on. (Over the diameter
+/// squared, a bigger head held less than its blows load it: a 15 cm flake on a 1 m haft took
+/// 6–8 kN a blow into a tree on 7 kN, G2.8, the user's play.)
 pub fn bind_split(
     haft: Piece,
     head: Piece,
@@ -173,7 +176,7 @@ pub fn bind_split(
     let lashed = 2.0 * wraps * tension * FRICTION;
     let diameter = 2.0 * radius;
     let wedged = match across {
-        Some(across) if thin < diameter => across * 2.0 * diameter * diameter,
+        Some(across) if thin < diameter => across * 2.0 * diameter * mid,
         _ => 0.0,
     };
     let hold = lashed + wedged;
