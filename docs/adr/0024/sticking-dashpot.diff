@@ -1,0 +1,205 @@
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index 31c6552..3d07389 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -85,6 +85,7 @@ impl Coupling for Contacts {
+             };
+         }
+         self.start_dashpots(&gaps_start, &measured_start);
++        self.start_slip_dashpots(info.start, info.previous, ahead);
+         // The contact that carries the most: its force must be right to 1 % when the step
+         // stops, an error of a hundredth of F/k, its force over its stiffness (its depth for a
+         // linear law; the reach for one stiffening under load, where a hundredth of the depth
+@@ -131,7 +132,10 @@ impl Coupling for Contacts {
+             .list
+             .iter()
+             .zip(at.iter())
+-            .map(|(c, &(_, _, _, slip, _, _))| c.friction * c.lambda * self.smooth(slip.length()).0)
++            .enumerate()
++            .map(|(i, (c, &(_, _, _, slip, _, _)))| {
++                c.friction * c.lambda * self.smooth(slip.length()).0 + self.slip_dashpot(i, slip).0
++            })
+             .sum();
+         let twist = self.twist_energy(states);
+         timer.stop(Slot::ContactRest);
+@@ -175,7 +179,8 @@ impl Coupling for Contacts {
+             } else {
+                 dashpots[i] - forces[i]
+             };
+-            let friction = slip * (c.friction * c.lambda * self.smooth(slip.length()).1);
++            let friction = slip * (c.friction * c.lambda * self.smooth(slip.length()).1)
++                + self.slip_dashpot(i, slip).1;
+             // The normal force acts at the contact points; friction at the material points
+             // too (one force), or for spheres at the carried friction points.
+             let at_points = match self.carried(i) {
+@@ -263,9 +268,14 @@ impl Coupling for Contacts {
+                 let k = self.matrix_stiffness(i, gap, 0.0);
+                 self.list[i].stiffness = k;
+             }
++            // The sticking dashpot's (`dashpot.rs`): across its rate and along it.
++            let (_, rate, [across, along_rate]) = self.slip_dashpot(i, slip);
++            let d = rate.normalize_or_zero();
+             let c = &mut self.list[i];
+             let n = c.normal;
+             let plane = DMat3::IDENTITY - DMat3::from_cols(n * n.x, n * n.y, n * n.z);
++            let rated = DMat3::from_cols(d * d.x, d * d.y, d * d.z);
++            let damped = (plane - rated) * across + rated * along_rate;
+             let r = slip.length();
+             // f₀ (`smooth`): |u| beyond e, a cubic within; f₁ = f₀'/|u|, f₂ = f₀''.
+             let (f1, f2) = if r >= e {
+@@ -275,7 +285,10 @@ impl Coupling for Contacts {
+             };
+             let along = if r > 0.0 { slip / r } else { DVec3::ZERO };
+             let outer = DMat3::from_cols(along * along.x, along * along.y, along * along.z);
+-            c.tangent = Some(((plane - outer) * f1 + outer * f2) * (c.friction * c.lambda));
++            c.tangent = Some(
++                ((plane - outer) * f1 + outer * f2) * (c.friction * c.lambda)
++                    + damped,
++            );
+         }
+         self.set_twist_stiffness(states);
+         // Each pressed face's stiffness as it presses now (`Patch::tangent`).
+diff --git a/crates/creeer_physics/src/world/contact/dashpot.rs b/crates/creeer_physics/src/world/contact/dashpot.rs
+index f322867..5d3234f 100644
+--- a/crates/creeer_physics/src/world/contact/dashpot.rs
++++ b/crates/creeer_physics/src/world/contact/dashpot.rs
+@@ -17,6 +17,15 @@
+ //! F5.)
+ 
+ use super::{Contacts, Law};
++use crate::structure::group::MemberState;
++use creeer_math::glam::DVec3;
++
++/// The most a sticking dashpot pushes, as a share of Coulomb's μ·λ (`slip_dashpot`).
++const DAMPED_SHARE: f64 = 0.1;
++
++/// A contact counts as at rest when its points moved less than this share of the stick
++/// distance across each other in the last step.
++const RESTING: f64 = 0.05;
+ 
+ /// A face's dashpot for the step: per point of it, its coefficient (zero where it does not
+ /// press), and on a plane the same as a quadratic form in its corners' rates, Σ c·w·wᵀ (each
+@@ -147,6 +156,70 @@ impl Contacts {
+     }
+ }
+ 
++impl Contacts {
++    /// Sets each sticking contact's dashpot on its slip for the step (`start`, `previous`: the
++    /// members at the step's start and the one before, `ahead` = τ/h).
++    ///
++    /// Static friction is the anchor's stiff spring (`mod.rs`), elastic: two logs lying across
++    /// each other on the ground, each sticking where it touches the other and the ground, rocked
++    /// on those springs at 3 Hz for good, their energy constant to 10⁻⁷ J (G2.0). Real contacts
++    /// that stick dissipate as they are loaded to and fro (Mindlin's microslip, Johnson §7.4),
++    /// and a contact model that sticks with a spring damps it, as discrete element models do
++    /// (Cundall & Strack 1979; Tsuji et al. 1992). So the spring is damped critically, as the
++    /// normal dashpot damps the penetration: c = 2·√(k·m), k = 2·μ·λ/e the stick spring's
++    /// stiffness at rest. Only while it sticks at the step's start: sliding, friction is
++    /// Coulomb's alone. Not for contacts with spheres (their friction points are carried).
++    pub(super) fn start_slip_dashpots(
++        &mut self,
++        start: &[MemberState<'_>],
++        previous: &[MemberState<'_>],
++        ahead: f64,
++    ) {
++        self.slip_references.clear();
++        for i in 0..self.list.len() {
++            let c = self.list[i];
++            let sticks = c.dashpot && c.friction > 0.0 && c.lambda > 0.0 && !c.rolls();
++            let now = self.gap_and_slip(i, start).3;
++            let then = self.gap_and_slip(i, previous).3;
++            let sticks = sticks && now.length() < 0.5 * self.smoothing && (now - then).length() < RESTING * self.smoothing;
++            let k = 2.0 * c.friction * c.lambda / self.smoothing;
++            self.list[i].sticking = if sticks {
++                2.0 * (k * c.mass.min(1e12)).sqrt()
++            } else {
++                0.0
++            };
++            self.slip_references.push(now + (now - then) * ahead);
++        }
++    }
++
++    /// The sticking dashpot's energy at contact `i`'s slip `slip`, its slope by the slip, and
++    /// its stiffness there (across the slip's rate, along it).
++    ///
++    /// Its force is at most a tenth of Coulomb's μ·λ (beyond, it grows no more: Huber's
++    /// function of the rate): it damps the spring that sticks, and must not hold a body that
++    /// begins to slide. Unbounded, it held a wedge on a 40° ramp (μ = 0.3) at 1 cm/s, where it
++    /// slides 6 m in a second.
++    pub(super) fn slip_dashpot(&self, i: usize, slip: DVec3) -> (f64, DVec3, [f64; 2]) {
++        let contact = &self.list[i];
++        let c = contact.sticking / self.beta;
++        if c == 0.0 {
++            return (0.0, DVec3::ZERO, [0.0; 2]);
++        }
++        let n = contact.normal;
++        let reference = self.slip_references.get(i).copied().unwrap_or(slip);
++        let mut rate = slip - reference;
++        rate -= n * n.dot(rate);
++        let r = rate.length();
++        let most = DAMPED_SHARE * contact.friction * contact.lambda;
++        let reach = most / c;
++        if r <= reach {
++            (0.5 * c * r * r, rate * c, [c, c])
++        } else {
++            (most * (r - 0.5 * reach), rate * (most / r), [most / r, 0.0])
++        }
++    }
++}
++
+ impl FaceDashpot {
+     /// Its form in the corners' rates (N·s/m): exact on a plane; over curved ground, where its
+     /// points damp their own rates, their rates taken as the corners' blend.
+diff --git a/crates/creeer_physics/src/world/contact/matrix.rs b/crates/creeer_physics/src/world/contact/matrix.rs
+index eb1e31f..cf39874 100644
+--- a/crates/creeer_physics/src/world/contact/matrix.rs
++++ b/crates/creeer_physics/src/world/contact/matrix.rs
+@@ -46,6 +46,8 @@ impl Contacts {
+         } else {
+             c.friction * c.lambda * 2.0 / self.smoothing
+         };
++        // With the sticking dashpot (`dashpot.rs`).
++        let tangent = tangent + c.sticking / self.beta;
+         (along * normal, (DMat3::IDENTITY - outer) * tangent)
+     }
+ 
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 1cb5647..0578116 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -121,6 +121,9 @@ pub struct Contact {
+     pub mass: f64,
+     /// Dashpot c (N·s/m), set when the step begins.
+     pub damping: f64,
++    /// Its sticking dashpot c (N·s/m), set when the step begins: zero unless it sticks then
++    /// (`dashpot.rs`).
++    pub sticking: f64,
+     /// Whether it has a dashpot (impact substeps resolve the vibration and drop it).
+     pub dashpot: bool,
+     /// Whether it touches at the start of the step or will within it (set when the step
+@@ -180,6 +183,7 @@ impl Contact {
+             stiffness: 0.0,
+             mass: f64::INFINITY,
+             damping: 0.0,
++            sticking: 0.0,
+             dashpot: true,
+             touching: false,
+             bump: false,
+@@ -247,6 +251,9 @@ pub struct Contacts {
+     /// Each contact's gap extrapolated along its own history to x̂, as the scheme extrapolates
+     /// the bodies: its dashpot damps the gap's rate from there.
+     references: Vec<f64>,
++    /// Each contact's slip extrapolated to x̂ along its own history, as `references`: its
++    /// sticking dashpot damps the slip's rate from there (`dashpot.rs`).
++    slip_references: Vec<DVec3>,
+     /// The reference gaps of the patches' measured points over curved ground, as `references`.
+     point_references: Vec<Vec<f64>>,
+     /// Each patch's dashpot between its corners for the step (N·s/m, `dashpot.rs`).
+@@ -291,6 +298,7 @@ impl Contacts {
+             carried: Vec::new(),
+             measures,
+             references: Vec::new(),
++            slip_references: Vec::new(),
+             point_references: Vec::new(),
+             face_dashpots: Vec::new(),
+             ground,

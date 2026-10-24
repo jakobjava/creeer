@@ -20,9 +20,50 @@ struct Item {
     /// Bounding radius plus the speculative margin.
     reach: f64,
     margin: f64,
+    /// A ball about the shape's middle in its node's frame (`ball`), for bodies on several nodes.
+    middle: (DVec3, f64),
+}
+
+/// How far apart (m) two shapes of one body lie in its rest shape at least, to meet each other
+/// (`World::meet_within`): a member's prisms on fastened nodes lie a few millimetres apart.
+const REST_APART: f64 = 0.01;
+
+/// A ball about a shape's middle, in its node's frame: centre and radius.
+fn ball(shape: &Shape) -> (DVec3, f64) {
+    match shape {
+        Shape::Hull(h) => {
+            let (lo, hi) = (h.vertices().iter()).fold(
+                (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY)),
+                |(lo, hi), &v| (lo.min(v), hi.max(v)),
+            );
+            let centre = 0.5 * (lo + hi);
+            let radius = (h.vertices().iter())
+                .map(|&v| (v - centre).length())
+                .fold(0.0, f64::max);
+            (centre, radius)
+        }
+        _ => (DVec3::ZERO, shape.bounding_radius()),
+    }
 }
 
 impl World {
+    /// Whether two shapes of one body meet each other (G2.5, ADR-0034): a structure's members
+    /// on nodes apart in its rest shape. A built structure is one body, and its members folding
+    /// through themselves as it collapses are stopped by the same contact laws as any other.
+    /// Shapes that may touch in the rest shape never do: the halves of one member's prisms
+    /// meeting at its nodes, members fastened together, the next node along a member. Each
+    /// shape's ball about its own middle, measured in the rest shape (nodes' orientations are
+    /// turns from it), apart by more than `REST_APART`. (About its node instead, a 1 m member's
+    /// half-prism reached 0.5 m, and a frame's arms 40° apart passed through each other.)
+    fn meet_within(&self, a: &Item, b: &Item) -> bool {
+        if a.node == b.node {
+            return false;
+        }
+        let rest = &self.bodies[a.body].structure.rest;
+        let ((ca, ra), (cb, rb)) = (a.middle, b.middle);
+        ((rest[a.node] + ca) - (rest[b.node] + cb)).length() > ra + rb + REST_APART
+    }
+
     fn items(&self) -> Vec<Item> {
         let mut items = Vec::new();
         for (b, body) in self.bodies.iter().enumerate() {
@@ -32,6 +73,8 @@ impl World {
                 continue;
             }
             let s = &body.structure;
+            // Shapes of a body on several nodes may meet each other (`meet_within`).
+            let many = s.node_count() > 1;
             for (node, shape) in &body.shapes {
                 let node = *node;
                 let radius = shape.bounding_radius();
@@ -48,6 +91,11 @@ impl World {
                     },
                     reach: radius + margin,
                     margin,
+                    middle: if many {
+                        ball(shape)
+                    } else {
+                        (DVec3::ZERO, radius)
+                    },
                 });
             }
         }
@@ -78,10 +126,10 @@ impl World {
                 if b.pose.position.x - b.reach > a.pose.position.x + a.reach {
                     break;
                 }
-                if a.body == b.body
-                    || (asleep(a.body) && asleep(b.body))
-                    || (!unjoined.is_empty() && joined(a.body, b.body))
+                if (asleep(a.body) && asleep(b.body))
                     || (a.pose.position - b.pose.position).length() > a.reach + b.reach
+                    || (!unjoined.is_empty() && joined(a.body, b.body))
+                    || (a.body == b.body && !self.meet_within(a, b))
                 {
                     continue;
                 }

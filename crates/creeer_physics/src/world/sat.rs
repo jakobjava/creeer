@@ -10,6 +10,15 @@ use super::shape::{Domain, Follows, PatchVertex, Pose, RawContact};
 use super::surface::Feature;
 use creeer_math::glam::{DMat3, DVec3};
 
+/// How much better (m) an edge axis must be than a face's to be taken (no flicker at rest).
+pub(super) const BIAS: f64 = 1e-4;
+
+/// An edge lies across a face when the edges' axis is within about a degree of the face's
+/// normal (the cosine): it lies along the face, and touches it along a line. Crossed edges
+/// lie further from every face beside them (a twelve-sided log's by 15°, a box's crossed at
+/// random by 17° in the box tests), and touch at a point.
+pub(super) const ACROSS: f64 = 0.9998;
+
 struct OrientedBox {
     center: DVec3,
     axes: [DVec3; 3],
@@ -104,7 +113,7 @@ pub fn box_box(
     }
     for i in 0..3 {
         for j in 0..3 {
-            consider(a.axes[i].cross(b.axes[j]), 2 + 3 * i + j, 1e-4);
+            consider(a.axes[i].cross(b.axes[j]), 2 + 3 * i + j, BIAS);
         }
     }
     let Some((separation, axis, kind)) = best else {
@@ -116,9 +125,12 @@ pub fn box_box(
     // Normal from B to A.
     let normal = if t.dot(axis) > 0.0 { -axis } else { axis };
     match kind {
-        0 => clip(&a, &b, -normal, margin, true),
-        1 => clip(&b, &a, normal, margin, false),
+        0 => clip(&a, &b, -normal, margin, true).0,
+        1 => clip(&b, &a, normal, margin, false).0,
         _ => {
+            if let Some(patch) = edge_on_face(&a, &b, normal, separation, margin) {
+                return patch;
+            }
             let (i, j) = ((kind - 2) / 3, (kind - 2) % 3);
             let (pa, qa) = a.edge(i, -normal);
             let (pb, qb) = b.edge(j, normal);
@@ -155,15 +167,19 @@ fn clip(
     towards: DVec3,
     margin: f64,
     reference_is_a: bool,
-) -> Vec<RawContact> {
+) -> (Vec<RawContact>, f64) {
     let (ref_face, ref_normal) = reference.face(towards);
     let middle = (ref_face[0] + ref_face[1] + ref_face[2] + ref_face[3]) * 0.25;
     let ref_point = ref_face[0];
     let depth = |p: DVec3| ref_normal.dot(p - ref_point);
     let (corners, _) = incident.face(-towards);
     let polygon = clip_to(&ref_face, ref_normal, middle, corners.to_vec());
-    if polygon.len() < 3 || polygon.iter().all(|&p| depth(p) >= margin) {
-        return Vec::new();
+    let least = polygon
+        .iter()
+        .map(|&p| depth(p))
+        .fold(f64::INFINITY, f64::min);
+    if polygon.len() < 3 || least >= margin {
+        return (Vec::new(), least);
     }
     // The domain in the face's coordinates: s towards corner 1, t towards corner 3.
     let (u, v) = (corners[1] - corners[0], corners[3] - corners[0]);
@@ -178,7 +194,7 @@ fn clip(
         })
         .collect();
     let domain = Domain::part(&points);
-    corners
+    let contacts = corners
         .iter()
         .enumerate()
         .map(|(i, &corner)| {
@@ -210,7 +226,35 @@ fn clip(
                 inset: 0.0,
             }
         })
-        .collect()
+        .collect();
+    (contacts, least)
+}
+
+/// An edge of one box lying across a face of the other (the edges' axis within about a
+/// degree of the face's normal, `hull_sat::ACROSS`), pressed in as deep as the edges cross
+/// (within the bias): that face's patch, as for hulls (`hull_sat::edge_on_face`). The edge
+/// touches the face along a line; the crossing names only its deeper end, and the other end
+/// was found the deeper one as the box rocked. `normal` from B to A.
+fn edge_on_face(
+    a: &OrientedBox,
+    b: &OrientedBox,
+    normal: DVec3,
+    separation: f64,
+    margin: f64,
+) -> Option<Vec<RawContact>> {
+    // A's face turned to B, and B's turned to A; the one nearer the axis.
+    let (_, on_a) = a.face(-normal);
+    let (_, on_b) = b.face(normal);
+    let (reference, incident, towards, is_a) = if on_a.dot(-normal) >= on_b.dot(normal) {
+        (a, b, on_a, true)
+    } else {
+        (b, a, on_b, false)
+    };
+    if towards.dot(if is_a { -normal } else { normal }) < ACROSS {
+        return None;
+    }
+    let (patch, least) = clip(reference, incident, towards, margin, is_a);
+    (!patch.is_empty() && (least - separation).abs() <= BIAS).then_some(patch)
 }
 
 /// `polygon` clipped by the side planes of the face `ref_face` (normal `ref_normal`, centre

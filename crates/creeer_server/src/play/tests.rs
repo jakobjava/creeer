@@ -96,10 +96,15 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// spawn moved to level ground at a temperate latitude (2026-10-22): 127-248 (median 166), and
 /// 4,994 where a crate lands on a fallen player at tick 299. The median a tenth above; the worst
 /// keeps the ceiling above.
+///
+/// *lumberjack* 41 → 52 at tick 145 (G2.0, ADR-0024): two players' bodies pressed together, whose
+/// faces' friction now keeps what each step built (before, a patch with its corners on B forgot
+/// it every step, and a crate on a crate crept down a ramp it should have held). 24 iterations
+/// for each of the two at 0.35 ms; a tenth above. (To be confirmed by the parent: a gate raised.)
 const WORK: [(&str, u64, u64); 9] = [
     ("crowd", 183, 7_300),
     ("work", 216, 216),
-    ("lumberjack", 50, 50),
+    ("lumberjack", 57, 57),
     ("quarry", 185, 185),
     ("toolmaking", 135, 135),
     // G2.8, measured 2026-10-23 (a tenth above): the towers' Newton works little, their

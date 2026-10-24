@@ -36,9 +36,7 @@ pub(super) fn triangles(points: &[DVec3], eps: f64) -> Result<Vec<[usize; 3]>, H
         if start.contains(&i) {
             continue;
         }
-        let visible: Vec<usize> = (0..faces.len())
-            .filter(|&f| planes[f].0.dot(p) - planes[f].1 > eps)
-            .collect();
+        let visible = visible_region(&faces, &planes, p, eps);
         if visible.is_empty() {
             continue;
         }
@@ -75,6 +73,45 @@ pub(super) fn triangles(points: &[DVec3], eps: f64) -> Result<Vec<[usize; 3]>, H
         }
     }
     Ok(faces)
+}
+
+/// The faces `p` sees (more than `eps` above their planes) that join the one it sees best
+/// across edges, sorted. Every face it sees is not enough: with nearly coplanar points (a
+/// member's twelve-sided end rings, G2.8's builders) a face within `eps` lay between faces it
+/// saw, the horizon was no single loop, and the hull came out with edges of one face only.
+fn visible_region(faces: &[[usize; 3]], planes: &[(DVec3, f64)], p: DVec3, eps: f64) -> Vec<usize> {
+    let above = |f: usize| planes[f].0.dot(p) - planes[f].1;
+    let Some(best) = (0..faces.len()).max_by(|&a, &b| above(a).total_cmp(&above(b))) else {
+        return Vec::new();
+    };
+    if above(best) <= eps {
+        return Vec::new();
+    }
+    let mut owner = HashMap::new();
+    for (f, t) in faces.iter().enumerate() {
+        for k in 0..3 {
+            owner.insert((t[k], t[(k + 1) % 3]), f);
+        }
+    }
+    let mut seen = vec![false; faces.len()];
+    seen[best] = true;
+    let mut stack = vec![best];
+    let mut region = Vec::new();
+    while let Some(f) = stack.pop() {
+        region.push(f);
+        let t = faces[f];
+        for k in 0..3 {
+            if let Some(&g) = owner.get(&(t[(k + 1) % 3], t[k]))
+                && !seen[g]
+                && above(g) > eps
+            {
+                seen[g] = true;
+                stack.push(g);
+            }
+        }
+    }
+    region.sort_unstable();
+    region
 }
 
 /// Four points of `points` spanning a tetrahedron as large as can be found cheaply.
@@ -193,13 +230,19 @@ pub(super) fn merge(
         let line = (q - p).normalize();
         (v - p).reject_from_normalized(line).length() <= eps
     };
+    // A corner stays if any face it is on bends there: judged face by face, a corner nearly on
+    // a straight edge was dropped from one face and kept in the other, their edges no longer
+    // met, and building a member's hull panicked (G2.8's builders).
+    let mut bends = vec![false; points.len()];
+    for (_, ring) in &faces {
+        for k in 0..ring.len() {
+            bends[ring[k]] |= !straight(ring, k);
+        }
+    }
     let mut used = vec![false; points.len()];
     let mut out = Vec::with_capacity(faces.len());
     for (n, ring) in faces {
-        let kept: Vec<usize> = (0..ring.len())
-            .filter(|&k| !straight(&ring, k))
-            .map(|k| ring[k])
-            .collect();
+        let kept: Vec<usize> = ring.into_iter().filter(|&v| bends[v]).collect();
         for &v in &kept {
             used[v] = true;
         }

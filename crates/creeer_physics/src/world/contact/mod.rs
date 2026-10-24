@@ -129,6 +129,9 @@ pub struct Contact {
     /// Whether it is a bump of the ground (`ground_rise::bump`): its offset is kept for the
     /// next step (`anchor.rs`).
     pub bump: bool,
+    /// Whether A's point is found afresh each step (a face's corner on B, projected on A's
+    /// face): it keeps its stick offset for the next step, not its anchor (`anchor.rs`).
+    pub projected: bool,
     /// Coulomb friction coefficient μ.
     pub friction: f64,
     /// Coefficient of restitution for the impact law after the step.
@@ -183,6 +186,7 @@ impl Contact {
             dashpot: true,
             touching: false,
             bump: false,
+            projected: false,
             friction,
             restitution: 0.0,
             approach: 0.0,

@@ -209,3 +209,6 @@ fn a_triangular_face_presses_as_a_punch_of_its_area() {
     assert!((energy / (0.5 * stiffness * depth * depth) - 1.0).abs() < 1e-12);
     assert!((forces.iter().sum::<f64>() / (stiffness * depth) - 1.0).abs() < 1e-12);
 }
+
+#[path = "hull_across_tests.rs"]
+mod across;

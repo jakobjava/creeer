@@ -8,6 +8,8 @@ mod assembly_tests;
 mod faces_tests;
 pub mod fasteners;
 pub mod law;
+#[cfg(test)]
+mod self_contact_tests;
 pub mod soil;
 #[cfg(test)]
 mod soil_tests;
