@@ -348,3 +348,62 @@ The experiments below, each behind a switch, are in `docs/adr/0024/g2.0-experime
 - **lumberjack's times** (development machine, full length, p50 / p99 / worst; the machine busy with other builds, so runs spread): this change 0.9–1.7 / 21–28 / 37–59 ms over three runs; 2add7e6 run beside them 1.7–4.1 / 52–84 / 103–164 ms. Gates (2 and 5 ms) not met: the scene's slow ticks are the felling and bucking themselves and the hull–hull groups above, and G1.10's ground sampling (3–4 ms of detection a tick) remains. To be measured again on a quiet machine.
 - **Goldens renewed:** play at full and short length. With the save format's version written into the recordings, every scene's hash changes by the version alone (13 against 12); with the version held at 12, *lumberjack* and *toolmaking* hashed as before at short length and *crowd*, *work* and *quarry* differed: crates and boulders on the terrain whose bumps are now kept. Stress at both lengths: *cars* and *server* differ by motion even with the version held at 12 (cars and crates on the terrain), *beams*, *factory* and *flyover* not; *cars* still does 568.5 kJ of plastic work with 80 members buckled. Every test, the physics accuracy tests among them, passes at its tolerance (`cargo xtask ci`).
 - **Next** (`docs/future-improvements.md`): a persistent manifold between hulls, its points kept in the bodies' frames while they still touch, the new ones added beside them (Bullet, Jolt; this ADR's `crossed-edges.patch`, measured on the ragdolls only, to be measured again on the fixture's rims); or one law for an edge crossing whichever way it is found.
+
+## G2.0, continued: contacts between hulls (2026-10-24)
+
+The remainder of G2.0: hull–hull contacts that hop (Found 2 above). Measured first on the fixture's pair (bodies 0 and 1 of `lumberjack-felled.bin`, the only pair still awake there), and on the scene's state after its last blow kept as a world (players taken out), so each variant steps the same state. The probes are not kept (a trace of each pair's separations, chosen axis and faces, per tick).
+
+### Prior work
+
+| Source | What it does | For Creëer |
+|---|---|---|
+| Bullet `btPersistentManifold` (Coumans) | Up to four points a pair, kept in both bodies' frames while they still touch, new points merged by proximity | All its points obey one law; Creëer's points and patches do not, and a point kept beside a patch counts one overlap twice. The persistence that matters here is the friction anchor's |
+| Box2D (Catto, GDC 2006–2014): feature ids; v3's speculative contacts | Contact points identified by the features that make them, to warm start their impulses | No impulses to warm start; `anchor.rs` already keys anchors by the point on A |
+| Jolt body-pair cache (Rouwé) | A pair's manifold reused while the relative pose changes by less than about 1 mm and 2° | Not taken: a millimetre unseen is many times the micrometre overlaps that hold the energy here |
+| Gregorius, "The Separating Axis Test between Convex Polyhedra" (GDC 2013), "Robust Contact Creation" (GDC 2015) | A bias for face axes over edge axes; the incident face as the most antiparallel; clipping | The bias kept; the most antiparallel face is wrong for long hulls (Found 2) |
+| Mindlin (1949); Johnson, *Contact Mechanics* §7.4; Cundall & Strack (1979); Tsuji et al. (1992) | A sticking contact dissipates by microslip; discrete element models damp their tangential springs | Measured as a sticking dashpot and rejected (below) |
+
+### Found
+
+1. **The log across a log is an edge lying across a face, and the edge pair names one end.** Body 0's long edge lies across body 1's face (33° apart, the face 3 cm wide). Edge pairs (51, 70) and (53, 70) are the line's two ends; for 600 ticks the test took one or the other (255 and 345 ticks), 27 µm in at one end and 57–94 µm found at the other, the guard zeroing the motion every 5–6 ticks. The face's own separation was −0.2 to −9 mm, set by vertices metres away.
+2. **The incident face was the most antiparallel of all.** A long hull has nearly parallel faces at every ring; the most antiparallel lay in another ring, its clip against the reference face was empty, and the pair had no contact for a tick (tick 220; 1 mm in at the next).
+3. **A patch with its corners on B forgot its friction every step.** A's point is where B's corner falls on A's face, found afresh; its anchor (B's corner) was under it again each step, so static friction held only within a step. A 40 kg crate on a 400 kg crate on a 20° ramp (μ = 0.6) crept 4.5 mm in 2 s (`stick_tests.rs`); the fixture's logs crept and rocked at 3–5 mrad/s with no guard fallback.
+4. **`World::touching` reported a patch at its rectangle's corners**, up to 0.8 m from where two poles cross: with crossing edges now patches, fastening there failed ("not on the body as it was").
+5. **The log bridge's stringer never touches its abutments** (`play/log_bridge.rs`, for its author): `across * s.orientation[0]` turns the item's upright frame, whose x is not the world's. The three rods lie within 21° of each other, the stringer 0.8 m beside the abutments, all on the ground from the first tick. A scene set-up fault, not detection's.
+6. **The builders scene panicked** once its motion changed: `Hull::new` of a member's half-prism (two nearly coplanar twelve-sided rings) gave edges with one face. The incremental hull took every face a new point saw by more than ε; a face within ε lay between them, so the horizon was no loop.
+
+### Kept
+
+| Change | Measured |
+|---|---|
+| **An edge lying across a face is that face's patch** (`hull_sat::edge_on_face`; the same in `sat.rs` for boxes, so a box's hull still touches as the box): where the edges are within the bias of the faces or better, their axis within about a degree (`sat::ACROSS`) of a face beside one of them, pressed as deep as the edges (within the bias). That face is the reference, the face beside the other edge most opposed to it the incident; of several, the face the edge lies flattest across | The whole crossing presses (`hull_across_tests.rs`: one patch, about 50 cm², its deepest point within 2 µm of the line's deeper end, tilted ±2 mrad); the fixture pair a patch every tick, the same faces from tick to tick; a box hull and a box alike in 2,000 random poses |
+| **The incident face**: of those reaching over the reference face within the margin, the most opposed within the bias of the deepest (`hull_sat::pressing`) | No tick without a contact; boxes as before |
+| **A patch's corners on B keep their stick offset** (`Contact::projected`; `pass.rs`, `anchor.rs`), as a rolling contact keeps its (`Kept::Slip`) | The crate on a crate: 4.5 mm → under 10 µm in 2 s, either body as A |
+| **`touching` reports a patch at its pressing polygon's middle**, at its least gap (`query.rs`) | The building tests' crossed poles are fastened where they cross |
+| **The hull's visible region grown from the face seen best** (`hull_build::visible_region`); a corner dropped only where no face bends | The builders' member hull, now a test (14 faces, 24 corners) |
+
+### Measured and rejected
+
+| What | Measured | Why rejected |
+|---|---|---|
+| Edge-across-face patches alone, friction as before | The fixture pair rocked at 4–8 mrad/s for 10 s, energy falling 12 µJ a tick, no guard fallbacks | Friction forgot each step's slip (Found 3) |
+| Swapping A and B in detection so a patch's corners are always on A | The fixture pair slept (tick 311); a character walked past a standing trunk (`a_character_walks_into_a_trunk_and_stops`): static geometry cannot be A | Replaced by the kept stick offset, which covers fixed geometry too |
+| The incident face as the first in order of opposition whose clip is not empty | A face of the next ring, short of the crossing; the face then taken was 0.36 mm off the edges' depth, or 4.5 mm out: 17 J out of nothing in the scene's pair | The deepest within the bias, then the most opposed |
+| The face beside the edges nearest in depth (not in direction) | A trunk against a player's box flipped between its two faces beside the edge every few ticks | The face the edge lies flattest across |
+| Edge-across-face only where the edges are clearly better | The trunk against the player's box alternated between the face test's flank (its separation set far away) and the edge test's box face | Within the bias as well |
+| **A sticking dashpot** (`docs/adr/0024/sticking-dashpot.diff`): the stick spring damped critically, c = 2·√(2μλ/e·m), capped (Huber) at a share of μλ, only while sticking at the step's start | Uncapped: a wedge on a 40° ramp held at 1 cm/s (6 m expected), a tumbling cube's spin turned back, the pile gained 100 kJ. Capped at 0.1·μλ and gated to contacts at rest (moved under 5 µm the last step): every accuracy test passed, but the single trunk no longer slept and the scene's pair still rocked. Capped at 0.1 without the rest gate: the scene's pair slept at 9.6 s, the fixture's at 3.75 s, but accuracy tests failed | It decided sleep one way or the other by its gates, and broke accuracy tests ungated. A damping inside Coulomb's cone, not added to it, is the lesson |
+
+### Measured (development machine, shared with other builds)
+
+- **Gate, trunks asleep within 5 s of the last blow: not met.** After these changes three parts awake 15 s on (4: 0.0, 5: 8, 6: 55 mrad/s; before: 4, 6, 8). Found on the scene's state with the players taken out: an 82 kg log balanced across another (its ground contacts carrying 0–2 N) rocks about its own axis at 3 Hz, 1–5 mrad/s, its energy constant to 10⁻⁷ J for 15 s, an undamped mode on the friction anchors' springs (with friction between the logs off it sleeps in 6 s). Trunk 6 rests against a held player's body, one patch now, moving with the player.
+- **lumberjack**, full length, p50 / p99 / worst: 1.08–1.34 / 14.6–18.3 / 45.6–48.2 ms over three runs (before: 0.9–1.7 / 21–28 / 37–59). Short: 0.21 / 0.35 / 0.40–0.57. Gates (2 and 5 ms) not met.
+- **builders**, full length: 3.7–3.8 / 53.7–64.6 / 80–90 ms, its most work 1,508 at tick 127 (gate 4,792); 26 ms p50 measured before by the parent. It ran only after the hull fix (it panicked before).
+- **lumberjack's work** at short length 41 → 52 at tick 145: two players' torsos pressed together, their faces' friction now kept. Its ceiling raised 50 → 57 (`play/tests.rs`): a gate raised, for the parent to confirm.
+
+### Goldens renewed
+
+Play and stress at both lengths. Motion changes: crates and boxes on one another (friction kept, edges across faces), trunks (edges across faces); with ADR-0034's self-contacts *cars* (569.3 kJ of plastic work against 568.5, 80 members buckled) and the G2.8 scenes. `planet_physics_is_bit_identical_across_platforms` renewed with its note.
+
+### Where this leaves G2.0
+
+The hops are gone: one physical contact keeps one representation from step to step, and friction keeps what a step built. What keeps felled trunks awake now is an undamped elastic mode of sticking contacts (the anchors' springs, e = 0.1 mm) and a trunk resting on a held player. Next (`docs/future-improvements.md`): damping the stick springs within Coulomb's cone, or a stiffer stick so that mode is fast and the face dashpots reach it.
