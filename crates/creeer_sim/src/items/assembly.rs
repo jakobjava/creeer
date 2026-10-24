@@ -102,7 +102,10 @@ impl Assembly {
     pub fn swinging(&self) -> Swinging {
         let mass = self.mass();
         let (mut inertia, mut moment) = (0.0, DVec3::ZERO);
-        let (mut strike, mut head) = (0.0, 0);
+        // What strikes: the farthest out of the parts with an edge, if any has one (a small
+        // flake in a split haft's end reaches a little less far than the haft: the haft's blunt
+        // end struck, and every blow broke the tool, G2.8, the user's play); else the farthest.
+        let (mut strike, mut head, mut edged) = (0.0, 0, false);
         for (k, p) in self.parts.iter().enumerate() {
             let m = p.piece.mass();
             let own = DMat3::from_quat(p.turn)
@@ -111,8 +114,9 @@ impl Assembly {
             inertia += own.z_axis.z + m * (p.at.x * p.at.x + p.at.y * p.at.y);
             moment += p.at * m;
             let reach = (p.at.truncate() + p.half().truncate()).length();
-            if reach > strike {
-                (strike, head) = (reach, k);
+            let sharp = p.piece.edge.is_some();
+            if (sharp && !edged) || (sharp == edged && reach > strike) {
+                (strike, head, edged) = (reach, k, sharp);
             }
         }
         Swinging {

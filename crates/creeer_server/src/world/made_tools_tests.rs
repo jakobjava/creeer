@@ -130,3 +130,107 @@ fn a_made_axe_cuts_a_felled_stem_through_and_holds_together() {
         "it cut nothing: {notes:?}"
     );
 }
+
+/// The whole of it as a player does it (the user's play, G2.8): a chert core knapped with a
+/// hammerstone, a branch stripped, the sharpest flake bound on, and a standing tree struck.
+#[test]
+fn a_tool_made_by_hand_cuts_a_standing_tree_and_holds_together() {
+    let (mut w, ada, t, tree, east) = feller();
+    stand(&mut w, ada, &t, east, tree.radius(0.7) + 0.6);
+    w.apply(&Command::Wield { tool: None }, Some(ada)).unwrap();
+    let feet = w.world.bodies[w.index(ada).unwrap()].structure.position[0];
+    let up = feet.normalize();
+    let side = east.cross(up).normalize();
+    let ground = |w: &ServerWorld, d: DVec3| w.ground_under(feet + d);
+    let turn = creeer_math::glam::DQuat::from_rotation_arc(DVec3::Z, up);
+    let lump = |m: &str, rho: f64, s: DVec3| {
+        Item::Piece(Piece::solid(m, rho, Form::Lump { size: s }), Vec::new())
+    };
+    let at = ground(&w, side * 0.5);
+    w.lay(
+        lump("chert", 2580.0, DVec3::new(0.14, 0.10, 0.06)),
+        at,
+        turn,
+    );
+    let at = ground(&w, -side * 0.5);
+    let hammer = w.lay(
+        lump("basalt", 2900.0, DVec3::new(0.10, 0.08, 0.06)),
+        at,
+        turn,
+    );
+    let branch = Piece::solid(
+        "spruce_green",
+        800.0,
+        Form::Rod {
+            radius: 0.015,
+            length: 0.6,
+        },
+    );
+    let at = ground(&w, -east * 0.4);
+    let stick = w.lay(Item::Piece(branch, Vec::new()), at, turn);
+    let pick = |w: &mut ServerWorld, loose: u64| {
+        w.apply(
+            &Command::Pick {
+                loose,
+                pocket: false,
+            },
+            Some(ada),
+        )
+        .unwrap();
+        wait(w, ada, 30);
+    };
+    let chert = |w: &ServerWorld| -> Vec<u64> {
+        let mut c: Vec<(u64, f64)> = (w.items.laid.iter())
+            .filter(|(_, l)| matches!(&l.0, Item::Piece(p, _) if p.material == "chert"))
+            .map(|(k, l)| (*k, l.0.mass()))
+            .collect();
+        c.sort_by(|a, b| b.1.total_cmp(&a.1));
+        c.into_iter().map(|c| c.0).collect()
+    };
+    pick(&mut w, hammer);
+    for _ in 0..3 {
+        let core = chert(&w)[0];
+        #[allow(clippy::cast_precision_loss)]
+        let started = w.tick as f64;
+        w.apply(
+            &Command::StrikeLoose {
+                loose: core,
+                started,
+            },
+            Some(ada),
+        )
+        .unwrap();
+        wait(&mut w, ada, 130);
+    }
+    w.apply(&Command::Drop, Some(ada)).unwrap();
+    wait(&mut w, ada, 30);
+    pick(&mut w, stick);
+    w.apply(&Command::Strip, Some(ada)).unwrap();
+    wait(&mut w, ada, 30);
+    let sharp = |w: &ServerWorld, k: u64| matches!(&w.items.laid[&k].0, Item::Piece(p, _) if p.edge.is_some_and(|e| e.angle < 0.8));
+    let flake = (chert(&w).into_iter()).find(|&k| sharp(&w, k));
+    let flake = flake.unwrap_or_else(|| panic!("no flake: {:?}", w.take_notes()));
+    w.apply(&Command::BindLying(flake), Some(ada)).unwrap();
+    wait(&mut w, ada, 30);
+    println!("{:?}", w.take_notes());
+    for _ in 0..5 {
+        #[allow(clippy::cast_precision_loss)]
+        let now = w.tick as f64;
+        let strike = Command::StrikeTree {
+            tree: t.id,
+            height: 0.7,
+            started: now,
+        };
+        w.apply(&strike, Some(ada)).unwrap();
+        wait(&mut w, ada, 120);
+        let notes = w.take_notes();
+        println!("{notes:?}");
+        assert!(
+            w.carried(ada).is_some(),
+            "the made axe came apart: {notes:?}"
+        );
+        // Its flake cuts (its haft's blunt end struck, bruising the bark, G2.8).
+        let cut = notes.iter().any(|(_, n)| n.contains("notch"));
+        assert!(cut, "it cut nothing: {notes:?}");
+    }
+}
