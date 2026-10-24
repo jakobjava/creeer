@@ -56,8 +56,6 @@ mod save;
 pub mod shape;
 mod sleep;
 mod stepping;
-#[cfg(test)]
-mod stick_tests;
 pub mod strut;
 #[cfg(test)]
 mod strut_tests;

@@ -1,9 +1,10 @@
 //! Static friction between bodies, kept from step to step (G2.0, ADR-0024): a face's patch
-//! has its corners on body A, whose friction points and anchors are both material points.
+//! with its corners on B keeps its stick offset, as a rolling contact does.
 
-use super::shape::{Shape, StaticShape};
-use super::*;
+use crate::world::shape::{Shape, StaticShape};
+use crate::world::*;
 use creeer_math::det;
+use creeer_math::glam::DVec3;
 
 const DT: f64 = 1.0 / 60.0;
 

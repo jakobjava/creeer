@@ -193,3 +193,6 @@ fn a_ball_spinning_on_the_ground_stops() {
     }
     assert!(world.bodies[0].sleep.asleep, "spins at {}", spin(&world));
 }
+
+#[path = "stick_tests.rs"]
+mod stick;
