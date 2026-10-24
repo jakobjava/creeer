@@ -39,6 +39,7 @@ impl ServerWorld {
         let Some(Item::Made(made)) = self.items.bodies.get(&held) else {
             return;
         };
+        let force = force * making::binding_share(made);
         if force <= made.hold {
             return;
         }

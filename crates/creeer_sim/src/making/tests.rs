@@ -292,7 +292,8 @@ fn a_split_hafted_flake_holds_its_own_blows_into_a_tree() {
             let swing = strike::swing_of(s.mass, s.gyration, s.carry, s.strike);
             let energy = 0.5 * swing.mass * swing.speed * swing.speed;
             let cut = crate::trees::chop::chopped(energy, edge, 5e6);
-            let force = crate::dig::peak_force(energy, cut, (swing.mass * swing.speed, 0.002));
+            let force = crate::dig::peak_force(energy, cut, (swing.mass * swing.speed, 0.002))
+                * binding_share(&made);
             assert!(
                 force < made.hold,
                 "{long} m on {length} m: {force:.0} N on {:.0}",
@@ -300,4 +301,54 @@ fn a_split_hafted_flake_holds_its_own_blows_into_a_tree() {
             );
         }
     }
+}
+
+/// The user's tool (G2.8): a 14 × 10 × 5 cm chert core, its 70° edge outward, lashed across the
+/// end of a 1.19 m, 44 mm C24 spruce stick (too thick for its split), holds its blows into a
+/// tree: the tree stops the 0.8 kg head, the binding only the stick behind it.
+#[test]
+fn a_heavy_core_lashed_on_a_long_stick_holds_its_blows_into_a_tree() {
+    let haft = Piece::solid(
+        "spruce_c24",
+        420.0,
+        Form::Rod {
+            radius: 0.022,
+            length: 1.19,
+        },
+    );
+    let mut core = Piece::solid(
+        "chert",
+        2580.0,
+        Form::Lump {
+            size: DVec3::new(0.14, 0.10, 0.05),
+        },
+    );
+    core.edge = Some(Edge {
+        angle: CORE_ANGLE,
+        length: 0.1,
+        radius: 2e-5,
+    });
+    let bast = Piece::solid(
+        "spruce_bast",
+        600.0,
+        Form::Block {
+            size: DVec3::new(0.9, 0.02, BARK),
+        },
+    );
+    let edge = core.edge;
+    let made = bind_split(haft, core, bast, 20e6, Some(1.8e6)).expect("binds");
+    let s = made.swinging();
+    let swing = strike::swing_of(s.mass, s.gyration, s.carry, s.strike);
+    let energy = 0.5 * swing.mass * swing.speed * swing.speed;
+    let cut = crate::trees::chop::chopped(energy, edge, 5e6);
+    let whole = crate::dig::peak_force(energy, cut, (swing.mass * swing.speed, 0.002));
+    let borne = whole * binding_share(&made);
+    println!(
+        "{energy:.0} J, {:.1} kN at the edge, {:.1} kN on the binding's {:.1} kN",
+        whole / 1e3,
+        borne / 1e3,
+        made.hold / 1e3
+    );
+    // The game said of the user's: "it holds 6593 N" (its strip longer than this one: 1.2 kN).
+    assert!(borne < 6593.0, "{borne:.0} N");
 }

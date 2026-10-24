@@ -205,6 +205,32 @@ pub fn bind_split(
     })
 }
 
+/// The share of a blow's force on `made`'s striking head that its binding bears. What it
+/// strikes stops the head; the binding only stops the rest of the tool behind it. The head
+/// taken as its mass at the striking point and the rest as its own effective mass there, the
+/// binding bears J = F · m_rest / (m_rest + m_head). (Taken as all of F, a 0.8 kg core lashed on
+/// a 1.2 m stick came off at its first blow into a tree, G2.8, the user's play.)
+pub fn binding_share(made: &Assembly) -> f64 {
+    let s = made.swinging();
+    let Some(head) = made.parts.get(s.head) else {
+        return 1.0;
+    };
+    let rest = Assembly {
+        parts: (made.parts.iter().enumerate())
+            .filter(|(k, _)| *k != s.head)
+            .map(|(_, p)| p.clone())
+            .collect(),
+        bindings: Vec::new(),
+        hold: 0.0,
+    };
+    if rest.parts.is_empty() {
+        return 1.0;
+    }
+    let r = rest.swinging();
+    let behind = crate::strike::swing_of(r.mass, r.gyration, r.carry, s.strike).mass;
+    behind / (behind + head.piece.mass())
+}
+
 /// The pieces a made thing falls into when it comes apart.
 pub fn apart(made: Assembly) -> Vec<Item> {
     (made.parts.into_iter())
