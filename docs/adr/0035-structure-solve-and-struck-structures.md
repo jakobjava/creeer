@@ -126,3 +126,17 @@ The kernels cost nothing at run time beyond one indirect call per row range (`mu
 
 - P2's targets: the reference tick (needs the members' evaluation in SIMD, bit for bit) and eight structures at once (needs fewer bytes a solve: a decision on mixed precision).
 - P3's targets: subcycling for large struck structures; the crash's iterations and plastic splits.
+
+## G2.8: refactorisations that changed nothing (2026-10-24)
+
+The *tower* play scene (17 × 20 × 17 bays, about 19,600 beams) took 2.2–3 s a tick every few ticks: each tick was a factorisation of its matrix. The structure refactorises when its contact blocks change by more than half their own size. The air's dashpots on its 6,000 nodes (a few N·s/m each, doubling and halving with the breeze) did that all the time, and so did the contacts of its clamped base nodes.
+
+**Kept:**
+- A held-fast node's blocks are left out: they are masked out of the matrix anyway.
+- Air's and water's blocks (dashpots, added mass) change materially only by more than half their own **and** more than a hundredth of the node's inertia in the matrix (m/β², the blocks entering it × β²).
+- Contacts are judged as ever. Without air or water on a structure, the rule is exactly the old one.
+- The tower's worst tick: 3.0 s → 0.12–0.2 s. Every stress and play hash is unchanged; only the tower's own changed.
+
+**Measured and rejected:** the same materiality for contacts too. It moved the save fixtures' steel frame (it changed when that frame refactorised), and seven fixture tests failed: they hold that motion bit for bit.
+
+**Still open (the user decided on 2026-10-24 to record it and move on):** the tower runs p50 28 ms at full length and about 120 ms a tick while awake. The cost is its solve and factorisation, against the 5 ms gate.

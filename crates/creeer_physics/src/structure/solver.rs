@@ -100,12 +100,11 @@ pub struct ImplicitSolver {
     pub(super) factor_broken: Vec<bool>,
     /// Scratch: each node's rotation since then.
     pub(super) turns: Vec<DMat3>,
-    /// Stiffness of the contacts at nodes (3×3 translation blocks, by node) in the
-    /// factorised matrix.
+    /// Blocks at nodes in the factorised matrix: all (contacts, air, water); air's and water's.
     pub(super) contact_blocks: Vec<(usize, DMat3)>,
+    pub(super) air_blocks: Vec<(usize, DMat3)>,
     pub(super) chol: Cholesky,
-    /// The factor applied to the unit translations at nodes a coupled solve asked for (node,
-    /// its three columns), solved once per factorisation (`coupled.rs`).
+    /// The factor at the unit translations a coupled solve asked for (`coupled.rs`).
     pub(super) unit_columns: Vec<(usize, [Vec<DVec3>; 3])>,
     pub(super) previous_x: Vec<DVec3>,
     pub(super) previous_v: Vec<DVec3>,
@@ -242,6 +241,7 @@ impl ImplicitSolver {
             factor_broken: Vec::new(),
             turns: vec![DMat3::IDENTITY; n],
             contact_blocks: Vec::new(),
+            air_blocks: Vec::new(),
             chol: Cholesky::new(structure.symbolic()),
             unit_columns: Vec::new(),
             previous_x: structure.position.clone(),

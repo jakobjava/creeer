@@ -77,11 +77,12 @@ pub(super) fn minimise(members: &mut [Member<'_>], coupling: &mut dyn Coupling) 
     // it changed materially, judged without the joints a joint solve takes exactly).
     let joints = Coupled::joints(members, coupling, &rigid, system.as_ref());
     for (m, (s, v)) in members.iter_mut().enumerate() {
-        let mut blocks = coupling.node_stiffness(m);
-        blocks.extend(s.dashpot_blocks(v.work.beta, v.work.dashpot_scale));
-        blocks.extend(s.added_blocks(v.work.beta));
+        let blocks = coupling.node_stiffness(m);
+        let mut air = s.dashpot_blocks(v.work.beta, v.work.dashpot_scale);
+
+        air.extend(s.added_blocks(v.work.beta));
         let exempt: Vec<usize> = joints.iter().filter(|j| j.0 == m).map(|j| j.1).collect();
-        if !s.elements.is_empty() && v.use_contact_stiffness(s, blocks, &exempt) {
+        if !s.elements.is_empty() && v.use_contact_stiffness(s, (blocks, air), &exempt) {
             v.update_turns(s);
         }
     }
