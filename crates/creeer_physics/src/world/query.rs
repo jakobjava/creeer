@@ -139,7 +139,24 @@ impl World {
         let body = &self.bodies[index];
         let s = &body.structure;
         let mut out = Vec::new();
+        // A face's patch (four corners in a row, the last with index 3) touches where it
+        // presses: its pressing polygon's middle, on B, at the polygon's least gap. Its corners
+        // are its rectangle's, which may lie far beyond (a pole's face lying across another
+        // pole: a corner 0.8 m from where they cross).
+        let mut corners: Vec<RawContact> = Vec::new();
         let mut keep = |c: RawContact, other| {
+            let c = match &c.patch {
+                None => c,
+                Some(v) => {
+                    corners.push(c.clone());
+                    if v.index < 3 || corners.len() < 4 {
+                        return;
+                    }
+                    let middle = pressed_middle(&corners[corners.len() - 4..]);
+                    corners.clear();
+                    middle
+                }
+            };
             let g = gap(&c);
             if g < margin {
                 out.push(Touch {
@@ -180,6 +197,38 @@ impl World {
             }
         }
         out
+    }
+}
+
+/// A patch's four corners as one contact: at its pressing polygon's middle (on both sides),
+/// with the polygon's least gap.
+fn pressed_middle(four: &[RawContact]) -> RawContact {
+    let at = |points: [DVec3; 4], [s, t]: [f64; 2]| {
+        points[0] * ((1.0 - s) * (1.0 - t))
+            + points[1] * (s * (1.0 - t))
+            + points[2] * (s * t)
+            + points[3] * ((1.0 - s) * t)
+    };
+    let a: [DVec3; 4] = std::array::from_fn(|k| four[k].point_a);
+    let b: [DVec3; 4] = std::array::from_fn(|k| four[k].point_b);
+    let normal = four[0].normal;
+    let domain = four[0].patch.as_ref().map(|v| v.domain.points().to_vec());
+    let points = domain.unwrap_or_default();
+    #[allow(clippy::cast_precision_loss)] // a few corners
+    let n = points.len().max(1) as f64;
+    let middle = points
+        .iter()
+        .fold([0.0, 0.0], |m, p| [m[0] + p[0] / n, m[1] + p[1] / n]);
+    let least = points
+        .iter()
+        .map(|&p| normal.dot(at(a, p) - at(b, p)))
+        .fold(f64::INFINITY, f64::min);
+    let on_b = at(b, middle);
+    RawContact {
+        point_a: on_b + normal * least,
+        point_b: on_b,
+        patch: None,
+        ..four[0].clone()
     }
 }
 

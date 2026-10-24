@@ -330,10 +330,15 @@ impl World {
         contact.radius_a = raw.radius_a;
         contact.radius_b = raw.radius_b;
         contact.bump = super::ground_rise::is_bump(&raw);
+        contact.projected = raw.patch.as_ref().is_some_and(|v| !v.corner_on_a);
         let kept = anchors.find((a, na), local_a, b);
-        if contact.rolls() {
+        if contact.rolls() || contact.projected {
             // A contact with a sphere: the anchor lies under A's surface point, less the
-            // stick offset carried over from the last step (`friction.rs`).
+            // stick offset carried over from the last step (`friction.rs`). So does a face's
+            // corner on B, whose point on A is where it falls on A's face, found afresh: kept
+            // as B's corner, its anchor was under A's point again each step, the slip a step
+            // had built was forgotten by the next, and a crate on a crate crept down a ramp
+            // well within its friction (4.5 mm in 2 s, G2.0).
             let slip = match kept {
                 Some(anchor::Kept::Slip(u)) => u,
                 _ => DVec3::ZERO,

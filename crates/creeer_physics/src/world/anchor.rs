@@ -128,7 +128,7 @@ pub fn after_step(bodies: &[&mut Body], group: &[usize], contacts: &Contacts) ->
                 } => Some((group[mb], nb)),
                 Side::Fixed(_) => None,
             };
-            let kept = if c.rolls() {
+            let kept = if c.rolls() || c.projected {
                 Kept::Slip(contacts.end_slip(i, &states))
             } else {
                 let moved = contacts.moved_anchor(i, &states);
