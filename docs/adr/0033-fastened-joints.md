@@ -244,7 +244,7 @@ The user asked to build with the trees that stand ("nail something to it"). A pa
 - End to end in survival: bark stripped into a pocket, the branch put down, nails refused, then J at the trunk with `bast_lashing`. Lashed after 30 s, the strip gone into the structure's items.
 - Physics: a bar fixed to the world at one end by `fix_to` and pinned at the other slips by half its weight over K, its fixed node unmoved.
 
-The play and stress goldens are unchanged: their scenes keep within the spawn's clearing, where no tree stands.
+The play and stress hashes are unchanged at both lengths: their scenes keep within the spawn's clearing, where no tree stands, and *lumberjack*'s felling has nothing fastened to let go. (*toolmaking*'s differs from its golden at both lengths, as it did before this change, from the made tools' commits since the goldens were last renewed: left for that work to renew.)
 
 **Limits** (also in `docs/future-improvements.md`):
 - The tree does not bend, sway, grow or take the load: nothing fastened to it pulls it over or breaks it, and wind does not work its joints loose.
