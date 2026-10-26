@@ -1,0 +1,13 @@
+Measured and rejected (G2.9, ADR-0005 "A rod against a narrow hole's rim"): the energy guard holds
+the contacts found at a step's start to what the last step left in them wherever the bodies are,
+not only where the last step ended. Measured with NOFILTER=1 set.
+
+--- a/crates/creeer_physics/src/structure/group.rs
++++ b/crates/creeer_physics/src/structure/group.rs
+@@ -157,5 +157,6 @@
+             let left = coupling.carried().filter(|_| {
++                std::env::var("NOFILTER").is_ok() ||
+                 members.iter().all(|(s, v)| {
+                     s.position == v.snapshot.end_x && s.orientation == v.snapshot.end_q
+                 })
+             });

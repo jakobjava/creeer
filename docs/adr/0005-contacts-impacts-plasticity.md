@@ -402,3 +402,70 @@ Impact substeps exist so a crash does its plastic work. Now, for a face's landin
 | All 8 bodies asleep | — | by 2 s |
 
 A ball's impact keeps its substeps as before. They also resolve a light joint ringing against what it strikes, and the saved fixtures hold that motion bit for bit. Measured and rejected: the same rule for every impact. A steel frame dropped 10 cm on its node balls (the save fixtures' scene) then skipped its landing's substeps. It settled to the same rest, but by another path, and seven fixture tests failed. Every crush and impact test passes unchanged, and every stress and play hash is unchanged.
+
+## Amended in G2.9 (2026-10-26): a rod against a narrow hole's rim
+
+A 3 m green spruce pole (a 16-sided prism hull, 27 kg) was raised by one end and walked under, its foot in a hole the player's blows dug (a capsule 15 cm in radius, 0.7 m deep, its rim rounded over 15 cm). It came up to 44° from the vertical with its foot 24 cm down the hole. Then one step it stood still, and the next it moved at 1,254 m/s. Left alone leaning in the same hole at 60°, it reached 20.7 m/s 51 ticks in.
+
+### The cause: the terrain's gradient on the hole's axis
+Found by printing, for the pole's group, every contact's gap and normal, the contacts' elastic energy at each step's start and end, the energy guard's books, and every face point the ground was put more than 2 cm into (the point, its foot, the density at both, the gradient's length).
+- **Near edits the gradient was central differences over 1 cm** (`Terrain::density_gradient`). Inside a dug hole the density is the brush's: 0.15 m − r at a distance r from its axis, a ridge along the axis. Within 1 cm of it the differences straddled the ridge, and the gradient shrank to r/1 cm: 0.027 at 0.27 mm from the axis, 0.15–0.46 a few millimetres out.
+- **The projection to the ground** (`ground::project`, two Newton steps d/|∇d|) then stepped 0.147/0.027 = 5.4 m. A point of the pole's face in the air, 15 cm from the wall (d = +0.147), was given a foot 0.3–5.4 m away on other ground. That ground's tangent plane put the point 2–20 cm inside it.
+- **A face patch was found holding 443,676 J** at a step's start, where the last step had left 4.6 J. The guard took that surplus from the motion (all of it: the pole stood still), but 81 kJ stayed in the contacts. The next step found 151 MJ.
+- **That step was redone in substeps** (the hull turned fast, `turn.rs`). Restoring a rigid body (`NodeState`) did not restore where the guard had seen it end, so the redo held its contacts to nothing. It found 2.5 GJ and turned 1.08 GJ of it into motion: 1,254 m/s.
+
+### Decision
+- **The edited density's gradient is exact** (`creeer_terrain/src/edit_gradient.rs`): the generated ground's exact gradient, as away from edits, carried through each edit's rounded max or min. Quilez's polynomial smooth minimum min(a, b) − k/4·h² has the gradient (1 − h/2)·∇low + h/2·∇high: a weighted mean of its two sides' gradients, continuous across the round.
+  - The value is the density's, bit for bit. The gradient agrees with fine differences to 10⁻⁴ around the hole, its walls and its rim.
+  - Next to the axis it keeps unit length, and the projection lands on the nearer wall.
+- **On a brush's axis itself the brush gives no slope.** Exactly there its distance has none: every direction across the axis is as steep. What is left is the round's share of the ground's gradient.
+  - `Brush::gradient` takes the world's y there. A blow struck where the last blow had dug its brush from took the hole's surface as facing along y, found no rock 2 cm behind it, and dug no more (`a_stone_heads_edge_wears_and_blunts`).
+- **A rigid body put back for a redone step keeps the guard's record of where its last step ended** (`structure/history.rs`), as a structure's whole clone already did.
+  - In *builders* (1,800 ticks) the guard had let 104 J of energy found anew pass unbooked in redone steps, 9.9 J at most at once; now 0.23 J.
+  - In *log_bridge* one redo had let 338 MJ pass; now 84 J in all. The rest is bodies moved between steps (Limits).
+- The raising controller (`raising.rs`, ADR-0027) is unchanged: the walk-up passes as written.
+
+### Prior work
+| Source | What it does | For Creëer |
+|---|---|---|
+| Quilez, "Smooth minimum" (iquilezles.org, 2013, revised 2019) | The polynomial smooth min, and its gradient as a mix of its two sides' gradients | The rounds' gradient used here, exact for the field the meshes and contacts read |
+| Quilez, "Normals for an SDF" (iquilezles.org) | Normals by central or tetrahedral differences with a small ε; right where the field is smooth | Differences fail across a ridge or crease of the field, as measured here |
+| Griewank & Walther, *Evaluating Derivatives* (SIAM, 2008) | Forward-mode differentiation: each operation carries its value and its gradient | How the gradient is carried through the edits in order |
+| Clarke, *Optimization and Nonsmooth Analysis* (1983) | A distance function has no gradient on its medial axis; its generalised gradient there is a set whose least element is the least slope | No slope from a brush exactly on its axis |
+| Hart, "Sphere tracing" (*The Visual Computer*, 1996) | Steps along a distance field bounded by its Lipschitz constant, never overshooting | A bounded step for the projection where \|∇d\| collapses: not needed with an exact gradient (Limits) |
+| PhysX (maxDepenetrationVelocity), Bullet (split impulse), Catto (Box2D: Baumgarte, pseudo-velocities) | A body found overlapping is pushed out with capped or discarded velocity | The guard's surplus does the same for one step; what stays in the contacts is not yet held to it (Limits) |
+
+### Measured and rejected
+| Tried | Measured | Why rejected |
+|---|---|---|
+| **The exact gradient with `Brush::gradient`'s own value on the axis** (the world's y) | *a_stone_heads_edge_wears_and_blunts*: after the first blow every blow found no rock behind the surface, and the chert edge stayed at 5 µm (it must blunt) | A direction the field does not have. Replaced by no slope from the brush (above) |
+| **The guard holding contacts found anew to what the last step left wherever the bodies are**, not only where it ended them (`docs/adr/0005/guard-books-anywhere.diff`) | The pole set 0.3 m into the rim at 45° and 60° (the probe below; 673 kJ in its contacts at the start): fastest 1.07 and 7.99 m/s, against 2.01 and 13.5. Every test passed; *builders* and *log_bridge* changed their hashes at full length | It reaches every body moved between steps, unmeasured there: the client's predicted avatar reset to the server's state (`predicted.rs`), frame changes, settling. Left for a change of its own (Limits) |
+
+### Validation added
+- `creeer_terrain/src/edit_gradient_tests.rs`:
+  - Around the hole, its walls, its rim and the ground beyond, the gradient matches fine differences, and the value is the density's bit for bit.
+  - 0.3 mm, 3 mm and 3 cm from the axis it has unit length and points to the axis, and two projection steps land within 1 µm of the nearer wall.
+  - On the axis itself it is about none, not y.
+- `creeer_server/src/world/rim_tests.rs`: the pole left leaning 10°, 20° and 30°, its foot 0.3 m down the hole against its east wall, slides down and rests on the rim.
+  - Fastest 2.65, 2.11 and 1.14 m/s. The gate is 4.1 m/s: falling the hole's whole depth, 0.85 m.
+  - Its energy is never above where it started (gate 10 mJ); it is at rest after 4 s.
+  - With central differences, at 30° it gained 36 J.
+- `raising_tests.rs`: the walk-up runs again. The pole comes up to 22° from the vertical with its foot 0.47 m down the hole, at 0.45 m/s at most throughout.
+- The probe (`probe_a_pole_leaning_in_a_hole`, ignored), fastest at 10°, 30°, 45° and 60°: 2.67, 2.85, 2.90 and 20.7 m/s before; 2.65, 1.14, 2.01 and 13.5 now.
+  - At 60° the 13.5 m/s is the first tick, out of the setup's 0.3 m overlap (673 kJ). After the third tick it is 1.09 m/s at most, and it ends leaning at 26°.
+  - Before, it stood dead 95 times in 4 s, was thrown at 20.7 m/s at tick 892, and ended lying at 89°.
+
+### Measured (development machine)
+- `Terrain::density_gradient` near an edit (200,000 points in and around the hole): 0.22 µs a call, against about 1.0 µs for seven densities' differences.
+- *quarry* (1,800 ticks, one heading, a release test): 0.38 s against 2.05 s; its Newton work 4,418 against 4,402.
+  - Its most in a tick went from 176 to 192 at tick 44: its four boulders rolling together in the pit's bottom. Their groups' work moved both ways (42 → 46, 66 → 77, 47 → 42 at ticks 41–44).
+  - The gate is raised from 185 to 211 (`play/tests.rs`).
+- Goldens renewed (`play`, `stress`), at the lengths where they changed:
+  - *quarry* and *toolmaking*: they dig, and their contacts near the edits see the exact gradient.
+  - *builders* and *log_bridge*: redone steps keep the guard's books.
+  - *server*'s 1,200-tick stress hash: it digs every ten seconds. At d72ea41 it already differed from its golden (5ddce697 against e10a03d0).
+
+### Limits (`docs/future-improvements.md`)
+- **Energy left in contacts after a surplus becomes the next step's.** The guard takes energy found anew from the motion only. What the contacts still hold at the step's end is what the next step holds them to. A body set down 0.3 m into the ground (673 kJ) is pushed out at up to 13.5 m/s.
+- **Bodies moved between steps are not held to the last step's books** (the rejected change above).
+- **A projection trusts |∇d|.** Exactly on a brush's axis the gradient is the round's share alone, about none, and `ground::project`'s step d/|∇d| is unbounded there. Only exactly on the axis, where no contact point has been seen.

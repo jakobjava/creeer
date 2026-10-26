@@ -105,7 +105,12 @@ const WORK: [(&str, u64, u64); 10] = [
     ("crowd", 183, 7_300),
     ("work", 216, 216),
     ("lumberjack", 57, 57),
-    ("quarry", 185, 185),
+    // G2.9's rim fix (ADR-0005): 176 → 192 at tick 44, its four boulders rolled together in
+    // the pit's bottom, the terrain's gradient there now exact (not differences over 1 cm).
+    // Its groups' work moved both ways (42 → 46, 66 → 77, 47 → 42 iterations, ticks 41–44),
+    // the scene's whole work by 0.4 % (4,402 → 4,418). A tenth above. (To be confirmed by the
+    // parent: a gate raised.)
+    ("quarry", 211, 211),
     ("toolmaking", 135, 135),
     // G2.8, measured 2026-10-24 (a tenth above): the towers' Newton works little, their
     // factorisations much; the builders' loose poles never rest (ADR-0024, G2.0's open hull
