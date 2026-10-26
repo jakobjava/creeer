@@ -157,7 +157,7 @@ G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.
 
 | Step | State |
 |---|---|
-| G2.0 Rest | Part done: ground bumps keep their identity, and a lone felled trunk rests (ADR-0024). Hull–hull contacts still hop, so logs on logs never rest: being fixed (persistent hull contacts) |
+| G2.0 Rest | Mostly done (ADR-0024, "G2.0: at rest", 2026-10-26): ground bumps keep their identity; hull–hull contacts no longer hop (edges across faces are patches, faces in one plane pressed together); the energy guard no longer lets in energy in proportion to what resting contacts hold. In *lumberjack* logs lying on logs sleep 3.5 s after the last blow (they never did), and a tick with the parts lying costs 1.7 ms instead of 6.9. Gate not met: a trunk resting on a standing player rocks on at 1–3 mrad/s (the legs' struts give the guard 82 mJ a step of slack, and a standing character's step gains up to 30 mJ: its legs' work must be booked first), and one trunk sleeps at 5.1 s |
 | G2.1 Joints | Done (ADR-0033) |
 | G2.2 Parts and fasteners | Done: nails, pegs and lashings from EN 1995-1-1; panels are boards fastened side by side (a grillage). Riven boards: not yet |
 | G2.3 Building by hand | Done: fasten (J/K), timed, survival rules, parts as members, records saved (v14) |
