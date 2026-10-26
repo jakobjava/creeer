@@ -36,21 +36,23 @@ pub(super) fn trial_states<'a>(members: &'a [Member<'_>]) -> Vec<MemberState<'a>
         .collect()
 }
 
-/// Energy may rise by this fraction of the kinetic + elastic energy (before or after the
-/// step, whichever is larger) before the guard rejects a Newmark step (rounding, Newmark's
-/// bounded energy oscillation, and its second-order error in fields that vary in space).
+/// Energy may rise by this fraction of the energy in motion before the guard rejects a step
+/// (rounding, Newmark's bounded energy oscillation, and its second-order error in fields that
+/// vary in space): the kinetic and elastic energy before or after the step, whichever is
+/// larger, but of the contacts' energy (found anew each step) only what it changed by in the
+/// step (`step_group_with`).
 const ENERGY_SLACK: f64 = 1.0e-3;
 
-/// Total energy (kinetic, elastic, potential of gravity and loads, coupling) and its
-/// kinetic + elastic part. Member elastic energies come from the last minimisation when it
-/// has `just_minimised` the members, or when the state is unchanged since (checked bit for
-/// bit). Right after a minimisation only its value is right: the step's plastic flow is not
+/// Total energy (kinetic, elastic, potential of gravity and loads, coupling), its kinetic +
+/// elastic part less the contacts' energy found anew, and that. Member elastic energies come
+/// from the last minimisation when it has `just_minimised` the members, or when the state
+/// is unchanged since (checked bit for bit). Right after a minimisation only its value is right: the step's plastic flow is not
 /// yet permanent, and the members' own elastic energy would count it as stored.
 fn group_energy(
     members: &[Member<'_>],
     coupling: &dyn Coupling,
     just_minimised: bool,
-) -> (f64, f64) {
+) -> (f64, f64, f64) {
     let mut total = (0.0, 0.0);
     for (s, v) in members {
         let unchanged =
@@ -64,8 +66,8 @@ fn group_energy(
         total.0 += kinetic + elastic + potential;
         total.1 += kinetic + elastic;
     }
-    let contact = coupling.elastic_energy(&states(members));
-    (total.0 + contact, total.1 + contact)
+    let (contact, found) = coupling.elastic_and_found(&states(members));
+    (total.0 + contact, total.1 + contact - found, found)
 }
 
 /// Where a member started a substep, and its dashpots' forces then.
@@ -147,7 +149,7 @@ pub fn step_group_with(
     for _ in 0..substeps {
         if guard {
             let t = Instant::now();
-            let (before, active) = group_energy(members, coupling, false);
+            let (before, active, held) = group_energy(members, coupling, false);
             // What the coupling, found anew, holds beyond what the last step left in it (a
             // crate's faces fitted again to the curved ground under them: a millijoule a step
             // that kept it rocking for good, F6) is no one's. It may not become motion, and no
@@ -201,13 +203,23 @@ pub fn step_group_with(
             members[0].1.timings.guard += t.elapsed();
             substep(members, coupling, scheme);
             let t = Instant::now();
-            let (after, active_after) = group_energy(members, coupling, true);
+            let (after, active_after, held_after) = group_energy(members, coupling, true);
             let after = net(members, after, scheme, coupling.driven_work());
             members[0].1.timings.guard += t.elapsed();
             // The slack scales with the energy in motion before or after the step, whichever
             // is larger: a body starting from rest in a varying field (planet gravity) makes
-            // a genuine second-order energy error that the 1 nJ floor alone would reject.
-            let limit = before + ENERGY_SLACK * active.max(active_after) + 1e-9;
+            // a genuine second-order energy error that the 1 nJ floor alone would reject. Of
+            // the contacts' elastic energy only what the step changed is in motion: the rest
+            // is the bodies' weight held on them. Taken whole, it let an 82 kg log lying across
+            // another gain up to 62 µJ a step (a thousandth of the 62 mJ its contacts held),
+            // more than the 0.2 mJ of its rocking lost to its dashpots, and it rocked at
+            // 5–16 mrad/s for good, five times their damping no matter (ADR-0024, "G2.0: at
+            // rest"). A ball's bounce or a crate's landing changes it by as much as it holds. The
+            // joints' and struts' energy counts whole: a standing character's step, its legs'
+            // struts holding 20 J, gains up to 30 mJ, and taken by their change alone a thousand
+            // such steps more were redone (the builders scene's most work 1,312 → 2,801).
+            let moving = active.max(active_after) + (held_after - held).abs();
+            let limit = before + ENERGY_SLACK * moving + 1e-9;
             let (mut after, mut removed) = (after, false);
             if after > limit {
                 // Fall back to ever more dissipative schemes; in non-convex contact situations
