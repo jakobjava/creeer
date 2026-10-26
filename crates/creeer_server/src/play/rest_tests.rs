@@ -64,9 +64,20 @@ fn lumberjack_s_trunks_sleep_within_5_s_of_the_last_blow() {
     }
     let mut tick = s.ticks.0;
     let mut since = None;
+    // Each part's last tick awake, and the ticks' cost from 10 s after the last blow.
+    let mut last_awake = vec![0; play.server.world.world.bodies.len()];
+    let (mut ms, mut lying) = (0.0, 0);
     while tick < last_blow + 900 {
-        play.tick(&still);
+        let t = play.tick(&still);
+        if tick >= last_blow + 600 {
+            (ms, lying) = (ms + t.ms, lying + 1);
+        }
         let w = &play.server.world.world;
+        for (i, b) in w.bodies.iter().enumerate() {
+            if !b.held && !b.sleep.asleep && i < last_awake.len() {
+                last_awake[i] = tick;
+            }
+        }
         let all = w.bodies.iter().all(|b| b.held || b.sleep.asleep);
         if all {
             since.get_or_insert(tick);
@@ -90,5 +101,13 @@ fn lumberjack_s_trunks_sleep_within_5_s_of_the_last_blow() {
         .collect();
     let after = since.map(|t| f64::from(t.saturating_sub(last_blow)) / 60.0);
     println!("last blow at tick {last_blow}; all asleep {after:?} s after it; awake: {awake:?}");
+    let slept: Vec<String> = (last_awake.iter().enumerate())
+        .filter(|(_, t)| **t > last_blow)
+        .map(|(i, t)| format!("{i}: {:.1} s", f64::from(t - last_blow) / 60.0))
+        .collect();
+    println!(
+        "last awake after the blow: {slept:?}; {:.2} ms a tick from 10 to 15 s after it",
+        ms / f64::from(lying.max(1))
+    );
     assert!(after.is_some_and(|t| t <= 5.0), "awake: {awake:?}");
 }

@@ -232,6 +232,16 @@ fn pressed_middle(four: &[RawContact]) -> RawContact {
     }
 }
 
+impl World {
+    /// The groups of the last step with their contacts, whose sides name members of the group
+    /// (`group[member]` is the body): for probes of what holds bodies awake.
+    pub fn group_contacts(&self) -> impl Iterator<Item = (&[usize], &[super::contact::Contact])> {
+        self.groups
+            .iter()
+            .map(|(g, c)| (g.as_slice(), c.list.as_slice()))
+    }
+}
+
 #[cfg(test)]
 #[path = "query_tests.rs"]
 mod tests;

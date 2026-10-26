@@ -287,6 +287,8 @@ fn finish(mut play: Play, ticks: Vec<Tick>, start: &[(u64, u64)]) -> Report {
 #[cfg(test)]
 mod rest_probe;
 #[cfg(test)]
+mod rest_stick_probe;
+#[cfg(test)]
 mod rest_tests;
 #[cfg(test)]
 mod tests;

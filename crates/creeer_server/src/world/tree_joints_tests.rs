@@ -175,7 +175,10 @@ fn overloaded_the_nail_lets_go_and_the_pole_falls() {
         }
     }
     assert!(gone, "the nail held 2.5 kN");
-    wait(&mut w, ada, 120);
+    // The 2.5 kN until the nail lets go flings the pole up to 5–6 m at about 20 m/s (with
+    // every build): after two seconds it was still in the air, its top 0.7 m up and falling, or
+    // 2.1 m (ADR-0024, "G2.0: at rest"). Five seconds see it down.
+    wait(&mut w, ada, 300);
     let s = &w.world.bodies[w.index(id).expect("the pole")].structure;
     let lowest = (s.position.iter()).map(|p| (*p - t.base).dot(t.turn * DVec3::Z));
     let highest = lowest.fold(f64::NEG_INFINITY, f64::max);
