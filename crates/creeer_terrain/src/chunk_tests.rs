@@ -32,18 +32,18 @@ fn surface(m: &TerrainMesh) -> &[u32] {
 
 #[test]
 fn keys_nest_and_locate_points() {
-    let k = key(3, -2, 5, 7);
+    let k = key(6, -2, 5, 7);
     assert_eq!(k.size(), 256.0);
     for child in k.children() {
         assert_eq!(child.parent(), k);
         assert_eq!(child.size() * 2.0, k.size());
     }
     let p = k.origin() + DVec3::new(1.0, 255.0, 100.0);
-    assert_eq!(ChunkKey::containing(p, 3), k);
-    assert_eq!(ChunkKey::containing(p, 0).parent().parent().parent(), k);
+    assert_eq!(ChunkKey::containing(p, 6), k);
+    assert_eq!(ChunkKey::containing(p, 3).parent().parent().parent(), k);
     // A chunk straddling the planet centre: nearest distance 0.
-    assert_eq!(key(0, -1, -1, -1).radial_range().0, 0.0);
-    let (near, far) = key(0, 10, 0, 0).radial_range();
+    assert_eq!(key(3, -1, -1, -1).radial_range().0, 0.0);
+    let (near, far) = key(3, 10, 0, 0).radial_range();
     assert!((near - 320.0).abs() < 1e-9 && far > 352.0);
 }
 
@@ -51,7 +51,7 @@ fn keys_nest_and_locate_points() {
 fn a_small_sphere_meshes_closed_and_on_its_surface() {
     let r = 9.3;
     let c = DVec3::splat(16.0);
-    let samples = ChunkSamples::from_fn(key(0, 0, 0, 0), |p| (p - c).length() - r);
+    let samples = ChunkSamples::from_fn(key(3, 0, 0, 0), |p| (p - c).length() - r);
     let m = mesh(&samples, |_, _| 1);
     assert!(!m.is_empty());
     // Closed: no open edges, so no caps, and V − E + F = 2 for a sphere.
@@ -88,7 +88,7 @@ fn neighbouring_chunks_join_without_gaps() {
     let mut welded: HashMap<[i64; 3], u32> = HashMap::new();
     let mut indices = Vec::new();
     for (x, z) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-        let k = key(0, x, 0, z);
+        let k = key(3, x, 0, z);
         let m = mesh(&ChunkSamples::from_fn(k, ground), |_, _| 0);
         for &i in surface(&m) {
             let p = m.positions[i as usize].as_dvec3() + k.origin();
@@ -117,7 +117,7 @@ fn chunks_on_the_real_planet() {
     let terrain = home();
     let dir = DVec3::new(0.2, 0.9, -0.4).normalize();
     let surface = dir * (terrain.planet().datum.radius(dir) + terrain.surface_height(dir));
-    let at = ChunkKey::containing(surface, 0);
+    let at = ChunkKey::containing(surface, 3);
     assert_eq!(terrain.occupancy(at), Occupancy::Mixed);
     let samples = terrain.sample_chunk(at);
     assert!(samples.has_surface());
@@ -125,15 +125,15 @@ fn chunks_on_the_real_planet() {
     assert!(m.triangle_count() > 500, "{} triangles", m.triangle_count());
     // Far above and deep below need no sampling.
     assert_eq!(
-        terrain.occupancy(ChunkKey::containing(surface + dir * 9000.0, 0)),
+        terrain.occupancy(ChunkKey::containing(surface + dir * 9000.0, 3)),
         Occupancy::Air
     );
     assert_eq!(
-        terrain.occupancy(ChunkKey::containing(surface - dir * 9000.0, 0)),
+        terrain.occupancy(ChunkKey::containing(surface - dir * 9000.0, 3)),
         Occupancy::Rock
     );
     // A coarse chunk around the same place also has surface.
-    let coarse = ChunkKey::containing(surface, 6);
+    let coarse = ChunkKey::containing(surface, 9);
     assert_eq!(terrain.occupancy(coarse), Occupancy::Mixed);
     assert!(terrain.sample_chunk(coarse).has_surface());
 }
@@ -220,8 +220,8 @@ fn the_surface_rock_does_not_depend_on_the_level_of_detail() {
         .collect();
     for up in &spots {
         let p = *up * (terrain.planet().datum.radius(*up) + terrain.surface_height(*up));
-        let fine = shares(ChunkKey::containing(p, 0), p, 40.0);
-        let coarse = shares(ChunkKey::containing(p, 9), p, 3000.0);
+        let fine = shares(ChunkKey::containing(p, 3), p, 40.0);
+        let coarse = shares(ChunkKey::containing(p, 12), p, 3000.0);
         let (&rock, _) = fine
             .iter()
             .max_by(|a, b| a.1.total_cmp(b.1))
@@ -297,7 +297,7 @@ fn volume(m: &TerrainMesh) -> f64 {
 fn caps_cover_the_rock_each_face_cuts() {
     // Flat ground 15.5 m up through a chunk 64 m wide: each side face cuts rock 15.5 m high,
     // the bottom face is all rock, the top one all air.
-    let k = key(1, 0, 0, 0);
+    let k = key(4, 0, 0, 0);
     let m = mesh(&ChunkSamples::from_fn(k, |p| p.y - 15.5), |_, _| 0);
     for p in &m.positions {
         assert!(
@@ -342,7 +342,7 @@ fn a_sphere_cut_by_a_face_is_closed_by_its_cap() {
     for (x, face) in [(4.0, 0), (28.0, 1)] {
         let c = DVec3::new(x, 16.0, 16.0);
         let m = mesh(
-            &ChunkSamples::from_fn(key(0, 0, 0, 0), |p| (p - c).length() - r),
+            &ChunkSamples::from_fn(key(3, 0, 0, 0), |p| (p - c).length() - r),
             |_, _| 0,
         );
         assert_eq!(unmatched(&m), 0, "face {face}: not closed");
@@ -365,8 +365,8 @@ fn ground_exactly_on_a_chunk_face_stays_closed() {
     // Level ground at y = 32 m: the vertices fall exactly on the face between two chunks.
     // Each is moved just into its own cell, so both chunks clip it alike and stay closed.
     let ground = |p: DVec3| p.y - 32.0;
-    let below = mesh(&ChunkSamples::from_fn(key(0, 0, 0, 0), ground), |_, _| 0);
-    let above = mesh(&ChunkSamples::from_fn(key(0, 0, 1, 0), ground), |_, _| 0);
+    let below = mesh(&ChunkSamples::from_fn(key(3, 0, 0, 0), ground), |_, _| 0);
+    let above = mesh(&ChunkSamples::from_fn(key(3, 0, 1, 0), ground), |_, _| 0);
     assert_eq!(unmatched(&below), 0, "the chunk below is not closed");
     assert_eq!(unmatched(&above), 0, "the chunk above is not closed");
     // The ground belongs to the chunk below: all of its area, none above.

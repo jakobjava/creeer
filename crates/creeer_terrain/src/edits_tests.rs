@@ -81,7 +81,7 @@ fn digging_makes_air_and_filling_makes_rock() {
 fn a_tunnel_inside_the_rock_meshes_closed_across_chunks() {
     let terrain = home();
     let (p, up) = underground(&terrain, 200.0);
-    let key = ChunkKey::containing(p, 0);
+    let key = ChunkKey::containing(p, 3);
     assert_eq!(terrain.occupancy(key), Occupancy::Rock);
     // A tunnel from the middle of this chunk into its +x neighbour.
     let a = key.center();
@@ -147,13 +147,13 @@ fn coarse_chunks_leave_out_brushes_they_cannot_resolve() {
         radius: 2.0,
     }));
     // Level 2 (4 m cells) resolves a 2 m brush; level 3 (8 m cells) does not.
-    assert_eq!(terrain.chunk_edits(ChunkKey::containing(p, 2)).len(), 1);
-    assert!(terrain.chunk_edits(ChunkKey::containing(p, 3)).is_empty());
+    assert_eq!(terrain.chunk_edits(ChunkKey::containing(p, 5)).len(), 1);
+    assert!(terrain.chunk_edits(ChunkKey::containing(p, 6)).is_empty());
     terrain.edit(Edit::Dig(Brush::Sphere {
         center: p,
         radius: 40.0,
     }));
-    assert_eq!(terrain.chunk_edits(ChunkKey::containing(p, 6)).len(), 1);
+    assert_eq!(terrain.chunk_edits(ChunkKey::containing(p, 9)).len(), 1);
 }
 
 #[test]
@@ -174,9 +174,9 @@ fn filled_material_shows_on_the_mesh() {
         marble,
     ));
     let m = terrain
-        .mesh_chunk(ChunkKey::containing(p + up * 3.9, 0))
+        .mesh_chunk(ChunkKey::containing(p + up * 3.9, 3))
         .expect("the ball has a surface");
-    let key = ChunkKey::containing(p + up * 3.9, 0);
+    let key = ChunkKey::containing(p + up * 3.9, 3);
     let on_ball = m
         .positions
         .iter()
@@ -245,7 +245,7 @@ fn a_dug_tunnel_is_dark_and_a_dug_pit_is_lit() {
     terrain.edit(Edit::Dig(bowl));
     // Mean openness of the vertices on a brush's wall (not the natural ground nearby).
     let mean_openness = |at: DVec3, brush: Brush| {
-        let key = ChunkKey::containing(at, 0);
+        let key = ChunkKey::containing(at, 3);
         let m = terrain.mesh_chunk(key).expect("has walls");
         let on_wall: Vec<f32> = (0..m.surface_vertices)
             .filter(|&v| {
@@ -288,7 +288,7 @@ fn a_thin_roof_still_hides_the_sky() {
         radius: 2.5,
     };
     terrain.edit(Edit::Dig(tunnel));
-    let key = ChunkKey::containing(p, 0);
+    let key = ChunkKey::containing(p, 3);
     let m = terrain.mesh_chunk(key).expect("has walls");
     // The lower half of the wall: the floor, with the roof straight above.
     let floor: Vec<f32> = (0..m.surface_vertices)
@@ -301,4 +301,39 @@ fn a_thin_roof_still_hides_the_sky() {
     assert!(floor.len() > 20, "{} floor vertices", floor.len());
     let mean = floor.iter().sum::<f32>() / floor.len() as f32;
     assert!(mean < 0.15, "floor openness {mean}");
+}
+
+/// A brush replaced in its place (a dig spot grown, G2.9) reads as if it had been there all
+/// along: the same field as a log built with it, its order among the others kept.
+#[test]
+fn a_replaced_brush_is_read_in_its_place() {
+    let (p, up) = underground(&home(), 0.0);
+    let small = Edit::Dig(Brush::Sphere {
+        center: p,
+        radius: 0.2,
+    });
+    let fill = Edit::Fill(
+        Brush::Sphere {
+            center: p + up * 0.3,
+            radius: 0.25,
+        },
+        3,
+    );
+    let deep = Edit::Dig(Brush::Capsule {
+        a: p,
+        b: p - up * 30.0,
+        radius: 0.3,
+    });
+    let (mut grown, mut built) = (Edits::default(), Edits::default());
+    grown.push(small);
+    grown.push(fill);
+    grown.replace(0, deep);
+    built.push(deep);
+    built.push(fill);
+    assert_eq!(grown.log(), built.log());
+    assert_eq!(grown.replaced(), [0]);
+    for k in 0..200 {
+        let q = p - up * (0.15 * f64::from(k)) + up.any_orthonormal_vector() * 0.1;
+        assert_eq!(grown.density(q, -1.0), built.density(q, -1.0), "at {k}");
+    }
 }

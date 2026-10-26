@@ -14,6 +14,7 @@
 //! one is built.
 
 use crate::chunk::{ChunkKey, KeyMap, KeySet, MAX_CHUNK_LEVEL, Occupancy};
+use crate::edits::{Edit, round};
 use crate::terrain::Terrain;
 use creeer_math::glam::{DVec3, IVec3};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -156,6 +157,25 @@ impl<T: Send + Sync + 'static> Streamer<T> {
             let cell = key.cell_size();
             let (klo, khi) = (key.origin(), key.origin() + DVec3::splat(key.size()));
             if klo.cmple(hi + cell).all() && khi.cmpge(lo - cell).all() {
+                entry.stale = true;
+            }
+        }
+    }
+
+    /// Marks the chunks that draw `edit` as stale: those its brush and its round reach, on the
+    /// levels that resolve it (`Edits::affecting`). A coarser chunk leaves a small brush out,
+    /// and rebuilt it would not change (a blow's dig rebuilt every level's chunk over it, G2.9).
+    pub fn invalidate_edit(&mut self, edit: &Edit) {
+        let (lo, hi) = edit.brush().bounds();
+        let radius = edit.brush().radius();
+        for (key, entry) in &mut self.entries {
+            let cell = key.cell_size();
+            if radius < 0.5 * cell {
+                continue;
+            }
+            let reach = round(cell) + cell;
+            let (klo, khi) = (key.origin(), key.origin() + DVec3::splat(key.size()));
+            if klo.cmple(hi + reach).all() && khi.cmpge(lo - reach).all() {
                 entry.stale = true;
             }
         }
@@ -307,7 +327,7 @@ impl<T: Send + Sync + 'static> Drop for Streamer<T> {
 
 /// The coarsest chunks: those of the top level around the planet.
 fn roots(terrain: &Terrain) -> Vec<ChunkKey> {
-    let size = f64::from(1u32 << MAX_CHUNK_LEVEL) * 32.0;
+    let size = crate::edits::FINEST_CELL * f64::from(1u32 << MAX_CHUNK_LEVEL) * 32.0;
     let extent =
         terrain.planet().datum.equatorial_radius() + terrain.heights().elevation().max_height();
     #[allow(clippy::cast_possible_truncation)] // a handful of chunks

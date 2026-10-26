@@ -209,6 +209,7 @@ fn server_messages_read_back() {
     back(&ServerMessage::Edits {
         first: 17,
         log: vec![9; 300],
+        in_place: true,
     });
     let nodes = vec![
         (4, Quantised([1, -2, 3])),

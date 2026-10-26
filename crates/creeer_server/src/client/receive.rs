@@ -43,7 +43,11 @@ impl Connection {
                     self.swings.insert(id, at);
                 }
             }
-            ServerMessage::Edits { first, log } => self.edited(first, &log),
+            ServerMessage::Edits {
+                first,
+                log,
+                in_place,
+            } => self.edited(first, &log, in_place),
             ServerMessage::Plastic(id, plastic) => self.deformed(id, &plastic),
             ServerMessage::Snapshot(snapshot) => self.snapshot(&snapshot),
             ServerMessage::Machines(list) => self.machines = list,

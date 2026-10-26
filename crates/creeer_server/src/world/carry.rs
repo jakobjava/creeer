@@ -49,6 +49,9 @@ pub(super) struct Carry {
     /// Held in the right hand at the body's side, as a tool is carried (a made thing: G1.6d),
     /// not in both hands before it.
     pub(super) one_hand: bool,
+    /// Held by one point, the other end where it lies (G2.9, `raising.rs`): too long or heavy
+    /// to hold level by the grip.
+    pub(super) end: Option<super::raising::End>,
 }
 
 /// The frame of a body facing `facing` (horizontal) about `up`: z the way it faces, y up.
@@ -89,11 +92,17 @@ impl ServerWorld {
             return Err("not to be carried".into());
         }
         // Lifted with at most half the strength its weight leaves the hands, which move the arms
-        // too.
+        // too; raised by one end, half its weight (the other end where it lies).
         let mass = self.mass_of(load);
-        let spare = carry::spare(mass);
+        let is_tool = matches!(
+            self.items.bodies.get(&self.ids[load]),
+            Some(creeer_sim::items::Item::Made(_))
+        );
+        let end = (!is_tool).then(|| self.end_hold(load, point)).flatten();
+        let spare = carry::spare(if end.is_some() { 0.5 * mass } else { mass });
         if spare <= 0.0 {
-            return Err(format!("{mass:.0} kg: too heavy to lift"));
+            let what = if end.is_some() { "raise" } else { "lift" };
+            return Err(format!("{mass:.0} kg: too heavy to {what}"));
         }
         if self.wields.remove(&player).is_some() {
             self.changed.push(by);
@@ -115,6 +124,8 @@ impl ServerWorld {
             _ => None,
         };
         let grip = tool.unwrap_or(q.conjugate() * (point - c));
+        // Raised by one end, held at a point of its axis.
+        let grip = end.map_or(grip, |e| e.axis * grip.dot(e.axis));
         let from = turn.conjugate() * (point - centre);
         let ahead = match tool {
             Some(_) => carry::forearm(),
@@ -154,6 +165,7 @@ impl ServerWorld {
                 straining: 0,
                 torn: 0,
                 one_hand: tool.is_some(),
+                end,
             },
         );
         // The load in the hands passes the body's box (as a joint's sides did; the box is no

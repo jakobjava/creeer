@@ -141,3 +141,27 @@ G1.3c's check of the terrain up close (ADR-0026, decision 11; `docs/art-style.md
 Three cells would be smoother, but a 3 m round on the finest level turns small holes into bowls. Motion in the stress and play scenes is unchanged (their physics hashes before and after are equal: no body reaches a dug rim there). The `server` stress scene, which digs, runs as before (p50 0.84 against 0.83 ms).
 
 **Limit:** on the finest level a round of 2 m spans about two vertices, so from a few metres away its lighting still shows the triangles as spikes along the rim. Smooth up close needs a finer mesh near the camera (0.5 m cells) or normals per pixel (`docs/future-improvements.md`).
+
+## Amended in G2.9 (2026-10-26): 12.5 cm cells near the player
+
+The user's play: a hand-dug post hole never showed, and the ground stayed solid where it was dug ("there is no visible hole"); the user asked for "highly detailed terrain detail ... so every dig makes a visible difference".
+
+**Prior work** (surveyed for this amendment; marked where unconfirmed):
+- Teardown keeps 10 cm voxels, run-length encoded (Gustafsson, Software Engineering Daily 2024).
+- Dual Universe keeps 25 cm "precision voxels" in an octree, compressed on the server.
+- Valheim first rebuilt its heightmap from every modifier in range, one a blow, and in 2021 changed to a per-zone record (TerrainComp) because of that cost.
+- Godot Voxel Tools edits only its finest level and saves only modified blocks.
+- Dreams records sculpts as lists of distance-field add and subtract operations (Evans, SIGGRAPH 2015).
+- Space Engineers and 7 Days to Die use about 1 m cells (unconfirmed).
+- Clipmaps (Losasso & Hoppe 2004) keep a ring of about equal chunks per level, so a finer level costs about one level's chunks, not eight times the chunks.
+- Transvoxel (Lengyel 2010) and CDLOD (Strugar 2010) join levels that differ by one, as ours do.
+
+**Decision.**
+- Three levels finer than 1 m. Level 0 now has 12.5 cm cells in 4 m chunks; level 3 has 1 m cells (`chunk::METRE_LEVEL`); the coarsest is level 18. With `detail` 2.5, 12.5 cm cells are drawn within about 10 m of the camera, 25 cm within 20 m, 50 cm within 40 m and 1 m within 80 m.
+- The generated ground has no detail finer than 1 m, and physics reads it at 1 m (`tiles::FINEST_SPACING`). Heights are sampled at that spacing however fine the cell, so the fine levels draw exactly the ground physics touches; only edits are finer.
+- **Rounds of three cells** (`ROUND_CELLS`). Over two cells, a rim on the 12.5 cm level still folded 62°. Over three it folds 47° at most on every level (`rounds_tests`, levels 0–5: 40, 43, 45, 40, 35 and 47°). The reason three cells were rejected above, 3 m bowls round small holes, holds only for a 1 m finest level: the finest round is now 37.5 cm, and physics rounds with it.
+- Chunk ids hold 5 bits of level and 19 bits a coordinate: planets up to about 1,000 km in radius.
+- An edit marks stale only the chunks of the levels that draw it (`Streamer::invalidate_edit`): a coarse chunk leaves a small brush out, and a blow's dig rebuilt every level's chunk over it.
+- **Edits replaced in their place** (`Edits::replace`). A dig spot's one brush grows with every blow (ADR-0032, amended). A server sends the log again from the first edit replaced since; a client changes those edits in place and redraws only where the old and new versions reach (`Connection::edits_dirty`). One brush a blow would put hundreds at one spot, each read at every point near it.
+
+Validation: the closed-mesh, cap, crack-ray and geomorph tests run as before on the old levels (each moved by three). The crack-ray test also crosses the new borders 0→1 and 1→2. The 1 m levels' results are unchanged.

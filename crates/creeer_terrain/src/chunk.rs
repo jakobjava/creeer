@@ -1,9 +1,10 @@
 //! Voxel chunks: blocks of 32³ cells of the terrain's density field, in a planet-centred
 //! octree.
 //!
-//! A chunk of level `L` has cells of 2^L metres, so it is 32·2^L m wide; level 0 is the full
-//! resolution (1 m cells, 32 m chunks). Chunks of one level tile space on a grid aligned with
-//! the planet's axes, and each splits into the eight chunks of the next finer level.
+//! A chunk of level `L` has cells of [`FINEST_CELL`]·2^L metres, so it is 32 cells wide; level
+//! 0 is the full resolution (12.5 cm cells, 4 m chunks: a hand-dug hole shows, G2.9), level 3
+//! has 1 m cells. Chunks of one level tile space on a grid aligned with the planet's axes, and
+//! each splits into the eight chunks of the next finer level.
 //!
 //! The density is negative inside rock and positive in air; the surface is its zero set.
 //! A chunk samples it on a 35³ grid, sample `(i, j, k)` at `origin + (i−1, j−1, k−1)·cell`,
@@ -11,7 +12,7 @@
 //! builds every quad reaching into its box without its neighbours, and clips them at the box
 //! (`surface_nets.rs`), so neighbouring chunks of one level join without gaps.
 
-use crate::edits::Edit;
+use crate::edits::{Edit, FINEST_CELL};
 use crate::terrain::{Terrain, generated};
 use creeer_math::glam::{DVec3, IVec3};
 
@@ -20,7 +21,9 @@ pub const CHUNK_CELLS: i32 = 32;
 /// Samples per chunk edge: cells −1..=32 need samples −1..=33.
 pub const SAMPLES: usize = 35;
 /// Coarsest level (cells of 32 km; one chunk is about a whole 500 km planet).
-pub const MAX_CHUNK_LEVEL: u8 = 15;
+pub const MAX_CHUNK_LEVEL: u8 = 18;
+/// The level whose cells are 1 m (the generator's finest detail: `tiles::FINEST_SPACING`).
+pub const METRE_LEVEL: u8 = 3;
 
 /// Identifies a chunk: octree level and grid position on that level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -46,7 +49,7 @@ impl PartialOrd for ChunkKey {
 impl ChunkKey {
     /// Cell edge (m).
     pub fn cell_size(&self) -> f64 {
-        f64::from(1u32 << self.level)
+        FINEST_CELL * f64::from(1u32 << self.level)
     }
 
     /// Chunk edge (m).
@@ -66,7 +69,7 @@ impl ChunkKey {
 
     /// The chunk of `level` containing point `p`.
     pub fn containing(p: DVec3, level: u8) -> Self {
-        let size = f64::from(1u32 << level) * f64::from(CHUNK_CELLS);
+        let size = FINEST_CELL * f64::from(1u32 << level) * f64::from(CHUNK_CELLS);
         #[allow(clippy::cast_possible_truncation)] // planet-sized coordinates fit i32 chunks
         let pos = (p / size).floor().as_ivec3();
         Self { level, pos }
@@ -94,11 +97,12 @@ impl ChunkKey {
 
     /// A unique 64-bit id (level and position packed), e.g. to name GPU resources.
     pub fn id(&self) -> u64 {
-        // 20 bits per coordinate hold ±524,288 chunks: 16,000 km at level 0.
-        let pack = |v: i32| u64::from(v.cast_unsigned() & 0xf_ffff);
-        (u64::from(self.level) << 60)
-            | (pack(self.pos.x) << 40)
-            | (pack(self.pos.y) << 20)
+        // 5 bits of level; 19 bits per coordinate hold ±262,144 chunks: ±1,048 km at level 0
+        // (planets up to about 1,000 km across their radius).
+        let pack = |v: i32| u64::from(v.cast_unsigned() & 0x7_ffff);
+        (u64::from(self.level) << 57)
+            | (pack(self.pos.x) << 38)
+            | (pack(self.pos.y) << 19)
             | pack(self.pos.z)
     }
 

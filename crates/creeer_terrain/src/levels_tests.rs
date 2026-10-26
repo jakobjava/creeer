@@ -39,10 +39,10 @@ fn world(key: ChunkKey, m: &TerrainMesh, v: usize) -> DVec3 {
 #[test]
 fn neighbours_of_one_level_refine_shared_vertices_identically() {
     let t = terrain();
-    let a = ChunkKey::containing(hills(t, 2), 2);
+    let a = ChunkKey::containing(hills(t, 5), 5);
     let mut checked = 0;
     for axis in [DVec3::X, DVec3::Y, DVec3::Z] {
-        let b = ChunkKey::containing(a.center() + axis * a.size(), 2);
+        let b = ChunkKey::containing(a.center() + axis * a.size(), 5);
         let (Some((_, wa)), Some((_, wb))) = (t.mesh_world(a), t.mesh_world(b)) else {
             continue;
         };
@@ -125,7 +125,7 @@ fn closest_on_triangle(p: DVec3, a: DVec3, b: DVec3, c: DVec3) -> (DVec3, [f64; 
 #[test]
 fn a_fully_morphed_chunk_lies_on_the_coarser_mesh() {
     let t = terrain();
-    for level in [1u8, 3] {
+    for level in [4u8, 6] {
         let fine = ChunkKey::containing(hills(t, level + 1), level);
         let coarse = fine.parent();
         let (mf, mc) = (
@@ -217,7 +217,7 @@ fn no_triangle_turns_over() {
             continue;
         }
         let p = up * (t.planet().datum.radius(up) + t.surface_height(up));
-        for level in [1u8, 3, 5] {
+        for level in [4u8, 6, 8] {
             let key = ChunkKey::containing(p, level);
             let Some(m) = t.mesh_chunk(key) else { continue };
             total[0] += m.surface_indices / 3;
@@ -243,7 +243,7 @@ fn level_gradients_are_exact() {
     let t = Terrain::new(
         Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
     );
-    let p = hills(&t, 3);
+    let p = hills(&t, 6);
     let radius = 6.0;
     t.edit(Edit::Dig(Brush::Sphere { center: p, radius }));
     let up = p.normalize();
@@ -275,9 +275,9 @@ fn level_gradients_are_exact() {
             }
         }
         // Inside the dug ball the brush's gradient, far out the terrain's; near its rim the
-        // round, with central differences (wider on coarse grids: 16 m at 8 m cells).
+        // round, with central differences (wider on coarse grids: 24 m at 8 m cells).
         assert!(
-            exact >= 40 && crease > 0,
+            exact >= 30 && crease > 0,
             "cell {cell}: {exact} exact, {crease} near the crease"
         );
     }
@@ -316,7 +316,7 @@ fn tunnel_rims_keep_their_shape() {
     let t = Terrain::new(
         Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
     );
-    let ground = hills(&t, 2);
+    let ground = hills(&t, 5);
     let up = ground.normalize();
     let east = up.any_orthonormal_vector();
     let a = ground - up * 3.0 - east * 2.0;

@@ -319,6 +319,7 @@ mod building_tests;
 mod carry;
 mod digging;
 mod felling;
+mod holes;
 mod item_bodies;
 mod items;
 #[cfg(test)]
@@ -333,6 +334,9 @@ pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
 mod posts;
+mod raising;
+#[cfg(test)]
+mod raising_tests;
 mod spawn;
 mod step;
 mod survival;

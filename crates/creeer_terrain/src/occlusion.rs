@@ -93,7 +93,7 @@ mod tests {
 
     fn key() -> ChunkKey {
         ChunkKey {
-            level: 0,
+            level: 3,
             pos: IVec3::ZERO,
         }
     }

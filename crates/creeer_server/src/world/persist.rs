@@ -140,8 +140,10 @@ impl ServerWorld {
             built: (self.building.built.iter())
                 .map(|(id, b)| (id.0, b.items.clone(), b.woods.clone()))
                 .collect(),
+            // What a spot still owes (its hole is in the edits): dug again, a new brush takes it.
             pits: (self.digging.pits.values())
-                .map(|p| (p.centre, p.volume))
+                .map(|p| (p.centre, p.owed()))
+                .filter(|p| p.1 > 0.0)
                 .collect(),
         }
     }

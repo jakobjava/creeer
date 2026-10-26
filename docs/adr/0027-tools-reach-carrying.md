@@ -251,3 +251,22 @@ Found by a test walking a stick through the forest (ADR-0031): a 1.2 m stick car
 ## Amended after the user's play (2026-10-23): a tool in one hand
 
 A made tool (G1.6d) is held as the catalogue's are: in the right hand at its balance, by the body's side (`carry::at_side`), its haft the way the body faces, drawn in the hand's grip (`ItemLook::grip`, protocol 24) rather than where its body is. The hands bring it from as taken to as held along the lift (turned at once, a tool spun at 30–60 rad/s on the hands' spring and a 1.6 m branch struck the ground, knocking its holder down: "one can not walk anymore"). Measured over the real client: 7.6 m walked in 3 s with a 0.6 m and a 1.6 m haft, the prediction within 2 mm. Loose matter is not taken in the hands: E scoops a pocketful.
+
+## Amended in G2.9 (2026-10-26): raising a long thing by one end
+
+The user's play: "how to dig it into the ground?" A carried load kept the turn it was taken with, so a log lifted lying stayed lying, and no post could be stood in its hole by hand.
+
+**Prior work.** One person raises a pole or post by setting its foot against something (a hole's wall, a stake, a foot), lifting the top end overhead, and walking towards the foot, hands moving along it, until it stands. Linemen "pike" poles up the same way with several people. Games that stand posts place them upright at once (Valheim, Rust); none we know of raises them by hand.
+
+**Decision** (`raising.rs`):
+- What the hands cannot hold level is held by one point. The test: a lone node (a log, a pole, a plank) whose weight times its lever about the grip is more than the grip's torque (`hands::grip`, 50 N·m). That point is on its long axis.
+- **No torque:** it turns as it will about the hands, the other end resting where it lies.
+- **The force** is the arms' (stiffness 445 N/m, damping, strength as for carrying), plus the share of its weight a beam resting on its far end puts at the hands: its centre's lever about that end over the hands', across the vertical.
+- **The plan:** the hands rise to about head height before the body (0.6 m above the elbows). The plan advances only while the end keeps within 10 cm of it: the hands wait for a heavy end. Planned on regardless, the end fell behind out of the arms' reach and dropped.
+- **Hand over hand:** the hands move along it at up to 0.5 m/s towards the point nearest where they mean to be, so walking towards its foot raises it.
+- **Weight:** raising by one end needs strength for half its weight. Lifting it whole would need all of it.
+
+Validation (`raising_tests.rs`):
+- A 3 m green spruce pole (27 kg) grabbed at its end is held by that point and raised to 20–80° from the vertical.
+- A crate is still held level.
+- Walked under with its foot over a 30 cm hole, the pole came up to 44° from the vertical with its foot 24 cm down the hole. Then, pressed against the hole's rim, it was thrown at 1,254 m/s: the energy guard stopped it dead, and the next step exploded. That is a fault of rigid bodies against a narrow hole's rim, being fixed; the test is ignored until then.

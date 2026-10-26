@@ -103,6 +103,9 @@ pub struct Connection {
     pub edits: Edits,
     /// Changes whenever edits were replaced rather than added to.
     pub edits_generation: u64,
+    /// Edits added, replaced or dropped since the views last took them (each version of a
+    /// replaced one): where the terrain must be drawn anew (G2.9).
+    pub edits_dirty: Vec<creeer_terrain::edits::Edit>,
     receiver: Receiver,
     playback: Playback,
     drawn_at: f64,
@@ -154,6 +157,7 @@ impl Connection {
             items: BTreeMap::new(),
             edits: Edits::default(),
             edits_generation: 0,
+            edits_dirty: Vec::new(),
             receiver: Receiver::default(),
             playback: Playback::new(DELAY),
             drawn_at: 0.0,

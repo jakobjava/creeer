@@ -222,8 +222,7 @@ impl SystemView {
         if log_len > near.seen_edits.1 {
             let new: Vec<_> = near.terrain.edits().log()[near.seen_edits.1..].to_vec();
             for edit in new {
-                let (lo, hi) = edit.brush().bounds();
-                near.streamer.invalidate(lo, hi);
+                near.streamer.invalidate_edit(&edit);
             }
             near.seen_edits.1 = log_len;
         }

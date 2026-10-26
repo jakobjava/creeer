@@ -84,10 +84,10 @@ fn in_typical_play_a_client_is_sent_less_than_its_budget() {
                 .command(Command::Crate(at + at.normalize() * 1.5));
         }
         if t % 300 == 150 {
-            let at = game
-                .server
-                .world
-                .ground_under(game.avatar(0) + walk.normalize() * 8.0);
+            // Beside the way, outside the circle walked: a 2 m ball is a hole 2 m deep, and walked
+            // into it knocks one down (since G2.9: rounded over 2 m, it was a shallow bowl).
+            let side = walk.normalize().cross(game.avatar(0).normalize());
+            let at = game.server.world.ground_under(game.avatar(0) + side * 8.0);
             let mut edits = Edits::default();
             edits.push(Edit::Dig(Brush::Sphere {
                 center: at,
@@ -110,6 +110,9 @@ fn in_typical_play_a_client_is_sent_less_than_its_budget() {
         down_rate * 8e-3
     );
     assert!(up_rate <= 8_000.0, "{:.0} kbit/s from it", up_rate * 8e-3);
+    // What came into the world in the last ticks is still on its way (40–50 ms): a fall two
+    // ticks before the end left its ragdoll's parts unsent (G2.9). Standing a moment, it comes.
+    game.run(30, |_| (DVec3::ZERO, false));
     // And the client has the world: every entity within its view, drawn where it is.
     let client = &game.clients[0].0;
     let world = &game.server.world;

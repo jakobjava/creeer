@@ -10,33 +10,66 @@ use creeer_terrain::edits::Edits;
 
 impl Connection {
     /// Edits from the `first`-th on: those before it kept, these replacing the rest.
-    pub(super) fn edited(&mut self, first: u64, log: &[u8]) {
+    /// `in_place`: these replace those edits only, the rest kept (a dig spot's brush grown).
+    pub(super) fn edited(&mut self, first: u64, log: &[u8], in_place: bool) {
         let Ok(part) = Edits::from_bytes(log) else {
             return;
         };
         let Ok(first) = usize::try_from(first) else {
             return;
         };
-        if first > self.edits.len() {
+        let old = self.edits.len();
+        if first > old {
             return; // never, in order: a gap would be a server's mistake
         }
-        let replaced = first < self.edits.len();
-        let mut edits = Edits::default();
-        for edit in self.edits.log()[..first].iter().chain(part.log()) {
-            edits.push(*edit);
+        // In place: as though the rest were sent again unchanged after them.
+        let end = if in_place {
+            (first + part.len()).max(old)
+        } else {
+            first + part.len()
+        };
+        // What changed, each version (a dig spot's brush grown is sent again, G2.9).
+        let mut changed = Vec::new();
+        for (i, edit) in (first..).zip(part.log()) {
+            match self.edits.log().get(i) {
+                Some(was) if was == edit => {}
+                Some(was) => {
+                    self.edits_dirty.extend([*was, *edit]);
+                    changed.push(i);
+                }
+                None => self.edits_dirty.push(*edit),
+            }
         }
-        self.edits = edits;
-        if replaced {
-            self.edits_generation += 1;
-        }
-        if let Some(terrain) = &self.terrain {
-            if replaced {
-                terrain.set_edits(self.edits.clone());
-            } else {
-                for edit in part.log() {
+        self.edits_dirty
+            .extend(self.edits.log().get(end..).unwrap_or_default());
+        if end >= old {
+            // Changed in their places, the rest added: the index mended, not built anew.
+            for &i in &changed {
+                self.edits.replace(i, part.log()[i - first]);
+            }
+            for edit in part.log().get(old - first..).unwrap_or_default() {
+                self.edits.push(*edit);
+            }
+            if let Some(terrain) = &self.terrain {
+                for &i in &changed {
+                    terrain.replace_edit(i, part.log()[i - first]);
+                }
+                for edit in part.log().get(old - first..).unwrap_or_default() {
                     terrain.edit(*edit);
                 }
             }
+        } else {
+            let mut edits = Edits::default();
+            for edit in self.edits.log()[..first].iter().chain(part.log()) {
+                edits.push(*edit);
+            }
+            self.edits = edits;
+            if let Some(terrain) = &self.terrain {
+                terrain.set_edits(self.edits.clone());
+            }
+        }
+        if !changed.is_empty() || end < old {
+            self.edits_generation += 1;
         }
     }
 

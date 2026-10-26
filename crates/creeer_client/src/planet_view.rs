@@ -174,21 +174,12 @@ impl PlanetView {
             loose.update(&self.terrain, camera, edits);
         }
         self.update_trees(camera);
-        if generation != self.seen_edits.0 {
-            // All edits were replaced: rebuild everything that is cached.
-            self.streamer
-                .invalidate(DVec3::splat(-1e9), DVec3::splat(1e9));
-            self.seen_edits = (generation, 0);
+        // Where edits were added, replaced (each version) or dropped: drawn anew there only
+        // (a dig spot's brush grows with every blow, G2.9).
+        for edit in std::mem::take(&mut self.session.connection.edits_dirty) {
+            self.streamer.invalidate_edit(&edit);
         }
-        let log_len = self.terrain.edits().len();
-        if log_len > self.seen_edits.1 {
-            let new: Vec<_> = self.terrain.edits().log()[self.seen_edits.1..].to_vec();
-            for edit in new {
-                let (lo, hi) = edit.brush().bounds();
-                self.streamer.invalidate(lo, hi);
-            }
-            self.seen_edits.1 = log_len;
-        }
+        self.seen_edits = (generation, self.terrain.edits().len());
         let update = self.streamer.update(camera);
         for (key, mesh) in &update.ready {
             renderer.insert_terrain(key.id(), key.origin(), mesh);

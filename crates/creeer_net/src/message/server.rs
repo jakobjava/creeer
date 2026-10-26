@@ -1,28 +1,12 @@
 //! What the server sends a client.
 
 pub use super::inventory::{Inventory, ItemView, StoreView};
+pub use super::plastic::Plastic;
 use super::{read_text, text};
 use crate::entity::{EntityId, Kind};
 use crate::quant::Quantised;
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 use creeer_math::glam::DVec3;
-
-/// A structure's lasting change of shape: nodes now elsewhere relative to node 0 (in its
-/// frame; an index past its nodes is a node new to it: a member buckling splits in two),
-/// its members anew if they changed, and members now broken.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Plastic {
-    /// Nodes moved for good: index and where they are now (1/1024 m).
-    pub nodes: Vec<(u32, Quantised)>,
-    /// All its members, if they changed (a member split where it buckles).
-    pub members: Option<Vec<[u32; 2]>>,
-    /// Members broken (in the members as they are now).
-    pub broken: Vec<u32>,
-    /// How many nodes it has now (G2.5: pieces that fell apart took theirs with them).
-    pub node_count: u32,
-    /// Its members' radii as drawn, when its members changed (G2.3: 0 a joint).
-    pub radii: Option<Vec<f64>>,
-}
 
 /// From the server to a client.
 #[derive(Clone, Debug, PartialEq)]
@@ -47,12 +31,15 @@ pub enum ServerMessage {
     /// An entity left view (or the world).
     Despawn(EntityId),
     /// Terrain edits, as `creeer_terrain::edits` writes a log, the first of them the
-    /// `first`-th edit of the world (a client joining gets the whole log).
+    /// `first`-th edit of the world (a client joining gets the whole log); `in_place`: these
+    /// replace those edits only, the rest kept (a dig spot's brush grown: G2.9).
     Edits {
         /// The index of the first edit.
         first: u64,
         /// The edits.
         log: Vec<u8>,
+        /// Whether these replace those edits only.
+        in_place: bool,
     },
     /// A structure deformed for good.
     Plastic(EntityId, Plastic),
@@ -164,10 +151,15 @@ impl Encode for ServerMessage {
                 w.u8(3);
                 w.put(id);
             }
-            Self::Edits { first, log } => {
+            Self::Edits {
+                first,
+                log,
+                in_place,
+            } => {
                 w.u8(4);
                 w.varint(*first);
                 w.bytes_with_length(log);
+                w.u8(u8::from(*in_place));
             }
             Self::Plastic(id, plastic) => {
                 w.u8(5);
@@ -306,6 +298,7 @@ impl Decode for ServerMessage {
             4 => Self::Edits {
                 first: r.varint()?,
                 log: r.bytes_with_length()?.to_vec(),
+                in_place: r.u8()? == 1,
             },
             5 => {
                 let id = r.get()?;

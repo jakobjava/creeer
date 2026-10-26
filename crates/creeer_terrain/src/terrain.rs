@@ -73,6 +73,14 @@ impl Terrain {
             .push(edit);
     }
 
+    /// Replaces edit `k` in its place ([`Edits::replace`]).
+    pub fn replace_edit(&self, k: usize, edit: Edit) {
+        self.edits
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(k, edit);
+    }
+
     /// Replaces all edits (loading a save).
     pub fn set_edits(&self, edits: Edits) {
         *self
@@ -257,7 +265,7 @@ impl Terrain {
 }
 
 /// Finest levels whose edited chunks get a sky view (cells up to 4 m).
-const SKY_VIEW_LEVELS: u8 = 2;
+const SKY_VIEW_LEVELS: u8 = crate::chunk::METRE_LEVEL + 2;
 /// Where sky-view rays start, past the vertex's own surface (m).
 const SKY_VIEW_START: f64 = 1.0;
 /// Length of the sky-view rays (m).

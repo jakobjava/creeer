@@ -26,7 +26,7 @@ fn smooth_extremes_round_only_near_the_crease() {
     assert!((f(k - e) - f(k + e)).abs() < 1e-9);
     let slope = |b: f64| (f(b + e) - f(b - e)) / (2.0 * e);
     assert!((slope(k - 1e-4) - slope(k + 1e-4)).abs() < 1e-3);
-    assert_eq!(round(1.0), 2.0);
+    assert_eq!(round(1.0), 3.0);
 }
 
 /// A point of the surface on gentle land, in the middle third of its chunk at `level`.
@@ -78,14 +78,14 @@ fn dug_rims_are_rounds_not_zigzags() {
     let t = Terrain::new(
         Planet::load(&creeer_data::Data::base(), "planets/home.ron").expect("home.ron"),
     );
-    let ground = gentle(&t, 2);
+    let ground = gentle(&t, 5);
     let up = ground.normalize();
     let centre = ground - up * 2.0;
     t.edit(Edit::Dig(Brush::Sphere {
         center: centre,
         radius: 4.5,
     }));
-    for level in [0u8, 1, 2] {
+    for level in [0u8, 1, 2, 3, 4, 5] {
         let key = ChunkKey::containing(ground, level);
         let m = t.mesh_chunk(key).expect("ground with a hole");
         let cell = key.cell_size();
@@ -99,7 +99,7 @@ fn dug_rims_are_rounds_not_zigzags() {
             folds.len()
         );
         assert!(folds.len() > 100, "level {level}: the rim was not meshed");
-        assert!(worst < 60.0, "level {level}: a fold of {worst:.0}°");
+        assert!(worst < 50.0, "level {level}: a fold of {worst:.0}°");
         assert!(
             sharp * 100 <= 3 * folds.len(),
             "level {level}: {sharp} folds beyond 45°"

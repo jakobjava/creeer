@@ -166,3 +166,4 @@ G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.
 | G2.6 Taking apart | Done: undo a joint (U), cut members. Salvage gives no items back yet |
 | G2.7 P2/P3 | Measured: targets not met (ADR-0035). SIMD kernels kept (bit-exact). The user decided (2026-10-24): record the gaps and move on, as for G1. The speed work continues in a later package (members' evaluation in SIMD, sub-cycling struck regions) |
 | G2.8 Scenes | tower, collapse, drop, builders and log bridge exist, with goldens and work ceilings. Gates not met (tower p50 28 ms, worst ≈ 0.5 s; builders p50 26 ms from the loose poles) |
+| G2.9 After the user's play (2026-10-26) | Terrain of 12.5 cm cells near the player, and every blow digs a hole that grows (ADR-0006, ADR-0032): done. Raising a long thing by one end (ADR-0027): done, but walking a post up into its hole throws it off the hole's rim (being fixed). Parts fastened to standing trees (ADR-0033): built on a branch, being merged |

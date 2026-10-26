@@ -6,6 +6,7 @@ use super::super::tests::world;
 use super::*;
 use creeer_net::message::Target;
 use creeer_sim::items::{Form, Piece};
+use creeer_terrain::dug::Field;
 use creeer_terrain::geology::deposits::tangent_frame;
 use std::time::Instant;
 
@@ -31,8 +32,10 @@ fn ada(pick: bool) -> (ServerWorld, EntityId, DVec3) {
     (w, ada, spot)
 }
 
-/// Ada strikes the ground at `at`, and the blow falls.
+/// Ada strikes the ground where it now is at `at` (each blow digs it: G2.9), and the blow
+/// falls.
 fn strike(w: &mut ServerWorld, ada: EntityId, at: DVec3) {
+    let at = w.ground_under(at + at.normalize() * 0.5);
     #[allow(clippy::cast_precision_loss)]
     let now = w.tick as f64;
     let target = Target {
@@ -121,7 +124,7 @@ fn ten_thousand_blows_cut_pits_and_keep_the_mass() {
         let spent = t.elapsed().as_secs_f64();
         (slowest, total) = (slowest.max(spent), total + spent);
     }
-    let owed: f64 = w.digging.pits.values().map(|p| p.volume).sum();
+    let owed: f64 = w.digging.pits.values().map(super::Pit::owed).sum();
     assert!(w.digging.cut > 0.5, "pits were cut: {} m³", w.digging.cut);
     let mass = heaps(&w);
     let closure = mass - density * (w.digging.cut + owed);
@@ -299,4 +302,31 @@ fn a_made_tool_is_held_in_one_hand_at_the_side() {
         w.dig(ada, at, (&swing, None));
     }
     assert!(w.carried(ada).is_some(), "it held together in soil");
+}
+
+#[test]
+#[ignore = "probe: each blow's time"]
+fn probe_blow_times() {
+    let (mut w, ada, at) = ada(true);
+    let swing = creeer_sim::strike::swing(&w.tools[0]);
+    let up = at.normalize();
+    let (east, north) = tangent_frame(up);
+    let (mut most, mut sum) = (0.0f64, 0.0);
+    for k in 0..3000u32 {
+        let off = if k % 2 == 0 { east } else { north } * if k % 4 < 2 { -0.5 } else { 0.5 };
+        let p = w.ground_under(at + off + up * 0.5);
+        let t = Instant::now();
+        w.dig(ada, p, (&swing, Some(0)));
+        let s = t.elapsed().as_secs_f64() * 1e3;
+        (most, sum) = (most.max(s), sum + s);
+        if k % 100 == 99 {
+            eprintln!(
+                "{k}: mean {:.2} ms, worst {most:.1} ms, {} pits, {} edits",
+                sum / 100.0,
+                w.digging.pits.len(),
+                w.terrain.edits().len()
+            );
+            (most, sum) = (0.0, 0.0);
+        }
+    }
 }

@@ -128,7 +128,7 @@ fn the_planet_centre_is_rock() {
     let radius = terrain.planet().datum.polar_radius;
     for x in [-1, 0] {
         let key = crate::chunk::ChunkKey {
-            level: 15,
+            level: 18,
             pos: creeer_math::glam::IVec3::new(x, -1, 0),
         };
         let mesh = terrain

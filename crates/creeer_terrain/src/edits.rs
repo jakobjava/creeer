@@ -126,10 +126,11 @@ impl Edit {
 }
 
 /// The rounds where edits meet the ground span this many cells of the grid that draws them: a
-/// round narrower than about two cells shows the cells' zigzag.
-pub const ROUND_CELLS: f64 = 2.0;
+/// round narrower than about two cells shows the cells' zigzag, and over two cells a rim on
+/// the 12.5 cm level still folded 62°, over three 47° at most (G2.9).
+pub const ROUND_CELLS: f64 = 3.0;
 /// The finest grid's cell (m): the field physics reads ([`Edits::density`]).
-pub const FINEST_CELL: f64 = 1.0;
+pub const FINEST_CELL: f64 = 0.125;
 
 /// The width (m) of the rounds where edits meet the ground, on a grid of `cell` metres.
 pub fn round(cell: f64) -> f64 {
@@ -164,12 +165,23 @@ const INDEX_MARGIN: f64 = ROUND_CELLS * FINEST_CELL + 2.0;
 pub struct Edits {
     log: Vec<Edit>,
     index: HashMap<IVec3, Vec<u32>>,
+    /// The edits replaced in their place, in turn (G2.9: a dig spot's brush grown).
+    replaced: Vec<usize>,
 }
 
 fn index_cell(p: DVec3) -> IVec3 {
     #[allow(clippy::cast_possible_truncation)] // planet-sized coordinates fit i32 cells
     let cell = (p / INDEX_CELL).floor().as_ivec3();
     cell
+}
+
+/// The index cells an edit is listed in.
+fn index_cells(edit: &Edit) -> impl Iterator<Item = IVec3> {
+    let (lo, hi) = edit.brush().bounds();
+    let (lo, hi) = (index_cell(lo - INDEX_MARGIN), index_cell(hi + INDEX_MARGIN));
+    (lo.z..=hi.z).flat_map(move |z| {
+        (lo.y..=hi.y).flat_map(move |y| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z)))
+    })
 }
 
 impl Edits {
@@ -191,16 +203,36 @@ impl Edits {
     /// Appends an edit.
     pub fn push(&mut self, edit: Edit) {
         let id = u32::try_from(self.log.len()).expect("fewer than 4 billion edits");
-        let (lo, hi) = edit.brush().bounds();
-        let (lo, hi) = (index_cell(lo - INDEX_MARGIN), index_cell(hi + INDEX_MARGIN));
-        for z in lo.z..=hi.z {
-            for y in lo.y..=hi.y {
-                for x in lo.x..=hi.x {
-                    self.index.entry(IVec3::new(x, y, z)).or_default().push(id);
-                }
-            }
+        for cell in index_cells(&edit) {
+            self.index.entry(cell).or_default().push(id);
         }
         self.log.push(edit);
+    }
+
+    /// Replaces edit `k` with `edit` in its place in the order (a dig spot's brush grown:
+    /// G2.9; one brush a blow would put hundreds at a spot, each read at every point near it).
+    pub fn replace(&mut self, k: usize, edit: Edit) {
+        let id = u32::try_from(k).expect("fewer than 4 billion edits");
+        for cell in index_cells(&self.log[k]) {
+            if let Some(list) = self.index.get_mut(&cell)
+                && let Ok(i) = list.binary_search(&id)
+            {
+                list.remove(i);
+            }
+        }
+        for cell in index_cells(&edit) {
+            let list = self.index.entry(cell).or_default();
+            if let Err(i) = list.binary_search(&id) {
+                list.insert(i, id);
+            }
+        }
+        self.log[k] = edit;
+        self.replaced.push(k);
+    }
+
+    /// The edits replaced in their place so far, in turn.
+    pub fn replaced(&self) -> &[usize] {
+        &self.replaced
     }
 
     /// The edits whose brush, widened by its round, overlaps the box `lo..hi` and that a grid

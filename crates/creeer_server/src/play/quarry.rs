@@ -1,7 +1,7 @@
 //! *quarry* (G1.10): four players with picks along the near rim of a pit 5 m across dug into the
 //! ground east of the spawn, four boulders lying in it. Each digs the wall before it, a blow every cycle, its
-//! heap growing beside it; each side has been dug a while (its ledger owes nearly a pit), so
-//! the terrain is cut during the scene as it is in play, every so often.
+//! heap growing beside it, and every blow cuts the terrain at once (G2.9: each side's hole
+//! grows, a dent, then a shaft).
 
 use super::Play;
 use super::record::Act;
@@ -17,11 +17,9 @@ use creeer_terrain::geology::deposits::tangent_frame;
 use std::sync::Arc;
 
 /// The pit: how far east of the spawn its centre is, its radius and its depth (m).
-const AT: f64 = 8.0;
+const AT: f64 = 10.0;
 const RADIUS: f64 = 2.5;
 const DEPTH: f64 = 1.2;
-/// What each side's ledger owes when the scene begins (m³): about a pit, so its first blows cut.
-const OWED: f64 = 0.5;
 /// The ticks between a player's blows.
 const EVERY: u32 = 125;
 
@@ -45,7 +43,7 @@ fn side(w: &ServerWorld, k: usize) -> (DVec3, DVec3) {
     (stand, dig)
 }
 
-/// The world: the pit dug, four boulders dropped into it, and each side's ledger.
+/// The world: the pit dug, and four boulders dropped into it.
 pub fn quarry_world(terrain: Arc<Terrain>) -> ServerWorld {
     let mut w = world(terrain);
     let (centre, up) = pit(&w);
@@ -62,10 +60,6 @@ pub fn quarry_world(terrain: Arc<Terrain>) -> ServerWorld {
         let floor = w.ground_under(centre + (east * c + north * s) * 1.0);
         w.apply(&Command::Ball(floor + up * 0.6), None)
             .expect("a boulder");
-    }
-    for k in 0..4 {
-        let (_, dig) = side(&w, k);
-        w.owe_dug(dig, OWED);
     }
     w
 }
@@ -101,7 +95,8 @@ mod tests {
     use super::*;
     use crate::play::scenes::{scene, terrain};
 
-    /// The whole scene: blows dig, heaps grow, and the terrain is cut.
+    /// The whole scene: blows dig, heaps grow, and every blow cuts the terrain, each side's
+    /// hole one edit grown in place.
     #[test]
     fn the_quarry_digs_and_cuts_its_pit() {
         let s = scene("quarry").expect("the scene");
@@ -112,15 +107,21 @@ mod tests {
             let acts = (s.script)(t, &play);
             asked += acts.iter().map(|a| a.commands.len()).sum::<usize>();
             play.tick(&acts);
-            fell += play.server.world.take_blows().len();
+            let blows = play.server.world.take_blows();
+            fell += blows.len();
         }
         let w = &play.server.world;
-        let cuts = w.terrain.edits().len() - edits;
+        let holes = w.terrain.edits().len() - edits;
         println!(
-            "{asked} asked, {fell} blows; {cuts} cuts, {:.2} m³",
-            w.cut_dug()
+            "{asked} asked, {fell} blows; {holes} holes, {:.1} l cut",
+            w.cut_dug() * 1e3
         );
         assert!(fell >= 40, "blows fell: {fell} of {asked}");
-        assert!(cuts >= 4 && w.cut_dug() > 1.0, "the pit was cut");
+        assert_eq!(holes, 4, "a hole each");
+        // A pick's blow in soil: about a litre.
+        assert!(
+            w.cut_dug() > 0.5e-3 * f64::from(u32::try_from(fell).unwrap_or(0)),
+            "cut"
+        );
     }
 }

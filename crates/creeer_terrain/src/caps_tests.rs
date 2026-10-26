@@ -66,7 +66,7 @@ fn unmatched(w: &WorldMesh, indices: &[u32]) -> usize {
 fn a_chunk_with_its_caps_is_a_closed_solid() {
     let mut checked = 0;
     for p in spots(4) {
-        for level in [0u8, 2, 4] {
+        for level in [3u8, 5, 7] {
             let key = ChunkKey::containing(p, level);
             let Some(w) = world(key) else { continue };
             let (lo, hi) = (key.origin(), key.origin() + DVec3::splat(key.size()));
@@ -106,7 +106,7 @@ fn a_chunk_with_its_caps_is_a_closed_solid() {
 fn neighbours_of_one_level_share_their_borders_bit_for_bit() {
     let mut shared = 0;
     for p in spots(3) {
-        let a = ChunkKey::containing(p, 2);
+        let a = ChunkKey::containing(p, 5);
         for axis in 0..3 {
             let mut step = IVec3::ZERO;
             step[axis] = 1;
@@ -186,7 +186,7 @@ fn between_levels_no_ray_reaches_the_rock_unseen() {
     let t = terrain();
     let (mut rays, mut level_faces, mut uncapped_misses) = (0, 0, 0);
     for p in spots(3) {
-        for fine_level in [1u8, 3] {
+        for fine_level in [0u8, 1, 4, 6] {
             let coarse = ChunkKey::containing(p, fine_level + 1);
             let Some(wc) = world(coarse) else { continue };
             let c = coarse.cell_size();

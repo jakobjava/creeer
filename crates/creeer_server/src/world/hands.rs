@@ -17,7 +17,7 @@ use creeer_math::glam::{DMat3, DQuat};
 use creeer_sim::carry;
 
 /// The arms' stiffness (N/m) and damping ratio.
-const STIFFNESS: f64 = 445.0;
+pub(super) const STIFFNESS: f64 = 445.0;
 const DAMPING: f64 = 0.47;
 /// The grip against a load's turn: the hands this far apart (m), each holding at most the
 /// strength's half, and how far it turns before they give their most (rad).
@@ -26,7 +26,7 @@ const GIVE_TURN: f64 = 0.1;
 /// How far from where the hands mean to have it a load may be pulled before it is out of their
 /// reach (m), and for how long they may give their most or have it there before it drops (a
 /// knock is not a pull: a tenth of a second).
-const GIVE: f64 = 0.3;
+pub(super) const GIVE: f64 = 0.3;
 const OVER: u32 = 6;
 /// How fast the body turns the way it goes, at most (rad/s): as the drawn body turns
 /// (`creeer_client::animate::stand`).
@@ -36,13 +36,13 @@ const TURN: f64 = 8.0;
 const RING: f64 = 0.5;
 
 /// The most torque the hands hold a load's turn with (N·m).
-fn grip() -> f64 {
+pub(super) fn grip() -> f64 {
     0.5 * carry::STRENGTH * 0.5 * HANDS_APART
 }
 
 /// A spring of `stiffness` on `mass` (or inertia), softened to ring at most `RING` a step, and
 /// its damping at `DAMPING` of critical.
-fn spring(stiffness: f64, mass: f64) -> (f64, f64) {
+pub(super) fn spring(stiffness: f64, mass: f64) -> (f64, f64) {
     let k = stiffness.min(mass * (RING / DT) * (RING / DT));
     (k, 2.0 * DAMPING * (k * mass).sqrt())
 }
@@ -68,6 +68,10 @@ impl ServerWorld {
 
     /// Avatar `by` (body `i`) holds its load (body `b`) this step.
     fn hold(&mut self, i: usize, b: usize, by: EntityId) {
+        if let Some(end) = self.carrying.get(&by).and_then(|c| c.end) {
+            self.hold_end(i, b, by, end);
+            return;
+        }
         let mass = self.mass_of(b);
         let s = &self.world.bodies[i].structure;
         let (centre, turn, v, w) = (

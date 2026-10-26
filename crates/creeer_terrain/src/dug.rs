@@ -1,11 +1,12 @@
 //! The volume a dig takes out of the ground (G1.5, ADR-0032), measured from the same density
 //! field the physics reads: the generated ground with every edit, rounded as the finest grid
-//! rounds it. What a player digs is handed out as it is dug; the terrain is cut once enough
-//! is dug for the smallest pit the grid draws, by a brush sized so the field loses exactly that.
+//! rounds it. Every blow's ground is cut at once (G2.9): a dig spot's one brush grows, sized so
+//! the field loses exactly what was dug there, to a thousandth.
 //!
 //! The field is sampled once on a grid of `step` about a centre (a column's generated density
 //! is linear in height: one height lookup a column), and then a brush's removal is a sum over
-//! the samples in rock: each one's share of rock, `clamp(½ − d/step)`, before and after.
+//! the samples in rock: each one's share of rock, `clamp(½ − d/step)`, before and after. A hole
+//! grown is measured only where it reaches beyond what it was: elsewhere both take the same.
 
 use crate::Terrain;
 use crate::edits::{Brush, Edit, FINEST_CELL, round};
@@ -28,23 +29,74 @@ fn rock(d: f64, step: f64) -> f64 {
 impl Field {
     /// `terrain`'s field within `reach` of `centre`, every `step` metres.
     pub fn around(terrain: &Terrain, centre: DVec3, reach: f64, step: f64) -> Self {
+        let keep = |p: DVec3| (p - centre).length() <= reach;
+        Self::sampled(terrain, centre, (DVec3::splat(reach), step), None, keep)
+    }
+
+    /// `terrain`'s field in a box about `centre` (its half sizes east, north and up, as
+    /// `tangent_frame` turns them), every `step` metres, without edit `without` (a dig spot's
+    /// own brush, to be grown).
+    pub fn in_box_without(
+        terrain: &Terrain,
+        centre: DVec3,
+        (half, step): (DVec3, f64),
+        without: Option<usize>,
+    ) -> Self {
+        Self::sampled(terrain, centre, (half, step), without, |_| true)
+    }
+
+    /// As [`Self::in_box_without`], only where brush `to` reaches beyond `from` (each grown
+    /// from the other: elsewhere both dig the same, and a blow measuring the whole hole took
+    /// 2–20 ms as it deepened, G2.9).
+    pub fn beyond_without(
+        terrain: &Terrain,
+        (from, to): (Brush, Brush),
+        (centre, half, step): (DVec3, DVec3, f64),
+        without: Option<usize>,
+    ) -> Self {
+        let margin = round(FINEST_CELL).min(to.radius()) + step;
+        let keep = |p: DVec3| {
+            let d = to.distance(p);
+            d <= margin && d < from.distance(p) - 1e-12
+        };
+        Self::sampled(terrain, centre, (half, step), without, keep)
+    }
+
+    fn sampled(
+        terrain: &Terrain,
+        centre: DVec3,
+        (half, step): (DVec3, f64),
+        without: Option<usize>,
+        keep: impl Fn(DVec3) -> bool,
+    ) -> Self {
         let up = centre.normalize();
         let (east, north) = tangent_frame(up);
         #[allow(clippy::cast_possible_truncation)] // a few dozen
-        let n = (reach / step).ceil() as i32;
+        let n = (half / step).ceil().as_ivec3();
+        let reach = half.length();
+        let k = round(FINEST_CELL);
         let edits = terrain.edits();
+        let (lo, hi) = (centre - reach - k, centre + reach + k);
+        let near: Vec<Edit> = (edits.log().iter().enumerate())
+            .filter(|&(i, e)| {
+                let (blo, bhi) = e.brush().bounds();
+                Some(i) != without && blo.cmple(hi).all() && bhi.cmpge(lo).all()
+            })
+            .map(|(_, e)| *e)
+            .collect();
         let mut samples = Vec::new();
-        for i in -n..=n {
-            for j in -n..=n {
+        for i in -n.x..=n.x {
+            for j in -n.y..=n.y {
                 let column = centre + east * (f64::from(i) * step) + north * (f64::from(j) * step);
-                let generated = terrain.generated_density(column);
-                for k in -n..=n {
-                    let z = f64::from(k) * step;
+                let mut generated = None;
+                for h in -n.z..=n.z {
+                    let z = f64::from(h) * step;
                     let p = column + up * z;
-                    if (p - centre).length() > reach {
+                    if !keep(p) {
                         continue;
                     }
-                    let d = edits.density(p, generated + z);
+                    let g = *generated.get_or_insert_with(|| terrain.generated_density(column));
+                    let d = near.iter().fold(g + z, |d, e| e.apply(p, d, k));
                     if d < step {
                         samples.push((p, d));
                     }
@@ -62,51 +114,69 @@ impl Field {
 
     /// The volume (m³) a dig with `brush` would take out of the field.
     pub fn removed(&self, brush: &Brush) -> f64 {
+        self.removed_beyond(None, brush)
+    }
+
+    /// The volume (m³) a dig with `brush` would take out of the field beyond what one with
+    /// `from` would (none: all it takes).
+    pub fn removed_beyond(&self, from: Option<&Brush>, brush: &Brush) -> f64 {
         let dig = Edit::Dig(*brush);
+        let was = from.map(|b| Edit::Dig(*b));
         let k = round(FINEST_CELL);
+        let (lo, hi) = brush.bounds();
+        let (lo, hi) = (lo - k - self.step, hi + k + self.step);
         let lost: f64 = (self.samples.iter())
-            .map(|&(p, d)| rock(d, self.step) - rock(dig.apply(p, d, k), self.step))
+            .filter(|(p, _)| p.cmpge(lo).all() && p.cmple(hi).all())
+            .map(|&(p, d)| {
+                let before = was.map_or(d, |w| w.apply(p, d, k));
+                rock(before, self.step) - rock(dig.apply(p, d, k), self.step)
+            })
             .sum();
         lost * self.step * self.step * self.step
     }
 
-    /// The radius in `least..=most` of a sphere about `centre` that takes at most `volume` out
-    /// of the field, within a thousandth of it, and what it takes (`most`'s if even that takes
-    /// less); none if even `least`'s takes more. What is left over stays dug and not cut.
-    pub fn sphere_for(
+    /// The parameter in `lo..=hi` at which `shape`'s brush (growing with it, each containing
+    /// the ones before) takes `volume` out of the field beyond what `lo`'s does (with `beyond`;
+    /// else all it takes), within a thousandth of it (regula falsi, Illinois), and what it
+    /// takes; `hi`'s if even that takes less.
+    pub fn grown_for(
         &self,
-        centre: DVec3,
         volume: f64,
-        (least, most): (f64, f64),
-    ) -> Option<(f64, f64)> {
-        let take = |radius: f64| {
-            self.removed(&Brush::Sphere {
-                center: centre,
-                radius,
-            })
-        };
-        let bottom = take(least);
-        if bottom > volume {
-            return None;
+        (shape, beyond): (impl Fn(f64) -> Brush, bool),
+        (lo, hi): (f64, f64),
+    ) -> (f64, f64) {
+        let from = beyond.then(|| shape(lo));
+        let take = |t: f64| self.removed_beyond(from.as_ref(), &shape(t));
+        let (mut a, mut b) = ((lo, take(lo) - volume), (hi, take(hi) - volume));
+        if b.1 <= 0.0 {
+            return (hi, b.1 + volume);
         }
-        let top = take(most);
-        if top <= volume {
-            return Some((most, top));
+        if a.1 >= 0.0 {
+            return (lo, a.1 + volume);
         }
-        let (mut lo, mut hi, mut best) = (least, most, (least, bottom));
-        for _ in 0..30 {
-            if volume - best.1 <= 1e-3 * volume {
-                break;
+        let mut side = 0;
+        for _ in 0..60 {
+            let t = (a.0 * b.1 - b.0 * a.1) / (b.1 - a.1);
+            let f = take(t) - volume;
+            if f.abs() <= 1e-3 * volume || (b.0 - a.0) < 1e-9 {
+                return (t, f + volume);
             }
-            let mid = 0.5 * (lo + hi);
-            let v = take(mid);
-            if v <= volume {
-                (lo, best) = (mid, (mid, v));
+            if f < 0.0 {
+                a = (t, f);
+                if side == -1 {
+                    b.1 *= 0.5;
+                }
+                side = -1;
             } else {
-                hi = mid;
+                b = (t, f);
+                if side == 1 {
+                    a.1 *= 0.5;
+                }
+                side = 1;
             }
         }
-        Some(best)
+        // (Never in a field of steps: the closest below.)
+        (a.0, a.1 + volume)
     }
 }
 

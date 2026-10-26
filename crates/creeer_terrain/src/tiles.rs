@@ -64,6 +64,10 @@ pub fn level_spacing(radius: f64, level: u8) -> f64 {
     radius * MAX_ANGLE_PER_FACE_UNIT * cell(level)
 }
 
+/// The finest height spacing (m): the generated ground has no detail finer than this, and
+/// physics reads it there (`Terrain::density`).
+pub const FINEST_SPACING: f64 = 1.0;
+
 /// Coarsest level whose samples are at most `spacing` metres apart.
 pub fn level_for_spacing(radius: f64, spacing: f64) -> u8 {
     (0..MAX_LEVEL)
@@ -294,11 +298,13 @@ impl HeightCache {
         tile
     }
 
-    /// A sampler at the level matching `spacing`, for many lookups in one area.
+    /// A sampler at the level matching `spacing`, for many lookups in one area; never finer
+    /// than [`FINEST_SPACING`] (G2.9: chunks of 12.5 cm cells draw the ground physics touches,
+    /// and only edits are finer).
     pub fn sampler(&self, spacing: f64) -> HeightSampler<'_> {
         HeightSampler {
             cache: self,
-            level: level_for_spacing(self.elevation.radius, spacing),
+            level: level_for_spacing(self.elevation.radius, spacing.max(FINEST_SPACING)),
             recent: Vec::new(),
         }
     }

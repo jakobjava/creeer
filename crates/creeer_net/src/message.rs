@@ -142,6 +142,7 @@ pub use command::{Command, Target};
 mod inventory;
 mod laid;
 pub use laid::{ItemLook, Laid, Part};
+mod plastic;
 pub(crate) mod profile;
 mod server;
 mod trees;

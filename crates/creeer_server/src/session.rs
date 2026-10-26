@@ -58,6 +58,8 @@ pub struct Session {
     /// What it will be, once the queue lets the spawn out.
     pending: HashSet<EntityId>,
     edits_told: usize,
+    /// How many of the edits replaced in their place it has been told of (G2.9).
+    replaced_told: usize,
     /// How many of the loose things picked up it has been told (G1.6c).
     taken_told: usize,
     /// How much of the log of items laid on the ground it has been told (G1.6).
@@ -81,6 +83,7 @@ impl Session {
             spawned: HashSet::new(),
             pending: HashSet::new(),
             edits_told: 0,
+            replaced_told: 0,
             taken_told: 0,
             laid_told: 0,
             trees_told: 0,
@@ -122,6 +125,7 @@ impl Session {
             self.queue(&ServerMessage::Despawn(id));
         }
         self.edits_told = 0;
+        self.replaced_told = 0;
         self.taken_told = 0;
         self.laid_told = 0;
         self.trees_told = 0;
@@ -218,6 +222,25 @@ impl Session {
         // Edits not yet had (all of the world's: the terrain is everyone's).
         let edits = world.terrain.edits();
         let log = edits.log();
+        // Edits replaced in their place since (a dig spot grown) that it had: each again, alone
+        // (sent again from the first, every blow sent a quarry's whole log after its hole).
+        let mut replaced = edits.replaced()[self.replaced_told.min(edits.replaced().len())..]
+            .iter()
+            .copied()
+            .filter(|&k| k < self.edits_told)
+            .collect::<Vec<usize>>();
+        replaced.sort_unstable();
+        replaced.dedup();
+        self.replaced_told = edits.replaced().len();
+        for k in replaced {
+            let mut part = Edits::default();
+            part.push(log[k]);
+            self.queue(&ServerMessage::Edits {
+                first: k as u64,
+                log: part.to_bytes(),
+                in_place: true,
+            });
+        }
         while self.edits_told < log.len() {
             let to = (self.edits_told + EDITS_PER_MESSAGE).min(log.len());
             let mut part = Edits::default();
@@ -229,6 +252,7 @@ impl Session {
             self.queue(&ServerMessage::Edits {
                 first,
                 log: part.to_bytes(),
+                in_place: false,
             });
         }
         // What was laid on the ground, then what was picked up (everyone's, as the terrain is;

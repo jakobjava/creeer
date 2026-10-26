@@ -61,9 +61,38 @@ A blow: 0.05 ms on average (budget 0.2). The rare blow that cuts a pit: 2.3 ms a
 ## Limits
 
 - A pit spanning two grounds (soil over its bedrock) cuts by volume what the blows dug; its mass closes exactly only within one ground.
-- The terrain shows hand digging in steps of about 0.4 m³ (the finest grid's smallest pit); finer terrain near players would show litres.
+- (Lifted in G2.9: every blow cuts the terrain, drawn in 12.5 cm cells near the player.)
 - A brittle head does not chip or break on rock (only abrasive wear); the heap's grain size is a rough estimate; dug matter does not settle or slide; loose stones lying over a cut pit stay where they lay.
 - The fills' rounded skin reads as the ground beneath, not the filled rock (pre-existing: rock is the fill's only within its brush).
 - In creative play, walking with bare hands, a click on the ground within reach digs by hand instead of the sandbox's tool.
 
 Each is in `docs/future-improvements.md`.
+
+## Amended in G2.9 (2026-10-26): every blow cuts the ground
+
+The user's play: "there is no visible hole". A post hole is 30–50 l; the smallest pit the 1 m grid drew held about 90–260 l, so a post hole never showed, and the ground stayed solid where it had been dug. With 12.5 cm cells near the player (ADR-0006, amended), every blow cuts.
+
+**Decision.**
+- Each spot has **one brush that grows**, in its place in the edit log (`Edits::replace`).
+  - It grows as a dent (a ball up to 15 cm, the hole's radius: a spade's width, a post hole 25–30 cm across), then a shaft down to 1 m (what an arm and a tool reach below the ground one stands on), then wider, up to 0.6 m.
+  - Each blow it is sized so the field, measured without it, loses exactly what was dug there, to a thousandth (`Field::grown_for`: regula falsi on the shape's parameter; each shape contains the ones before).
+  - The field is sampled in a box about the hole's axis, on a grid of a fifth of its radius (1.5–4 cm). Sampled in a ball about the whole hole, a blow took 70 ms.
+- A blow within 10 cm of a hole digs that hole (its floor and walls), wherever its cell.
+- If any later edit comes near a hole (a hole backfilled, then dug again), a new brush begins: grown in place, the hole would lie under the fill.
+- A hole as wide as it grows passes what it could not take to a new spot at its floor. Otherwise every blow there measured it again, to cut nothing.
+- Saves keep what a spot still owes (its hole is in the edits). Dug again, a new brush takes it.
+- Every hole is grown in place in the edit log; only a later *fill* nearby starts a new brush. Digs combine the same in either order, and treated as any edit, a hole a metre from another began anew every blow: 3,000 edits in 3,000 blows, each blow slower than the last.
+
+**Measured and rejected.**
+
+| Tried | Measured | Why not |
+|---|---|---|
+| The field sampled in a ball about the whole hole | 70 ms a blow | Most samples far from the hole |
+| The whole hole measured each blow, bracketed by its whole volume × 1.33 | 2.5 ms a blow at 0.9 m deep | A deep shaft's every blow reached into widening it, its whole wall measured |
+| A later edit of any kind stops a hole growing in place | 3,000 edits for 3,000 blows at four spots a metre apart; blows slowed to 70 ms | Digs after it take the same ground in either order; only fills matter |
+| A 4 cm grid for wide holes | 7 ms a blow at 0.6 m wide | The old pits were measured on 10 cm |
+
+**Cost.** A blow measures only where its hole grows (`Field::beyond_without`): its floor for a shaft, its wall as it widens. The grid is a fifth of the hole's radius, 1.5–10 cm.
+- A post hole dug at one spot: 0.3–0.9 ms a blow, to 73 l and about 0.9 m deep in 60 blows.
+- 10,000 blows at four spots a metre apart: 1.4 ms a blow on average, 5.3 ms at worst (the old ledger: 0.05 ms a blow, 2.3 ms for the rare blow that cut a pit). The heaps' mass equals ρ × (cut + owed) to 10⁻⁹, and the terrain measured anew on another grid lost the same within 5 %.
+- Four holes are four edits.
