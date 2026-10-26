@@ -13,6 +13,9 @@ mod clip;
 pub mod cube;
 pub mod datum;
 pub mod dug;
+mod edit_gradient;
+#[cfg(test)]
+mod edit_gradient_tests;
 pub mod edits;
 #[cfg(test)]
 mod edits_tests;

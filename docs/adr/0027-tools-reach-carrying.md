@@ -269,4 +269,6 @@ The user's play: "how to dig it into the ground?" A carried load kept the turn i
 Validation (`raising_tests.rs`):
 - A 3 m green spruce pole (27 kg) grabbed at its end is held by that point and raised to 20–80° from the vertical.
 - A crate is still held level.
-- Walked under with its foot over a 30 cm hole, the pole came up to 44° from the vertical with its foot 24 cm down the hole. Then, pressed against the hole's rim, it was thrown at 1,254 m/s: the energy guard stopped it dead, and the next step exploded. That is a fault of rigid bodies against a narrow hole's rim, being fixed; the test is ignored until then.
+- Walked under with its foot over a 30 cm hole, the pole comes up to 22° from the vertical (gate 30°) with its foot 47 cm down the hole (gate 20 cm), at 0.45 m/s at most.
+  - At first it came up to 44° with its foot 24 cm down, and then, pressed against the hole's rim, was thrown at 1,254 m/s: the energy guard stopped it dead, and the next step exploded.
+  - That was the terrain's gradient on the hole's axis (central differences across its ridge) and a redone step that lost the guard's books, not the raising: fixed in ADR-0005 ("Amended in G2.9: a rod against a narrow hole's rim"). The raising controller is unchanged.

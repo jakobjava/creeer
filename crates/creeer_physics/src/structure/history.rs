@@ -15,11 +15,20 @@ pub struct NodeState {
     previous: (DVec3, DVec3, DQuat, DVec3),
     acceleration: (DVec3, DVec3),
     loads: (DVec3, DVec3),
+    /// Where the energy guard saw the last step end (`step.rs`'s snapshot), if it did: the
+    /// guard holds the contacts found at a step's start to what the last step left in them
+    /// only where the bodies are where it ended. Not put back, a step redone in substeps (a
+    /// box turning fast, `world/turn.rs`) saw its body elsewhere than the redone attempt's end
+    /// and held its contacts to nothing: the energy they were found with became motion. A
+    /// pole's contacts found holding 2.5 GJ, against the 81 kJ the last step left in them,
+    /// threw it at 1,254 m/s (G2.9, ADR-0005).
+    end: Option<(DVec3, DQuat)>,
 }
 
 impl NodeState {
     /// The state of node 0 of `s` and its solver, if the structure is a single node.
     pub fn of(s: &Structure, solver: &ImplicitSolver) -> Option<Self> {
+        let end = &solver.snapshot;
         (s.node_count() == 1 && s.element_count() == 0).then(|| Self {
             position: s.position[0],
             orientation: s.orientation[0],
@@ -33,6 +42,7 @@ impl NodeState {
             ),
             acceleration: (solver.acceleration[0], solver.angular_acceleration[0]),
             loads: (solver.previous_load[0], solver.previous_torque[0]),
+            end: (end.end_x.first().copied()).zip(end.end_q.first().copied()),
         })
     }
 
@@ -55,5 +65,12 @@ impl NodeState {
         ) = self.previous;
         (solver.acceleration[0], solver.angular_acceleration[0]) = self.acceleration;
         (solver.previous_load[0], solver.previous_torque[0]) = self.loads;
+        let end = &mut solver.snapshot;
+        end.end_x.clear();
+        end.end_q.clear();
+        if let Some((x, q)) = self.end {
+            end.end_x.push(x);
+            end.end_q.push(q);
+        }
     }
 }

@@ -337,6 +337,8 @@ mod posts;
 mod raising;
 #[cfg(test)]
 mod raising_tests;
+#[cfg(test)]
+mod rim_tests;
 mod spawn;
 mod step;
 mod survival;

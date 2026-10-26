@@ -9,7 +9,7 @@ use creeer_net::message::Target;
 use creeer_sim::items::{Form, Item, Piece};
 use creeer_terrain::edits::{Brush, Edit};
 
-fn wait(w: &mut ServerWorld, ada: EntityId, n: u32, walk: DVec3) {
+pub(super) fn wait(w: &mut ServerWorld, ada: EntityId, n: u32, walk: DVec3) {
     let input = AvatarInput {
         walk,
         ..AvatarInput::default()
@@ -23,7 +23,7 @@ fn wait(w: &mut ServerWorld, ada: EntityId, n: u32, walk: DVec3) {
 /// A world with ada standing, a hole dug 3.6 m east of her (15 cm across in radius, 0.7 m
 /// deep), a 3 m green spruce pole lying east–west with its foot over the hole, ada at its top
 /// end: the world, ada, the pole, the way east, and the hole's mouth.
-fn ada_and_pole() -> (ServerWorld, EntityId, EntityId, DVec3, DVec3) {
+pub(super) fn ada_and_pole() -> (ServerWorld, EntityId, EntityId, DVec3, DVec3) {
     let mut w = world();
     let ada = w.avatar_of("ada");
     wait(&mut w, ada, 60, DVec3::ZERO);
@@ -98,7 +98,6 @@ fn a_pole_grabbed_at_its_end_is_raised_by_that_end() {
 }
 
 #[test]
-#[ignore = "a pole pressed on the hole's rim blows up (G2.9): being fixed"]
 fn walked_up_its_foot_in_a_hole_a_pole_comes_up_to_stand() {
     let (mut w, ada, id, east, mouth) = ada_and_pole();
     grab_the_top(&mut w, ada, id, east);

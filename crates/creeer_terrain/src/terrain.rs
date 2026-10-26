@@ -15,8 +15,6 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 /// Height tiles kept in memory (about 18 KB each).
 const HEIGHT_TILES: usize = 4096;
-/// Step of the finite differences for density gradients (m).
-const GRADIENT_STEP: f64 = 0.01;
 
 /// A planet's terrain, shared by the simulation and the mesh workers.
 #[derive(Debug)]
@@ -107,31 +105,22 @@ impl Terrain {
     }
 
     /// The density and its gradient at `p` (the gradient points into the air). The distance to
-    /// the surface is about `density / |gradient|`. Away from edits the gradient is exact (the
-    /// derivative of the interpolated heights, the datum and the distance from the centre: one
-    /// height lookup); near them, where brushes and ground meet in creases, central
-    /// differences over 1 cm.
+    /// the surface is about `density / |gradient|`. The gradient is exact: the derivative of
+    /// the interpolated heights, the datum and the distance from the centre (one height
+    /// lookup), carried through the rounded max or min of each edit near `p`
+    /// (`edit_gradient.rs`). The value is [`Self::density`]'s, bit for bit.
     pub fn density_gradient(&self, p: DVec3) -> (f64, DVec3) {
-        let edits = self.edits();
-        if p != DVec3::ZERO && edits.near(p).next().is_none() {
-            let (height, height_gradient) = self.heights.sampler(1.0).height_gradient(p);
-            let (radius, radius_gradient) = self.planet.datum.radius_gradient(p);
-            let length = p.length();
-            return (
-                length - radius - height,
-                p / length - radius_gradient - height_gradient,
-            );
+        if p == DVec3::ZERO {
+            return (self.density(p), DVec3::ZERO); // the centre: no direction, no slope
         }
-        let mut sampler = self.heights.sampler(1.0);
-        let datum = self.planet.datum;
-        let mut d = |q: DVec3| edits.density(q, generated(&datum, &mut sampler, q));
-        let h = GRADIENT_STEP;
-        let gradient = DVec3::new(
-            d(p + DVec3::X * h) - d(p - DVec3::X * h),
-            d(p + DVec3::Y * h) - d(p - DVec3::Y * h),
-            d(p + DVec3::Z * h) - d(p - DVec3::Z * h),
-        ) / (2.0 * h);
-        (d(p), gradient)
+        let (height, height_gradient) = self.heights.sampler(1.0).height_gradient(p);
+        let (radius, radius_gradient) = self.planet.datum.radius_gradient(p);
+        let length = p.length();
+        let generated = (
+            length - radius - height,
+            p / length - radius_gradient - height_gradient,
+        );
+        self.edits().density_gradient(p, generated)
     }
 
     /// The rock at `p` (material id), edits included; `None` in air.
