@@ -203,3 +203,52 @@ The *log bridge* scene (`play/log_bridge.rs`: two players nail a plank across tw
 - **Parts resting on each other rock by millimetres,** so they count as touching within 1 cm (was 5 mm): as near as a nail draws them together.
 
 The scene's test (both ends nailed by tick 899; under the crates, the bridge breaks or comes apart) passes. At full length it takes 35 s in release, so it is run by hand.
+
+## G2.9: fastened to standing trees (2026-10-26)
+
+The user asked to build with the trees that stand ("nail something to it"). A part (or a built structure) touching a standing tree's trunk is now lashed, pegged or nailed to it as to another part: J aimed at the part or at the trunk, after the fastener's time.
+
+**Prior work:**
+
+| Source | What it does | For Creëer |
+|---|---|---|
+| Treehouse practice: the treehouse attachment bolt (TAB, Garnier limb; Nelson Treehouse, treehousesupplies.com) | One large bolt with a collar bearing on the stem, the beam on a long perch away from the trunk, so the tree can grow and few holes wound it. Builders warn that trees moving in wind shear nails, screws and bolts | The tree as a fixed support is what a single tree with a TAB is. Sway is not modelled (a limit), so that failure is absent. A TAB is a bolt: a fastener kind of its own with G3's iron |
+| Wood Handbook FPL-GTR-282, ch. 8 | Nails driven into green wood and pulled before it dries hold about as in seasoned wood; the withdrawal equation holds for seasoned wood or unseasoned wood that stays wet. Wood drying round a nail, or wetted and dried, can drop it to a quarter | A living stem stays wet: its side is taken at its species' density as EN 1995 takes it (12 %), as a felled log's is. The loss on drying is a limit for every green part |
+| EN 1995-1-1 §8.3.2 | Cuts withdrawal by a third for timber fastened near fibre saturation that will dry under load | Not applied to the stem (it never dries); see the limit above |
+| Shigo (1977), CODIT | A tree walls off a wound, and grows round a fastener over the years | Not modelled: trees do not grow in the game |
+| Survival builders (The Forest, Sons of the Forest) | Pieces snap onto trunks as fixed anchors | Snapping rejected (principle 13). Kept: the tree as a fixed support, now with a law |
+
+**Decision:**
+- **The tree is the other member.** Its side (`fasteners::side`) is the species' living wood (`data/flora/trees.ron`'s `wood`, e.g. `birch_green`), as thick along the fastener as the stem is there (2·r(z)); a lashing goes round that. The part's side is its member's wood and thickness. The law is the fastener's as between two parts (Johansen's modes, K_ser, withdrawal; a lashing's friction clamp): one fastener, the contact the thinner's thickness squared.
+- **It does not bend.** The joint runs from the part's node (put into its member where it meets the stem) to the stem's axis at that height, axis to axis as between two parts, so the law's `between` is the real distance. The axis end is held fast to the world (`Structure::fix_to`, which `Structure::anchor` is now built on).
+- **Nothing more is kept.** A node held fast on a tree's axis (within 0.1 mm) is a joint to that tree. That holds through saves, pieces falling apart and nodes put in, since the forest grows the same trees from the seed. The save version is unchanged and old saves load as before. No protocol change either: `Fasten` and `Unfasten` with a target on no body name a point on a trunk (`creeer_net`'s docs say so), and the server finds the tree and the part touching it there.
+- **Touching a tree:** the world reports a contact of the part on a trunk's box, its normal within 60° of level in the tree's frame (the ground's is along the stem). The joint's place is the round stem's side facing the part's axis where the two axes come nearest (segment to segment), within 30 cm of the aim.
+- **Felled, it lets go.** `fell` severs every joint fixed to the tree above the cut, and what they held falls (or comes apart next step). Joints below the cut hold to the stump.
+- **Taking it apart:** U at the part or at the trunk. A tree joint is found by its end on the part, since its middle lies inside the stem.
+- **Survival as for parts:** a lashing takes a strip of bast from the pockets; nails and pegs wait for G3.
+- **Client:** J and U aimed at a standing tree's trunk send the trunk's point (`fastening.rs`), as strikes aim at trees.
+
+**Measured and rejected:**
+
+| Tried | What happened | Why rejected |
+|---|---|---|
+| The contact's own point as the joint's place (as between parts) | A pole leant on a trunk touched its box with a side face, whose patch pressed at its middle: the point lay 0.8 m down from the pole's top, which was what touched, and the joint went to the pole's middle | Replaced by the axes' nearest points |
+
+**Tests** (`world/tree_joints_tests.rs`, `structure/grow_tests.rs`). A 50 mm green spruce pole is leant like a ladder on a 15–30 cm tree near the spawn (green birch), its top 1.6 m up, and nailed with `nail_100` by a player's command.
+- The law: slip modulus 1,227 kN/m, yield 1,222 N, peak 1,405 N, withdrawal 1,148 N.
+- 490 N down and 196 N along the trunk's face on its top: it moves 0.3 mm and nothing breaks. Not nailed, the same push along the face slides it off.
+- 2.5 kN along the face: the nail lets go within 2 s, and the pole falls more than 0.3 m.
+- The tree felled at 0.5 m: the joint lets go at once, and the pole falls more than 0.5 m once the trunk is gone.
+- Saved and loaded: the same bytes, the joint kept, and it still holds 2 s on.
+- U aimed at the trunk: not before its 10 s, gone after.
+- End to end in survival: bark stripped into a pocket, the branch put down, nails refused, then J at the trunk with `bast_lashing`. Lashed after 30 s, the strip gone into the structure's items.
+- Physics: a bar fixed to the world at one end by `fix_to` and pinned at the other slips by half its weight over K, its fixed node unmoved.
+
+The play and stress goldens are unchanged: their scenes keep within the spawn's clearing, where no tree stands.
+
+**Limits** (also in `docs/future-improvements.md`):
+- The tree does not bend, sway, grow or take the load: nothing fastened to it pulls it over or breaks it, and wind does not work its joints loose.
+- Felled, its joints let go: the trunk does not carry down what was nailed to it. Nothing new can be fastened to a stump, though joints below a cut hold.
+- A notch cut into the stem beside a joint does not weaken it, and bark is taken as wood.
+- The part rests on the trunk's box (a square of the disc's area) while the joint is measured to the round stem.
+- A lashing round a trunk takes one strip whatever the girth.
