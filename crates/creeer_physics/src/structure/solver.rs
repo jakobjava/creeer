@@ -115,9 +115,13 @@ pub struct ImplicitSolver {
     pub(super) angular_acceleration: Vec<DVec3>,
     /// The external loads and torques of the last step: Newmark carries them into the next
     /// (its forces are the step's two ends' mean), so the energy guard credits a step
-    /// with the work of that mean (`group.rs`).
+    /// with the work of that mean (`booked.rs`).
     pub(super) previous_load: Vec<DVec3>,
     pub(super) previous_torque: Vec<DVec3>,
+    /// The loads' and torques' share of the last substep's change of momentum, over h (N,
+    /// N·m): what BDF2 carries a third of into the next step (`booked.rs`). Not saved: a
+    /// loaded solver takes it as the loads now, as a history reset does.
+    pub(super) given: [Vec<DVec3>; 2],
     /// Each dashpot's force and torque at the end of the last substep (node, N, N·m): in
     /// the accelerations Newmark carries, so in the work its next step's mean does.
     pub(super) dashpot_end: Vec<(usize, DVec3, DVec3)>,
@@ -252,6 +256,7 @@ impl ImplicitSolver {
             angular_acceleration: vec![DVec3::ZERO; n],
             previous_load: structure.load.clone(),
             previous_torque: structure.torque.clone(),
+            given: [structure.load.clone(), structure.torque.clone()],
             dashpot_end: Vec::new(),
             rest_inverse: structure
                 .inertia
@@ -340,6 +345,7 @@ impl ImplicitSolver {
         // The accelerations now are of the loads now.
         self.previous_load.clone_from(&s.load);
         self.previous_torque.clone_from(&s.torque);
+        self.given = [s.load.clone(), s.torque.clone()];
         let w = &mut self.work;
         // Its evaluation goes on with the last step's flows, made from the measures replaced
         // below.
@@ -372,29 +378,5 @@ impl ImplicitSolver {
     /// The (sub)step length h (s).
     pub fn time_step(&self) -> f64 {
         self.h
-    }
-
-    /// Changes the time step to `dt` (split into the solver's substeps) and re-linearises.
-    /// The history is rebuilt for the new step from the current velocities and the last
-    /// accelerations (x₋ = x − h·v + h²/2·a), so BDF2 continues a decelerating motion
-    /// instead of restarting it as uniform (which would make or lose energy).
-    pub fn set_time_step(&mut self, structure: &Structure, dt: f64) {
-        let h = dt / f64::from(self.substeps);
-        #[allow(clippy::float_cmp)] // the very same step: nothing to do
-        if h == self.h {
-            return;
-        }
-        self.h = h;
-        self.work.beta = self.beta();
-        self.refactor(structure);
-        let s = structure;
-        for i in 0..s.node_count() {
-            let (a, alpha) = (self.acceleration[i], self.angular_acceleration[i]);
-            self.previous_x[i] = s.position[i] - s.velocity[i] * h + a * (0.5 * h * h);
-            self.previous_v[i] = s.velocity[i] - a * h;
-            let back = -s.angular_velocity[i] * h + alpha * (0.5 * h * h);
-            self.previous_q[i] = crate::so3::exp(back) * s.orientation[i];
-            self.previous_w[i] = s.angular_velocity[i] - alpha * h;
-        }
     }
 }

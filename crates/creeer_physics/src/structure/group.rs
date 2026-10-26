@@ -7,6 +7,7 @@
 //! coupling's stiffness on that body.
 
 use super::Structure;
+use super::booked::{Start, acting, give, unbooked_work};
 pub use super::coupling::{Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo};
 use super::minimise::minimise;
 use super::solver::{ImplicitSolver, Scheme, Timings};
@@ -39,12 +40,13 @@ pub(super) fn trial_states<'a>(members: &'a [Member<'_>]) -> Vec<MemberState<'a>
 /// Energy may rise by this fraction of the energy in motion before the guard rejects a step
 /// (rounding, Newmark's bounded energy oscillation, and its second-order error in fields that
 /// vary in space): the kinetic and elastic energy before or after the step, whichever is
-/// larger, but of the contacts' energy (found anew each step) only what it changed by in the
-/// step (`step_group_with`).
+/// larger, but of the contacts' and struts' energy (found or set anew each step) only what it
+/// changed by in the step (`step_group_with`).
 const ENERGY_SLACK: f64 = 1.0e-3;
 
 /// Total energy (kinetic, elastic, potential of gravity and loads, coupling), its kinetic +
-/// elastic part less the contacts' energy found anew, and that. Member elastic energies come
+/// elastic part less the coupling's energy held under weight (`Coupling::elastic_and_held`),
+/// and that. Member elastic energies come
 /// from the last minimisation when it has `just_minimised` the members, or when the state
 /// is unchanged since (checked bit for bit). Right after a minimisation only its value is right: the step's plastic flow is not
 /// yet permanent, and the members' own elastic energy would count it as stored.
@@ -66,51 +68,8 @@ fn group_energy(
         total.0 += kinetic + elastic + potential;
         total.1 += kinetic + elastic;
     }
-    let (contact, found) = coupling.elastic_and_found(&states(members));
-    (total.0 + contact, total.1 + contact - found, found)
-}
-
-/// Where a member started a substep, and its dashpots' forces then.
-type Start = (Vec<DVec3>, Vec<DQuat>, Vec<(usize, DVec3, DVec3)>);
-
-/// The work the members' external loads and torques did since they were at `start` (J) that
-/// the energy's potential of the loads does not count. A torque has no potential as a load
-/// has (rotations do not add): its work, τ·Δθ for the rotation vector Δθ a node turned by,
-/// is credited instead; without that every joule a torque gave was taken for the
-/// integration's gain and removed (a motor in a free-floating station turned it for a
-/// second, then no more: F6). Newmark's forces are the mean of the step's two ends: a load
-/// or torque that changed did the work of its mean with the last step's, which the potential
-/// (at the load now) misses by ½·(f₋₁ − f)·Δx: unbooked, a thruster or motor switched on or
-/// off took the step for a gain and redid it by backward Euler.
-fn unbooked_work(members: &[Member<'_>], start: &[Start], newmark: bool) -> f64 {
-    let mut work = 0.0;
-    for ((s, v), (x0, q0, dashpots)) in members.iter().zip(start) {
-        for i in 0..s.node_count() {
-            let (torque, before) = (s.torque[i], v.previous_torque[i]);
-            let torque = if newmark {
-                0.5 * (torque + before)
-            } else {
-                torque
-            };
-            if torque != DVec3::ZERO {
-                work += torque.dot(crate::so3::log(s.orientation[i] * q0[i].conjugate()));
-            }
-            let change = v.previous_load[i] - s.load[i];
-            if newmark && change != DVec3::ZERO {
-                work += 0.5 * change.dot(s.position[i] - x0[i]);
-            }
-        }
-        work += s.dashpot_work(x0, q0) + s.added_work(x0, v.h);
-        // Newmark's mean took the last step's dashpots' forces too (in its accelerations).
-        if newmark {
-            for &(n, force, torque) in dashpots {
-                work += 0.5
-                    * (force.dot(s.position[n] - x0[n])
-                        + torque.dot(crate::so3::log(s.orientation[n] * q0[n].conjugate())));
-            }
-        }
-    }
-    work
+    let (coupled, held) = coupling.elastic_and_held(&states(members));
+    (total.0 + coupled, total.1 + coupled - held, held)
 }
 
 /// Advances every member by one step of its solver, solving them jointly with `coupling`.
@@ -147,6 +106,8 @@ pub fn step_group_with(
         v.timings = Timings::default();
     }
     for _ in 0..substeps {
+        // The scheme the substep is taken by in the end (a fallback's, if the guard redid it).
+        let mut used = scheme;
         if guard {
             let t = Instant::now();
             let (before, active, held) = group_energy(members, coupling, false);
@@ -168,15 +129,7 @@ pub fn step_group_with(
                 v.save(s);
             }
             // Whether any load or torque does work the loads' potential misses.
-            let acting = members.iter().any(|(s, v)| {
-                s.torque
-                    .iter()
-                    .chain(&v.previous_torque)
-                    .any(|t| *t != DVec3::ZERO)
-                    || s.load != v.previous_load
-                    || !s.dashpots.is_empty()
-                    || !s.added_mass.is_empty()
-            }) || coupling.driven();
+            let acting = members.iter().any(|(s, v)| acting(s, v)) || coupling.driven();
             let start: Vec<Start> = if acting {
                 members
                     .iter()
@@ -195,7 +148,7 @@ pub fn step_group_with(
             // and the work of the coupling's moved points (`driven`).
             let net = |members: &[Member<'_>], energy: f64, scheme: Scheme, driven: f64| {
                 if acting {
-                    energy - unbooked_work(members, &start, scheme == Scheme::Newmark) - driven
+                    energy - unbooked_work(members, &start, scheme) - driven
                 } else {
                     energy
                 }
@@ -214,10 +167,13 @@ pub fn step_group_with(
             // another gain up to 62 µJ a step (a thousandth of the 62 mJ its contacts held),
             // more than the 0.2 mJ of its rocking lost to its dashpots, and it rocked at
             // 5–16 mrad/s for good, five times their damping no matter (ADR-0024, "G2.0: at
-            // rest"). A ball's bounce or a crate's landing changes it by as much as it holds. The
-            // joints' and struts' energy counts whole: a standing character's step, its legs'
-            // struts holding 20 J, gains up to 30 mJ, and taken by their change alone a thousand
-            // such steps more were redone (the builders scene's most work 1,312 → 2,801).
+            // rest"). A ball's bounce or a crate's landing changes it by as much as it holds. So
+            // with the struts, set anew each step under a weight as contacts are found anew:
+            // whole, a player's legs holding 82 J under it and a 125 kg trunk lying across it
+            // let in 82 mJ a step, and the trunk rocked at 1–3 mrad/s for good. (By their
+            // change alone, before the loads BDF2 carries were booked, `booked.rs`, a thousand
+            // more of the builders' walking steps were redone: their most work 1,312 → 2,801.)
+            // The joints' drives count whole.
             let moving = active.max(active_after) + (held_after - held).abs();
             let limit = before + ENERGY_SLACK * moving + 1e-9;
             let (mut after, mut removed) = (after, false);
@@ -236,6 +192,7 @@ pub fn step_group_with(
                         v.fallbacks += 1;
                     }
                     substep(members, coupling, fallback);
+                    used = fallback;
                     let energy = group_energy(members, coupling, true).0;
                     after = net(members, energy, fallback, coupling.driven_work());
                     if after <= limit {
@@ -265,6 +222,7 @@ pub fn step_group_with(
         }
         // What the next substep's prediction carries: these loads.
         for (s, v) in members.iter_mut() {
+            give(s, v, used);
             v.previous_load.clone_from(&s.load);
             v.previous_torque.clone_from(&s.torque);
         }

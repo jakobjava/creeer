@@ -142,9 +142,10 @@ impl Coupling for Contacts {
         self.found_energy(states) + self.joints.elastic_energy(states)
     }
 
-    fn elastic_and_found(&self, states: &[MemberState<'_>]) -> (f64, f64) {
+    fn elastic_and_held(&self, states: &[MemberState<'_>]) -> (f64, f64) {
         let found = self.found_energy(states);
-        (found + self.joints.elastic_energy(states), found)
+        let (drives, struts) = self.joints.stored(states);
+        (found + drives + struts, found + struts)
     }
 
     fn found_energy(&self, states: &[MemberState<'_>]) -> f64 {
