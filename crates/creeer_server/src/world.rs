@@ -338,6 +338,9 @@ mod step;
 mod survival;
 #[cfg(test)]
 mod survival_tests;
+mod tree_joints;
+#[cfg(test)]
+mod tree_joints_tests;
 pub mod trees;
 #[cfg(test)]
 mod trees_tests;

@@ -70,9 +70,11 @@ pub enum Command {
         started: f64,
     },
     /// Fastens the two parts touching nearest the target with one of a fastener (G2.3: its
-    /// name in the catalogue, `data/fasteners.ron`).
+    /// name in the catalogue, `data/fasteners.ron`); a target on no body is a point on a
+    /// standing tree's trunk, and the part touching it there is fastened to the tree (G2.9).
     Fasten { target: Target, fastener: String },
-    /// Takes the fasteners out of the joint nearest the target on a built structure (G2.6).
+    /// Takes the fasteners out of the joint nearest the target on a built structure (G2.6), or
+    /// (on no body) of the joint to the standing tree's trunk there (G2.9).
     Unfasten(Target),
     /// Backfills round the part targeted where it stands in a hole: a post (G2.4).
     SetPost(Target),

@@ -40,12 +40,21 @@ impl ServerWorld {
         Ok(())
     }
 
-    /// The joint of structure `id` nearest `at`, if one is within reach of it.
+    /// The joint of structure `id` nearest `at`, if one is within reach of it: a joint's middle,
+    /// or for one to a tree (G2.9: it runs to the stem's axis) its end on the part.
     fn joint_near(&self, id: EntityId, at: DVec3) -> Result<usize, String> {
         let s = &self.world.bodies[self.index(id).ok_or("it is gone")?].structure;
+        let to_tree = |a: usize| s.held_fast(a) && self.tree_holding(s.position[a]).is_some();
         (0..s.element_count())
             .filter_map(|e| s.joint_ends(e).map(|(a, b)| (e, a, b)))
-            .map(|(e, a, b)| (e, (0.5 * (s.position[a] + s.position[b]) - at).length()))
+            .map(|(e, a, b)| {
+                let p = if to_tree(a) {
+                    s.position[b]
+                } else {
+                    0.5 * (s.position[a] + s.position[b])
+                };
+                (e, (p - at).length())
+            })
             .filter(|(_, d)| *d < NEAR)
             .min_by(|x, y| x.1.total_cmp(&y.1))
             .map(|(e, _)| e)

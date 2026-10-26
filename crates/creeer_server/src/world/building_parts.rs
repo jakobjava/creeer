@@ -101,7 +101,7 @@ impl ServerWorld {
         }))
     }
 
-    fn wood(&self, id: &str) -> Result<&creeer_materials::Material, String> {
+    pub(super) fn wood(&self, id: &str) -> Result<&creeer_materials::Material, String> {
         (self.building.materials.as_ref())
             .and_then(|m| m.get(id))
             .ok_or_else(|| format!("no material {id}"))
@@ -207,7 +207,7 @@ impl ServerWorld {
     /// The node of built structure `id`'s members `elements` (a range of its elements, joints
     /// skipped) nearest `point`, put into the member there if no node is near; that member and
     /// its thickness.
-    fn node_at(
+    pub(super) fn node_at(
         &mut self,
         id: EntityId,
         point: DVec3,

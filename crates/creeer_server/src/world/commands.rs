@@ -86,8 +86,15 @@ impl ServerWorld {
             }
             Command::Fasten { target, fastener } => {
                 let by = by.ok_or("only a player")?;
-                self.reached(by, target.body, target.at, target.seen)?;
-                let part = target.body.ok_or("nothing there to fasten")?;
+                let part = if let Some(part) = target.body {
+                    self.reached(by, Some(part), target.at, target.seen)?;
+                    part
+                } else {
+                    // A standing tree's trunk aimed at (G2.9): the part touching it there.
+                    within(target.at)?;
+                    self.within_reach(by, target.at)?;
+                    self.part_at_trunk(target.at)?
+                };
                 self.begin_fastening(by, part, target.at, fastener)?;
             }
             Command::SetPost(target) => {
@@ -98,8 +105,15 @@ impl ServerWorld {
             }
             Command::Unfasten(target) => {
                 let by = by.ok_or("only a player")?;
-                self.reached(by, target.body, target.at, target.seen)?;
-                let built = target.body.ok_or("nothing there to take apart")?;
+                let built = if let Some(built) = target.body {
+                    self.reached(by, Some(built), target.at, target.seen)?;
+                    built
+                } else {
+                    // A standing tree's trunk aimed at (G2.9): what is fastened to it there.
+                    within(target.at)?;
+                    self.within_reach(by, target.at)?;
+                    self.joint_to_tree_near(target.at)?
+                };
                 self.begin_unfastening(by, built, target.at)?;
             }
             Command::BindLying(id) => {

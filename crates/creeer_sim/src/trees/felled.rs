@@ -16,7 +16,7 @@ const RINGS_EVERY: f64 = 3.0;
 /// The thinnest a hull's ring is drawn to (m): a stem's top is a point.
 const TIP: f64 = 0.01;
 /// A standing trunk's boxes: each this tall (m), up to where the stem is this thin (m).
-const BOX: f64 = 3.0;
+pub const BOX: f64 = 3.0;
 const THINNEST_BOX: f64 = 0.03;
 /// A square of a disc's area: its half side over the disc's radius (√π / 2).
 const SQUARE: f64 = 0.886_226_925_452_758;

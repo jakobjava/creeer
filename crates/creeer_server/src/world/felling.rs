@@ -132,7 +132,7 @@ impl ServerWorld {
     /// and the way it goes; none: nothing was left): the part above a body, held there by a
     /// hinge joint across the way it goes, as hinge wood guides a falling tree. The notch's wood
     /// lies as chips beside the stump (it came out of the standing tree, scenery).
-    fn fell(
+    pub(super) fn fell(
         &mut self,
         tree: u64,
         (standing, grown): (&creeer_sim::trees::Standing, &Tree),
@@ -154,6 +154,8 @@ impl ServerWorld {
         self.trees.cuts.remove(&tree);
         self.trees.felled.insert(tree, cut.z);
         self.trees.log.push(tree);
+        // What was fastened to it above the cut lets go (G2.9).
+        self.let_go_of_tree(standing, cut.z);
         let wood = cut.removed() * grown.density;
         let stump = standing.base + standing.turn * DVec3::new(0.0, 0.0, cut.z);
         self.lay_chips(&part, wood, stump);
