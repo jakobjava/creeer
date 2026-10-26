@@ -1,0 +1,286 @@
+diff --git a/crates/creeer_physics/src/world/contact/coupling.rs b/crates/creeer_physics/src/world/contact/coupling.rs
+index 31c6552..9f396c5 100644
+--- a/crates/creeer_physics/src/world/contact/coupling.rs
++++ b/crates/creeer_physics/src/world/contact/coupling.rs
+@@ -84,6 +84,7 @@ impl Coupling for Contacts {
+                 0.0
+             };
+         }
++        self.start_stick_dashpots(info.start, info.previous, ahead);
+         self.start_dashpots(&gaps_start, &measured_start);
+         // The contact that carries the most: its force must be right to 1 % when the step
+         // stops, an error of a hundredth of F/k, its force over its stiffness (its depth for a
+@@ -127,11 +128,8 @@ impl Coupling for Contacts {
+         timer.stop(Slot::ContactLaws);
+         let timer = start();
+         let (damping, _, _) = self.dashpots(&gaps, measured);
+-        let friction: f64 = self
+-            .list
+-            .iter()
+-            .zip(at.iter())
+-            .map(|(c, &(_, _, _, slip, _, _))| c.friction * c.lambda * self.smooth(slip.length()).0)
++        let friction: f64 = (at.iter().enumerate())
++            .map(|(i, &(_, _, _, slip, _, _))| self.friction_energy(i, slip))
+             .sum();
+         let twist = self.twist_energy(states);
+         timer.stop(Slot::ContactRest);
+@@ -175,7 +175,7 @@ impl Coupling for Contacts {
+             } else {
+                 dashpots[i] - forces[i]
+             };
+-            let friction = slip * (c.friction * c.lambda * self.smooth(slip.length()).1);
++            let friction = self.friction_force(i, slip);
+             // The normal force acts at the contact points; friction at the material points
+             // too (one force), or for spheres at the carried friction points.
+             let at_points = match self.carried(i) {
+@@ -236,6 +236,8 @@ impl Coupling for Contacts {
+             }
+             c.lambda = force;
+         }
++        // Static friction's dashpot follows its spring (`stick.rs`).
++        self.set_stick_ratios();
+         changed
+     }
+ 
+@@ -263,6 +265,8 @@ impl Coupling for Contacts {
+                 let k = self.matrix_stiffness(i, gap, 0.0);
+                 self.list[i].stiffness = k;
+             }
++            // At the damped slip, its stiffness by the slip 1 + d times (`stick.rs`).
++            let (slip, factor) = self.damped_slip(i, slip);
+             let c = &mut self.list[i];
+             let n = c.normal;
+             let plane = DMat3::IDENTITY - DMat3::from_cols(n * n.x, n * n.y, n * n.z);
+@@ -275,7 +279,8 @@ impl Coupling for Contacts {
+             };
+             let along = if r > 0.0 { slip / r } else { DVec3::ZERO };
+             let outer = DMat3::from_cols(along * along.x, along * along.y, along * along.z);
+-            c.tangent = Some(((plane - outer) * f1 + outer * f2) * (c.friction * c.lambda));
++            c.tangent =
++                Some(((plane - outer) * f1 + outer * f2) * (c.friction * c.lambda * factor));
+         }
+         self.set_twist_stiffness(states);
+         // Each pressed face's stiffness as it presses now (`Patch::tangent`).
+diff --git a/crates/creeer_physics/src/world/contact/matrix.rs b/crates/creeer_physics/src/world/contact/matrix.rs
+index eb1e31f..8ff2254 100644
+--- a/crates/creeer_physics/src/world/contact/matrix.rs
++++ b/crates/creeer_physics/src/world/contact/matrix.rs
+@@ -10,13 +10,14 @@ impl Contacts {
+     /// Gauss-Newton stiffness of a contact on its point (3×3): the penalty (and dashpot) along
+     /// the normal while it touches or will touch within the step (closing over its gap: an
+     /// impact, whose stiffness is the coupling that matters most), sticking friction across it.
+-    fn stiffness(&self, c: &Contact) -> DMat3 {
+-        let (normal, tangent) = self.stiffness_parts(c);
++    fn stiffness(&self, i: usize) -> DMat3 {
++        let (normal, tangent) = self.stiffness_parts(i);
+         normal + tangent
+     }
+ 
+     /// The normal and the tangential (friction) part of [`Self::stiffness`].
+-    fn stiffness_parts(&self, c: &Contact) -> (DMat3, DMat3) {
++    fn stiffness_parts(&self, i: usize) -> (DMat3, DMat3) {
++        let c = &self.list[i];
+         // A patch's corners are coupled: their stiffness comes as the patch's blocks.
+         let own = if matches!(c.law, Law::Patch { .. }) {
+             0.0
+@@ -36,15 +37,16 @@ impl Contacts {
+         if let Some(tangent) = c.tangent {
+             return (along * normal, tangent);
+         }
+-        // Sticking: the stiff spring of the anchor. Sliding: Coulomb's force μ·λ is constant,
+-        // its secant over the slip of the step is the stiffness the step sees.
++        // Sticking: the stiff spring of the anchor, with its dashpot (`stick.rs`). Sliding:
++        // Coulomb's force μ·λ is constant, its secant over the slip of the step is the
++        // stiffness the step sees.
+         let n = c.normal;
+         let outer = DMat3::from_cols(n * n.x, n * n.y, n * n.z);
+         let slip = c.sliding * self.beta;
+         let tangent = if slip > self.smoothing {
+             c.friction * c.lambda / slip
+         } else {
+-            c.friction * c.lambda * 2.0 / self.smoothing
++            c.friction * c.lambda * 2.0 / self.smoothing * self.stick_factor(i)
+         };
+         (along * normal, (DMat3::IDENTITY - outer) * tangent)
+     }
+@@ -56,9 +58,9 @@ impl Contacts {
+     fn arms_and_blocks(&self, i: usize) -> impl Iterator<Item = (DVec3, DVec3, DMat3)> {
+         let c = &self.list[i];
+         let blocks = match self.carried(i) {
+-            None => [Some((c.arm_a, c.arm_b, self.stiffness(c))), None],
++            None => [Some((c.arm_a, c.arm_b, self.stiffness(i))), None],
+             Some([fa, fb]) => {
+-                let (normal, tangent) = self.stiffness_parts(c);
++                let (normal, tangent) = self.stiffness_parts(i);
+                 [
+                     Some((c.arm_a, c.arm_b, normal)),
+                     Some((fa.arm0(), fb.arm0(), tangent)),
+@@ -127,7 +129,7 @@ impl Contacts {
+     /// amended in G2.3).
+     pub(super) fn node_blocks(&self, member: usize) -> Vec<(usize, DMat3)> {
+         let mut blocks = Vec::new();
+-        for c in &self.list {
++        for (i, c) in self.list.iter().enumerate() {
+             for side in [c.a, c.b] {
+                 if let Side::Node {
+                     member: m, node, ..
+@@ -139,9 +141,9 @@ impl Contacts {
+                     // the matrix indefinite (rigid bodies take a face's corners together). The
+                     // matrix is the step's preconditioner: such a corner gives its normal part.
+                     let block = if c.lambda < 0.0 {
+-                        self.stiffness_parts(c).0
++                        self.stiffness_parts(i).0
+                     } else {
+-                        self.stiffness(c)
++                        self.stiffness(i)
+                     };
+                     blocks.push((node, block));
+                 }
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 3d5f4b1..011877f 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -40,6 +40,7 @@ mod normal;
+ pub mod patch;
+ #[cfg(test)]
+ mod patch_tests;
++mod stick;
+ pub mod turning;
+ mod twist;
+ 
+@@ -255,6 +256,8 @@ pub struct Contacts {
+     point_references: Vec<Vec<f64>>,
+     /// Each patch's dashpot between its corners for the step (N·s/m, `dashpot.rs`).
+     face_dashpots: Vec<dashpot::FaceDashpot>,
++    /// Each contact's static friction damped for the step (`stick.rs`).
++    stick: Vec<stick::Damped>,
+     /// The ground, for contacts measured against it.
+     ground: Option<Arc<dyn Ground>>,
+     /// The shapes balls are measured against ([`Measure::Closest`]).
+@@ -297,6 +300,7 @@ impl Contacts {
+             references: Vec::new(),
+             point_references: Vec::new(),
+             face_dashpots: Vec::new(),
++            stick: Vec::new(),
+             ground,
+             shapes,
+             tolerance: f64::INFINITY,
+diff --git a/crates/creeer_physics/src/world/contact/stick.rs b/crates/creeer_physics/src/world/contact/stick.rs
+new file mode 100644
+index 0000000..80ef2c6
+--- /dev/null
++++ b/crates/creeer_physics/src/world/contact/stick.rs
+@@ -0,0 +1,113 @@
++//! Static friction's spring damped within Coulomb's cone (ADR-0024, "G2.0: sticking contacts
++//! at rest").
++//!
++//! Static friction is a spring between A's point and its anchor on B, of stiffness
++//! k = 2·μ·λ/e at rest (`mod.rs`, e the stick distance), and elastic: its energy comes back.
++//! A felled log balanced across another, its ends on the ground carrying 0–2 N, rocked on
++//! those soft springs at 3 Hz for good, its energy constant to 10⁻⁷ J, and never slept. The
++//! stick spring stands for a real contact's tangential compliance, which is far stiffer
++//! (Mindlin's 8·G*·a) and whose vibration dies in the contact (microslip, Johnson §7.4); its
++//! own ringing, slow because it is soft, is the model's, as an undamped normal penalty's would
++//! be. So it is damped critically, as the normal dashpot damps the penetration: c = 2·√(k·m),
++//! m the contact's effective mass.
++//!
++//! Within the cone, not beside it. Discrete element codes damp the tangential spring and cap
++//! the sum of spring and dashpot at μ·F_n (Cundall & Strack 1979; Tsuji et al. 1992; LAMMPS'
++//! and LIGGGHTS' history models rescale the spring so that |k·u + c·u̇| ≤ μ·F_n); engines'
++//! impulse friction is the limit of the same, all tangential motion taken within the cone
++//! (Moreau's maximal dissipation; Box2D, PhysX, Bullet). A dashpot added to Coulomb's force
++//! instead held a wedge sliding down a 40° ramp at 1 cm/s; capped at a tenth of μ·λ beside it,
++//! it broke accuracy tests unless gated to resting contacts, and gated it decided sleep either
++//! way (`docs/adr/0024/sticking-dashpot.diff`).
++//!
++//! So the friction law's argument is the damped slip s = u + γ·u̇, γ = c/k the spring's time
++//! constant, u̇ = (u − u_r)/β the scheme's rate of the slip from its reference at x̂ (as the
++//! normal dashpot's, `dashpot.rs`): within the step s = (1 + d)·u − d·u_r, d = γ/β, affine in
++//! the unknowns. Its energy μ·λ·f₀(|s|)/(1 + d) has the force μ·λ·f₀'(|s|)·ŝ: the spring and
++//! its dashpot, k·u + c·u̇, while it sticks, and never more than μ·λ. A contact at rest has
++//! u̇ = 0 and holds what it held; one that slides keeps Coulomb's μ·λ, along u + γ·u̇.
++
++use super::{Contacts, point};
++use crate::structure::group::MemberState;
++use creeer_math::glam::DVec3;
++
++/// One contact's damped slip for the step: its reference slip at x̂ and d = γ/β.
++#[derive(Clone, Copy, Debug, Default)]
++pub(super) struct Damped {
++    reference: DVec3,
++    ratio: f64,
++}
++
++impl Contacts {
++    /// Sets each contact's damped slip for the step (`start`, `previous`: the members at the
++    /// step's start and one step before; `ahead` = τ/h). After the normal forces λ are set.
++    /// Contacts with spheres (friction at carried points) and impact substeps' (no dashpots)
++    /// keep their friction undamped.
++    pub(super) fn start_stick_dashpots(
++        &mut self,
++        start: &[MemberState<'_>],
++        previous: &[MemberState<'_>],
++        ahead: f64,
++    ) {
++        self.stick.clear();
++        for c in &self.list {
++            if !c.dashpot || c.rolls() || c.friction <= 0.0 {
++                self.stick.push(Damped::default());
++                continue;
++            }
++            let slip = |states: &[MemberState<'_>]| {
++                let travel = point(c.a, states).0 - point(c.anchor, states).0;
++                travel - c.normal * c.normal.dot(travel)
++            };
++            let (now, then) = (slip(start), slip(previous));
++            self.stick.push(Damped {
++                reference: now + (now - then) * ahead,
++                ratio: 0.0,
++            });
++        }
++        self.set_stick_ratios();
++    }
++
++    /// Each damped contact's d = γ/β for its normal force λ as it is now (at the step's start
++    /// and again at each refresh of λ): critical for the spring friction has at that λ.
++    pub(super) fn set_stick_ratios(&mut self) {
++        for (c, d) in self.list.iter().zip(&mut self.stick) {
++            let k = 2.0 * c.friction * c.lambda / self.smoothing;
++            let damped = c.dashpot && !c.rolls() && k > 0.0;
++            d.ratio = if damped {
++                2.0 * (c.mass.min(1e12) / k).sqrt() / self.beta
++            } else {
++                0.0
++            };
++        }
++    }
++
++    /// Contact `i`'s damped slip at slip `slip`, and 1 + d (its energy's divisor and its
++    /// stiffness's factor).
++    pub(super) fn damped_slip(&self, i: usize, slip: DVec3) -> (DVec3, f64) {
++        match self.stick.get(i) {
++            // (Both slips lie in the contact's plane already.)
++            Some(d) if d.ratio > 0.0 => (slip + (slip - d.reference) * d.ratio, 1.0 + d.ratio),
++            _ => (slip, 1.0),
++        }
++    }
++
++    /// Contact `i`'s friction energy at slip `slip`.
++    pub(super) fn friction_energy(&self, i: usize, slip: DVec3) -> f64 {
++        let c = &self.list[i];
++        let (s, factor) = self.damped_slip(i, slip);
++        c.friction * c.lambda * self.smooth(s.length()).0 / factor
++    }
++
++    /// Contact `i`'s friction force on A's point at slip `slip` (the energy's slope).
++    pub(super) fn friction_force(&self, i: usize, slip: DVec3) -> DVec3 {
++        let c = &self.list[i];
++        let (s, _) = self.damped_slip(i, slip);
++        s * (c.friction * c.lambda * self.smooth(s.length()).1)
++    }
++
++    /// The factor 1 + d of contact `i`'s friction stiffness while it sticks.
++    pub(super) fn stick_factor(&self, i: usize) -> f64 {
++        self.stick.get(i).map_or(1.0, |d| 1.0 + d.ratio)
++    }
++}

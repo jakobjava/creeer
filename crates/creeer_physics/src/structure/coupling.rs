@@ -52,6 +52,11 @@ pub trait Coupling: Sync {
     fn found_energy(&self, states: &[MemberState<'_>]) -> f64 {
         self.elastic_energy(states)
     }
+    /// [`Self::elastic_energy`] and its part [`Self::found_energy`] together (one evaluation
+    /// where they share it).
+    fn elastic_and_found(&self, states: &[MemberState<'_>]) -> (f64, f64) {
+        (self.elastic_energy(states), self.found_energy(states))
+    }
     /// Adds the gradient of [`Self::energy`] to `gradient[member][block]` (translation
     /// blocks, then rotation blocks).
     fn add_gradient(&self, states: &[MemberState<'_>], gradient: &mut [Vec<DVec3>]);

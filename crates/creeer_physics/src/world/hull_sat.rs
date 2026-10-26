@@ -73,7 +73,7 @@ pub fn hull_hull(pose_a: Pose, a: &Hull, pose_b: Pose, b: &Hull, margin: f64) ->
     };
     pressing.map_or_else(Vec::new, |(p, reference_is_a)| {
         let (reference, incident) = if reference_is_a { (&a, &b) } else { (&b, &a) };
-        clip(reference, incident, &p, reference_is_a)
+        clip_flat(reference, incident, &p, reference_is_a, margin)
     })
 }
 
@@ -119,7 +119,39 @@ fn edge_on_face(
     }
     let (_, p, reference_is_a) = best?;
     let (reference, incident) = if reference_is_a { (a, b) } else { (b, a) };
-    Some(clip(reference, incident, &p, reference_is_a))
+    Some(clip_flat(reference, incident, &p, reference_is_a, margin))
+}
+
+/// The patch of `pressing` and of the reference hull's other faces in its plane (within
+/// `ACROSS`) that the same incident face presses: one flat region of the hull, each face's
+/// part of it its own patch.
+///
+/// A felled trunk's faces along its length lie in nearly one plane, bent a little at each
+/// ring. An edge of a player's body box lying across such a trunk where two of its rings meet
+/// presses on both faces; the edge pair named one end of the line or the other as the trunk
+/// rocked, and with it one face (16, then 17: 362 µm in at one, 388 µm found at the other).
+/// The face's patch held its part of the line alone: each time the choice changed the other
+/// part was found pressed in, 0.34 J beyond what the last step left, every ten ticks for good
+/// (ADR-0024, "G2.0: at rest"). Each face clips the incident face to its own sides, so the
+/// patches cover disjoint parts of the overlap.
+fn clip_flat(
+    reference: &Placed<'_>,
+    incident: &Placed<'_>,
+    pressing_face: &Pressing,
+    reference_is_a: bool,
+    margin: f64,
+) -> Vec<RawContact> {
+    let mut contacts = clip(reference, incident, pressing_face, reference_is_a);
+    let normal = reference.normals[pressing_face.face];
+    for (g, n) in reference.normals.iter().enumerate() {
+        if g == pressing_face.face || n.dot(normal) < ACROSS {
+            continue;
+        }
+        if let Some(p) = pressing(reference, g, incident, &[pressing_face.incident], margin) {
+            contacts.extend(clip(reference, incident, &p, reference_is_a));
+        }
+    }
+    contacts
 }
 
 /// The largest separation of `other` from a face plane of `reference`, and that face.

@@ -406,4 +406,74 @@ Play and stress at both lengths. Motion changes: crates and boxes on one another
 
 ### Where this leaves G2.0
 
-The hops are gone: one physical contact keeps one representation from step to step, and friction keeps what a step built. What keeps felled trunks awake now is an undamped elastic mode of sticking contacts (the anchors' springs, e = 0.1 mm) and a trunk resting on a held player. Next (`docs/future-improvements.md`): damping the stick springs within Coulomb's cone, or a stiffer stick so that mode is fast and the face dashpots reach it.
+The hops are gone: one physical contact keeps one representation from step to step, and friction keeps what a step built. What keeps felled trunks awake now is an undamped elastic mode of sticking contacts (the anchors' springs, e = 0.1 mm) and a trunk resting on a held player. Next (`docs/future-improvements.md`): damping the stick springs within Coulomb's cone, or a stiffer stick so that mode is fast and the face dashpots reach it. (Corrected below: it was not that mode.)
+
+## G2.0: at rest (2026-10-26)
+
+What kept felled trunks awake after the hull–hull hops were fixed (*G2.0, continued*): the 82 kg log balanced across another, and the 125 kg trunk lying on a standing player.
+
+### How it was measured
+
+- **The scene's own state.** *lumberjack* played to its end by the build under test, its felled parts written as a world with the players taken out (`play/rest_stick_probe.rs`, `rest_stick_write`), then stepped 20 s by any build or switch (`rest_stick_step`: `ONLY` keeps some bodies; `TRACE` prints one second tick by tick: each body's spin, Newton iterations, the guard's fallbacks, its height and kinetic energy, and each contact's normal force, stick offset and torque).
+- **With the players.** `rest_stick_scene`: the scene left alone with its players; one body's group and contacts tick by tick, and what `World::touching` reports against another body (`World::group_contacts`, added for it).
+- **The gate.** `lumberjack_s_trunks_sleep_within_5_s_of_the_last_blow` (run by hand) now also prints each part's last tick awake and the ticks' mean cost from 10 to 15 s after the last blow.
+- **The guard's books**, step by step (a temporary print, not kept): energy before and after, the limit, the surplus found anew; and, temporarily, the hull test's candidate faces.
+
+### Prior work
+
+| Source | What it does | For Creëer |
+|---|---|---|
+| Cundall & Strack (1979); Tsuji, Tanaka & Ishida (1992); LAMMPS' and LIGGGHTS' granular history models | A sticking contact's tangential spring damped like the normal one, the sum of spring and dashpot capped at μ·F_n (the spring rescaled where it is exceeded) | Built (friction's argument the damped slip u + γ·u̇: its force inside the cone by construction) and measured: not needed once the guard was right (*Measured and rejected*) |
+| Box2D v3's soft step and soft contacts (Catto, *Solver2D*, 2024; GDC 2011, "Soft Constraints"); Bullet's ERP/CFM; MuJoCo's solref/solimp (a time constant and a damping ratio, 1 by default) | Contacts are damped springs of a chosen frequency and damping ratio; friction is a velocity-level constraint inside the cone (impulses clamped by μ·λ in Box2D, Bullet and PhysX; MuJoCo's friction rows have no position term, only the reference velocity's damping): the tangential motion within the cone is taken each step, Moreau's maximal dissipation | Creëer's static friction is a position-level anchor spring (it never creeps, ADR-0005) and stores energy where impulse friction does not. The undamped stick mode the last section named was looked for: no sustained motion here was that mode |
+| Box2D, PhysX and Jolt sleeping (islands asleep once every body has been slow for a while; PhysX's threshold on mass-normalised kinetic energy) | Sleep is a test of rest | Creëer's thresholds (1 mm/s and 1 mrad/s for 1 s) kept: what failed was rest, not the test |
+| Simo & Tarnow (1992); Laursen & Love (2002); Hauret & Le Tallec (2006) | Energy-conserving and energy-controlling schemes with contact: the scheme's energy may not rise, and where contacts act it is made to fall | ADR-0004/0005's guard is of this kind. Its tolerance is what this section is about: a rise allowed in proportion to energy that does not move lets energy in |
+| Jolt's manifold reduction (`mUseManifoldReduction`: a pair's manifolds of nearly one normal merged into one); Gregorius, "Implementing Quickhull" (GDC 2014: nearly coplanar faces merged as the hull is built) | One contact region where a shape's faces lie nearly in one plane | Taken at the contact (*Kept*): a trunk's faces are bent at each ring, and merged they would not be a plane face |
+
+### Found
+
+1. **The log balanced across another was not an undamped stick mode.** On the scene's state (82 kg on a 69 kg log, 700 of its 800 N on one patch, its far end on the ground) it rocked at 2–3 Hz, 5–16 mrad/s, for 20 s. Its stick offsets moved by under 1 µm while it rocked (the stick distance is 100 µm): friction's springs barely took part. The face dashpots five times critical, or a stick dashpot five times critical, left it rocking (6 and 7 mrad/s at 19 s). Converging each step to 3·10⁻⁹ m instead of 3·10⁻⁷ m made it decay (27 → 0.8 mrad/s in 19 s): its motion was being fed. The guard's books, step by step: gains of up to 92 µJ a step accepted, 1.4 mJ net in 20 s. The guard allows a rise of a thousandth of the kinetic and elastic energy, and the elastic energy was the 62 mJ its contacts held under its weight: 62 µJ a step allowed, against a rocking of 0.2 mJ. With the allowance a hundred times smaller the log slept at 3.9 s.
+2. **The trunk on a standing player hopped between two of its own faces.** The player's body box lies with an edge across the trunk where two of its rings meet, whose faces (16 and 17) lie within 0.1° of one plane. The edge test named one end of the line or the other as the trunk rocked, and with it one face, whose patch held its part of the line alone. Each time the choice changed (every ten ticks, exactly) the other part was found pressed in, 388 µm against 362 µm, 0.34 J beyond what the last step left; the guard took it from the motion (the trunk stopped dead), and the cycle began again (55–138 mrad/s).
+3. **No longer hopping, the trunk on the player still rocks at 1–3 mrad/s**, fed as the log was through the allowance. Its group holds the player's legs, struts storing 82 J under the player and the trunk: 82 mJ a step allowed. Unsolved (*Where this leaves G2.0*).
+
+### Kept
+
+| Change | Measured |
+|---|---|
+| **The guard's allowance counts of the contacts' energy only its change over the step** (`structure/group.rs`; both energies in one evaluation, `Coupling::elastic_and_found`): the kinetic energy and the members', joints' and struts' elastic energy whole as before, and what the contacts' elastic energy changed by. A resting body's contacts hold its weight; a bounce or a landing changes their energy by about as much as they hold, so contacts in motion keep their allowance | The log across a log asleep at 3.5 s in the scene, where it rocked for good. Every accuracy test as before |
+| **A hull's faces in one plane with the pressed face are pressed too** (`hull_sat::clip_flat`): the reference hull's other faces within `ACROSS` (about 1°) of it that the same incident face presses give their own patches, the incident face clipped to each one's sides (disjoint parts of the overlap); in the face test and the edge-across-face test | The trunk on the player: no hop in 900 ticks (no surplus, no velocities zeroed). Boxes have no such faces: a box's hull touches as the box (`hull_across_tests`) |
+
+### Measured and rejected
+
+| What | Measured | Why rejected |
+|---|---|---|
+| **Static friction damped within Coulomb's cone** (`docs/adr/0024/stick-in-cone.diff`, against bb006a4): friction's argument the damped slip s = u + γ·u̇, γ = 2·√(m/k) critical for the stick spring k = 2μλ/e at the contact's mass, u̇ the scheme's slip rate from its reference at x̂ (as the normal dashpot's); its energy μλ·f₀(\|s\|)/(1 + γ/β), whose force μλ·f₀'(\|s\|)·ŝ is spring and dashpot while it sticks and never beyond μλ; the matrix 1 + γ/β times stiffer | Alone, on the first scene state, the log pair slept in 2 s (it rocked before); in the scene the log still rocked (8.5 mrad/s at 15 s). With γ fixed at the step's start the tumbling cube's spin turned back on landing (4.96 → −0.18 rad/s: λ ≈ 0 at the start made γ huge, then λ was refreshed); γ refreshed with λ, every physics test passed. With the kept changes: the scene's logs asleep at 4.4 s with it, 3.5 s without; the 100 kg trunk at 6.7 s with it, 5.1 s without | Not what kept the log awake (*Found* 1), slower to rest in the scene, and it changes every friction contact. Kept as a patch, with its pitfall |
+| Every step converged to 3·10⁻⁸ or 3·10⁻⁹ m (with the stick dashpot) | The log decayed (asleep at 13 s; 0.8 mrad/s at 19 s); the scene's log still 9 mrad/s at 15 s | Starves the feed instead of closing it; dearer |
+| **The allowance without any coupling energy held whole** (contacts, joints and struts all by their change; with the stick dashpot) | The gate met: every part asleep 3.9 s after the last blow. But a standing character's own step gains up to 30 mJ while its legs hold 20 J: 1,080 more steps of *builders* redone by backward Euler, its most work 2,801 Newton iterations at tick 273 (short length, ceiling 1,659; 1,259 without the change), p99 70–78 ms against 55 | The characters' legs need their own books first (*Where this leaves G2.0*) |
+| The same, the loads' booked work added to the allowance | *builders* as above (2,801) | The characters' gains are not their loads' work |
+
+### Validation
+
+- **The gate** (the whole scene; the last blow at tick 1,778; each part's last tick awake after it):
+
+  | | 69 kg log (4) | 82 kg log across it (5) | 125 kg trunk on a player (6) | 100 kg trunk (7) | ms a tick 10–15 s after |
+  |---|---|---|---|---|---|
+  | bb006a4 | awake at 15 s | awake (8.0 mrad/s) | awake (55 mrad/s) | 5.4 s | 6.87 |
+  | this change | 3.5 s | 3.5 s | awake (1.3 mrad/s) | 5.1 s | 1.73 |
+
+  Not met: the trunk on the standing player, and the 100 kg trunk 0.1 s late.
+- `a_felled_trunk_alone_on_the_terrain_comes_to_rest` (CI) passes; every test at its tolerance (`cargo xtask ci`).
+- **lumberjack**, full length: 1.17 / 16.2 / 59.6 ms p50 / p99 / worst (before 1.08–1.34 / 14.6–18.3 / 45.6–48.2 over three runs); its slow ticks are the felling and bucking. *builders* full length 3.6 / 62.7 / 89.4 ms, its most work 1,518 at tick 127 at both lengths (ceiling 1,659).
+- *log_bridge*'s full run spends 412,756 Newton iterations at tick 941 (about 2.5 s), exactly as bb006a4 does: not this change's.
+- **One test's window lengthened.** `overloaded_the_nail_lets_go_and_the_pole_falls` looked at the pole 2 s after the nail let go, but the 2.5 kN until then flings it 5–6 m up at about 20 m/s with either build: bb006a4 caught it falling past 0.7 m, this build at 2.1 m. It now looks after 5 s, when it is down.
+
+### Goldens renewed
+
+- **The allowance** (with it alone, every scene hashes as with both at short length): play *crowd*, *work*, *quarry*, *toolmaking* and *builders* at both lengths and *log_bridge* at full length: crates, boulders, stones and poles at rest on one another or on the terrain, their steps' small gains now redone or taken from the motion where they were let in before. Stress *cars* and *server* at both lengths: cars and crates resting on one another and the terrain.
+- **Both changes:** play *lumberjack* at full length (its felled trunks; at short length nothing is felled yet, and it hashes as before).
+- Every other hash is unchanged, and the save fixtures in `creeer_sim` pass unchanged.
+
+### Where this leaves G2.0
+
+- Logs lying on logs rest within 3.5 s, and a trunk on a standing player no longer hops; a tick with the parts lying costs 1.73 ms instead of 6.87.
+- **Not met:** a trunk resting on a standing player stays awake at 1–3 mrad/s. The guard allows each step a thousandth of the player's legs' 82 J, and a character standing alone gains up to 30 mJ a step that it lets in. Until the legs' work is booked (as the joints' drives' is, `Coupling::driven_work`), their energy cannot leave the allowance. Next: find and book what the legs gain, then count the struts by their change as the contacts are.
+- The 100 kg trunk sleeps at 5.1 s, at the gate's edge.

@@ -139,10 +139,12 @@ impl Coupling for Contacts {
     }
 
     fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
-        let geometry = self.geometry(states);
-        self.normal_forces(&geometry.gaps(), &geometry.measured, false)
-            .0
-            + self.joints.elastic_energy(states)
+        self.found_energy(states) + self.joints.elastic_energy(states)
+    }
+
+    fn elastic_and_found(&self, states: &[MemberState<'_>]) -> (f64, f64) {
+        let found = self.found_energy(states);
+        (found + self.joints.elastic_energy(states), found)
     }
 
     fn found_energy(&self, states: &[MemberState<'_>]) -> f64 {
