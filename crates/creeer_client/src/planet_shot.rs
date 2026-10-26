@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
 //!
-//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes> <file.png> [--sun <deg>]`
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -146,6 +146,32 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 return Err("the server did not make the tunnel".into());
             }
             crate::planet_view::place(a - east * 1.5 + up * 0.5, (b - a).normalize())
+        }
+        "holes" => {
+            // Holes as a pick digs them (G2.9): a dent, shafts 0.3 and 0.7 m deep, one widened.
+            let ground = |d: DVec3| {
+                let p = up * terrain.planet().datum.radius(up) + d;
+                p.normalize() * (terrain.planet().datum.radius(p) + terrain.surface_height(p))
+            };
+            let (_, north) = creeer_terrain::geology::deposits::tangent_frame(up);
+            let shaft = |at: DVec3, depth: f64, radius: f64| {
+                Edit::Dig(Brush::Capsule {
+                    a: at,
+                    b: at - at.normalize() * depth,
+                    radius,
+                })
+            };
+            let spots = [-1.2, -0.4, 0.4, 1.2].map(|s| ground(east * 2.5 + north * (s + 8.0)));
+            view.session.edit(shaft(spots[0], 0.0, 0.08));
+            view.session.edit(shaft(spots[1], 0.3, 0.15));
+            view.session.edit(shaft(spots[2], 0.7, 0.15));
+            view.session.edit(shaft(spots[3], 1.0, 0.35));
+            play(&mut view, 0.5)?;
+            if terrain.edits().len() < 4 {
+                return Err("the server did not dig the holes".into());
+            }
+            let eye = ground(north * 8.0) + up * 1.7;
+            crate::planet_view::place(eye, (ground(east * 2.5 + north * 8.0) - eye).normalize())
         }
         other => return Err(format!("unknown planet view `{other}`").into()),
     };

@@ -96,3 +96,5 @@ The user's play: "there is no visible hole". A post hole is 30–50 l; the small
 - A post hole dug at one spot: 0.3–0.9 ms a blow, to 73 l and about 0.9 m deep in 60 blows.
 - 10,000 blows at four spots a metre apart: 1.4 ms a blow on average, 5.3 ms at worst (the old ledger: 0.05 ms a blow, 2.3 ms for the rare blow that cut a pit). The heaps' mass equals ρ × (cut + owed) to 10⁻⁹, and the terrain measured anew on another grid lost the same within 5 %.
 - Four holes are four edits.
+
+**A hole's walls are its column's rock** (found looking at the holes, G2.9). Soil slides off natural slopes steeper than 25–40° (`Geology::cover_on_slope`), and that was judged by the slope where the point is. A dug wall is steep, so a hole in soil drew its walls and rims as the sandstone beneath, in jagged pale spikes, and its walls dug as sandstone. Now the natural ground's slope decides (`terrain::natural_slope`: the generated heights' gradient), both for drawing and for `rock_at`. `a_holes_wall_is_the_rock_its_column_holds` gave rock 8 for soil 0 under the old rule.

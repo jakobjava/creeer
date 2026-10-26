@@ -337,3 +337,25 @@ fn a_replaced_brush_is_read_in_its_place() {
         assert_eq!(grown.density(q, -1.0), built.density(q, -1.0), "at {k}");
     }
 }
+
+/// A hole's steep wall is the rock its column holds at that depth, as the ground beside it
+/// undug is: its soil does not slide off because a wall was dug in it (judged by the wall's
+/// slope, a hole in soil dug and drew its walls as the rock beneath, G2.9).
+#[test]
+fn a_holes_wall_is_the_rock_its_column_holds() {
+    let terrain = home();
+    let undug = terrain.sibling();
+    let (mouth, up) = underground(&terrain, 0.0);
+    terrain.edit(Edit::Dig(Brush::Capsule {
+        a: mouth,
+        b: mouth - up * 0.8,
+        radius: 0.15,
+    }));
+    let side = up.any_orthonormal_vector();
+    for depth in [0.1, 0.2, 0.4, 0.6] {
+        // Just inside the wall, and the same point with nothing dug.
+        let p = mouth - up * depth + side * 0.17;
+        assert!(terrain.density(p) < 0.0, "{depth} m: in the wall");
+        assert_eq!(terrain.rock_at(p), undug.rock_at(p), "{depth} m down");
+    }
+}

@@ -141,9 +141,9 @@ impl Terrain {
         }
         let near: Vec<Edit> = self.edits().near(p).copied().collect();
         Some(Edits::material(&near, p, 0.0).unwrap_or_else(|| {
-            // The same soil rule as the meshes: none on steep slopes.
-            let (_, gradient) = self.density_gradient(p);
-            let cover = Geology::cover_on_slope(gradient.angle_between(p.normalize()));
+            // The same soil rule as the meshes: none on steep natural slopes.
+            let slope = natural_slope(&self.planet.datum, &mut self.heights.sampler(1.0), p);
+            let cover = Geology::cover_on_slope(slope);
             let geology = &self.planet.geology;
             let deposits = geology.deposits_near(p, 0.0);
             geology
@@ -192,7 +192,7 @@ impl Terrain {
                 Site::Cell { low, edge } => levels.refine(point, normal, (low, edge)),
                 Site::Cap { depth } => levels.fixed(point, normal, depth),
             };
-            let (p, normal) = (refined.anchor, refined.normal);
+            let p = refined.anchor;
             if let Some(rock) = Edits::material(&chunk_edits, p, tolerance) {
                 return (refined, rock);
             }
@@ -211,7 +211,7 @@ impl Terrain {
             } else {
                 surface
             };
-            let slope = f64::from(normal.angle_between(up.as_vec3()));
+            let slope = natural_slope(&datum, &mut sampler, p);
             let cover = Geology::cover_on_slope(slope);
             (refined, geology.sample(at, height, &deposits, cover).rock)
         });
@@ -272,6 +272,17 @@ const SKY_VIEW_START: f64 = 1.0;
 const SKY_VIEW_REACH: f64 = 32.0;
 /// Smallest step of a sky-view ray (m): rock thinner than this may be missed.
 const SKY_VIEW_MIN_STEP: f64 = 0.25;
+
+/// The slope of the ground as generated under `p` (rad from the vertical), which decides where
+/// soil stays (`Geology::cover_on_slope`) whatever was dug there since: a dug wall is steep, but
+/// its column's soil is not gone (judged by the wall, a hole in soil drew its walls and rims as
+/// the sandstone beneath, in jagged spikes, and its walls dug as sandstone: G2.9).
+fn natural_slope(datum: &Datum, sampler: &mut HeightSampler<'_>, p: DVec3) -> f64 {
+    let (_, height) = sampler.height_gradient(p);
+    let (_, radius) = datum.radius_gradient(p);
+    let up = p.normalize();
+    (up - radius - height).angle_between(up)
+}
 
 /// The generated density at `p` (m): its height above the surface, from `sampler`'s heights.
 /// The planet's centre has no direction to look up a height in and is deep rock (it gave NaN,
