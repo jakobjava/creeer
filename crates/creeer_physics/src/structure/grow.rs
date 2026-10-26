@@ -172,8 +172,15 @@ impl Structure {
         axis: creeer_math::glam::DVec3,
         law: &JointLaw,
     ) -> usize {
-        use creeer_math::glam::{DMat3, DVec3};
         let at = self.position[node] - axis * GROUND_GAP;
+        self.fix_to(node, at, law)
+    }
+
+    /// Holds node `node` to the world at `at` by a joint of law `law`: a node held fast there,
+    /// joined to it as the node lies now (a post's ground beside it; G2.9, a standing tree's
+    /// axis, the tree taken as not bending). Returns the joint's index.
+    pub fn fix_to(&mut self, node: NodeId, at: creeer_math::glam::DVec3, law: &JointLaw) -> usize {
+        use creeer_math::glam::{DMat3, DVec3};
         let ground = self.node_count();
         self.position.push(at);
         self.orientation.push(DQuat::IDENTITY);
