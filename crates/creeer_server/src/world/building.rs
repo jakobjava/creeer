@@ -5,8 +5,10 @@
 //!
 //! Survival: a lashing takes a bast strip from the pockets; nails need iron and pegs a bored
 //! hole, which come with G3, so they are a creative server's. Nothing snaps, previews or
-//! undoes (plan.md, principle 13): a part is fastened where it lies.
+//! undoes (plan.md, principle 13): a part is fastened where it lies. A part touching a standing
+//! tree's trunk is fastened to the tree alike (G2.9, `tree_joints.rs`).
 
+use super::tree_joints::Touched;
 use super::*;
 use creeer_building::fasteners::{Fastener, Kind};
 use creeer_materials::MaterialTable;
@@ -17,10 +19,10 @@ use std::collections::BTreeMap;
 const TICKS: f64 = 60.0;
 /// How far from the point aimed at two parts may touch to be fastened there (m): faces lying on
 /// each other touch over their whole overlap, its contact's point anywhere in it.
-const NEAR: f64 = 0.3;
+pub(super) const NEAR: f64 = 0.3;
 /// A gap two parts may have and still be fastened (m: they must touch, as near as a nail draws
 /// them together; a part resting on another rocks by millimetres).
-const TOUCHING: f64 = 0.01;
+pub(super) const TOUCHING: f64 = 0.01;
 
 /// What is being built, and what was.
 #[derive(Debug, Default)]
@@ -93,7 +95,7 @@ impl ServerWorld {
         if self.carried(by).is_some() {
             return Err("both hands are needed: put down what you hold (prop it)".into());
         }
-        self.touching_part(part, at)?;
+        self.touching_any(part, at)?;
         self.fastener_at_hand(by, k)?;
         let seconds = self.building.fasteners[k].seconds;
         // (Validated under ten minutes: a few thousand ticks.)
@@ -181,10 +183,13 @@ impl ServerWorld {
         self.index(u.part).ok_or("that part is gone")?;
         let at = u.at;
         self.within_reach(by, at)?;
-        let (other, point) = self.touching_part(u.part, at)?;
+        let (other, point) = self.touching_any(u.part, at)?;
         let from = self.fastener_at_hand(by, u.fastener)?;
         let fastener = self.building.fasteners[u.fastener].clone();
-        self.fasten(u.part, other, point, &fastener)?;
+        match other {
+            Touched::Part(id) => self.fasten(u.part, id, point, &fastener)?,
+            Touched::Tree(tree) => self.fasten_to_tree(u.part, tree, point, &fastener)?,
+        }
         if let Some((pocket, k)) = from {
             let item = self.change_pockets(by, |p| p[pocket].take(k));
             if let (Some(item), Some(b)) = (item, self.building.built.get_mut(&u.part)) {

@@ -112,3 +112,30 @@ fn building_onto_a_loaded_structure_keeps_its_load() {
         s.position[tip].y
     );
 }
+
+/// A bar fixed to the world at one end by a joint across it (G2.9: nailed to a standing tree)
+/// and pinned at the other: the joint carries its share of the weight, slipping by that over
+/// its slip modulus, and the fixed node does not move.
+#[test]
+fn a_bar_fixed_to_the_world_by_a_joint_carries_its_end() {
+    let mut s = cantilever(2.0, 4, Section::solid_round(0.05), STEEL_S235);
+    let tip = s.node_count() - 1;
+    s.set_support(0, Support::Free);
+    s.set_support(tip, Support::Pinned);
+    // The fixed node 0.15 m beside the bar's end, across the weight.
+    let at = s.position[0] - DVec3::Z * 0.15;
+    let joint = s.fix_to(0, at, &NAILED);
+    let fixed = s.elements[joint].a;
+    assert!(s.held_fast(fixed));
+    statics::nonlinear(&mut s, 50);
+    // Half the bar's weight at its end (the fixed node's mass is never moved).
+    let half = 0.5 * (s.total_mass() - 1.0) * STANDARD_GRAVITY.length();
+    let slip = -s.position[0].y;
+    let expected = half / NAILED.lateral;
+    assert!(
+        (slip / expected - 1.0).abs() < 0.3,
+        "slipped {slip} m, {expected} m expected"
+    );
+    assert!((s.position[fixed] - at).length() < 1e-12, "the world held");
+    assert_eq!(s.elements_broken(), 0);
+}
