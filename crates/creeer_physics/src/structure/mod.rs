@@ -10,6 +10,7 @@ use rayon::prelude::*;
 
 mod added;
 mod assemble;
+mod booked;
 mod buckling;
 #[cfg(test)]
 mod buckling_tests;

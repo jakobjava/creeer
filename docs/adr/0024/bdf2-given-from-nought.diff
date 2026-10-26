@@ -1,0 +1,20 @@
+Rejected (ADR-0024, "G2.0: the standing character's books"): after a history reset, the loads'
+share of the last step's change of momentum taken as nought (the reset's velocities carry none)
+instead of as the loads now. Against the kept change (g2-rest3).
+
+--- a/crates/creeer_physics/src/structure/solver.rs
++++ b/crates/creeer_physics/src/structure/solver.rs
+@@ pub fn reset_history(&mut self, s: &Structure) {
+             self.previous_w[i] = s.angular_velocity[i];
+         }
++        self.given.iter_mut().for_each(|g| g.fill(DVec3::ZERO));
+         self.initial_accelerations(s);
+     }
+@@ pub(crate) fn initial_accelerations(&mut self, s: &Structure) {
+         self.previous_load.clone_from(&s.load);
+         self.previous_torque.clone_from(&s.torque);
+-        self.given = [s.load.clone(), s.torque.clone()];
+         let w = &mut self.work;
+@@ (ImplicitSolver::try_new)
+-            given: [structure.load.clone(), structure.torque.clone()],
++            given: [vec![DVec3::ZERO; n], vec![DVec3::ZERO; n]],

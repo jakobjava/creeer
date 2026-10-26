@@ -232,7 +232,14 @@ impl Joints {
     /// The energy they store (their drives' and the struts' springs; constraints and limits
     /// are ideal).
     pub(crate) fn elastic_energy(&self, states: &[MemberState<'_>]) -> f64 {
-        self.terms(states, false, |_, _, _, _| {}).0 + self.strut_terms(states, |_, _, _, _| {}).0
+        let (drives, struts) = self.stored(states);
+        drives + struts
+    }
+
+    /// The energy their drives store, and the struts'.
+    pub(crate) fn stored(&self, states: &[MemberState<'_>]) -> (f64, f64) {
+        let drives = self.terms(states, false, |_, _, _, _| {}).0;
+        (drives, self.strut_terms(states, |_, _, _, _| {}).0)
     }
 
     /// The step's β (its velocities are the change from x̂ over it).

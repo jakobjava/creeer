@@ -52,9 +52,10 @@ pub trait Coupling: Sync {
     fn found_energy(&self, states: &[MemberState<'_>]) -> f64 {
         self.elastic_energy(states)
     }
-    /// [`Self::elastic_energy`] and its part [`Self::found_energy`] together (one evaluation
-    /// where they share it).
-    fn elastic_and_found(&self, states: &[MemberState<'_>]) -> (f64, f64) {
+    /// [`Self::elastic_energy`] and its part held under the members' weight, which the energy
+    /// guard counts only by its change (`group.rs`): what is found or set anew each step, the
+    /// contacts' [`Self::found_energy`] and the struts' (one evaluation where they share it).
+    fn elastic_and_held(&self, states: &[MemberState<'_>]) -> (f64, f64) {
         (self.elastic_energy(states), self.found_energy(states))
     }
     /// Adds the gradient of [`Self::energy`] to `gradient[member][block]` (translation

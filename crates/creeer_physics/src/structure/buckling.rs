@@ -201,6 +201,7 @@ impl ImplicitSolver {
         };
         solver.previous_load = kept(&self.previous_load);
         solver.previous_torque = kept(&self.previous_torque);
+        solver.given = [kept(&self.given[0]), kept(&self.given[1])];
         solver.previous_q = (0..n)
             .map(|i| {
                 if i < old {

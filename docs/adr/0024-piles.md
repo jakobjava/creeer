@@ -475,5 +475,72 @@ What kept felled trunks awake after the hull–hull hops were fixed (*G2.0, cont
 ### Where this leaves G2.0
 
 - Logs lying on logs rest within 3.5 s, and a trunk on a standing player no longer hops; a tick with the parts lying costs 1.73 ms instead of 6.87.
-- **Not met:** a trunk resting on a standing player stays awake at 1–3 mrad/s. The guard allows each step a thousandth of the player's legs' 82 J, and a character standing alone gains up to 30 mJ a step that it lets in. Until the legs' work is booked (as the joints' drives' is, `Coupling::driven_work`), their energy cannot leave the allowance. Next: find and book what the legs gain, then count the struts by their change as the contacts are.
+- **Not met:** a trunk resting on a standing player stays awake at 1–3 mrad/s. The guard allows each step a thousandth of the player's legs' 82 J, and a character standing alone gains up to 30 mJ a step that it lets in. Until the legs' work is booked (as the joints' drives' is, `Coupling::driven_work`), their energy cannot leave the allowance. Next: find and book what the legs gain, then count the struts by their change as the contacts are. (Done: *G2.0: the standing character's books*, below.)
 - The 100 kg trunk sleeps at 5.1 s, at the gate's edge.
+
+## G2.0: the standing character's books (2026-10-26)
+
+What the characters' steps gain that kept the legs' energy in the guard's allowance, and the trunk on the standing player asleep.
+
+### How it was measured
+
+- **The guard's books, group by group** (a temporary print in `structure/group.rs`, not kept): for every step over its allowance, or every step while tracing, the members' masses and scheme, the gain and the allowance, and its parts: the kinetic energy's change, the potential's (gravity and loads), the coupling's, the contacts', the work booked; for each member its load and torque, what BDF2 carries of them (below), its displacement and the loads' work along it.
+- **One character alone** (a temporary test beside `character/tests.rs`): standing on a plane; walking from rest to 1.4 m/s and stopping again, on the level and on 10° up and down.
+- ***builders* tick by tick** at full length (1,800 ticks), its work and the steps redone, by the groups' members (players 105 kg, poles 3 kg): every step of the world, the clients' predictions with the server's.
+- **The gate** as before (`lumberjack_s_trunks_sleep_within_5_s_of_the_last_blow`, by hand), and *lumberjack*'s state with the players kept (`rest_stick_scene`).
+
+### Prior work
+
+| Source | What it does | For Creëer |
+|---|---|---|
+| Dahlquist, "G-stability is equivalent to A-stability" (BIT 18, 1978); Hairer & Wanner, *Solving ODEs II* (1996), V.6 | BDF2 is G-stable: what it never lets grow is a norm over two steps, not one step's energy. Its step is v₁ = (4v₀ − v₋₁)/3 + (2h/3)·f/m: a third of the last step's change of velocity is carried into the next | The energy of one step may rise by BDF2 itself where the forces change from step to step. A load set anew each tick changes in a jump: the third carried is the last step's load, not this one's |
+| Krenk, "Energy conservation in Newmark based time integration algorithms" (CMAME 195, 2006); Simo & Tarnow (1992) | The discrete energy balance of a scheme: the external forces' work is the work of the force the scheme applies over the step (Newmark's: the mean of its ends) | The guard books Newmark's mean already (F6). The same for BDF2: the loads it applies are (g₋₁ + 2f)/3, g₋₁ the loads' share of the last step's |
+| Character controllers: PhysX's and Jolt's (`CharacterVirtual`) kinematic capsules; Jolt's `Character` and Bullet's `btKinematicCharacterController` moved by set velocities; active ragdolls (NaturalMotion's Euphoria; Geijtenbeek, van de Panne & van der Stappen, "Flexible muscle-based locomotion", 2013) and MuJoCo's actuators, forces set each step | The kinematic ones keep no energy books at all; the dynamic ones apply muscles' and controllers' forces as forces of the step, set from the state each step | Creëer's character is of the second kind (ADR-0023): its walk, balance and its reactions on what it stands on are loads set each tick, its legs a strut set each tick. Their work is the muscles', and is to be booked as work, not taken for the scheme's gain |
+
+### Found
+
+1. **What a standing or walking character's step gains is BDF2 carrying the last tick's loads.** A character is stepped as held (BDF2, ADR-0023), and its walk is a load set anew each tick that closes a fifteenth of the gap to the speed asked for: it falls by about 7 % a step. BDF2 carries a third of the last step's change of momentum, so of a load it gives (g₋₁ + 2f)/3 while the potential books f·Δx. Walking on the level from rest to 1.4 m/s, the steps gained up to 0.11 J (kinetic energy 27 J at 0.7 m/s), and every other step was over the allowance and redone by backward Euler, even with the legs' 17.7 J counted whole in it. The same in *builders*: of the 5,271 steps it redid in 1,800 ticks, 868 were lone players'.
+2. **Counted by their change, the struts gave no slack, and the walks were redone.** The struts alone counted by their change: 8,036 steps redone, 991 a lone player's, and every group's history moved: most work 2,138 at tick 358 (full length; ceiling 1,659).
+3. **Booked, a walk gains at most 5 mJ** (its second-order error, 3·10⁻⁴ of its kinetic energy), on the level and on 10° up or down, starting and stopping: no step redone.
+4. **After a history reset every force acts two thirds** in BDF2's first step: the reset's velocities carry no change of momentum (`reset_history`: "as if it had been moving uniformly"). A body moving against its forces then gains a third of their work: a player braking at 1.1 m/s gained up to 0.48 J a step. With the loads' share taken as nought there (as the velocities say), a player's walk pressing the pole it stands on into the ground was booked at two thirds against its contacts' whole and redone (*Measured and rejected*). Taken as the loads now (as Newmark's accelerations are after a reset), the books are whole for the loads and the forces that hold them alike, and a braking body's restart gains as before. Such resets are a client's prediction set back to the server's state every tick (`predicted.rs`) and a body woken; *builders* redid 1,029 of its lone players' steps, and its server's work is under its ceiling (*Validation*).
+
+### Kept
+
+| Change | Measured |
+|---|---|
+| **BDF2's carried loads booked** (`structure/booked.rs`): each solver keeps its loads' and torques' share of the last substep's change of momentum (`given`: the loads after backward Euler, the mean with the last step's after Newmark, (g₋₁ + 2f)/3 after BDF2; the loads now after a history reset, and on loading a save: not saved), and the guard books what the potential misses, (g₋₁ − f)/3·Δx, and the torques' work at (g₋₁ + 2τ)/3 | Walking on the level: gains of up to 0.11 J a step become at most 5 mJ, none redone (*Found* 1, 3) |
+| **The struts counted by their change** (`Coupling::elastic_and_held`: the contacts' energy found anew and the struts' set anew each step under the weight, both only by their change in the guard's allowance; the joints' drives whole) | The trunk on the standing player asleep 3.3 s after the last blow, where it rocked for good |
+
+### Measured and rejected
+
+| What | Measured | Why rejected |
+|---|---|---|
+| **The carried loads taken as nought after a history reset** (`docs/adr/0024/bdf2-given-from-nought.diff`, against the kept change) | *builders* at full length: lone players' steps redone 104 (1,029 kept), but players with the poles they stand on 191 (55 kept): a 420 N walk pressing a 3 kg pole into the ground booked at two thirds against its contacts' whole, 3.6 mJ gained by a group at rest; most work 1,756 at tick 482 (ceiling 1,659) | Every force acts two thirds in the first step after a reset; booking the loads alone so is a gain wherever contacts hold them |
+| The struts counted by their change without the booking | 8,036 steps of *builders* redone against 5,271; most work 2,138 at tick 358 at full length (ceiling 1,659) | *Found* 2 |
+| The booking without the struts counted by their change | The trunk on the player asleep at 3.7 s; but the felling played otherwise, and the 69 and 82 kg logs lay awake 15 s on (1.2 and 4.2 mrad/s) | Half the kept change: the struts' 82 mJ of slack remains for any body a player stands on or against |
+
+### Validation
+
+- **The gate** (the whole scene; the last blow at tick 1,778; each part's last tick awake after it):
+
+  | | 69 kg log (4) | 82 kg log across it (5) | 125 kg trunk on a player (6) | 100 kg trunk (7) | ms a tick 10–15 s after |
+  |---|---|---|---|---|---|
+  | 95e1f2b | 3.5 s | 3.5 s | awake (1.3 mrad/s) | 5.1 s | 1.73 |
+  | this change | 3.6 s | 3.6 s | 3.3 s | 5.3 s | 0.04 |
+
+  All asleep 5.37 s after the last blow: not met by the 100 kg trunk alone, which rocks between faces of its hull at about 5 Hz (100 mrad/s, decaying) until 4.3 s and sleeps a second later. It has no strut and no load; how it falls changes with the play.
+- **Work** (Newton iterations in a tick, CI's lengths; ceilings in `play/tests.rs` unchanged): *builders* 1,537 at tick 5 at both lengths (1,518 at tick 127 before; ceiling 1,659), *log_bridge* 74, *drop* 388, *tower* and *collapse* 6, each within its ceiling. **Not met: *toolmaking* 137 at tick 877 against its 135** (every heading alike), where stones swung in the hands are set down. The booking takes its stones' and players' steps by their own scheme where backward Euler redid them (steps redone in the whole scene 1,562 → 927; by tick 874 a stone in the hands redone 15–18 times against 60–69, a player 5–7 against 10–31; the scene's work in all 24,354 → 23,486 iterations), and the stones' BDF2 steps at the setting down take more iterations: 131 against 120 for the three stones in that tick. Not lowered here; the ceiling is not raised (for the user).
+- **Times**, full length: *lumberjack* 1.22 / 16.4 / 38.0 ms p50 / p99 / worst (1.17 / 16.2 / 59.6 before); *builders* 3.5 / 51.9 / 71.4 (3.6 / 62.7 / 89.4); *toolmaking* 0.21 / 5.2 / 11.1. *log_bridge*'s full run spends 368,146 Newton iterations at tick 941 (412,756 before).
+- Every other test at its tolerance (`cargo test --workspace --no-fail-fast`: all but the work ceilings' test and the six save-fixture tests, *Goldens renewed*).
+
+### Goldens renewed
+
+- **Every play scene at both lengths**: each has players standing or walking (*tower*, *collapse* and *drop* too, standing by), whose BDF2 steps now book the loads carried and whose legs count by their change; their steps are redone less, and what they touch moves otherwise.
+- **Stress *server*** at both lengths (8 players). *beams*, *cars*, *factory* and *flyover* hash as before.
+- **Not renewed: the save fixtures in `creeer_sim`.** Six of their tests fail (versions 5 to 10: `the_version_5_fixture_reads_as_it_was_saved` and the five after it), which compare each fixture with the fixture scene stepped now (`save/tests.rs`, `scene()`): its rolling test ball's Newmark steps that the guard redoes by BDF2 now book the loads BDF2 carries, and its half second moves otherwise. With the booking switched off (the struts still counted by their change) they pass. The fixtures are files as each version wrote them and cannot be written again as those versions; whether to rewrite them with this version's motion (as 36b45fc did for version 5) is the user's.
+
+### Where this leaves G2.0
+
+- A trunk lying across a standing player sleeps 3.3 s after the last blow (it rocked for good), and a tick with *lumberjack*'s parts lying costs 0.04 ms (1.73 before).
+- The gate is missed by the 100 kg trunk alone (5.3 s), *toolmaking*'s work ceiling by 2 iterations (137 against 135), and six save-fixture tests fail on the fixture scene's changed motion: all three for the user. CI is not green.
+- A history reset still gives every force two thirds in the next step (*Found* 4); recorded in `docs/future-improvements.md`.
