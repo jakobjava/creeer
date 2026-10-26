@@ -111,7 +111,10 @@ const WORK: [(&str, u64, u64); 10] = [
     // the scene's whole work by 0.4 % (4,402 → 4,418): the work moved among the boulders, the
     // exact gradient slowed nothing. A tenth above.
     ("quarry", 211, 211),
-    ("toolmaking", 135, 135),
+    // G2.0, a standing character's books (ADR-0024): 135 → 137 at tick 877, stones set down by
+    // BDF2 where backward Euler redid them before; the scene's redone steps 1,562 → 927 and its
+    // whole work 24,354 → 23,486. A tenth above.
+    ("toolmaking", 151, 151),
     // G2.8, measured 2026-10-24 (a tenth above): the towers' Newton works little, their
     // factorisations much; the builders' loose poles never rest (ADR-0024, G2.0's open hull
     // contacts).

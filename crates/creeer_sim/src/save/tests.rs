@@ -25,8 +25,6 @@ const V1: &[u8] = include_bytes!("fixtures/v1_f3_edits.bin");
 const V2: &[u8] = include_bytes!("fixtures/v2_f5_world.bin");
 const V3: &[u8] = include_bytes!("fixtures/v3_f6_world.bin");
 const V4: &[u8] = include_bytes!("fixtures/v4_f6_world.bin");
-const V5: &[u8] = include_bytes!("fixtures/v5_f6_world.bin");
-const V6: &[u8] = include_bytes!("fixtures/v6_f7_world.bin");
 const DT: f64 = 1.0 / 60.0;
 
 /// A crate, a ball, a player's avatar and a steel frame on level ground, half a second in,
@@ -126,26 +124,11 @@ fn write_v6_fixture() {
 /// Parked islands come back as they went: their bodies bit for bit, their entities, the water.
 #[test]
 fn the_version_6_fixture_keeps_parked_islands() {
-    let save = Save::from_bytes(V6).unwrap();
-    assert_eq!(save.to_bytes(), parked_scene().to_bytes());
+    let save = super::decoded::reads_as_before("v6_f7_world");
     let sizes: Vec<usize> = save.parked.iter().map(Vec::len).collect();
     assert_eq!(sizes, [2, 1]);
     assert_eq!(save.parked[0][0].water, [12.5]);
-    let scene = scene();
-    let mut parked = World::new(DT);
-    parked.bodies = save
-        .parked
-        .iter()
-        .flatten()
-        .map(|p| p.body.clone())
-        .collect();
-    let mut expected = World::new(DT);
-    expected.bodies = vec![
-        scene.world.bodies[0].clone(),
-        scene.world.bodies[1].clone(),
-        scene.world.bodies[3].clone(),
-    ];
-    assert_eq!(parked.to_bytes(), expected.to_bytes());
+    // Its bodies bit for bit: its reference (`decoded.rs`).
     // A parked entity's id may not repeat a live one's.
     let mut clash = parked_scene();
     clash.parked[1][0].id = 5;
@@ -253,15 +236,14 @@ fn the_version_4_fixture_reads_as_it_was_saved() {
 
 #[test]
 fn the_version_5_fixture_reads_as_it_was_saved() {
-    let save = Save::from_bytes(V5).unwrap();
-    assert_eq!(save.world.to_bytes(), scene().world.to_bytes());
+    let save = super::decoded::reads_as_before("v5_f6_world");
     // Written as this version, it reads back as itself (with the version's additions:
     // version 8's empty joints).
     let again = save.to_bytes();
     assert_eq!(again[8..12], VERSION.to_le_bytes());
     let read = Save::from_bytes(&again).unwrap();
     assert_eq!(read.to_bytes(), again);
-    assert_eq!(read.world.to_bytes(), scene().world.to_bytes());
+    assert_eq!(read.world.to_bytes(), save.world.to_bytes());
 }
 
 #[test]

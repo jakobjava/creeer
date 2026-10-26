@@ -386,6 +386,8 @@ fn from_sections(bytes: &[u8]) -> Result<Save, SaveError> {
 #[cfg(test)]
 mod ages_tests;
 #[cfg(test)]
+mod decoded;
+#[cfg(test)]
 mod joint_tests;
 #[cfg(test)]
 mod machine_tests;

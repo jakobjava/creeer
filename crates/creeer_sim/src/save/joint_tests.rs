@@ -8,7 +8,6 @@ use creeer_physics::world::Body;
 use creeer_physics::world::joint::{Joint, Kind};
 use creeer_physics::world::shape::Shape;
 
-const V8: &[u8] = include_bytes!("fixtures/v8_g1_world.bin");
 const DT: f64 = 1.0 / 60.0;
 
 /// The fixtures' scene with a two-link pendulum beside it: a hinge to the world with stops and
@@ -60,11 +59,8 @@ fn write_v8_fixture() {
 
 #[test]
 fn the_version_8_fixture_keeps_its_joints() {
-    let save = Save::from_bytes(V8).unwrap();
-    // Re-saved, it is the current version of what the scene writes (version 9 on: the same
-    // sections, its header the newer version).
-    let written = joint_scene();
-    assert_eq!(save.to_bytes(), written.to_bytes());
+    let save = super::decoded::reads_as_before("v8_g1_world");
+    // Re-saved in today's format, it is its reference (`decoded.rs`).
     let joints = save.world.joints();
     assert_eq!(joints.len(), 2);
     assert!(joints[0].anchor.is_some(), "the hinge's friction anchor");
@@ -72,8 +68,11 @@ fn the_version_8_fixture_keeps_its_joints() {
         joints[1].multipliers.point.length() > 0.0,
         "the link's force"
     );
-    // It goes on as the saved world would have, bit for bit.
-    let (mut loaded, mut world) = (save.world, written.world);
+    // Saved and read back, a world goes on as it would have, bit for bit: its joints'
+    // state is kept (today's scene: the fixture's motion is the physics of its day).
+    let written = joint_scene();
+    let read = Save::from_bytes(&written.to_bytes()).unwrap();
+    let (mut loaded, mut world) = (read.world, written.world);
     for _ in 0..30 {
         loaded.step();
         world.step();
