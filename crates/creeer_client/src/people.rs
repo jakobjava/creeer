@@ -35,8 +35,9 @@ pub struct DrawnPerson {
     pub wields: Option<u8>,
     /// How long ago it began the swing it is in (G1.4e; s), if any.
     pub swing: Option<f64>,
-    /// Whether it carries a load in both hands (G1.4f).
-    pub carrying: bool,
+    /// What its hands hold (G1.4f), as drawn and where they hold it (G2.10), if anything but a
+    /// made tool (`made`).
+    pub holding: Option<crate::animate::grasp::Load>,
     /// A made tool in its right hand (G1.10): its pieces about its centre, and where the hand
     /// holds it there.
     pub made: Option<(Vec<creeer_net::message::Part>, DVec3)>,
@@ -107,6 +108,10 @@ impl People {
             .filter(|v| v.iter().filter(|s| matches!(s, Source::Segment(_))).count() == 15)
             .ok_or("the engineer's bones are not the ragdoll's segments and the fingers")?;
         let hands = Hands::new(&model.bones);
+        let mut animator = Animator::default();
+        if let Some(h) = &hands {
+            animator.set_hands(h.shapes());
+        }
         let held = crate::held::Held::register(&mut renderer.meshes);
         let levels = entry.levels.ok_or("the engineer's levels have no errors")?;
         let id = renderer.add_skinned(&SkinnedMeshData::new(&model, levels));
@@ -119,7 +124,7 @@ impl People {
             hands,
             held,
             outfits: HashMap::new(),
-            animator: Animator::default(),
+            animator,
         };
         for worn in [&STARTING_OUTFIT[..], &["base_layer"]] {
             people.add_outfit(renderer, worn);
@@ -160,16 +165,18 @@ impl People {
             let swung = p.wields.or(p.made.as_ref().map(|_| AXE));
             let swing = (swung.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
             self.animator.swing(p.key, swing);
-            self.animator.carrying(p.key, p.carrying);
+            self.animator.holding(p.key, p.holding);
             let bones = self.animator.bones(p.key, &p.body, dt, ground);
             let made = p
                 .made
                 .as_ref()
                 .map(|(parts, grip)| (parts, *grip, haft(parts)));
+            // The fingers closed on a tool's handle, else as the arms reach what they hold.
+            let [held, left] = self.animator.holds(p.key);
             let right = match (tool, &made) {
                 (Some((_, radius)), _) => Hold::Grip(radius),
                 (None, Some((.., radius))) => Hold::Grip(*radius),
-                _ => Hold::Relaxed,
+                _ => held,
             };
             if let (Some((parts, grip, radius)), Some(hands)) = (made, &self.hands) {
                 let frame = bones[5] * hands.grip(0, radius);
@@ -177,7 +184,7 @@ impl People {
             }
             scene
                 .characters
-                .push(self.holding(&p.look, &bones, [right, Hold::Relaxed]));
+                .push(self.holding(&p.look, &bones, [right, left]));
             if let (Some((t, _)), Some(hands)) = (tool, &self.hands)
                 && let Some((mesh, instance)) = self.held.instance(t, hands, bones[5])
             {

@@ -2,9 +2,10 @@
 //! on the grounds, rendered headless, to judge the look by, and held to approved golden images.
 //!
 //! - `creeer_client --style-board <file.png> [--ground soil|gravel|granite|basalt|grass]
-//!   [--sun <deg>] [--camera x y z yaw pitch] [--walk <sheet.png>]`: one board: the crate new,
-//!   weathered a year and four years, the engineer in his base layer, in his outfit and fallen,
-//!   and a stride of him walking (`style_people.rs`).
+//!   [--sun <deg>] [--camera x y z yaw pitch] [--walk <sheet.png>] [--holding <sheet.png>]`: one
+//!   board: the crate new, weathered a year and four years, the engineer in his base layer, in
+//!   his outfit and fallen, a stride of him walking (`style_people.rs`), and him holding things
+//!   (G2.10, `style_holding.rs`).
 //! - `creeer_client --style-board <dir> --all [--check <golden dir> | --save <golden dir>]`:
 //!   the board on each of the five grounds at noon and in the evening, the walk and run sheets
 //!   (G1.4a) and the items' icons, written to `dir`; held to the golden images (`golden.rs`),
@@ -246,6 +247,21 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(sheet) = value_of("--walk") {
         board.walk(&scene, sun, 1.4).save_png(Path::new(sheet))?;
         println!("saved {sheet}: a stride walking at 1.4 m/s in eight frames");
+    }
+    if let Some(sheet) = value_of("--holding") {
+        let sky = demo::sky(DVec3::ZERO);
+        let at = DVec3::new(0.0, 1.0, 0.0);
+        let lighting = sky.lighting(at, demo::sun_direction(sun), &Lighting::default());
+        let b = &mut board;
+        crate::style_holding::holding_sheet(
+            &mut b.renderer,
+            &mut b.people,
+            &b.meshes,
+            (&sky, &lighting),
+            &scene,
+        )
+        .save_png(Path::new(sheet))?;
+        println!("saved {sheet}: holding a box, a pole, a stick, and a box on the ground (G2.10)");
     }
     println!("saved {path}: the crate at {AGES:?} years on {ground}, sun {sun}°");
     Ok(())

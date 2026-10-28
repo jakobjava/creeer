@@ -71,3 +71,72 @@ fn a_leg_reaches_what_it_can_and_bends_its_knee_forward() {
         "{short}"
     );
 }
+
+/// The knee's bend solved exactly (G2.10) is the old search's (G1.3g: a ternary search for the
+/// straightest, then bisection) to its precision, over every reach a leg has.
+#[test]
+fn the_exact_knee_is_the_searched_one() {
+    let joints = bones::joints();
+    for side in 0..2 {
+        let (h, k, a) = (
+            joints[HIP[side]].2,
+            joints[KNEE[side]].2,
+            joints[ANKLE[side]].2,
+        );
+        let span = |angle: f64| (k + DQuat::from_rotation_x(angle) * (a - k) - h).length();
+        let searched = |reach: f64| {
+            let (mut lo, mut hi) = (0.0f64, 0.6f64);
+            for _ in 0..60 {
+                let (a, b) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+                if span(a) < span(b) {
+                    lo = a;
+                } else {
+                    hi = b;
+                }
+            }
+            let straightest = 0.5 * (lo + hi);
+            if reach >= span(straightest) {
+                return straightest;
+            }
+            let (mut lo, mut hi, growing) = if reach >= span(0.0) {
+                (0.0, straightest, true)
+            } else {
+                (straightest, 2.4, false)
+            };
+            for _ in 0..50 {
+                let mid = 0.5 * (lo + hi);
+                if (span(mid) < reach) == growing {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            0.5 * (lo + hi)
+        };
+        let chain = Chain::new(h, k, a);
+        assert!(
+            (0.0..0.6).contains(&chain.straightest),
+            "{}",
+            chain.straightest
+        );
+        let (mut worst, mut reaches) = (0.0f64, 0.0f64);
+        for i in 0..=400 {
+            let reach = 0.2 + 0.7 * f64::from(i) / 400.0;
+            let bend = knee_for(side, reach);
+            worst = worst.max((bend - searched(reach)).abs());
+            reaches = reaches.max((span(bend) - span(searched(reach))).abs());
+            // Within its range it reaches exactly as far.
+            if reach < chain.span(chain.straightest) && reach > chain.span(KNEE_MOST) {
+                assert!((span(bend) - reach).abs() < 1e-9, "{reach}: {}", span(bend));
+            }
+        }
+        println!(
+            "leg {side}: the exact knee within {worst:.1e} rad of the searched, reaching within {reaches:.1e} m"
+        );
+        // (The search finds the straightest to the square root of the doubles' precision only,
+        // 1.5e-8: the span is flat at its longest. Measured 2.1e-8 rad, the reach the same to
+        // the doubles' precision.)
+        assert!(worst < 5e-8, "{worst} rad");
+        assert!(reaches < 1e-12, "{reaches} m");
+    }
+}

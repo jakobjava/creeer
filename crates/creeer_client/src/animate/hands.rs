@@ -59,6 +59,8 @@ struct Hand {
     across: DVec3,
     knuckles: DVec3,
     down: DVec3,
+    /// The wrist joint (the hand's bone's head).
+    wrist: DVec3,
 }
 
 /// Each digit's bends, from the thumb, from the hand out (rad).
@@ -69,12 +71,13 @@ type Bends = [[f64; 3]; 5];
 pub enum Hold {
     /// Relaxed, as measured.
     Relaxed,
-    /// Open: every joint straight, the fingers together (reaching, letting go).
-    // Held open by G1.4d's reach and G1.4f's throws; until then by its test alone.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Open: every joint straight, the fingers together (laid flat on what they hold).
     Open,
     /// Closed on a handle of this radius (m) across the palm.
     Grip(f64),
+    /// Closed under an edge across the palm's end (G2.10: a box held by its sides, the fingers
+    /// under its bottom): the palm on one face, the fingers bent until they meet the face beyond.
+    Edge,
 }
 
 /// Both hands' digits at rest, from the model's bones.
@@ -143,6 +146,7 @@ impl Hands {
                 across,
                 knuckles,
                 down,
+                wrist,
             })
         };
         Some(Self {
@@ -161,6 +165,7 @@ impl Hands {
                 Hold::Relaxed => RELAXED.map(|d| d.map(f64::to_radians)),
                 Hold::Open => [[0.0; 3]; 5],
                 Hold::Grip(radius) => self.gripping(side, radius),
+                Hold::Edge => self.under_edge(side),
             };
             for (digit, bends) in hand.digits.iter().zip(bends) {
                 out.extend(digit.bones(base, bends));
@@ -182,22 +187,28 @@ impl Hands {
         Frame64::new(hand.handle(radius), turn)
     }
 
-    /// Hand `side`'s bends gripping a handle of `radius` (m), worked out once a radius (the
-    /// closing takes a few hundred steps a finger).
+    /// Hand `side`'s bends gripping a handle of `radius` (m).
     fn gripping(&self, side: usize, radius: f64) -> Bends {
-        let key = (side, radius.to_bits());
+        self.cached(side, radius.to_bits(), |hand| {
+            std::array::from_fn(|k| {
+                if k == 0 {
+                    hand.thumb_over(radius)
+                } else {
+                    hand.wrapped(k, radius)
+                }
+            })
+        })
+    }
+
+    /// Hand `side`'s bends held as `key` says (a handle's radius's bits; `rest::EDGE`), worked
+    /// out by `close` once (the closing takes a few hundred steps a finger).
+    fn cached(&self, side: usize, key: u64, close: impl Fn(&Hand) -> Bends) -> Bends {
+        let key = (side, key);
         let mut cache = self.grips.borrow_mut();
         if let Some(bends) = cache.iter().find(|(k, _)| *k == key) {
             return bends.1;
         }
-        let hand = &self.hands[side];
-        let bends = std::array::from_fn(|k| {
-            if k == 0 {
-                hand.thumb_over(radius)
-            } else {
-                hand.wrapped(k, radius)
-            }
-        });
+        let bends = close(&self.hands[side]);
         cache.push((key, bends));
         bends
     }
@@ -243,19 +254,23 @@ impl Hand {
         self.knuckles - self.down * radius + self.palm * (radius + FINGER)
     }
 
-    /// The bends of digit `k` closed on a handle of `radius` (m) across the palm, as a hand
-    /// closes: its joints bending together, each in proportion to its range, until a bone meets
-    /// the handle; that bone's joint and those before it stop there, and the joints beyond go on
-    /// (the closing of grasp planners such as GraspIt's).
+    /// The bends of digit `k` closed on a handle of `radius` (m) across the palm.
     fn wrapped(&self, k: usize, radius: f64) -> [f64; 3] {
-        let digit = &self.digits[k];
         let centre = self.handle(radius);
         let reach = radius + FINGER;
-        let tip = digit.tip();
-        let meets = |b: &[f64; 3], i: usize| {
-            let p = digit.points(*b, tip);
+        self.closed(k, |p, i| {
             distance_to_line(p[i], p[i + 1], centre, self.across) <= reach
-        };
+        })
+    }
+
+    /// The bends of digit `k` closed as a hand closes: its joints bending together, each in
+    /// proportion to its range, until a bone meets what it holds (`meets`, given the digit's
+    /// points and the bone's index); that bone's joint and those before it stop there, and the
+    /// joints beyond go on (the closing of grasp planners such as GraspIt's).
+    fn closed(&self, k: usize, meets: impl Fn(&[DVec3; 4], usize) -> bool) -> [f64; 3] {
+        let digit = &self.digits[k];
+        let tip = digit.tip();
+        let meets = |b: &[f64; 3], i: usize| meets(&digit.points(*b, tip), i);
         let mut bends = [0.0; 3];
         let mut moving = 0;
         for step in 1..=CLOSING {
@@ -323,6 +338,10 @@ fn distance_to_line(a: DVec3, b: DVec3, c: DVec3, axis: DVec3) -> f64 {
     let x = (-a.dot(ab) / ab.length_squared().max(1e-12)).clamp(0.0, 1.0);
     (a + ab * x).length()
 }
+
+#[path = "hands_rest.rs"]
+mod rest;
+pub use rest::HandShape;
 
 #[cfg(test)]
 #[path = "hands_tests.rs"]

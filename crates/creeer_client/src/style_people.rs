@@ -15,7 +15,7 @@ use creeer_render::{Camera, Character, DebugLines, Frame, Image, Lighting, Rende
 use creeer_sim::character::{self, bones, ragdoll};
 
 /// The board's ground: the plane y = 0.
-struct Flat;
+pub(crate) struct Flat;
 
 impl Ground for Flat {
     fn under(&self, at: DVec3, _up: DVec3) -> Option<(DVec3, DVec3)> {
@@ -28,7 +28,7 @@ impl Ground for Flat {
 
 /// How the engineer looks on the board: the first player colour, a middle skin tone, brown
 /// hair, wearing `outfit`.
-fn look(outfit: &[&str]) -> Look {
+pub(crate) fn look(outfit: &[&str]) -> Look {
     Look {
         colour: 0,
         skin: 4,
@@ -169,7 +169,7 @@ pub fn tools_sheet(
             body: Body::Standing(centre, DQuat::IDENTITY),
             wields: Some(tool),
             swing: None,
-            carrying: false,
+            holding: None,
             made: None,
         };
         people.draw(&[person], 1.0 / 60.0, &Flat, &mut scene);
@@ -233,7 +233,7 @@ pub fn hands_sheet(
 }
 
 /// The middle `CROP` pixels of images of one size, side by side.
-fn side_by_side(images: &[Image]) -> Image {
+pub(crate) fn side_by_side(images: &[Image]) -> Image {
     const CROP: u32 = 420;
     let (full, h) = (images[0].width, images[0].height);
     let (w, left) = (CROP.min(full), (full - CROP.min(full)) / 2);

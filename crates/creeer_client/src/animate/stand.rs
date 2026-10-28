@@ -91,6 +91,8 @@ impl State {
             let angle = self.heading.angle_between(want);
             let step = (TURN * dt / angle.max(1e-9)).min(1.0);
             self.heading = self.heading.lerp(want, step).normalize_or(want);
+        } else {
+            self.face_held(up, dt);
         }
         let forward =
             (self.heading - up * self.heading.dot(up)).normalize_or(orientation * DVec3::Z);
@@ -118,7 +120,8 @@ impl State {
             DVec3::ZERO
         };
         let drawn = self.smoother.draw(local, transition, dt, carry);
-        drawn.bones(&base, forward, up)
+        let bones = drawn.bones(&base, forward, up);
+        self.reach_out(bones, (up, forward), dt, ground)
     }
 
     /// What the body does now, and its pose in the world: the pelvis, the joints' turns and the
@@ -294,9 +297,6 @@ impl State {
         } else {
             upper::standing(&mut turns, lean);
         }
-        if self.carrying {
-            upper::carrying(&mut turns);
-        }
         if let Some(progress) = self.swing {
             upper::swing(&mut turns, progress);
         }
@@ -376,11 +376,13 @@ impl State {
         let stepping = pace > 0.0 && self.stepping;
         let needed = hips::needed(&root, &going, &reached, stepping).max(0.0);
         self.lower_hips(needed, fresh, dt);
-        root.position -= up * self.drop;
+        // Stooping and squatting to what is held low (`holding.rs`).
+        let (stoop, squat) = self.stoop(&mut turns, up, forward, dt);
+        root.position -= up * (self.drop + squat);
         // The trunk leans about the hips, so the legs keep their reach.
         let hips = 0.5 * (joints[skeleton::HIP[0]].2 + joints[skeleton::HIP[1]].2);
         let at = root.transform_point(hips);
-        let tilt = DQuat::from_axis_angle(up.cross(forward).normalize_or(DVec3::X), lean);
+        let tilt = DQuat::from_axis_angle(up.cross(forward).normalize_or(DVec3::X), lean + stoop);
         root.rotation = (tilt * root.rotation).normalize();
         root.position = at - root.rotation * hips;
         let mode = if self.stepping {

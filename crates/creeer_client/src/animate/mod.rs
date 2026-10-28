@@ -9,10 +9,13 @@
 //! (`pose.rs`). Fallen, the bones are the ragdoll's segments exactly; standing up blends from
 //! there. Nothing is sent: it is drawn from what the client already has.
 
+mod arms;
 pub mod feet;
 pub mod gait;
+pub mod grasp;
 pub mod hands;
 mod hips;
+mod holding;
 mod inertial;
 mod pose;
 pub mod skeleton;
@@ -23,6 +26,7 @@ mod upper;
 use creeer_math::Frame64;
 use creeer_math::glam::{DQuat, DVec3};
 use feet::{Foot, Ground};
+use hands::{HandShape, Hold};
 use pose::{Mode, Smoother};
 use std::collections::HashMap;
 
@@ -76,8 +80,17 @@ struct State {
     lowering: f64,
     /// A tool's swing, through it (`Animator::swing`).
     swing: Option<f64>,
-    /// Both hands hold a load (G1.4f).
-    carrying: bool,
+    /// What the hands hold (G2.10, `holding.rs`), and whether they still do (let go, the arms
+    /// come back from it); how far the arms reach for it (0 to 1); each hand's hold on it, in
+    /// its frame; the fingers' holds drawn (right, left); the stoop's lean (rad) and the hips'
+    /// drop (m), each with its rate; the hands' shapes at rest.
+    held: Option<grasp::Load>,
+    holding: bool,
+    reaching: f64,
+    grasps: [Option<grasp::Reach>; 2],
+    holds: [Hold; 2],
+    stoop: [f64; 4],
+    hands: [HandShape; 2],
     /// What it did last frame, and its poses smoothed across changes.
     mode: Mode,
     smoother: Smoother,
@@ -87,12 +100,22 @@ struct State {
 #[derive(Debug, Default)]
 pub struct Animator {
     states: HashMap<u32, State>,
+    /// The hands' shapes at rest, the model's (`Hands::shapes`); none: the ragdoll's.
+    hands: Option<[HandShape; 2]>,
 }
 
 impl Animator {
+    /// The model's hands from now on (their arms are placed by where they touch what they hold).
+    pub fn set_hands(&mut self, hands: [HandShape; 2]) {
+        self.hands = Some(hands);
+    }
+
     /// Character `key`'s bones this frame, `dt` seconds after the last, its `body` as given.
     pub fn bones(&mut self, key: u32, body: &Body, dt: f64, ground: &dyn Ground) -> Vec<Frame64> {
         let state = self.states.entry(key).or_insert_with(|| State::new(body));
+        if let Some(hands) = self.hands {
+            state.hands = hands;
+        }
         state.time += dt;
         let bones = match body {
             Body::Fallen(bones) => {
@@ -135,11 +158,26 @@ impl Animator {
         }
     }
 
-    /// Whether character `key` carries a load in both hands (G1.4f): its arms hold it.
-    pub fn carrying(&mut self, key: u32, carrying: bool) {
+    /// What character `key`'s hands hold this frame (G2.10), if anything: its arms reach where
+    /// they hold it, and it stoops to it held low. A load not the one held before is taken anew
+    /// (the hands placed on it at once, the arms reaching out to it).
+    pub fn holding(&mut self, key: u32, load: Option<grasp::Load>) {
         if let Some(state) = self.states.get_mut(&key) {
-            state.carrying = carrying;
+            state.holding = load.is_some();
+            if let Some(load) = load {
+                if state.held.is_some_and(|h| h.id != load.id) {
+                    state.grasps = [None; 2];
+                }
+                state.held = Some(load);
+            }
         }
+    }
+
+    /// How character `key`'s fingers hold this frame (right, left).
+    pub fn holds(&self, key: u32) -> [Hold; 2] {
+        self.states
+            .get(&key)
+            .map_or([Hold::Relaxed; 2], |s| s.holds)
     }
 
     /// Forgets the characters not in `keep`.
@@ -190,7 +228,13 @@ impl State {
             drop: 0.0,
             lowering: 0.0,
             swing: None,
-            carrying: false,
+            held: None,
+            holding: false,
+            reaching: 0.0,
+            grasps: [None; 2],
+            holds: [Hold::Relaxed; 2],
+            stoop: [0.0; 4],
+            hands: [0, 1].map(HandShape::approximate),
             stop_up: [false; 2],
             mode: Mode::Standing,
             smoother: Smoother::default(),

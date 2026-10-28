@@ -229,7 +229,9 @@ impl PlanetSession {
                             body,
                             wields: *wields,
                             swing: c.swinging(*id),
-                            carrying: carries.is_some() && made.is_none(),
+                            // What the hands hold, reached for where they hold it (G2.10).
+                            holding: (carries.filter(|_| made.is_none()))
+                                .and_then(|h| crate::held_load::load(&h, &c.kinds, &poses)),
                             made,
                         });
                     }

@@ -50,6 +50,7 @@ mod golden;
 mod gpu_passes;
 mod headless;
 mod held;
+mod held_load;
 mod holding;
 mod hulls;
 mod icon_image;
@@ -99,6 +100,7 @@ mod shimmer;
 #[cfg(test)]
 mod struck_bench_tests;
 mod style_board;
+mod style_holding;
 mod style_people;
 mod system_bench;
 mod system_cmd;

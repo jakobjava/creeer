@@ -159,3 +159,45 @@ fn a_held_tool_lies_along_the_handle_the_fingers_close_on() {
         );
     }
 }
+
+/// Each hand's shape at rest gives the frames its arm is placed by (G2.10): gripping, the
+/// tool's (`Hands::grip`); under a box's edge, the fingers curled under its bottom, none in it.
+#[test]
+fn under_an_edge_the_fingers_curl_under_it_and_stay_out_of_the_box() {
+    let hands = Hands::new(&engineer()).expect("fingers");
+    let shapes = hands.shapes();
+    for (side, hand) in hands.hands.iter().enumerate() {
+        let grip = hands.grip(side, 0.02);
+        let rest = shapes[side].rest(Hold::Grip(0.02));
+        assert!((rest.position - grip.position).length() < 1e-12);
+        for axis in [DVec3::X, DVec3::Y, DVec3::Z] {
+            assert!((rest.rotation * axis - grip.rotation * axis).length() < 1e-12);
+        }
+        // The palm faces along the hold's x as `palm_sign` says.
+        let x = rest.rotation * DVec3::X;
+        assert!((x.dot(hand.palm) - shapes[side].palm_sign()).abs() < 1e-9);
+        let edge = shapes[side].rest(Hold::Edge).position;
+        let bends = hands.under_edge(side);
+        let mut deepest = f64::MIN;
+        for (k, (digit, bends)) in hand.digits.iter().zip(bends).enumerate().skip(1) {
+            let p = digit.points(bends, digit.tip());
+            for q in &p[1..] {
+                // Under the box (its side of the face the palm is on): how far up into it.
+                let q = *q - edge;
+                if q.dot(hand.palm) > 0.0 {
+                    deepest = deepest.max(-q.dot(hand.down));
+                }
+            }
+            assert!(
+                (p[3] - edge).dot(hand.palm) > 0.0,
+                "finger {k} not under it"
+            );
+        }
+        println!(
+            "under an edge: the fingers' bones {:.1} mm below the bottom at the nearest",
+            -deepest * 1e3
+        );
+        // Each bone's axis no nearer the bottom than about a finger's half thickness.
+        assert!(deepest < -FINGER + 2e-3, "{deepest} m into the box");
+    }
+}

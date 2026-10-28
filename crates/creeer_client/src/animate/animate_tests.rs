@@ -308,29 +308,3 @@ fn a_swing_raises_and_strikes_with_the_right_arm() {
         assert!(step < 1.55 * mean, "a jump of {step} m, the mean {mean} m");
     }
 }
-
-#[test]
-fn carrying_the_hands_are_where_the_load_is_held() {
-    let flat = Plane {
-        normal: DVec3::Y,
-        sea: -100.0,
-    };
-    let centre = DVec3::new(0.0, creeer_sim::character::heights().0, 0.0);
-    let body = Body::Standing(centre, DQuat::IDENTITY);
-    let mut animator = Animator::default();
-    let dt = 1.0 / 60.0;
-    animator.bones(6, &body, dt, &flat);
-    animator.carrying(6, true);
-    let b = animator.bones(6, &body, dt, &flat);
-    // Both hands within a few centimetres of where the server holds a load (`carry::held`),
-    // across the body's width.
-    let held = creeer_sim::carry::held(centre, DVec3::Y, DVec3::Z);
-    for hand in [5, 11] {
-        let at = b[hand].transform_point(bones::centres()[hand]);
-        let off = at - held;
-        assert!(
-            off.y.abs() < 0.08 && off.z.abs() < 0.08,
-            "hand {hand} {off} from the hold"
-        );
-    }
-}
