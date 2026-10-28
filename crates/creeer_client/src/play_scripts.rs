@@ -13,7 +13,7 @@ use creeer_sim::trees::{Part, Tree};
 pub(crate) struct Player {
     /// Seconds since joined.
     pub(crate) t: f64,
-    /// When it last struck (s), and the stone it holds.
+    /// When it last struck (s), and whether it holds its stone (the knapper) or its axe.
     struck: f64,
     holding: bool,
     /// The tree it fells.
@@ -82,8 +82,10 @@ enum Blow {
 
 /// The feller's walk and acts this frame: where it looks.
 pub(crate) fn fell(view: &mut PlanetView, p: &mut Player, me: DVec3) -> (DVec3, DVec3) {
-    if p.tree.is_none() {
+    // The steel axe, once (commands are rate-limited: one a frame crowded out the blows).
+    if !p.holding {
         view.session.command(Command::Wield { tool: Some(2) });
+        p.holding = true;
     }
     let (walk, look, blow) = felling(view, p, me);
     if !matches!(blow, Blow::None) && walk == DVec3::ZERO && p.t - p.struck > 2.1 {

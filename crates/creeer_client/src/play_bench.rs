@@ -34,6 +34,10 @@ const BUDGET: f64 = 16.7;
 /// What a frame's own work (all but the render) may take at worst under `--gate` (ms): the
 /// budget less the render's 8.6 ms p50 at 1600 × 900 on the development machine, less a margin.
 const OWN_GATE: f64 = 6.0;
+/// The seconds after joining the gate leaves out: the world about the camera streaming in (its
+/// terrain's chunks, its trees' and loose things' cells), as `--planet-bench` leaves out its
+/// first frame.
+const WARMING: f64 = 3.0;
 
 /// Runs the bench.
 ///
@@ -67,7 +71,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut player = crate::play_scripts::Player::default();
     let mut times: Vec<[f64; 6]> = Vec::new();
     let mut drawn: Vec<(f64, usize)> = Vec::new();
-    let (mut ticks, mut ticked) = (Vec::new(), 0);
+    let (mut ticks, mut ticked, mut own) = (Vec::new(), 0, 0.0f64);
     let every = args.iter().any(|a| a == "--each-second");
     let frame = Duration::from_secs_f64(1.0 / 60.0);
     let (mut next, mut last, mut joined) = (Instant::now(), Instant::now(), None);
@@ -169,6 +173,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             times.push(ms);
+            if t > WARMING {
+                own = own.max(ms[..5].iter().sum());
+            }
             ticks.extend(fresh);
             drawn.push((t, felled_rods(&view)));
             // A line a second (`--each-second`): each phase's worst in it.
@@ -187,7 +194,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    let (own, flashes) = report(&times, &drawn);
+    let flashes = report(&times, &drawn);
+    println!("a frame's own work after the first {WARMING} s: worst {own:.2} ms");
     let c = &view.session.connection;
     let flakes = c.laid.values().filter(|l| l.word == "flake").count();
     let felled = c.trees.values().filter(|t| t.felled).count();
@@ -236,8 +244,8 @@ fn felled_rods(view: &PlanetView) -> usize {
         .count()
 }
 
-/// Prints the frames' phases and the flashes: the worst frame's own work (ms) and how many.
-fn report(times: &[[f64; 6]], drawn: &[(f64, usize)]) -> (f64, usize) {
+/// Prints the frames' phases and the flashes: how many.
+fn report(times: &[[f64; 6]], drawn: &[(f64, usize)]) -> usize {
     let pct = percentile;
     for (k, name) in PHASES.iter().enumerate() {
         let v: Vec<f64> = times.iter().map(|t| t[k]).collect();
@@ -270,10 +278,5 @@ fn report(times: &[[f64; 6]], drawn: &[(f64, usize)]) -> (f64, usize) {
         }
     }
     println!("felled parts drawn by none (s, frames): {flashes:.2?}");
-    // The client's own work in a frame: all but the render.
-    let own = (times.iter())
-        .map(|t| t[..5].iter().sum::<f64>())
-        .fold(0.0, f64::max);
-    println!("a frame's own work (all but the render): worst {own:.2} ms");
-    (own, flashes.len())
+    flashes.len()
 }
