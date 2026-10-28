@@ -46,19 +46,17 @@ impl Holding {
         self.load.is_some()
     }
 
-    /// A key while something is held (Q, H, Ctrl); whether it was one.
+    /// A key (Q, H, Ctrl); whether it was one for what is held. Q and Ctrl are followed with
+    /// nothing held too: let go of while Q was down, the next thing taken turned with the mouse.
     pub fn key(&mut self, code: KeyCode, pressed: bool) -> bool {
-        if !self.holding() {
-            return false;
-        }
         match code {
             KeyCode::KeyQ => self.turning = pressed,
             KeyCode::ControlLeft | KeyCode::ControlRight => self.fine = pressed,
-            KeyCode::KeyH if pressed => self.steady = !self.steady,
+            KeyCode::KeyH if pressed && self.holding() => self.steady = !self.steady,
             KeyCode::KeyH => {}
             _ => return false,
         }
-        true
+        self.holding()
     }
 
     /// A turn of the wheel while something is held: pushed away or drawn in, or rolled with Q;
@@ -137,5 +135,84 @@ impl Holding {
         } else {
             "wheel nearer/farther · Q+mouse turn · Q+wheel roll · Ctrl fine · H steady · G put down · T throw"
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Holding something at the default place before the eyes.
+    fn held() -> Holding {
+        Holding {
+            load: Some(EntityId(5)),
+            at: DVec3::new(0.0, -0.3, -0.6),
+            ..Holding::default()
+        }
+    }
+
+    #[test]
+    fn nothing_held_takes_no_keys_wheel_or_mouse() {
+        let mut h = Holding::default();
+        assert!(!h.key(KeyCode::KeyQ, true) && !h.key(KeyCode::KeyH, true));
+        assert!(!h.wheel(1.0));
+        assert_eq!(h.mouse((10.0, 0.0)), (false, 1.0));
+        assert!(h.hint().is_none() && !h.steady);
+    }
+
+    #[test]
+    fn the_wheel_moves_it_two_centimetres_a_notch_within_reach_and_finer_with_ctrl() {
+        let mut h = held();
+        let from = h.at.length();
+        assert!(h.wheel(1.0));
+        assert!((h.at.length() - from - NOTCH).abs() < 1e-12);
+        assert!(h.key(KeyCode::ControlLeft, true));
+        h.wheel(1.0);
+        assert!((h.at.length() - from - NOTCH * (1.0 + FINE)).abs() < 1e-12);
+        assert_eq!(h.mouse((0.0, 0.0)), (false, FINE), "the view finer too");
+        for _ in 0..1000 {
+            h.wheel(1.0);
+        }
+        assert!((h.at.length() - FARTHEST).abs() < 1e-12);
+        for _ in 0..1000 {
+            h.wheel(-1.0);
+        }
+        assert!((h.at.length() - NEAREST).abs() < 1e-12);
+    }
+
+    #[test]
+    fn with_q_the_mouse_turns_it_and_the_wheel_rolls_it() {
+        let mut h = held();
+        let at = h.at;
+        assert!(h.key(KeyCode::KeyQ, true));
+        assert_eq!(h.mouse((100.0, 0.0)), (true, 1.0), "not the view");
+        let yaw = h.turn.angle_between(DQuat::IDENTITY);
+        assert!((yaw - 100.0 * PER_PIXEL).abs() < 1e-9, "{yaw}");
+        h.turn = DQuat::IDENTITY;
+        h.wheel(2.0);
+        assert!((h.turn.angle_between(DQuat::IDENTITY) - 2.0 * ROLL).abs() < 1e-9);
+        assert_eq!(h.at, at, "rolled, not moved");
+    }
+
+    #[test]
+    fn held_steady_neither_the_wheel_nor_the_mouse_moves_it() {
+        let mut h = held();
+        assert!(h.key(KeyCode::KeyH, true) && h.steady);
+        assert!(h.key(KeyCode::KeyH, false) && h.steady, "a press toggles");
+        h.key(KeyCode::KeyQ, true);
+        assert!(!h.wheel(1.0) && !h.mouse((5.0, 5.0)).0);
+        assert!(h.hint().is_some_and(|t| t.contains("J fasten")));
+        h.key(KeyCode::KeyH, true);
+        assert!(!h.steady);
+    }
+
+    #[test]
+    fn q_let_go_of_with_nothing_held_does_not_turn_the_next_thing_taken() {
+        let mut h = held();
+        h.key(KeyCode::KeyQ, true);
+        h.load = None;
+        assert!(!h.key(KeyCode::KeyQ, false), "passed on: nothing held");
+        h.load = Some(EntityId(6));
+        assert_eq!(h.mouse((10.0, 0.0)), (false, 1.0), "the view turns");
     }
 }
