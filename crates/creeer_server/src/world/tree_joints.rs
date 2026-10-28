@@ -203,6 +203,28 @@ impl ServerWorld {
         point: DVec3,
         fastener: &Fastener,
     ) -> Result<(), String> {
+        let (node, axis, law) = self.tree_joint(part, tree, point, fastener)?;
+        let i = self.index(part).ok_or("it is gone")?;
+        let body = &mut self.world.bodies[i];
+        body.structure.fix_to(node, axis, &law);
+        body.solver = ImplicitSolver::new(&body.structure, Scheme::Newmark, DT, 1);
+        body.wake();
+        if let Some(r) = self.building.built.get_mut(&part) {
+            r.woods
+                .resize(self.world.bodies[i].structure.element_count(), None);
+        }
+        Ok(())
+    }
+
+    /// Where a joint of `fastener` from part `part` (made a structure) to standing tree `tree`
+    /// at `point` goes: the part's node there, the point on the tree's axis it runs to, its law.
+    pub(super) fn tree_joint(
+        &mut self,
+        part: EntityId,
+        tree: u64,
+        point: DVec3,
+        fastener: &Fastener,
+    ) -> Result<(usize, DVec3, creeer_physics::structure::JointLaw), String> {
         let (standing, _) = self.standing(tree).ok_or("that tree is felled")?;
         let forest = Arc::clone(self.trees.forest.as_ref().ok_or("no trees")?);
         let species = &forest.species[usize::from(standing.species)];
@@ -231,15 +253,7 @@ impl ServerWorld {
         };
         let materials = self.building.materials.as_ref().ok_or("no materials")?;
         let law = fastener.law(materials, (&sa, &sb), &at, between)?;
-        let body = &mut self.world.bodies[i];
-        body.structure.fix_to(node, axis, &law);
-        body.solver = ImplicitSolver::new(&body.structure, Scheme::Newmark, DT, 1);
-        body.wake();
-        if let Some(r) = self.building.built.get_mut(&part) {
-            r.woods
-                .resize(self.world.bodies[i].structure.element_count(), None);
-        }
-        Ok(())
+        Ok((node, axis, law))
     }
 
     /// The tree (standing or a stump) a node held fast at `p` is fixed to, if any.

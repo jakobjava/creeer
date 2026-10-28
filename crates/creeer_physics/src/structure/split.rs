@@ -132,6 +132,13 @@ impl Structure {
         let el = self.elements.get(e)?;
         (el.is_joint() && !el.broken).then_some((el.a, el.b))
     }
+
+    /// What joint `e`'s fasteners hold together across it (N: its law's withdrawal capacity), if
+    /// it is a joint and holds.
+    pub fn joint_withdrawal(&self, e: usize) -> Option<f64> {
+        self.joint_ends(e)?;
+        self.elements[e].fastened.as_ref().map(|f| f.withdrawal)
+    }
 }
 
 impl Structure {

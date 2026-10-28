@@ -26,6 +26,9 @@ pub enum Kind {
         width: f64,
         thickness: f64,
         wraps: u32,
+        /// Of its `wraps`, how many one hand makes while the other holds the part (a tack: G2.10);
+        /// 0: it cannot be tacked.
+        tack: u32,
         pretension: f64,
         friction: f64,
     },
@@ -116,6 +119,7 @@ impl Fastener {
                 width,
                 thickness,
                 wraps,
+                tack: _,
                 pretension,
                 friction,
             } => Ok(law::lashing(
@@ -135,6 +139,46 @@ impl Fastener {
                 between,
             )),
         }
+    }
+
+    /// This fastener tacked (G2.10): a lashing's first turns, made by one hand while the other
+    /// holds the part in place, in their share of its time. None for what is not tacked (a nail
+    /// or a peg is driven whole by one hand; a lashing of `tack` 0).
+    pub fn tacked(&self) -> Option<Self> {
+        let Kind::Lashing { wraps, tack, .. } = self.kind else {
+            return None;
+        };
+        let mut tacked = self.clone();
+        if let Kind::Lashing { wraps: w, .. } = &mut tacked.kind {
+            *w = tack;
+        }
+        tacked.seconds = self.seconds * f64::from(tack) / f64::from(wraps);
+        (tack > 0).then_some(tacked)
+    }
+
+    /// What a lashing's turns hold together across its parts (N: each turn's two strands at
+    /// their breaking strength), as its joint keeps it: how a joint made by its tack is told
+    /// from one made whole. None for a nail or a peg.
+    ///
+    /// # Errors
+    /// If its material is unknown.
+    pub fn lashing_withdrawal(&self, materials: &MaterialTable) -> Result<Option<f64>, String> {
+        let Kind::Lashing {
+            width,
+            thickness,
+            wraps,
+            ..
+        } = self.kind
+        else {
+            return Ok(None);
+        };
+        let m = materials
+            .get(&self.material)
+            .ok_or_else(|| format!("no material {}", self.material))?;
+        let strength = self
+            .strength
+            .unwrap_or(m.structural(ROOM).ultimate_strength);
+        Ok(Some(2.0 * f64::from(wraps) * strength * width * thickness))
     }
 }
 
@@ -180,12 +224,14 @@ pub fn problems(fasteners: &[Fastener], materials: &MaterialTable) -> Vec<String
                 width,
                 thickness,
                 wraps,
+                tack,
                 pretension,
                 friction,
             } => {
                 width > 0.0
                     && thickness > 0.0
                     && wraps > 0
+                    && tack < wraps
                     && (0.0..=1.0).contains(&pretension)
                     && (0.0..=1.5).contains(&friction)
             }

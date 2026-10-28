@@ -13,6 +13,7 @@
 - **Boneworks / HurricaneVR**: hands as force-limited drives; heavy things need two hands; their melee felt "wobbly and laggy" (too soft). Half-Life: Alyx avoided physical hands for want of feedback to the player's own hand, as a mouse has none.
 - **Catto's soft constraints** (Box2D v3 "Soft Step"), **Box3D's motor joint** (a velocity motor and a spring, each with its force and torque capped), **PhysX D6 drives**, **Jolt's motor springs**, **MuJoCo welds** (`solref`): a stiffness set by frequency and damping ratio, not N/m, so it behaves the same for every mass; implicit and capped.
 - **Haptics' virtual coupling** (Colgate 1995) and the **god-object** (Zilles & Salisbury 1995): the hand's intent kept apart from the object and joined to it by a bounded spring-damper, the intent never running far ahead of a blocked object.
+- **Lashing alone:** a square lashing is started with a clove hitch on the upright and the crossbar laid against it; its first wraps hold the crossbar while the rest and the frapping turns are drawn (Scouting Magazine, "Mark II" square lashing, 2019; scouting pioneering guides). No timing of lashing by hand was found (a Marine Corps knot course allows 30 s for a square knot): the tack takes its turns' share of the lashing's estimated time.
 - **Human limits**:
   - two hands lift about 58.6 kg to the elbows (ADR-0027);
   - one hand carries comfortably 9–10 kg (men's one-handed carrying);
@@ -57,8 +58,9 @@
      - G puts it down; T throws it.
    - **A hint** of these keys shows while something is held.
 4. **Fastening while holding:**
-   - Held steady, a part is nailed or pegged with the free hand. While that hand works, the other holds it with one hand's strength and torque, so a part too heavy for one hand sags unless it rests on something: tack it where it rests, adjust it, nail the rest.
-   - A lashing takes both hands: the part must be propped.
+   - **Held steady,** a part is nailed or pegged with the free hand. While that hand works, the other holds it with one hand's strength and torque, so a part too heavy for one hand sags unless it rests on something: tack it where it rests, adjust it, nail the rest.
+   - **A lashing is tacked, then finished** (`tacking.rs`; the user chose it, 2026-10-28). Held steady, the free hand makes the lashing's first turns (its `tack` in `data/fasteners.ron`: 2 of the bast lashing's 4, in their share of its time, 15 s), as a lone builder starts a square lashing: laid against the first turns, a crossbar is held by them. Let go, the tack holds the part (half the whole lashing's clamp and hold); J with both hands free draws the rest of its turns (the other 15 s), the joint made anew with the whole lashing where its parts lie. The tack is told from a whole lashing by what its joint keeps (its turns' hold apart), so it is known after a save and wherever its structure goes. The strip is taken by the tack.
+   - **Fastened, the hands let go:** the joint holds the part, and a part made a structure has other nodes than the one gripped (held on, it was yanked towards the old node's frame).
 
 ## Measured and rejected
 
@@ -74,6 +76,7 @@
 | The fist's twist left to the grip's turn springs (`grip_holds_twist` dropped) | That branch, drooping in one hand at the wrist's cap, spun about its own axis at 150 rad/s in a step | The fist holds a handle's own axis by its friction (G1.7's rule kept) |
 | Hand over hand towards the point of the pole nearest the hands' target | The hands stayed at the very end of a pole raised overhead (the target above its end), and it stalled at 42° | Along it the way the body faces when the load lags, or when they push it forward and it does not go |
 | The arms' reach measured from the standing shoulders alone | A pole lying 0.6 m before the feet, held steady where it lay to be nailed, was lifted 0.58 m in half a second into the arms' reach, off the pole it was to be nailed to ("not on the body as it was"): nothing could be held on the ground or lowered onto it | The shoulders come down and out towards it, as a person stoops and squats |
+| A lashing refused while a part is held (it takes both hands) | In survival the only fastener is a lashing (nails need iron, pegs an auger: G3), so no part could be held in place and fastened at all | Tacked by its first turns with one hand, finished with both |
 
 ## Validation
 
@@ -92,7 +95,7 @@
   - a branch picked up and carried walking follows the body's half turn in about half a second, steady to a thousandth of a rad/s after;
   - in the work scene every blow falls and no box is dropped;
   - over a slow link, walking with a load is corrected as rarely as before.
-- **Fastening while holding** (`building_tests.rs`): a pole held where it lies before the feet, not steady, is refused a nail ("hold it steady first"), and refused a lashing ("both hands"); held steady, it stays within a centimetre while a nail is driven in its 6 s, and the two poles become one structure. With the stoop taken out, the hands lift it off the other.
+- **Fastening while holding** (`tacking_tests.rs`): a pole held where it lies before the feet, not steady, is refused a nail or a lashing ("hold it steady first"); held steady, it stays within a centimetre while a nail is driven in its 6 s, the two poles become one structure and the hands let go. With the stoop taken out, the hands lift it 0.58 m off the other in half a second. Tacked while held steady, it stays within a centimetre for the tack's 15 s; then the hands let go and its joint holds 1,920 N apart. Taken again, it cannot be finished ("both hands"). Put down and finished, 15 s later its joint holds the whole lashing's 3,840 N (`creeer_building`: two turns are half the clamp).
 - **The input:** a hold reads back within a millimetre and a quarter milliradian (`inputs.rs`).
 
 ## Limits

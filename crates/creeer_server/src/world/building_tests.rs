@@ -8,21 +8,21 @@ use creeer_math::glam::DQuat;
 use creeer_net::message::Target;
 use creeer_sim::items::{Form, Item, Piece};
 
-fn wait(w: &mut ServerWorld, ada: EntityId, n: u32) {
+pub(super) fn wait(w: &mut ServerWorld, ada: EntityId, n: u32) {
     for _ in 0..n {
         w.steer(ada, &AvatarInput::default());
         w.step();
     }
 }
 
-fn centre(w: &ServerWorld, id: EntityId) -> DVec3 {
+pub(super) fn centre(w: &ServerWorld, id: EntityId) -> DVec3 {
     w.world.bodies[w.index(id).expect("there")]
         .structure
         .position[0]
 }
 
 /// A green spruce pole, 50 mm round and 1.6 m long.
-fn pole() -> Item {
+pub(super) fn pole() -> Item {
     Item::Piece(
         Piece::solid(
             "spruce_green",
@@ -65,7 +65,7 @@ fn crossed(creative: bool) -> (ServerWorld, EntityId, EntityId, EntityId, DVec3)
     (w, ada, below, above, touch.point)
 }
 
-fn fasten(
+pub(super) fn fasten(
     w: &mut ServerWorld,
     ada: EntityId,
     part: EntityId,
@@ -288,99 +288,4 @@ fn a_pole_set_in_a_hole_stands_and_one_let_go_falls() {
             assert!(lean > 30.0, "let go, it still stands ({lean}°)");
         }
     }
-}
-
-/// Ada, a pole lying across her way 0.6 m before her (the one she will hold), and on it, along
-/// her way, another crossing it 10 cm from its near end: their ids and where they cross.
-fn across() -> (ServerWorld, EntityId, EntityId, EntityId, DVec3) {
-    let mut w = world();
-    w.creative = true;
-    let ada = w.avatar_of("ada");
-    wait(&mut w, ada, 60);
-    let me = centre(&w, ada);
-    let up = character::plumb(&w.world, me);
-    let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
-    // A rod lies along its own x.
-    let lying = |axis: DVec3| {
-        let side = up.reject_from(axis).normalize();
-        DQuat::from_mat3(&creeer_math::glam::DMat3::from_cols(
-            axis,
-            side,
-            axis.cross(side),
-        ))
-    };
-    let lay = |w: &mut ServerWorld, id, at: DVec3, axis: DVec3| {
-        let i = w.index(id).expect("there");
-        let b = &mut w.world.bodies[i];
-        (b.structure.position[0], b.structure.orientation[0]) = (at, lying(axis));
-        b.solver.reset_history(&b.structure);
-    };
-    let at = w.ground_under(me + east * 0.6) + up * 0.03;
-    let held = w.add_item(pole(), at, true);
-    lay(&mut w, held, at, east.cross(up).normalize());
-    // The other from on the held one to the ground beyond (the ground may rise or fall).
-    let on = at + up * 0.051;
-    let along = (w.ground_under(me + east * 2.1) + up * 0.03 - on).normalize();
-    let other = w.add_item(pole(), on + along * 0.7, true);
-    lay(&mut w, other, on + along * 0.7, along);
-    wait(&mut w, ada, 90);
-    let j = w.index(other).expect("there");
-    let touch = (w
-        .world
-        .touching(w.index(held).expect("there"), 0.005)
-        .into_iter())
-    .find(|t| t.other.is_some_and(|(k, _)| k == j))
-    .expect("they cross");
-    (w, ada, held, other, touch.point)
-}
-
-/// Ada's hold of `part` where it lies now, held steady or not (G2.10).
-fn held_where_it_lies(w: &ServerWorld, ada: EntityId, part: EntityId, steady: bool) -> AvatarInput {
-    let s = &w.world.bodies[w.index(part).expect("there")].structure;
-    AvatarInput {
-        hold: Some(creeer_net::message::Hold {
-            offset: s.position[0] - centre(w, ada),
-            turn: s.orientation[0],
-            steady,
-        }),
-        ..AvatarInput::default()
-    }
-}
-
-#[test]
-fn a_part_held_steady_is_nailed_where_it_is_held_but_not_lashed() {
-    // In creative, nails at hand: Ada takes the pole before her feet where the other crosses it
-    // (she stoops to it).
-    let (mut w, ada, part, other, at) = across();
-    let target = Target {
-        body: Some(part),
-        at,
-        seen: w.tick as f64,
-    };
-    w.apply(&Command::Grab(target), Some(ada)).expect("taken");
-    let moving = held_where_it_lies(&w, ada, part, false);
-    w.steer(ada, &moving);
-    w.step();
-    let why = fasten(&mut w, ada, part, at, "nail_100").expect_err("not held steady");
-    assert!(why.contains("steady"), "{why}");
-    let why = fasten(&mut w, ada, part, at, "bast_lashing").expect_err("both hands held");
-    assert!(why.contains("both hands"), "{why}");
-    // Held steady where it lies, a nail is driven with the other hand in its time (6 s).
-    let steady = held_where_it_lies(&w, ada, part, true);
-    let start = centre(&w, part);
-    let mut farthest = 0.0_f64;
-    for t in 0..330 {
-        if t == 30 {
-            fasten(&mut w, ada, part, at, "nail_100").expect("begins");
-        }
-        w.steer(ada, &steady);
-        w.step();
-        farthest = farthest.max((centre(&w, part) - start).length());
-    }
-    assert!(farthest < 0.01, "moved {farthest} m while held steady");
-    for _ in 0..70 {
-        w.steer(ada, &steady);
-        w.step();
-    }
-    assert!(w.index(other).is_none(), "nailed: {:?}", w.take_notes());
 }

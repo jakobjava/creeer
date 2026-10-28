@@ -50,6 +50,10 @@ pub(super) struct Built {
 pub(super) enum Work {
     /// Fastening it to what it touches (G2.3).
     Fasten,
+    /// Tacking it with a lashing's first turns while one hand holds it (G2.10).
+    Tack,
+    /// Drawing the rest of a tacked lashing's turns, both hands free (G2.10).
+    Finish,
     /// Taking a joint of it apart (G2.6).
     Undo,
     /// Backfilling round it where it stands in a hole (G2.4).
@@ -92,23 +96,18 @@ impl ServerWorld {
         let k = (self.building.fasteners.iter())
             .position(|f| f.name == fastener)
             .ok_or_else(|| format!("no fastener {fastener}"))?;
-        // Holding a part, one hand keeps it still (steady: H) while the other nails or pegs
-        // it; a lashing takes both (G2.10).
-        if let Some(c) = self.carrying.get(&by) {
-            let lashing = matches!(
-                self.building.fasteners[k].kind,
-                creeer_building::fasteners::Kind::Lashing { .. }
-            );
-            if lashing {
-                return Err("a lashing takes both hands: prop it or put it down, then lash".into());
-            }
-            if !c.tool && c.steady.is_none() {
-                return Err("hold it steady first (H), then fasten it".into());
-            }
+        let work = self.fastening_work(by, part, at, k)?;
+        let whole = &self.building.fasteners[k];
+        let tack = whole.tacked().map_or(0.0, |t| t.seconds);
+        let (seconds, doing) = match work {
+            Work::Tack => (tack, "tacking"),
+            Work::Finish => (whole.seconds - tack, "finishing the lashing"),
+            _ => (whole.seconds, "fastening"),
+        };
+        if work != Work::Finish {
+            // (A tack's strip was taken when it was made.)
+            self.fastener_at_hand(by, k)?;
         }
-        self.touching_any(part, at)?;
-        self.fastener_at_hand(by, k)?;
-        let seconds = self.building.fasteners[k].seconds;
         // (Validated under ten minutes: a few thousand ticks.)
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let done = self.tick + (seconds * TICKS).ceil() as u64;
@@ -119,10 +118,10 @@ impl ServerWorld {
                 at,
                 fastener: k,
                 done,
-                work: Work::Fasten,
+                work,
             },
         );
-        self.note(by, format!("fastening: {seconds:.0} s"));
+        self.note(by, format!("{doing}: {seconds:.0} s"));
         Ok(())
     }
 
@@ -172,7 +171,8 @@ impl ServerWorld {
         for (by, u) in due {
             self.building.under_way.remove(&by);
             let undone = match u.work {
-                Work::Fasten => None,
+                Work::Fasten | Work::Tack => None,
+                Work::Finish => Some(self.finish_due(by, &u).map(|()| "lashed fast")),
                 Work::Undo => Some(self.unfasten_due(by, &u).map(|()| "taken apart")),
                 Work::Post => Some(self.post_due(by, &u).map(|()| "set in the ground")),
             };
@@ -183,6 +183,10 @@ impl ServerWorld {
             }
             let outcome = self.fasten_due(by, &u);
             let note = match outcome {
+                Ok(()) if u.work == Work::Tack => format!(
+                    "tacked with {}: let go, then J again to finish it",
+                    self.building.fasteners[u.fastener].name
+                ),
                 Ok(()) => format!("fastened with {}", self.building.fasteners[u.fastener].name),
                 Err(why) => format!("not fastened: {why}"),
             };
@@ -196,10 +200,20 @@ impl ServerWorld {
         self.within_reach(by, at)?;
         let (other, point) = self.touching_any(u.part, at)?;
         let from = self.fastener_at_hand(by, u.fastener)?;
-        let fastener = self.building.fasteners[u.fastener].clone();
+        let whole = &self.building.fasteners[u.fastener];
+        let fastener = match u.work {
+            Work::Tack => whole.tacked().ok_or("it cannot be tacked")?,
+            _ => whole.clone(),
+        };
         match other {
-            Touched::Part(id) => self.fasten(u.part, id, point, &fastener)?,
-            Touched::Tree(tree) => self.fasten_to_tree(u.part, tree, point, &fastener)?,
+            Touched::Part(id) => {
+                self.fasten(u.part, id, point, &fastener)?;
+                self.hands_off(&[u.part, id]);
+            }
+            Touched::Tree(tree) => {
+                self.fasten_to_tree(u.part, tree, point, &fastener)?;
+                self.hands_off(&[u.part]);
+            }
         }
         if let Some((pocket, k)) = from {
             let item = self.change_pockets(by, |p| p[pocket].take(k));

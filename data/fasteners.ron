@@ -10,8 +10,10 @@
 //     (EN 10230 nails: at least 600 MPa).
 //   - Peg(diameter, length): a wooden dowel in a bored hole (m); `strength` none (its wood's
 //     bending strength is the material's).
-//   - Lashing(width, thickness, wraps, pretension, friction): a strip or cord (m), turns round
-//     both parts, the share of its strength it is drawn to by hand, and the friction between
+//   - Lashing(width, thickness, wraps, tack, pretension, friction): a strip or cord (m), turns round
+//     both parts, how many of them one hand makes while the other holds the part in place (a
+//     tack, G2.10: they hold it until the rest are drawn with both hands; 0: it cannot be
+//     tacked), the share of its strength it is drawn to by hand, and the friction between
 //     the parts it clamps.
 //   Bolts and welds come as kinds of their own later (EN 1993-1-8): a law each in law.rs, and
 //   entries here.
@@ -32,6 +34,8 @@
     (name: "peg_25", kind: Peg(diameter: 0.025, length: 0.200), material: "birch_green", strength: None, peak_slip: 0.010, failure_slip: 0.020, seconds: 60.0),
     // A lashing of fresh spruce bast, a 12 × 2 mm strip, four turns drawn to a quarter of its
     // strength by hand (estimate), wood on wood μ 0.4 (Wood Handbook: 0.3–0.5). Lashed cross
-    // joints slip far before they fail (BioResources 2024, lashed bamboo; estimates).
-    (name: "bast_lashing", kind: Lashing(width: 0.012, thickness: 0.002, wraps: 4, pretension: 0.25, friction: 0.4), material: "spruce_bast", strength: None, peak_slip: 0.010, failure_slip: 0.030, seconds: 30.0),
+    // joints slip far before they fail (BioResources 2024, lashed bamboo; estimates). Two turns
+    // tack it, one hand holding the part (G2.10: as a lone builder starts a square lashing;
+    // made at the same pace, no timing of one-handed turns being found).
+    (name: "bast_lashing", kind: Lashing(width: 0.012, thickness: 0.002, wraps: 4, tack: 2, pretension: 0.25, friction: 0.4), material: "spruce_bast", strength: None, peak_slip: 0.010, failure_slip: 0.030, seconds: 30.0),
 ]

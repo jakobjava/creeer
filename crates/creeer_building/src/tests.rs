@@ -127,6 +127,32 @@ fn a_lashing_clamps_by_its_turns() {
     );
 }
 
+/// Tacked (G2.10), the bast lashing is its first two turns, in half its 30 s: half the clamp
+/// and half the hold apart, told from the whole by the hold its joint keeps. A nail is not
+/// tacked: one hand drives it whole.
+#[test]
+fn a_lashing_tacked_is_its_first_turns_in_their_time() {
+    let (all, m) = catalogue();
+    let whole = named(&all, "bast_lashing");
+    let tacked = whole.tacked().expect("a lashing is tacked");
+    assert!(
+        (tacked.seconds - 15.0).abs() < 1e-12,
+        "{} s",
+        tacked.seconds
+    );
+    let sides = (&c24(&m, 0.15), &c24(&m, 0.15));
+    let (law, full) = (
+        tacked.law(&m, sides, &ONE, 0.15).expect("holds"),
+        whole.law(&m, sides, &ONE, 0.15).expect("holds"),
+    );
+    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-9;
+    assert!(close(law.withdrawal, 1920.0), "{}", law.withdrawal);
+    assert!(close(law.lateral_peak, 0.5 * full.lateral_peak));
+    let kept = |f: &Fastener| f.lashing_withdrawal(&m).expect("known").expect("a lashing");
+    assert!(close(kept(&tacked), law.withdrawal) && close(kept(whole), full.withdrawal));
+    assert!(named(&all, "nail_100").tacked().is_none());
+}
+
 /// Every entry, generically: it validates, and fastening a board as thick as 40 % of it (a
 /// lashing: 8 cm) onto a green spruce pole makes a law the solver takes (physical: its
 /// equivalent member builds).

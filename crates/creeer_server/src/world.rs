@@ -347,6 +347,9 @@ mod step;
 mod survival;
 #[cfg(test)]
 mod survival_tests;
+mod tacking;
+#[cfg(test)]
+mod tacking_tests;
 mod tree_joints;
 #[cfg(test)]
 mod tree_joints_tests;

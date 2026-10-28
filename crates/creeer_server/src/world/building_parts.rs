@@ -176,7 +176,27 @@ impl ServerWorld {
         }
         let (a, ea, ta) = self.node_at(x, point, 0..first)?;
         let (b, eb, tb) = self.node_at(x, point, first..end)?;
-        let s = &self.world.bodies[xi].structure;
+        let law = self.joint_law(x, [(a, ea, ta), (b, eb, tb)], fastener)?;
+        let body = &mut self.world.bodies[xi];
+        body.structure.join(a, b, &law);
+        body.solver = ImplicitSolver::new(&body.structure, Scheme::Newmark, DT, 1);
+        body.wake();
+        if let Some(r) = self.building.built.get_mut(&x) {
+            r.woods
+                .resize(self.world.bodies[xi].structure.element_count(), None);
+        }
+        Ok(())
+    }
+
+    /// The law of a joint of `fastener` in built structure `x` between two of its members' nodes,
+    /// each (node, member, thickness).
+    pub(super) fn joint_law(
+        &self,
+        x: EntityId,
+        [(a, ea, ta), (b, eb, tb)]: [(usize, usize, f64); 2],
+        fastener: &Fastener,
+    ) -> Result<creeer_physics::structure::JointLaw, String> {
+        let s = &self.world.bodies[self.index(x).ok_or("it is gone")?].structure;
         let between = (s.position[b] - s.position[a]).length();
         let record = self.building.built.get(&x).ok_or("no record")?;
         let wood_of = |e: usize| {
@@ -192,16 +212,7 @@ impl ServerWorld {
             spread: 0.0,
             contact: ta.min(tb) * ta.min(tb),
         };
-        let law = fastener.law(materials, (&sa, &sb), &at, between)?;
-        let body = &mut self.world.bodies[xi];
-        body.structure.join(a, b, &law);
-        body.solver = ImplicitSolver::new(&body.structure, Scheme::Newmark, DT, 1);
-        body.wake();
-        if let Some(r) = self.building.built.get_mut(&x) {
-            r.woods
-                .resize(self.world.bodies[xi].structure.element_count(), None);
-        }
-        Ok(())
+        fastener.law(materials, (&sa, &sb), &at, between)
     }
 
     /// The node of built structure `id`'s members `elements` (a range of its elements, joints
