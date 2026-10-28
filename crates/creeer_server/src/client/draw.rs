@@ -48,6 +48,8 @@ impl Connection {
         if let (Some(w), Some(pose)) = (&self.welcome, p.pose()) {
             let drawn = poses.insert(w.avatar, pose);
             self.in_own_hands(&mut poses, drawn, pose);
+            // Moved on by what the player steered it that the server has not yet shown.
+            self.steered_drawn(&mut poses);
         }
         poses
     }

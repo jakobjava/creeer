@@ -353,3 +353,6 @@ fn a_client_is_told_each_crates_age_and_its_wear_when_it_changes() {
         client.ages[&dropped].wear
     );
 }
+
+#[path = "steered_tests.rs"]
+mod steered;

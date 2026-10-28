@@ -111,8 +111,10 @@ pub struct Connection {
     drawn_at: f64,
     /// The shapes aimed at, built once each (`aim.rs`).
     aim_shapes: aim::AimShapes,
-    /// What changes the drawn world, held until its round is drawn (`held.rs`).
+    /// What changes the drawn world, held until its round is drawn (`held.rs`); the own load as
+    /// steered (`steered.rs`).
     held: held::Held,
+    steered: steered::Steered,
     terrain: Option<Arc<Terrain>>,
     pub(crate) predicted: Option<Predicted>,
     /// Whether this tick is a send round (every [`INPUT_EVERY`]: the inputs, and renet's
@@ -167,6 +169,7 @@ impl Connection {
             drawn_at: 0.0,
             aim_shapes: aim::AimShapes::default(),
             held: held::Held::default(),
+            steered: steered::Steered::default(),
             terrain: None,
             predicted: None,
             due: true,
@@ -281,6 +284,7 @@ impl Connection {
             .playback
             .advance(dt.as_secs_f64() * f64::from(TICK_RATE), newest);
         self.apply_drawn();
+        self.steered_advance();
         if let Some(p) = &mut self.predicted {
             p.advance(dt.as_secs_f64());
         }
@@ -306,13 +310,13 @@ impl Connection {
             });
         }
         let input = p.input(walk, jump, thrust);
-        if input.seq % INPUT_EVERY != 0 {
-            return;
-        }
+        let inputs = (input.seq % INPUT_EVERY == 0).then(|| p.to_send());
+        self.steered_input(&input);
+        let Some(inputs) = inputs else { return };
         self.due = true;
         let message = ClientMessage::Inputs {
             ack: self.receiver.newest().map_or(0, |s| s.tick),
-            inputs: p.to_send(),
+            inputs,
         };
         self.renet.send_message(UNRELIABLE, to_bytes(&message));
     }
@@ -388,3 +392,4 @@ mod draw;
 mod held;
 mod hold;
 mod receive;
+mod steered;

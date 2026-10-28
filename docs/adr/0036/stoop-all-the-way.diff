@@ -1,0 +1,21 @@
+Rejected (ADR-0036, Measured and rejected): the drawn body stooped all the way the server's
+reach assumes, for anything held below the shoulders. Against `animate/holding.rs`'s
+`State::stoop`: the stoop's target taken straight from `reach::stooped` instead of
+`stoop_needed`. Measured: a pole held at the elbows stooped the body 0.34 m down and 0.17 m on,
+its wrists 0.17 m from the shoulders, the hands 28 mm off the pole.
+
+--- a/crates/creeer_client/src/animate/holding.rs
++++ b/crates/creeer_client/src/animate/holding.rs
+@@ State::stoop @@
+         let (lean, drop) = match self.held.filter(|_| self.holding) {
+-            Some(load) => self.stoop_needed(&load, up, forward),
++            Some(load) => {
++                let standing = reach::shoulders(self.centre, up);
++                let to = reach::stooped(standing, up, load.held()) - standing;
++                let lean = leaning(to.dot(forward).max(0.0));
++                let squat = skeleton::shortest_leg() + SQUAT_SPARE + self.drop;
++                let most = (hip_height() - squat).max(0.0);
++                (lean, (-to.dot(up) - lowered(lean)).clamp(0.0, most))
++            }
+             None => (0.0, 0.0),
+         };
