@@ -1,5 +1,4 @@
-//! The physics world: bodies (structures and rigid bodies), fixed geometry and contacts
-//! (ADR-0005).
+//! The physics world: bodies (structures and rigid bodies), fixed geometry and contacts (ADR-0005).
 //!
 //! Every step: find contacts at the start of the step (with a speculative margin, so fast
 //! bodies meet the face in front of them before they could pass it), join bodies that touch
@@ -15,6 +14,9 @@ pub mod frame;
 mod friction;
 #[cfg(test)]
 mod friction_tests;
+pub mod grip;
+#[cfg(test)]
+mod grip_tests;
 pub mod ground;
 mod ground_hull;
 mod ground_rise;
@@ -80,8 +82,7 @@ use shape::{Shape, StaticShape};
 use std::sync::Arc;
 use surface::Surface;
 
-/// A body of the world: a structure (or a rigid body: one node, no members) with collision
-/// shapes on its nodes.
+/// A body of the world: a structure (a rigid body: one node, no members) with shapes on its nodes.
 #[derive(Clone, Debug)]
 pub struct Body {
     /// The physical body.
@@ -186,17 +187,16 @@ pub struct World {
     pub static_surface: Surface,
     /// Contacts of the last step.
     pub contacts: Vec<Contact>,
-    /// The groups of the last step: their bodies and contacts (member indices refer to the
-    /// bodies listed).
+    /// The groups of the last step: their bodies and contacts (members index the bodies).
     groups: Vec<(Vec<usize>, Contacts)>,
     /// Joints between bodies, or bodies and the world (`joint.rs`).
     joints: Vec<joint::Joint>,
-    /// Pairs of bodies that pass through each other, beyond those a joint keeps from colliding
-    /// (`joint.rs`): a ragdoll's limbs, for one. Not saved: whoever loads a world gives them
-    /// again, as its ground.
+    /// Pairs of bodies that pass through each other beyond a joint's (a ragdoll's limbs). Not
+    /// saved: whoever loads a world gives them again, as its ground.
     passing: Vec<(usize, usize)>,
-    /// Struts for the next step (`strut.rs`).
+    /// Struts and grips for the next step (`strut.rs`, `grip.rs`).
     struts: Vec<strut::Strut>,
+    grips: Vec<grip::Grip>,
     /// Friction anchors of the last step.
     anchors: Vec<anchor::Anchor>,
     /// The elastic energy each point contact and face held at the end of the last step, by
@@ -204,7 +204,7 @@ pub struct World {
     /// `structure/group.rs`).
     left: Left,
     /// The bodies a (sub)step is restricted to while groups turning fast are substepped apart
-    /// from the rest (`turn.rs`); none: every body. Not saved: set only within a step.
+    /// (`turn.rs`); none: every body. Not saved.
     only: Option<Vec<bool>>,
     dt: f64,
 }
@@ -226,6 +226,7 @@ impl World {
             joints: Vec::new(),
             passing: Vec::new(),
             struts: Vec::new(),
+            grips: Vec::new(),
             anchors: Vec::new(),
             only: None,
             dt,

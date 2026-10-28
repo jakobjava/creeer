@@ -110,6 +110,16 @@ impl Joints {
     /// friction's anchors that slipped.
     pub(crate) fn project(&mut self, members: &mut [Member<'_>]) {
         if self.list.is_empty() {
+            // A grip alone (a thing held in the air): the hands' work booked all the same.
+            if self.has_grips() {
+                let states: Vec<MemberState<'_>> = (members.iter())
+                    .map(|(s, _)| MemberState {
+                        position: &s.position,
+                        orientation: &s.orientation,
+                    })
+                    .collect();
+                self.driven = self.grip_work(&states);
+            }
             return;
         }
         let timer = crate::profile::start();
@@ -150,11 +160,13 @@ impl Joints {
                 self.driven += force.dot(opened) * h;
             }
         }
+        // The hands' work on what they grip (`grip.rs`), as a moved point's.
+        self.driven += self.grip_work(&states);
     }
 
-    /// Whether any joint's points are moved.
+    /// Whether any joint's points are moved, or anything is gripped.
     pub(crate) fn driven(&self) -> bool {
-        self.list.iter().any(|(_, j)| j.moving != [DVec3::ZERO; 2])
+        self.list.iter().any(|(_, j)| j.moving != [DVec3::ZERO; 2]) || self.has_grips()
     }
 
     /// The work the moved points did over the last substep (J; the end's force: a joint's terms

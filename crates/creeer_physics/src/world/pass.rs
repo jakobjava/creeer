@@ -242,6 +242,20 @@ impl World {
             }
             joints[g].add_strut(local, [rigid(Some(strut.a)), rigid(strut.b)]);
         }
+        // The grips alike (`grip.rs`): on their body's group.
+        for grip in &self.grips {
+            let Some(&g) = group_of.get(grip.a.0).filter(|&&g| g != usize::MAX) else {
+                continue;
+            };
+            let Some(a) = groups[g].iter().position(|&b| b == grip.a.0) else {
+                continue;
+            };
+            let s = &self.bodies[grip.a.0].structure;
+            let rigid = s.node_count() == 1 && s.element_count() == 0;
+            let mut local = *grip;
+            local.a.0 = a;
+            joints[g].add_grip(local, rigid);
+        }
         joints
     }
 

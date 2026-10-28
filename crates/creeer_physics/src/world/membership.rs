@@ -51,6 +51,7 @@ impl World {
     fn renumber(&mut self, map: &[Option<usize>]) {
         self.renumber_joints(map);
         self.renumber_struts(map);
+        self.renumber_grips(map);
         self.left = self.left.renumbered(map);
         self.anchors = self
             .anchors

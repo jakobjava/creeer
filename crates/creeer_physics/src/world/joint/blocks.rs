@@ -35,6 +35,7 @@ impl Joints {
                     .iter()
                     .flat_map(|g| [Some(g.strut.a.0), g.strut.b.map(|b| b.0)]),
             )
+            .chain(self.grips.iter().map(|g| Some(g.grip.a.0)))
             .flatten()
             .max()
             .map_or(0, |m| m + 1);
@@ -95,6 +96,18 @@ impl Joints {
                 let mut m6 = [[0.0; 6]; 6];
                 outer(&mut m6, &s.a, &s.b, w);
                 cross.push((a, b, m6));
+            }
+        });
+        // The grips' (on their one side).
+        self.grip_terms(states, |k, s, _, w| {
+            if w == 0.0 {
+                return;
+            }
+            let ((m, n), rigid_side) = self.grip_side(k);
+            if rigid_side {
+                outer(&mut rigid[m], &s.a, &s.a, w);
+            } else {
+                nodes.push((m, n, translation(&s.a, w)));
             }
         });
         (self.rigid, self.cross, self.nodes) = (rigid, cross, nodes);

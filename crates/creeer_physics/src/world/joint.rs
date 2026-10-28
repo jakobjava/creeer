@@ -15,6 +15,7 @@
 //! each other unless the joint says so.
 
 mod blocks;
+mod grip;
 mod group;
 mod project;
 mod rows;

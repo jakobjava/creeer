@@ -177,6 +177,7 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
     } else if contacts.list.is_empty()
         && !contacts.joints.limited()
         && !contacts.joints.has_struts()
+        && !contacts.joints.has_grips()
         && !held
     {
         // (A joint's stops are stepped as contacts are, and struts and bodies held:

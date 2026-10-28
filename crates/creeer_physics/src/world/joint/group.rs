@@ -33,6 +33,8 @@ pub(crate) struct Joints {
     pub(super) nodes: Vec<(usize, usize, DMat3)>,
     /// The group's struts (`strut.rs`): their terms ride with the joints'.
     pub(crate) struts: Vec<super::strut::GroupStrut>,
+    /// The group's grips (`grip.rs`): their terms ride with the joints'.
+    pub(crate) grips: Vec<super::grip::GroupGrip>,
     /// The work its moved points did over the last substep (J; `project.rs`).
     pub(super) driven: f64,
 }
@@ -119,6 +121,7 @@ impl Joints {
             })
             .collect();
         self.begin_struts(info);
+        self.begin_grips(info);
         // Friction sticks where a joint first meets it.
         for (_, joint) in &mut self.list {
             if joint.friction > 0.0 && joint.anchor.is_none() {
@@ -224,7 +227,8 @@ impl Joints {
     pub(crate) fn energy(&self, states: &[MemberState<'_>]) -> f64 {
         let timer = crate::profile::start();
         let energy = self.terms(states, false, |_, _, _, _| {}).1
-            + self.strut_terms(states, |_, _, _, _| {}).1;
+            + self.strut_terms(states, |_, _, _, _| {}).1
+            + self.grip_terms(states, |_, _, _, _| {});
         timer.stop(crate::profile::Slot::JointTerms);
         energy
     }
@@ -236,10 +240,12 @@ impl Joints {
         drives + struts
     }
 
-    /// The energy their drives store, and the struts'.
+    /// The energy their drives store, and the struts' and grips' (set anew each step: the
+    /// guard counts it by its change).
     pub(crate) fn stored(&self, states: &[MemberState<'_>]) -> (f64, f64) {
         let drives = self.terms(states, false, |_, _, _, _| {}).0;
-        (drives, self.strut_terms(states, |_, _, _, _| {}).0)
+        let held = self.strut_terms(states, |_, _, _, _| {}).0 + self.grip_stored(states);
+        (drives, held)
     }
 
     /// The step's β (its velocities are the change from x̂ over it).
@@ -269,6 +275,9 @@ impl Joints {
                     add(side, row, coefficient);
                 }
             }
+        });
+        self.grip_terms(states, |k, s, coefficient, _| {
+            add(self.grip_side(k).0, &s.a, coefficient);
         });
         timer.stop(crate::profile::Slot::JointTerms);
     }
