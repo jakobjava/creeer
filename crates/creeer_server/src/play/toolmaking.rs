@@ -158,11 +158,14 @@ mod tests {
     fn every_player_makes_a_tool_and_digs_with_it() {
         let s = scene("toolmaking").expect("the scene");
         let mut play = Play::new((s.build)(terrain()), s.name, s.players, &terrain());
-        let mut blows = 0;
-        let mut made = 0;
+        let (mut blows, mut made, mut knapping) = (0, 0, 0);
         for t in 0..s.ticks.0 {
             let acts = (s.script)(t, &play);
-            play.tick(&acts);
+            let cost = play.tick(&acts);
+            // While they knap, before the hammerstones are put down.
+            if t < PUT_DOWN {
+                knapping = knapping.max(cost.client_work);
+            }
             blows += play.server.world.take_blows().len();
             if t == DIG_FROM + 30 {
                 made = (0..4)
@@ -176,6 +179,13 @@ mod tests {
         println!("{made} tools made, {blows} blows; refused {refused:?}");
         assert_eq!(made, 4, "every player made a tool");
         assert!(blows >= 4 * 3 + 4 * 3, "knapped and dug: {blows} blows");
+        // A client's prediction while knapping (2026-10-28, the user's "30 ms frames"): 120 Newton
+        // iterations in a tick while the struck cores rocked as bodies through their swings, 6 now
+        // they are bodies from their blows on (ADR-0030, amended). A tenth above.
+        assert!(
+            knapping <= 7,
+            "a client's prediction took {knapping} knapping"
+        );
     }
 }
 

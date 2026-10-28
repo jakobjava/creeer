@@ -44,7 +44,11 @@ impl ServerWorld {
     }
 
     /// Avatar `by` strikes what lies at `id` with what it holds (its swing begun at the world's
-    /// tick `started`): it is made a body where it lies, and the swing aimed at its top.
+    /// tick `started`): the swing is aimed at it as it lies, and it is made a body when the blow
+    /// falls (`strikes.rs`, `Aim::Lying`). Made a body when the swing began, it lay a second as
+    /// one before the blow: rocking on its laid pose (box-high on a slope, not its hull's rest),
+    /// it cost the server a millisecond a tick and every client near it, predicting it, several
+    /// a frame (the user's "30 ms frames" knapping, 2026-10-28; ADR-0030, amended).
     pub(super) fn strike_loose(
         &mut self,
         by: EntityId,
@@ -52,13 +56,28 @@ impl ServerWorld {
         started: f64,
     ) -> Result<(), String> {
         let ready = self.ready_to_swing(by, started, false)?;
-        let (item, centre, turn) = self.lying_in_reach(by, id)?;
+        self.lying_in_reach(by, id)?;
+        self.begin_swing(by, ready, super::strikes::Aim::Lying(id));
+        Ok(())
+    }
+
+    /// The blow of a swing at what lies at `id` falls: if it still lies there and its top is
+    /// within avatar `by`'s reach, it is made a body where it lies, its node and the point of its
+    /// top (in its frame).
+    pub(super) fn rouse_struck(&mut self, by: EntityId, id: u64) -> Option<(EntityId, DVec3)> {
+        let (item, centre, turn) = self.lying_in_reach(by, id).ok()?;
+        // Its top as it lies: the box about it, on its plumb line (`laid::half`).
+        let up = centre.normalize();
+        let top = (turn.conjugate() * up).abs().dot(super::laid::half(&item));
+        let i = self.index(by)?;
+        let at = self.world.bodies[i].structure.position[0];
+        let plumb = character::plumb(&self.world, at);
+        if !creeer_sim::reach::within(at, plumb, centre + up * top) {
+            return None;
+        }
         self.take_lying(id);
         let (i, top) = self.rouse(item, centre, turn);
-        let local = turn.conjugate() * (centre.normalize() * top);
-        let body = self.ids()[i];
-        self.begin_swing(by, ready, super::strikes::Aim::Body(body, 0, local));
-        Ok(())
+        Some((self.ids()[i], turn.conjugate() * (up * top)))
     }
 
     /// `item` made a body where it lay (`centre`, turned `turn`), at rest: its index, and how far

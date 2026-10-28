@@ -73,3 +73,21 @@ The client's replay cost over the slow link rose with the mispredictions: 4.5–
 ## Amended in G1.4a (2026-10-22): the avatar drawn between its ticks
 
 The user saw the upper body "four times, flickering every frame". The predicted avatar was drawn where its newest tick left it, so on a screen drawing faster than the 60 ticks a second it stood still for a frame or two and then moved a whole tick at once (5.8 cm running), and the animation (ADR-0027, G1.4a), measuring its motion frame by frame, read it as stop and go. Now `Predicted` keeps the avatar's pose before its last tick and the time since, and draws it between the two by the share of a tick passed: render interpolation (Fiedler, "Fix Your Timestep!", 2004; Unity's rigidbody interpolation). A correction moves the tick before with it, so the drawn avatar stays where it was and the smoothing takes it on as before. It is drawn at most a tick (17 ms) late. `Play::draw_later` lets the harness pass time between ticks as a client's frames do; the motion probe draws at 144 a second (`animate/probe_tests.rs`). The corrections themselves, and what is measured of them, are unchanged: they compare the prediction's own ticks.
+
+## Amended after the user's play (2026-10-28): the clients' work measured and gated
+
+The user's knapping gave 30 ms frames (ADR-0030, amended). Its cause was this prediction: a struck core, a body rocking beside the knapper for its swing's second, mispredicted at every snapshot, and every snapshot replayed the inputs not yet applied (3 in real time) with it, each step about 1 ms for the core's ground sampling. The client's session took 7–11 ms a frame. The core is now a body only from its blow on, so nothing is predicted while knapping.
+
+**Measured.** The play harness timed only the server's tick. It now also times each client's own work (`Tick::client_ms`, the most of any client in a tick), counts its prediction's Newton iterations (`Corrections::work`, replays included; `Tick::client_work`) and takes the physics' phases of the clients' steps (`Tick::client_phases`); `creeer_tools play` prints them. A client's most work in a tick at CI's length:
+
+| Scene | A client's most work in a tick (Newton iterations) | Its worst tick (ms, full length) | What it predicts then |
+|---|---|---|---|
+| crowd | 158 (tick 219) | 5.5 | crates dropped beside the players |
+| work | 238 (tick 1) | 2.2 | crates struck, boxes carried |
+| lumberjack | 5 | 0.5 | (felled parts are not predicted) |
+| quarry | 468 (tick 45) | 2.8 | boulders rolling in the pit |
+| toolmaking | 226 (tick 875) | 17.5 | four hammerstones put down, settling |
+| builders | 1,955 (tick 521) | 317 (2,198 iterations at tick 623) | loose poles beside eight players |
+| log_bridge | 144 (tick 143) | 220 (10,584 at tick 1,783) | poles and crates, the bridge breaking |
+
+Each is gated a tenth above at CI's length (`play/tests.rs`, `CLIENT_WORK`). The worst are bodies settling or pushed beside the avatar: a replay's cost is the bodies' steps times the inputs replayed, at every snapshot that mispredicts them. *builders*' and *log_bridge*'s clients take up to 220–317 ms a tick (p99 106–111 ms) and *toolmaking*'s put-down 17 ms: a game's frames there are over budget. They are recorded in `docs/future-improvements.md` (*A client replays every body it predicts*) for the user to schedule. Choosing the bubble by what the avatar can touch within the replay (Unity's prediction switching), or cheaper hulls on the ground (P1's contacts), would cut them.

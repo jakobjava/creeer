@@ -68,9 +68,10 @@ fn client_work() {
     }
 }
 
-/// One player knapping at *toolmaking*'s first station, in lockstep: each tick, the struck
-/// core's body on the server (its speed and spin, asleep or not, its Newton iterations so far),
-/// and the client's prediction (its time setting back and replaying, the bodies in it).
+/// One player knapping at *toolmaking*'s first station in lockstep, then putting the hammerstone
+/// down (tick 850): each tick, the item bodies on the server (their speed and spin, asleep or
+/// not, their Newton iterations so far), and the client's prediction (its time setting back and
+/// replaying, the bodies in it).
 #[test]
 #[ignore = "prints the struck core's body and the client's prediction, tick by tick"]
 fn knapping_one_player() {
@@ -79,7 +80,7 @@ fn knapping_one_player() {
     let start = play.avatar(0);
     let mut replayed = Duration::ZERO;
     let mut target = None;
-    for t in 0..900u32 {
+    for t in 0..1100u32 {
         let c = play.client(0);
         let me = play.avatar(0);
         let mut stones: Vec<_> = (c.laid.values())
@@ -101,6 +102,9 @@ fn knapping_one_player() {
                 loose: h.0,
                 pocket: false,
             });
+        }
+        if t == 850 {
+            act.commands.push(Command::Drop);
         }
         if [300, 450, 600, 750].contains(&t) {
             let core = near.iter().max_by(|a, b| a.2.total_cmp(&b.2)).unwrap();

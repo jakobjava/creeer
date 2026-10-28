@@ -1,17 +1,20 @@
-//! `creeer_client --play-bench <knap|fell> [--seconds <s>]` (2026-10-28): a singleplayer game as
-//! the window plays it, headless, its frames timed phase by phase. The server is hosted on its
-//! own thread in real time (`host.rs`); each frame does what `app/planet.rs` does while walking
-//! (the session's ticks and its prediction, the terrain, trees and loose things about the
-//! camera, the snapshot drawn, the scene built, the crosshair's aim, the frame rendered at
-//! 1600 × 900 off-screen), paced at 60 a second. A script plays the player:
+//! `creeer_client --play-bench <knap|fell> [--seconds <s>] [--each-second] [--gate]`
+//! (2026-10-28): a singleplayer game as the window plays it, headless, its frames timed phase
+//! by phase. The server is hosted on its own thread in real time (`host.rs`); each frame does
+//! what `app/planet.rs` does while walking (the session's ticks and its prediction, the
+//! terrain, trees and loose things about the camera, the snapshot drawn, the scene built, the
+//! crosshair's aim, the frame rendered at 1600 × 900 off-screen), paced at 60 a second. A
+//! script plays the player (`play_scripts.rs`):
 //!
 //! - `knap`: *toolmaking*'s world; to the first station, the lighter stone taken up, the core
-//!   struck four times, as the user knapped (2026-10-28: "30 ms frames");
+//!   struck every 2.2 s, as the user knapped (2026-10-28: "30 ms frames");
 //! - `fell`: *lumberjack*'s world; the steel axe, the nearest notched tree cut until it goes
 //!   over, then its branches struck off where it lies ("slow frames", "the tree flashes").
 //!
-//! It prints the frames over budget with their phases, each phase's p50 and worst, and the
-//! frames the felled trees' stems are drawn shorter than the frame before and after (a flash).
+//! It prints the frames over budget with their phases, each phase's p50 and worst, the hosted
+//! server's ticks, and the frames a felled part is drawn by none (a flash). `--gate` fails on
+//! a flash, or a frame whose own work (all but the render) passes [`OWN_GATE`]: on the
+//! development machine, otherwise idle (the render and the server share its cores).
 
 use crate::DemoMeshes;
 use crate::physics_view;
@@ -28,6 +31,9 @@ use std::time::{Duration, Instant};
 const PHASES: [&str; 6] = ["session", "terrain", "snapshot", "scene", "aim", "render"];
 /// The frame budget at 60 Hz (ms).
 const BUDGET: f64 = 16.7;
+/// What a frame's own work (all but the render) may take at worst under `--gate` (ms): the
+/// budget less the render's 8.6 ms p50 at 1600 × 900 on the development machine, less a margin.
+const OWN_GATE: f64 = 6.0;
 
 /// Runs the bench.
 ///
@@ -181,7 +187,14 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    report(&times, &drawn);
+    let (own, flashes) = report(&times, &drawn);
+    let c = &view.session.connection;
+    let flakes = c.laid.values().filter(|l| l.word == "flake").count();
+    let felled = c.trees.values().filter(|t| t.felled).count();
+    println!(
+        "flakes lying {flakes}, trees felled {felled}; last note {:?}",
+        c.noted.as_ref().map(|n| &n.0)
+    );
     let pct = |q: f64| percentile(ticks.clone(), q);
     println!(
         "server    p50 {:6.2} p99 {:6.2} worst {:6.2} ms ({} ticks, on its own thread)",
@@ -190,6 +203,15 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         pct(100.0),
         ticks.len()
     );
+    // `--gate`: no flash, and every frame's own work within what the render leaves of 60 Hz.
+    if args.iter().any(|a| a == "--gate") {
+        if flashes > 0 {
+            return Err(format!("{flashes} felled parts drawn by none for a frame or more").into());
+        }
+        if own > OWN_GATE {
+            return Err(format!("a frame's own work {own:.2} ms, over its gate {OWN_GATE}").into());
+        }
+    }
     Ok(())
 }
 
@@ -214,7 +236,8 @@ fn felled_rods(view: &PlanetView) -> usize {
         .count()
 }
 
-fn report(times: &[[f64; 6]], drawn: &[(f64, usize)]) {
+/// Prints the frames' phases and the flashes: the worst frame's own work (ms) and how many.
+fn report(times: &[[f64; 6]], drawn: &[(f64, usize)]) -> (f64, usize) {
     let pct = percentile;
     for (k, name) in PHASES.iter().enumerate() {
         let v: Vec<f64> = times.iter().map(|t| t[k]).collect();
@@ -247,4 +270,10 @@ fn report(times: &[[f64; 6]], drawn: &[(f64, usize)]) {
         }
     }
     println!("felled parts drawn by none (s, frames): {flashes:.2?}");
+    // The client's own work in a frame: all but the render.
+    let own = (times.iter())
+        .map(|t| t[..5].iter().sum::<f64>())
+        .fold(0.0, f64::max);
+    println!("a frame's own work (all but the render): worst {own:.2} ms");
+    (own, flashes.len())
 }
