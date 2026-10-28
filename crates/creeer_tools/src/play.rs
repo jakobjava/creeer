@@ -40,6 +40,14 @@ fn print(name: &str, what: &str, report: &Report) {
         report.percentile_ms(100.0),
         report.hash
     );
+    // A client's own work (its prediction), which a game's frame holds.
+    let (tick, work) = report.most_client_work();
+    println!(
+        "{:10} a client: {:6.3} p99 {:6.3} worst ms | work {work} (tick {tick})",
+        "",
+        report.client_percentile_ms(99.0),
+        report.client_percentile_ms(100.0)
+    );
 }
 
 /// `--headings <n>`: the scene played turned about the spawn to `n` headings (an ensemble, as
@@ -100,16 +108,17 @@ fn play(s: &Scene, ticks: u32, trace: Option<f64>, profiled: bool) -> Report {
             c.end_tick(u64::from(t));
         }
         let spent = cost.phases;
-        if trace.is_some_and(|ms| cost.ms > ms) {
+        if trace.is_some_and(|ms| cost.ms.max(cost.client_ms) > ms) {
             // With the physics' phases when built with `--features creeer_physics/profile`.
             let phases: Vec<String> = (creeer_physics::profile::NAMES.iter())
                 .filter(|(s, _)| spent[*s as usize] > 0)
                 .map(|(s, n)| format!("{n} {}", spent[*s as usize]))
                 .collect();
             eprintln!(
-                "tick {t}: {:.3} ms, {} iterations; {}",
+                "tick {t}: {:.3} ms, {} iterations; a client {:.3} ms; {}",
                 cost.ms,
                 cost.work,
+                cost.client_ms,
                 phases.join(", ")
             );
         }

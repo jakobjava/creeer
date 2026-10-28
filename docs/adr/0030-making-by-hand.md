@@ -113,3 +113,35 @@ A made tool keeps the hold it was bound with: tools bound before this keep their
 **And still** (the user's play, a tool bound to hold 6 kN broken by its first blow): a knapped flake is small (3 × 2 × 1 cm off a fist-sized core), and in the split end it reached a little less far than the haft's end. What strikes was the part farthest out, so the haft's blunt end struck: "it only bruised the bark", and a blow that cuts nothing is stopped in a millimetre, its whole impulse on the binding. The tests above had bound a 10 cm flake, which no hand-knapped core gives. **Now** the farthest-out part with an edge strikes, if any has one. `made_tools_tests.rs` now also makes the tool as a player does (a core knapped three times, a branch stripped, the sharpest flake bound) and strikes a standing tree: it cuts a notch every blow and holds.
 
 **And the share the binding bears** (the user's play: a 14 × 10 × 5 cm core, 0.8 kg, lashed across a 1.19 m, 44 mm C24 stick, held 6.6 kN and broke at its first blow into a tree). What a blow strikes stops the head; the binding only stops the rest of the tool behind it. The head taken as its mass at the striking point and the rest as its own effective mass there: J = F · m_rest / (m_rest + m_head) (`making::binding_share`). Every cut had loaded it with all of F. That tool's blow: 268 J, 11.1 kN at its edge, 1.7 kN on its binding of 6.6 kN. A light flake on a heavy haft still puts nearly all of F on its binding.
+
+## Amended after the user's play (2026-10-28): a stone struck as it lies is a body from its blow on
+
+The user: "hitting a stone with another caused 30 ms frames".
+
+**Measured first, on the real path.** `creeer_client --play-bench knap` plays a singleplayer game as the window does: the server hosted on its own thread in real time (`host.rs`), the client's frames paced at 60 a second, each frame's phases timed. In *toolmaking*'s world the player takes up the lighter stone and strikes the core every 2.2 s. While each swing was on its way, the client's session (taking in snapshots, its prediction set back and replayed) took 7–11 ms a frame, at worst 16–52 ms. Frames ran 20–26 ms, at worst 30–73 ms: 180 of 885 frames over 16.7 ms. Rendering, the trees and loose things, the snapshot and the aim took what they take with no stone struck. The hosted server's ticks were 0.1–2 ms, on their own thread: not the frames' cost.
+
+**Found** (`play/client_probe.rs`: one player knapping in lockstep, and the play harness now timing the clients' own work, `Tick::client_ms`):
+
+1. `Command::StrikeLoose` made the stone a body where it lay when the swing began, a second before its blow. A laid thing rests box-high on its plumb line (`lay`), not where its hull would rest. On *toolmaking*'s slope the first core, as a body, tipped (its spin growing 1.22 times a tick, from 0.0015 to 1.07 rad/s) and rocked for the whole second. Cores laid again after a blow dropped 1–2 cm and settled for a quarter of one.
+2. The client predicts the bodies within 6 m of its avatar (ADR-0025). A moving body's snapshot never agrees with the prediction within the quanta, so every snapshot set the prediction back and replayed the inputs the server had not yet applied (2 in lockstep, 3 in real time), the stone with them.
+3. A step of the avatar with a 62-cornered lump on the ground costs about 1 ms: the hull's ground sampling (its faces' and edges' points against the terrain, `ground_hull.rs`) took 1.3 ms of detection a step in the clients' profile. Replayed, that is 3–4 such steps a tick.
+
+**Now** the swing is aimed at the thing as it lies (`Aim::Lying`). It is made a body when the blow falls, if it still lies there and its top is within reach (`rouse_struck`). Nothing moves a stone lying still, so a body for the swing's second simulated nothing real; from its blow on it moves as struck. A blow that breaks it lays the core and what broke off in the same tick, so it is never a body at all: no step and nothing to predict. A blow that only bruises it leaves a body moving with the blow's impulse, laid once it rests.
+
+| Knapping | Before | Now |
+|---|---|---|
+| Real path, the client's session a frame (`--play-bench knap`, two runs) | 7–11 ms while a swing was on its way; worst 21–105 ms | worst 0.5–0.95 ms; p99 0.07–0.10 ms |
+| Real path, frames | p99 60.7 ms; 180 of 885 over 16.7 ms | p99 11.1–13.8 ms; 1–4 of 965 over (the render's spikes, the machine shared) |
+| *toolmaking*'s knapping (ticks 0–800, lockstep): a client's worst tick | 7.99 ms, 120 Newton iterations | 0.44 ms, 6 |
+| Three stones knapped in turn (`loose_tests.rs`): the world's most Newton iterations in a tick | 43 | 6 (gated at 7, was 50) |
+
+| What | Measured | Why not |
+|---|---|---|
+| The struck stone made a body as the swing begins, placed at its hull's rest rather than box-high | Not built: a hull's rest on sloped, bumpy ground is found only by settling it (the cost found above), and a body put to sleep where it does not rest would hover or sink until struck | A stone lying still needs no body until something moves it |
+| Predicting only the bodies the avatar could touch within the replay (Unity's prediction switching, ADR-0025's prior work) | Not built: the core lies 0.7 m from the knapper's hands, within a lunge's reach in the replay's 0.17 s | It would not have spared the knapper; the bubble is ADR-0025's to change |
+
+**Tests:** `a_stone_lying_struck_with_a_stone_in_hand_breaks_where_it_lies` (no body before the blow; taken from the ground when it falls) and `knapping_stones_lying_about_costs_the_world_next_to_nothing` (6 Newton iterations at most, gated at 7); `every_player_makes_a_tool_and_digs_with_it` gates a client's prediction while *toolmaking*'s players knap (6 Newton iterations a tick at most, gated at 7; 120 before). Each play scene's clients' prediction work is gated (`play/tests.rs`, `CLIENT_WORK`), and `--play-bench knap --gate` fails a frame whose own work passes 6 ms on the development machine.
+
+**Goldens:** *toolmaking*'s play hashes renewed at both lengths: its cores are no longer bodies during the swings, so they no longer rock and settle on the server. Its most work (137 at tick 877, a hammerstone put down) is unchanged, and every other scene hashes as before.
+
+**Still costly** (found here; in `docs/future-improvements.md`): a stone put down from the hands falls and settles for about a second near the player, and the client predicts it as above. That is 2–8 ms of client work a tick for one player in lockstep (*toolmaking*'s four players' put-down: 226 Newton iterations and 17 ms in a client's worst tick), and 0.8 ms a tick while it lies at rest awake, until it sleeps.

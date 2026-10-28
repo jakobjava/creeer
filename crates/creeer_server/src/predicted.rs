@@ -9,6 +9,7 @@
 //! through.
 
 mod nearby;
+mod smooth;
 #[cfg(test)]
 mod tests;
 
@@ -72,6 +73,9 @@ pub struct Corrections {
     pub largest: f64,
     /// The time spent setting the prediction back and replaying it, in all.
     pub replaying: std::time::Duration,
+    /// The Newton iterations its ticks took, replays included (the client's work, as a play
+    /// scene's server's is counted).
+    pub work: u64,
 }
 
 impl Predicted {
@@ -102,7 +106,13 @@ impl Predicted {
         }
     }
 
-    fn step(world: &mut World, around: &mut Option<Surroundings>, input: &AvatarInput, load: f64) {
+    /// One tick of `input` on `world`: the Newton iterations it took.
+    fn step(
+        world: &mut World,
+        around: &mut Option<Surroundings>,
+        input: &AvatarInput,
+        load: f64,
+    ) -> u64 {
         let at = world.bodies[0].structure.position[0];
         let water = (around.as_ref().and_then(|a| a.sea.as_ref())).map(|sea| sea.depth(at));
         let mut reactions = Vec::new();
@@ -118,11 +128,15 @@ impl Predicted {
         if let Some(a) = around.as_mut() {
             a.push(world);
         }
+        let work = |w: &World| -> u64 { w.bodies.iter().map(|b| b.solver.iterations_total).sum() };
+        let before = work(world);
         world.step();
+        let worked = work(world).saturating_sub(before);
         character::release(world, &mut reactions);
         if let Some(a) = around.as_mut() {
             a.settle(world, DT);
         }
+        worked
     }
 
     /// The fixed shapes it meets (G1.7: trunks), in place of the last.
@@ -142,7 +156,8 @@ impl Predicted {
         if !self.fallen && !self.world.bodies.is_empty() {
             self.previous = self.pose_with(DVec3::ZERO);
             self.since = 0.0;
-            Self::step(&mut self.world, &mut self.around, &input, self.load);
+            self.corrections.work +=
+                Self::step(&mut self.world, &mut self.around, &input, self.load);
             self.history.record(input.seq, &self.nearby, &self.world);
         }
         input
@@ -261,63 +276,18 @@ impl Predicted {
         self.history.forget_before(last_input);
         let around = self.around.take();
         let (ids, history, load) = (&self.nearby, &mut self.history, self.load);
+        let work = &mut self.corrections.work;
         (self.world, self.around) = reconcile(
             (world, around),
             last_input,
             &mut self.log,
             |(w, a), input| {
-                Self::step(w, a, input, load);
+                *work += Self::step(w, a, input, load);
                 history.record(input.seq, ids, w);
             },
         );
         self.smooth(before, &was, drawn);
         self.corrections.replaying += started.elapsed();
-    }
-
-    /// The drawn bodies' offsets after a correction: the avatar's and each body's slide from
-    /// where it was drawn; a body coming in slides from where it was interpolated, one going
-    /// out slides from where it was predicted to where it is interpolated.
-    fn smooth(
-        &mut self,
-        before: Option<DVec3>,
-        was: &BTreeMap<EntityId, DVec3>,
-        drawn: impl Fn(EntityId) -> Option<DVec3>,
-    ) {
-        if let Some(before) = before {
-            let after = self.world.bodies[0].structure.position[0];
-            self.smoothing.corrected(before, after);
-            // The tick before moves with the correction, so the drawn avatar stays where it was.
-            if let Some(p) = &mut self.previous {
-                p.position += after - before;
-            }
-            let c = &mut self.corrections;
-            let by = (after - before).length();
-            c.count += 1;
-            c.over_a_centimetre += u32::from(by > 0.01);
-            c.largest = c.largest.max(by);
-        }
-        let now: BTreeMap<EntityId, DVec3> = (self.nearby.iter())
-            .zip(self.world.bodies.iter().skip(1))
-            .map(|(id, b)| (*id, b.structure.position[0]))
-            .collect();
-        for (id, &after) in &now {
-            let from = was.get(id).copied().or_else(|| drawn(*id));
-            let smoothing = self.drawn.entry(*id).or_default();
-            if let Some(before) = from {
-                smoothing.corrected(before, after);
-            }
-        }
-        for (id, &at) in was {
-            if !now.contains_key(id) {
-                let offset = self.drawn.remove(id).unwrap_or_default();
-                let mut released = offset;
-                if let Some(to) = drawn(*id) {
-                    released.corrected(at, to);
-                }
-                self.released.insert(*id, released);
-            }
-        }
-        self.drawn.retain(|id, _| now.contains_key(id));
     }
 
     /// `seconds` passed: the avatar as drawn (the prediction, less what is left of the last
@@ -369,17 +339,12 @@ impl Predicted {
 
     /// Where a body that left the prediction is drawn from its interpolated pose.
     pub fn released(&self, id: EntityId) -> DVec3 {
-        self.released
-            .get(&id)
-            .map_or(DVec3::ZERO, |s| s.clone().advance(0.0))
+        (self.released.get(&id)).map_or(DVec3::ZERO, |s| s.clone().advance(0.0))
     }
 
     /// The avatar's velocity as predicted (m/s).
     pub fn velocity(&self) -> DVec3 {
-        self.world
-            .bodies
-            .first()
-            .map_or(DVec3::ZERO, |b| b.structure.velocity[0])
+        (self.world.bodies.first()).map_or(DVec3::ZERO, |b| b.structure.velocity[0])
     }
 
     /// Its orientation, if it has come.

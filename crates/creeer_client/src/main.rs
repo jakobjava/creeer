@@ -23,7 +23,9 @@
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
 //! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night> <file.png> [--sun <deg>]`, and
-//! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times).
+//! `creeer_client --planet-bench [seconds]` flies from orbit to the ground (frame times), and
+//! `creeer_client --play-bench <knap|fell> [--gate]` plays a scripted singleplayer game, its
+//! frames timed phase by phase (`play_bench.rs`).
 //!
 //! The F4 solar-system sandbox (button in the Sandbox window): a generated solar system with
 //! n-body orbits, ships in orbit, time warp, pushing bodies, and the map (M). Headless:
@@ -83,6 +85,10 @@ mod planet_net;
 mod planet_shot;
 mod planet_ui;
 mod planet_view;
+mod play_bench;
+#[cfg(test)]
+mod play_bench_tests;
+mod play_scripts;
 mod players_bench;
 mod powerhouse_panel;
 mod profiler_ui;
@@ -103,6 +109,7 @@ mod system_sim;
 mod system_ui;
 mod system_view;
 mod terrain_mesh;
+mod tree_draw;
 mod tree_view;
 mod water_bench;
 
@@ -173,6 +180,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             players,
             (headless::ao_quality(&args)?, people),
         );
+    }
+    if args.iter().any(|a| a == "--play-bench") {
+        return play_bench::run(&args);
     }
     if args.iter().any(|a| a == "--physics-bench") {
         return physics_bench::bench(&args).map_err(Into::into);

@@ -63,6 +63,14 @@ pub struct Tick {
     /// The physics' phases in the server's tick alone (`creeer_physics::profile`, with its
     /// `profile` feature; the clients' own prediction steps left out).
     pub phases: [u64; creeer_physics::profile::SLOTS],
+    /// The most one client's own work took in it (ms): taking in what the server sent (its
+    /// prediction set back and replayed), its input predicted and sent. A game's frame holds
+    /// this on its main thread; the server it hosts ticks on a thread of its own (`host.rs`).
+    pub client_ms: f64,
+    /// The most Newton iterations one client's prediction took in it (its replays included).
+    pub client_work: u64,
+    /// The physics' phases in the clients' own work (their predictions' steps), all of them.
+    pub client_phases: [u64; creeer_physics::profile::SLOTS],
 }
 
 fn iterations(server: &Server) -> u64 {
@@ -136,19 +144,25 @@ impl Play {
     /// If `acts` are not one per player.
     pub fn tick(&mut self, acts: &[Act]) -> Tick {
         assert_eq!(acts.len(), self.players.len(), "one act per player");
+        let (mut client_ms, mut client_work): (f64, u64) = (0.0, 0);
+        let _ = creeer_physics::profile::take();
         for ((client, relay), act) in self.players.iter_mut().zip(acts) {
             relay.pump(self.now);
+            let started = Instant::now();
+            let worked = client.corrections().work;
             client.update(STEP);
             for command in &act.commands {
                 client.command(command.clone());
             }
             client.input(act.walk, act.jump, act.thrust);
             client.flush();
+            client_ms = client_ms.max(started.elapsed().as_secs_f64() * 1e3);
+            client_work = client_work.max(client.corrections().work - worked);
             relay.pump(self.now);
         }
         self.recording.ticks.push(acts.to_vec());
         let before = iterations(&self.server);
-        let _ = creeer_physics::profile::take();
+        let client_phases = creeer_physics::profile::take();
         let start = Instant::now();
         self.server.tick();
         let ms = start.elapsed().as_secs_f64() * 1e3;
@@ -158,7 +172,14 @@ impl Play {
             relay.pump(self.now);
         }
         self.now += STEP;
-        Tick { ms, work, phases }
+        Tick {
+            ms,
+            work,
+            phases,
+            client_ms,
+            client_work,
+            client_phases,
+        }
     }
 
     /// The players.
@@ -230,7 +251,15 @@ pub struct Report {
 impl Report {
     /// The tick time at percentile `q` (0–100, ms).
     pub fn percentile_ms(&self, q: f64) -> f64 {
-        let mut ms: Vec<f64> = self.ticks.iter().map(|t| t.ms).collect();
+        Self::percentile(self.ticks.iter().map(|t| t.ms).collect(), q)
+    }
+
+    /// The most one client's own work took in a tick, at percentile `q` (0–100, ms).
+    pub fn client_percentile_ms(&self, q: f64) -> f64 {
+        Self::percentile(self.ticks.iter().map(|t| t.client_ms).collect(), q)
+    }
+
+    fn percentile(mut ms: Vec<f64>, q: f64) -> f64 {
         ms.sort_by(f64::total_cmp);
         if ms.is_empty() {
             return f64::NAN;
@@ -243,6 +272,13 @@ impl Report {
     /// The most work in a tick, and its tick.
     pub fn most_work(&self) -> (usize, u64) {
         (self.ticks.iter().map(|t| t.work).enumerate())
+            .max_by_key(|&(_, w)| w)
+            .unwrap_or((0, 0))
+    }
+
+    /// The most work one client's prediction took in a tick, and its tick.
+    pub fn most_client_work(&self) -> (usize, u64) {
+        (self.ticks.iter().map(|t| t.client_work).enumerate())
             .max_by_key(|&(_, w)| w)
             .unwrap_or((0, 0))
     }
@@ -284,6 +320,8 @@ fn finish(mut play: Play, ticks: Vec<Tick>, start: &[(u64, u64)]) -> Report {
     }
 }
 
+#[cfg(test)]
+mod client_probe;
 #[cfg(test)]
 mod rest_probe;
 #[cfg(test)]

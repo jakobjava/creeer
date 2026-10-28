@@ -311,9 +311,16 @@ impl Session {
     pub fn send(&mut self, renet: &mut RenetServer, world: &ServerWorld, seconds: f64, tick: u32) {
         self.pacer.refill(seconds);
         self.commands = (self.commands + COMMANDS_PER_SECOND * seconds).min(COMMAND_BURST);
+        // The round's messages go with this tick's snapshot: said first, once (5 bytes).
+        let mut round = Some(to_bytes(&ServerMessage::Round(tick)));
         while let Some(q) = self.outbox.front() {
-            if !self.pacer.may_send(q.bytes.len()) {
+            let marker = round.as_ref().map_or(0, Vec::len);
+            if !self.pacer.may_send(q.bytes.len() + marker) {
                 break;
+            }
+            if let Some(marker) = round.take() {
+                self.pacer.send(marker.len());
+                renet.send_message(self.client, RELIABLE, marker);
             }
             let q = self.outbox.pop_front().expect("a front");
             self.pacer.send(q.bytes.len());

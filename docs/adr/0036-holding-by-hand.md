@@ -45,7 +45,7 @@
    - **Held things pass the body's box.**
    - **Twist:** a slender load does not twist in the fist beyond the grip's friction (G1.7's rule, kept: `twist.rs`).
    - **Hand over hand:** a pole's hands move along it at 0.5 m/s when it lags behind where they mean to be the way the body faces, or when they push it forward (over 40 N) and it does not go. So a pole is walked up into its hole.
-3. **Steered by the player** (protocol 30):
+3. **Steered by the player** (protocol 30, with ADR-0008's round 31):
    - **The hold:** sent with every input (`AvatarInput::hold`: the load's centre from the avatar's, its turn, steady), delta-coded and quantised (1 mm, a quarter milliradian), so the client predicts with what the server applies.
    - **Taken:** it is held where it was, relative to the view.
    - **The keys** (`creeer_client`'s `holding.rs`):

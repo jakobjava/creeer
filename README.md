@@ -18,6 +18,7 @@ cargo run -p creeer_client --release -- --screenshot shot.png --view far --overl
 cargo run -p creeer_client --release -- --bench 600   # headless render benchmark
 cargo run -p creeer_client --release -- --planet surface shot.png   # planet views: orbit/high/low/surface/tunnel/night
 cargo run -p creeer_client --release -- --planet-bench 40   # fly from orbit to the ground: frame times
+cargo run -p creeer_client --release -- --play-bench knap   # a scripted singleplayer game (knap, fell): frame phases
 cargo run -p creeer_client --release -- --system moon shot.png   # solar system: home/orbit/moon/map/system/lagrange/transfer
 cargo run -p creeer_client --release -- --system-bench   # solar-system sandbox: frame times
 cargo run -p creeer_server --release -- --save world.creeer   # dedicated server (UDP 27015; console: save, players, quit)

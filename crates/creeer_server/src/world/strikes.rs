@@ -18,6 +18,8 @@ pub(super) enum Aim {
     Body(EntityId, usize, DVec3),
     /// A standing tree (G1.7, `felling.rs`), by its id, at its cut's height up its stem.
     Tree(u64, f64),
+    /// What lies on the ground (G1.6c), by its id: made a body when the blow falls (`loose.rs`).
+    Lying(u64),
 }
 
 /// A swing on its way.
@@ -182,9 +184,16 @@ impl ServerWorld {
                 energy: swing.energy,
             });
         }
-        let (on, at) = match s.aim {
+        let aim = match s.aim {
+            Aim::Lying(lying) => {
+                let (body, local) = self.rouse_struck(s.by, lying)?;
+                Aim::Body(body, 0, local)
+            }
+            aim => aim,
+        };
+        let (on, at) = match aim {
             Aim::Ground(at) => (None, at),
-            Aim::Tree(..) => return None,
+            Aim::Tree(..) | Aim::Lying(_) => return None,
             Aim::Body(id, node, local) => {
                 let b = &self.world.bodies[self.index(id)?].structure;
                 (

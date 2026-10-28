@@ -87,6 +87,11 @@ pub enum ServerMessage {
     Item(EntityId, super::ItemLook),
     /// Standing trees cut into or felled since last told (G1.7; everyone's, as the terrain is).
     Trees(Vec<super::TreeCut>),
+    /// The reliable messages after it went with the snapshot of this network tick (sent before
+    /// the first of a round's, 2026-10-28): a client drawing the past changes what it draws at
+    /// that tick, with that snapshot's bodies, not before (a felled part replaced by its pieces
+    /// was drawn by none for 3 ticks).
+    Round(u32),
 }
 
 /// An entity's age as a client draws it: its exposure (years of weathering) as of network
@@ -277,6 +282,10 @@ impl Encode for ServerMessage {
                 w.u8(18);
                 w.put(cuts);
             }
+            Self::Round(tick) => {
+                w.u8(19);
+                w.u32(*tick);
+            }
         }
     }
 }
@@ -383,6 +392,7 @@ impl Decode for ServerMessage {
             16 => Self::Note(read_text(r)?),
             17 => Self::Item(r.get()?, r.get()?),
             18 => Self::Trees(r.get()?),
+            19 => Self::Round(r.u32()?),
             _ => return Err(r.error("unknown server message")),
         })
     }

@@ -95,3 +95,10 @@
 - **Ages** (`creeer_sim::ageing`, ADR-0026). The server keeps each entity's weathering (its exposure as of a tick, the rate it grows at since) and its wear from impacts, by entity, so parking and reordering bodies leave it alone.
 - **Protocol 7** adds `ServerMessage::Age`: an entity's exposure as of a network tick, its rate and its wear. It is queued right after the entity's spawn (and dropped with the spawn if it leaves view first), and again when the rate or the wear changes. A client works out the exposure at any moment from the rate: nothing is sent per tick.
 - **Save version 9** adds the optional section `AGES`. Earlier saves load with everything new.
+
+## Amended after the user's play (2026-10-28): changes drawn at their round; protocol 30
+
+- **Changes to the drawn world wait for their round.** A client draws the world 4 ticks in the past (`interp`), but applied what came reliably at once: a felled part limbed, despawned and replaced by a new body in one tick, was drawn by none for 3 ticks, since the new body showed only from its first snapshot (ADR-0031, amended, has the measurements). As Unity's Netcode for Entities does for its interpolated ghosts, the client now holds despawns, things laid and taken, and trees cut until the snapshot whose bodies it draws is the one they went with (`creeer_server::client::held`). Spawns, edits, inventories and notes still take effect at once (an edit's ground is the prediction's, at the present).
+- **Protocol 30** adds `ServerMessage::Round(tick)`, sent before the first reliable message of a round (5 bytes, paced with them): the snapshot of `tick` went with what follows. The reliable channel keeps their order through losses and resends, so a held message's round is exact.
+- **Cost:** play scenes' bandwidth unchanged at the kbit/s shown (crowd 95 / 38.6 down / up); every play and stress hash unchanged by it.
+- **Protocol 31** (merged the same day): protocol 30 was made twice on two branches, this round and the held load's steering (`AvatarInput::hold`, ADR-0036); the two together are 31, so neither branch's 30 speaks to it.

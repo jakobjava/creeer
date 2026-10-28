@@ -81,3 +81,39 @@ Each is in `docs/future-improvements.md`.
 - **Crates put down inside trunks.** The stress scene's yards were put down before any trunk was laid, and the trunks then appeared inside the crates (its median tick 0.7 → 1.7 ms, its worst 9 ms). Nothing may be put down in a trunk now (`clear_of_trunks`: crates, boxes, balls, frames, kit items: "a tree stands there"); the yards leave those spots out. After: median 0.8 ms, worst 1.2 ms (120 ticks), as before G1.7.
 - **Ageing's pruning took 14 ms every 600 ticks** with 100,000 parked bodies (a set of every parked id): only the aged entities missing from the world are now looked for among the parked (`ageing.rs`), the same result. The stress scene's server is within its ceilings again (worst 6.9 ms of 8.1, first 2.7 of 7.5); it was over them before G1.7 (15.7 ms).
 - **The stress and play goldens** were stale since G1.6 (its save version 10): the commit before G1.7 gives the stress server's hash `01c358c9a7e6301a`, and G1.7 without trees and with save version 10 gives the same, so G1.7 moves nothing but through its trees; the play scenes' work is unchanged to the iteration (crowd 3,355 at tick 1,533; work 362 at tick 1,776). Renewed for version 11 and the forest. The crowd scene's tick gates (worst 5 ms, p99 2 ms) fail as they did before G1.7 (worst 19 ms, p99 11.6 ms): P1's (G1.8).
+
+## Amended after the user's play (2026-10-28): felled trees drawn whole, and cheap to aim at
+
+The user: "felling a tree causes slow frames", and "when you take the branches off a tree the tree flashes when the branch gets removed".
+
+### The flash
+
+**Measured.** *lumberjack* in lockstep, each client's drawn stems summed each tick (the standing trees to their cuts, the felled parts in view): at every limb and every buck a part of 11.6–14.1 m was drawn by none for 3 ticks (ticks 1,623–1,626 and 1,779–1,782), and at every felling the stem above the cut vanished (tick 717: 46.26 of the four trees' 57.85 m drawn). `--play-bench fell` (one player limbing a felled tree for 35 s): 11 flashes of 2–3 frames. No mesh is rebuilt: trees are drawn as instanced rods and masses each frame (`tree_draw.rs`).
+
+**Found.** A limb or a buck replaces the part by new bodies within one tick (`bucking.rs`, `replace_part`). The client draws the world 4 ticks in the past, between snapshots, so a body is drawn from the first snapshot that has it. But the despawn came reliably and was applied the moment it came. The old part went at once, and the new one came only when the past drawn reached its first snapshot, 3 ticks later. Felling did the same: the tree was cut at its stump (`ServerMessage::Trees`) before its trunk's body was drawn.
+
+**Prior work.** Unity's Netcode for Entities despawns an interpolated ghost only once its interpolation tick reaches the tick it was despawned at, and spawns one once it reaches the tick it came at (`GhostDespawnSystem`, "Ghost spawning", Netcode for Entities manual): the interpolated timeline's changes happen on that timeline. Predicted ghosts are despawned at once.
+
+**Now** each round's reliable messages follow `ServerMessage::Round(tick)`, the snapshot they went with (protocol 30; 5 bytes a round that sends any; ADR-0008, amended). The client holds what changes the world it draws in the past (despawns, things laid and taken, trees cut) until the snapshot whose bodies it draws is that round's (`client/held.rs`). The old part and its pieces change places within a frame; the felled tree's stem and its trunk too. A spawn of an entity whose despawn is held (a character fallen and up again, sent anew) does the despawn at once, as before.
+
+| Stems drawn | Before | Now |
+|---|---|---|
+| *lumberjack*, every client every tick | 3-tick gaps at every felling, limb and buck | whole every tick (`the_lumberjacks_fell_their_trees_and_buck_them`; failed at tick 717 before) |
+| `--play-bench fell`, 60 s | 11 flashes of 2–3 frames | none (`--gate` fails on one) |
+
+### The slow frames
+
+**Measured.** A client's frame work beside *lumberjack*'s felled trees, each call the best of five (`play_bench_tests.rs`): an aim (the crosshair's ray against what is drawn, `Connection::aim`) took 0.002 ms with no felled part, 0.73 ms with one, 2.24 ms with three and 2.9 ms with four. The crosshair casts two rays a frame, so four felled parts cost about 6 ms a frame, and every limb and buck adds parts. On the real path (`--play-bench fell`) the aim's phase went from 0.1 ms before the fall to 1.5 ms p50, 3.2 ms worst after one tree was felled and limbed.
+
+**Found.** For each felled part, every aim built its hull anew from the few hundred corners it is told (`Hull::new`, 0.7 ms), before testing whether the ray passes anywhere near it. The trees of the felled parts were also grown anew every frame to draw them (`Tree::grow`, about 0.1 ms each).
+
+**Now** each entity's shape is built once, the first time a ray passes within a reach found from its corners alone (a ball no smaller than the shape's own bounding radius), and kept until the entity is despawned or spawned anew (`client/aim.rs`, `AimShapes`). The felled parts' trees are grown once each and kept while a part of them is in view (`TreeView::keep_felled`).
+
+| Felled parts | Before | Now |
+|---|---|---|
+| An aim, four parts in view (best of 5) | 2.9 ms | 0.004–0.009 ms; a part's first aim after it appears builds its hull once (0.7 ms) |
+| Real path, the aim's phase a frame | 1.5 ms p50, 3.2 ms worst | 0.09 ms p50, 0.29 ms p99 |
+
+The lumberjack test now also aims along every felled part twice every second and checks the second builds no shape.
+
+**The server's felling, measured and left:** the falling trunk's ticks on the server's own thread, 17 ms at worst when a tree goes over in `--play-bench fell`, and *lumberjack*'s 1.1 / 15.9 / 38.3 ms (p50 / p99 / worst): its trunks' ground sampling and their hinged steps, already recorded (ADR-0024; *Felled trunks that rest, and cheaper on the ground*). They do not slow the client's frames, which run on another thread; a server tick over 16.7 ms delays the snapshots, which the client's playback rides out (it runs on up to 6 ticks past the newest).

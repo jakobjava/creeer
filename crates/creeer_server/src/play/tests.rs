@@ -125,6 +125,27 @@ const WORK: [(&str, u64, u64); 10] = [
     ("log_bridge", 84, 84),
 ];
 
+/// Each scene's most work one client's prediction took in a tick at CI's length (Newton
+/// iterations, its replays included: `Tick::client_work`), a tenth above what it measured. A
+/// game's frame holds its client's work on its main thread (2026-10-28, the user's "30 ms
+/// frames" knapping: *toolmaking*'s knapping took a client 120 iterations and 8 ms a tick while
+/// the struck cores rocked as bodies before their blows; 6 since they are bodies from their
+/// blows on, ADR-0030 amended). The worsts left are bodies settling or pushed beside the players,
+/// predicted and replayed (ADR-0025, amended): *toolmaking*'s hammerstones put down (tick 875),
+/// *quarry*'s boulders, *builders*' loose poles (1,955 at tick 521 here; 317 ms at full length).
+const CLIENT_WORK: [(&str, u64); 10] = [
+    ("crowd", 174),
+    ("work", 262),
+    ("lumberjack", 6),
+    ("quarry", 515),
+    ("toolmaking", 249),
+    ("tower", 0),
+    ("collapse", 0),
+    ("drop", 5),
+    ("builders", 2_151),
+    ("log_bridge", 159),
+];
+
 /// The headings each scene is played at for its ensemble (`Play::heading`).
 const HEADINGS: u32 = 8;
 
@@ -144,6 +165,11 @@ fn measure_the_work_ceilings() {
         }
         let report = run(s, s.ticks.1);
         let (tick, most) = report.most_work();
+        let (client_tick, client) = report.most_client_work();
+        println!(
+            "{}: a client's prediction {client} at tick {client_tick}",
+            s.name
+        );
         let (down, up) = report.kbits();
         println!(
             "{}: {most} at tick {tick}; {down:.0} kbit/s down, {up:.1} up; worst {:.2} ms",
@@ -185,6 +211,13 @@ fn every_scene_keeps_within_its_work_and_its_bandwidth() {
             s.name
         );
         let report = run(s, s.ticks.1);
+        let (_, client_ceiling) = *CLIENT_WORK.iter().find(|w| w.0 == s.name).expect("a gate");
+        let (tick, client) = report.most_client_work();
+        assert!(
+            client <= client_ceiling,
+            "{}: a client's prediction took {client} Newton iterations at tick {tick}",
+            s.name
+        );
         // plan.md §5: 256 kbit/s to a client, on the wire.
         let (down, up) = report.kbits();
         assert!(

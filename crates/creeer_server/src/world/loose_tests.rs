@@ -241,12 +241,17 @@ fn a_stone_lying_struck_with_a_stone_in_hand_breaks_where_it_lies() {
         Some(ada),
     )
     .unwrap();
-    assert_eq!(w.taken_since(0), [stone.id], "lying no longer: an item");
-    assert_eq!(w.items.bodies.len(), before + 1);
+    // Struck as it lies: no body until the blow falls (2026-10-28), then taken from the ground.
+    let mut bodies = 0;
     for _ in 0..70 {
+        if w.taken_since(0).is_empty() {
+            bodies = bodies.max(w.items.bodies.len() - before);
+        }
         w.steer(ada, &AvatarInput::default());
         w.step();
     }
+    assert_eq!(bodies, 0, "a body before the blow");
+    assert_eq!(w.taken_since(0), [stone.id], "lying no longer: struck");
     // The blow fell on it: what broke off lies beside it (a flake, or grit), or it bruised.
     let Lying::Stone { size, rock } = stone.what else {
         unreachable!()
@@ -328,6 +333,9 @@ fn knapping_stones_lying_about_costs_the_world_next_to_nothing() {
             "all but the player and the hammerstone laid"
         );
     }
-    // Measured 43 (the struck stone a body for its blow's second); as bodies, flakes took 250.
-    assert!(most <= 50, "{most} Newton iterations in a tick");
+    // Measured 43 with the struck stone a body for its blow's second, rocking on its laid pose
+    // (as bodies, flakes took 250); 6 since it is a body only from its blow on (2026-10-28,
+    // ADR-0030 amended): a tenth above.
+    println!("{most} Newton iterations at most in a tick");
+    assert!(most <= 7, "{most} Newton iterations in a tick");
 }

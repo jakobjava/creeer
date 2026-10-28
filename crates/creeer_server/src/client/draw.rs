@@ -9,6 +9,22 @@ use creeer_net::interp::sample;
 use std::collections::BTreeMap;
 
 impl Connection {
+    /// The player's own avatar as drawn, once it has come.
+    pub fn avatar(&self) -> Option<Pose> {
+        if self.fallen {
+            // Down: its pelvis as the server has it.
+            let pelvis = self.welcome.as_ref()?.avatar;
+            let poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
+            return poses.get(&pelvis).copied();
+        }
+        self.predicted.as_ref()?.pose()
+    }
+
+    /// The server tick drawn at (fractional; a little in the past).
+    pub fn drawn_at(&self) -> f64 {
+        self.drawn_at
+    }
+
     /// Every entity's pose to draw it at now (the player's own avatar where it is predicted).
     pub fn poses(&self) -> BTreeMap<EntityId, Pose> {
         let mut poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
