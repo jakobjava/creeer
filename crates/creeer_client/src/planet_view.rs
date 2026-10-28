@@ -110,6 +110,15 @@ impl PlanetView {
         Ok(Self::new(session, terrain))
     }
 
+    /// A singleplayer game of `world` (`PlanetSession::hosting`).
+    ///
+    /// # Errors
+    /// If the planet cannot be loaded.
+    pub fn hosting(world: creeer_server::ServerWorld) -> Result<Self, String> {
+        let (session, terrain) = PlanetSession::hosting(world)?;
+        Ok(Self::new(session, terrain))
+    }
+
     /// A game on the dedicated server at `server`, as `name`.
     ///
     /// # Errors

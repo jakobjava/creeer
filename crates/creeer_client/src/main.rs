@@ -82,6 +82,10 @@ mod planet_net;
 mod planet_shot;
 mod planet_ui;
 mod planet_view;
+mod play_bench;
+#[cfg(test)]
+mod play_bench_tests;
+mod play_scripts;
 mod players_bench;
 mod powerhouse_panel;
 mod profiler_ui;
@@ -172,6 +176,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             players,
             (headless::ao_quality(&args)?, people),
         );
+    }
+    if args.iter().any(|a| a == "--play-bench") {
+        return play_bench::run(&args);
     }
     if args.iter().any(|a| a == "--physics-bench") {
         return physics_bench::bench(&args).map_err(Into::into);

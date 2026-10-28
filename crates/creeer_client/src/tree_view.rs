@@ -218,6 +218,12 @@ impl TreeView {
         best
     }
 
+    /// Standing tree `id`, if its cell is about the camera; and the forest.
+    pub fn standing(&self, id: u64) -> Option<(Standing, &Forest)> {
+        let t = self.cells.values().flatten().find(|t| t.id == id)?;
+        Some((*t, &self.forest))
+    }
+
     /// A word for standing tree `t` (its girth, and how far it is cut), never its species: a
     /// spruce and a pine are the player's to tell apart (principle 9).
     pub fn name(&self, c: &creeer_server::Connection, t: &Standing) -> String {

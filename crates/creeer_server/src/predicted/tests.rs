@@ -106,3 +106,15 @@ fn measure_walking_into_crates() {
         }
     }
 }
+
+impl super::Predicted {
+    /// The bodies predicted with the avatar (for probes).
+    pub(crate) fn nearby_count(&self) -> usize {
+        self.nearby.len()
+    }
+
+    /// The inputs not yet applied by the server (for probes).
+    pub(crate) fn pending(&self) -> usize {
+        self.log.pending().count()
+    }
+}

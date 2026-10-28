@@ -59,6 +59,16 @@ impl PlanetSession {
         let mut world = ServerWorld::new(Arc::clone(&data), load_terrain(&data, PLANET)?, PLANET);
         // Survival (G1.6b); creative, the sandbox's tools drop crates and dig within 500 m.
         world.creative = creative;
+        Self::hosting(world)
+    }
+
+    /// A singleplayer game of `world` (on the reference planet), hosted as `singleplayer`
+    /// hosts its own: a bench's world (`play_bench.rs`).
+    ///
+    /// # Errors
+    /// If the planet cannot be loaded.
+    pub fn hosting(world: ServerWorld) -> Result<(Self, Arc<Terrain>), String> {
+        let data = Arc::clone(&world.data);
         let mut server = Server::new(world);
         let end = server.connect_memory();
         let mut connection = Connection::memory(end, PLAYER, data.hash());
