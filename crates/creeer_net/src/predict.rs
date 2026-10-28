@@ -41,7 +41,7 @@ pub const QUEUED: usize = 10;
 
 impl AvatarInput {
     /// The input as it arrives at the server: its walk to [`crate::message::WALK_SCALE`], its
-    /// thrust to [`crate::message::THRUST_SCALE`].
+    /// thrust to [`crate::message::THRUST_SCALE`], its hold as written (`inputs.rs`).
     #[must_use]
     pub fn quantised(self) -> Self {
         Self {
@@ -49,6 +49,7 @@ impl AvatarInput {
                 .value(crate::message::WALK_SCALE),
             thrust: Quantised::new(self.thrust, crate::message::THRUST_SCALE)
                 .value(crate::message::THRUST_SCALE),
+            hold: crate::message::as_read(self.hold),
             ..self
         }
     }
@@ -64,9 +65,16 @@ pub struct InputLog {
     next: u32,
     /// The number of the last input that asked to walk.
     walked: Option<u32>,
+    /// What the hands are steered to, for the inputs from now on.
+    hold: Option<crate::message::Hold>,
 }
 
 impl InputLog {
+    /// Steers the hands to `hold` in the inputs from now on (G2.10; none: as they hold it).
+    pub fn set_hold(&mut self, hold: Option<crate::message::Hold>) {
+        self.hold = hold;
+    }
+
     /// A new input: walk at `walk` (m/s), jump or not. Numbered, quantised and kept.
     pub fn push(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         self.next += 1;
@@ -79,6 +87,7 @@ impl InputLog {
             jump,
             thrust,
             stopping: walk == DVec3::ZERO && self.walked.is_some_and(|w| self.next - w <= STOPPING),
+            hold: self.hold,
         }
         .quantised();
         self.inputs.push_back(input);

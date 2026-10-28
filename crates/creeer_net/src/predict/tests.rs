@@ -230,6 +230,7 @@ fn an_input_is_predicted_with_what_the_server_is_told() {
         jump: true,
         thrust: DVec3::new(0.123_4, -1.0 / 3.0, 0.0),
         stopping: false,
+        hold: None,
     };
     let sent: AvatarInput =
         crate::message::from_bytes(&crate::message::to_bytes(&input.quantised())).unwrap();

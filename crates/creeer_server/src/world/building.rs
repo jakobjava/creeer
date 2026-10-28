@@ -92,8 +92,19 @@ impl ServerWorld {
         let k = (self.building.fasteners.iter())
             .position(|f| f.name == fastener)
             .ok_or_else(|| format!("no fastener {fastener}"))?;
-        if self.carried(by).is_some() {
-            return Err("both hands are needed: put down what you hold (prop it)".into());
+        // Holding a part, one hand keeps it still (steady: H) while the other nails or pegs
+        // it; a lashing takes both (G2.10).
+        if let Some(c) = self.carrying.get(&by) {
+            let lashing = matches!(
+                self.building.fasteners[k].kind,
+                creeer_building::fasteners::Kind::Lashing { .. }
+            );
+            if lashing {
+                return Err("a lashing takes both hands: prop it or put it down, then lash".into());
+            }
+            if !c.tool && c.steady.is_none() {
+                return Err("hold it steady first (H), then fasten it".into());
+            }
         }
         self.touching_any(part, at)?;
         self.fastener_at_hand(by, k)?;

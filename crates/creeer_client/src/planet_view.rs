@@ -71,6 +71,8 @@ pub struct PlanetView {
     pub loose: Option<crate::loose_view::LooseView>,
     /// The trees about (G1.7).
     pub trees: Option<crate::tree_view::TreeView>,
+    /// Steering what the hands hold (G2.10).
+    pub holding: crate::holding::Holding,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -127,6 +129,7 @@ impl PlanetView {
             walking: false,
             wielding: None,
             inventory: false,
+            holding: crate::holding::Holding::default(),
             loose: crate::loose_view::LooseView::new(&terrain),
             trees: crate::tree_view::TreeView::new(&terrain),
             streamer,

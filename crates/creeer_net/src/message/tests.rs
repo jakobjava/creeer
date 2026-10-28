@@ -34,6 +34,7 @@ fn client_messages_read_back() {
         // Thrust coming and going (on alternate thirds).
         thrust: DVec3::new(0.0, if seq % 3 == 0 { 0.5 } else { 0.0 }, -0.25),
         stopping: false,
+        hold: None,
     };
     back(&ClientMessage::Hello {
         protocol: crate::PROTOCOL_VERSION,
@@ -271,6 +272,7 @@ fn inputs_cost_a_byte_or_two_each() {
                 jump: seq == 104,
                 thrust: DVec3::ZERO,
                 stopping: false,
+                hold: None,
             }
             .quantised()
         })

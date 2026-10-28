@@ -194,8 +194,10 @@ fn a_branch_picked_up_is_carried_steadily_walking() {
         );
         w.step();
         let i = w.carried(ada).and_then(|c| w.index(c)).expect("still held");
-        // Once the body has turned the way it walks.
-        if t > 150 {
+        // Once the body has turned the way it walks, and the branch with it: turned within
+        // one hand's torque (G2.10), a 1.4 m branch follows the body's half turn in about half
+        // a second (2.9 rad/s at tick 151, under 0.05 from tick 180).
+        if t > 180 {
             most = most.max(w.world.bodies[i].structure.angular_velocity[0].length());
         }
     }

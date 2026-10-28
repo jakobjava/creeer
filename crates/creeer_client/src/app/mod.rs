@@ -111,7 +111,9 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } if !response.consumed => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
-                    if !(pressed && !event.repeat && app.key(code)) {
+                    // What the hands hold takes its keys first (G2.10: Q, H, Ctrl).
+                    let held = !event.repeat && app.holding().is_some_and(|h| h.key(code, pressed));
+                    if !held && !(pressed && !event.repeat && app.key(code)) {
                         app.fly.key(code, pressed);
                     }
                 }
@@ -145,7 +147,8 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => f64::from(y),
                     MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
                 };
-                if !app.system_scroll(notches) {
+                let held = app.holding().is_some_and(|h| h.wheel(notches));
+                if !held && !app.system_scroll(notches) {
                     app.fly.scroll(notches);
                 }
             }
@@ -155,11 +158,12 @@ impl ApplicationHandler for App {
     }
 
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
-        if let (Some(app), DeviceEvent::MouseMotion { delta }) = (&mut self.running, event)
-            && app.looking
-            && !app.system_mouse(delta.0, delta.1)
-        {
-            app.fly.mouse_motion(delta.0, delta.1);
+        if let (Some(app), DeviceEvent::MouseMotion { delta }) = (&mut self.running, event) {
+            // Q held, the mouse turns what the hands hold; Ctrl, the view finer (G2.10).
+            let (turned, gain) = app.holding().map_or((false, 1.0), |h| h.mouse(delta));
+            if !turned && app.looking && !app.system_mouse(delta.0, delta.1) {
+                app.fly.mouse_motion(delta.0 * gain, delta.1 * gain);
+            }
         }
     }
 

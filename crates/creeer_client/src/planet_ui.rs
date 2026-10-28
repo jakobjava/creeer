@@ -281,3 +281,20 @@ fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
         view.send(Command::Look { skin, hair });
     }
 }
+
+/// The keys for what the hands hold (G2.10), low on the screen while something is held.
+pub fn hold_hint(ctx: &egui::Context, hint: Option<&str>) {
+    let Some(hint) = hint else { return };
+    let rect = ctx.content_rect();
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("hold hint"),
+    ));
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 48.0),
+        egui::Align2::CENTER_BOTTOM,
+        hint,
+        egui::FontId::proportional(13.0),
+        egui::Color32::from_white_alpha(200),
+    );
+}

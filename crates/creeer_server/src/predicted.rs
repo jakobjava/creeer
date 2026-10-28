@@ -131,6 +131,12 @@ impl Predicted {
     }
 
     /// A new input (one a tick): kept, applied to the avatar at once, and returned to be sent.
+    /// Steers the hands to `hold` from the next input on (G2.10; none: as they hold by
+    /// themselves).
+    pub fn set_hold(&mut self, hold: Option<creeer_net::message::Hold>) {
+        self.log.set_hold(hold);
+    }
+
     pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) -> AvatarInput {
         let input = self.log.push(walk, jump, thrust);
         if !self.fallen && !self.world.bodies.is_empty() {

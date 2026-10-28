@@ -7,8 +7,9 @@
 //! lost packet loses none).
 
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
-use creeer_math::glam::DVec3;
-pub use inputs::{THRUST_SCALE, WALK_SCALE};
+use creeer_math::glam::{DQuat, DVec3};
+pub(crate) use inputs::as_read;
+pub use inputs::{OFFSET_SCALE, THRUST_SCALE, TURN_SCALE, WALK_SCALE};
 use inputs::{read_inputs, write_inputs};
 
 /// What an avatar's player asks of it for one tick.
@@ -27,6 +28,22 @@ pub struct AvatarInput {
     /// Stopping (G1.10): no walk asked, but one was within the last second: the legs brake at
     /// their most (a body pushed while standing is not braked so).
     pub stopping: bool,
+    /// Where the hands mean what they hold (G2.10), if the player steers it; none: as they
+    /// hold it by themselves (a script's, a tool by the side).
+    pub hold: Option<Hold>,
+}
+
+/// Where the hands mean what they hold, as the player steers it with the view, the wheel and
+/// its turning keys (`creeer_server`'s `holding.rs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hold {
+    /// Where the thing held is meant (its node's centre), from the avatar's centre (world
+    /// frame, m): the server holds it at its grip.
+    pub offset: DVec3,
+    /// Its turn as meant (world).
+    pub turn: DQuat,
+    /// Held still where it is (H): the view and the other hand free.
+    pub steady: bool,
 }
 
 /// No tool, as a wielded tool's index is sent.

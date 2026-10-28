@@ -1,0 +1,107 @@
+# ADR-0036: Holding by hand: a firm grip, steered by the player
+
+- **Status:** In progress (2026-10-28). The grip, the server's holding and the controls are built; the hands drawn at the grip (arms reaching it, fingers closed) and the player's own load drawn where it is steered are being built.
+- **Context:** the user's play of G2 (2026-10-28): "this current carrying/hold/grabbing system is absolutely horrible: things float, are not properly grabbed by the hand, start spinning for some reason, go through the player"; building "completely unintuitive, weird, slow (… it is difficult to get the things where you want them)". G2 cannot close until it is fixed. The user's aim: "a realistic system which does not make it hard just because the controls are bad; humans are beings which can manipulate things in space very well if the object is not too heavy". Chosen (2026-10-28): held firmly in the hand; for building, the part held where the player wants it and fastened while held; the key map below.
+- **Replaces:** ADR-0027's G1.4f compliant hands (and its G2.9 amendment, raising by one end: now the grip's torque limit).
+- **Builds on:** ADR-0023 (struts: capped springs solved with their bodies), ADR-0022 (joints; moved points' work booked), ADR-0024 (the energy guard's books).
+
+## Prior work
+
+- **Half-Life 2** (Source SDK `weapon_physcannon.cpp`, `hl2_player.cpp`): the held object is driven by a velocity controller towards a target pose (at most 1000 in/s, 3600 °/s); it is dropped only on a sustained error (after 1 s, beyond 12 in), never at a limit; hand pickup to 35 kg; the hold distance keeps it in front of the player. It sets the held object's mass to 1 kg so it cannot push the player: not taken (the reaction is real here).
+- **Garry's Mod physgun**: the wheel pushes and pulls, E with the mouse turns, a key freezes the object in place: the controls taken (Q for turning; H holds it still).
+- **Amnesia / Penumbra**: grab and drag with the mouse, the wheel for distance; reviewers found the gestures "take practice": not taken.
+- **Boneworks / HurricaneVR**: hands as force-limited drives; heavy things need two hands; their melee felt "wobbly and laggy" (too soft). Half-Life: Alyx avoided physical hands for want of feedback to the player's own hand, as a mouse has none.
+- **Catto's soft constraints** (Box2D v3 "Soft Step"), **Box3D's motor joint** (a velocity motor and a spring, each with its force and torque capped), **PhysX D6 drives**, **Jolt's motor springs**, **MuJoCo welds** (`solref`): a stiffness set by frequency and damping ratio, not N/m, so it behaves the same for every mass; implicit and capped.
+- **Haptics' virtual coupling** (Colgate 1995) and the **god-object** (Zilles & Salisbury 1995): the hand's intent kept apart from the object and joined to it by a bounded spring-damper, the intent never running far ahead of a blocked object.
+- **Human limits**:
+  - two hands lift about 58.6 kg to the elbows (ADR-0027);
+  - one hand carries comfortably 9–10 kg (men's one-handed carrying);
+  - the wrist holds about 11–12 N·m (Delp et al.: radial deviation 11.0, flexion 12.2);
+  - forward grip reach is about 0.7 m;
+  - stooping and squatting bring the shoulders from 0.818 of the stature down to about 0.43 of it, the trunk leant forward (Winter's segment lengths: hips at 0.23 of it in a squat, the trunk 0.29 of it leant 45°): for a 1.75 m person 0.7 m lower and 0.35 m on, so the hands reach the ground before the feet;
+  - peak hand speeds in reaching are 1.5–2 m/s;
+  - a braced hand places to about a millimetre, a free one to a few.
+
+## Decision
+
+1. **A grip** (`creeer_physics::world::grip`, solved in the body's group with its contacts and joints, as struts are):
+   - **What it is:** a capped spring-damper from the point held and the node's turn to where the hands mean them, its target moving.
+   - **Its law:** k·(target − p) + c·(target's velocity − p's): a vector Huber spring, stiff within the cap and constant beyond it. A load too heavy lags or sags; it is not dropped for it.
+   - **Its turn:** alike, by three arms on the node's axes.
+   - **Stiffness:** by frequency, 8 Hz critically damped (k = m·ω², c = 2mω; the arms' from the largest moment), so it settles in about a tenth of a second whatever it weighs.
+   - **Caps:** its pull at most the hands' strength, 575 N with two hands and half with one. Its torque at most the two hands' grip, 57.5 N·m, or the wrist's 11 N·m with one hand.
+   - **In the energy guard:** within a step its target stands still, so its spring is a potential, counted by its change as the struts' and contacts' are. The hands' work booked is their damper's drag at the target's own speed.
+2. **The hands** (`creeer_server`'s `hands.rs`, `carry.rs`):
+   - **One hand or two:** by need. One for what is at most 9 kg and levered at most 11 N·m about the grip (a made tool, always); two for anything else.
+   - **What can be grabbed:** anything up to twice their strength (one end can be raised, the other resting where it lies).
+   - **Where they mean it:** where the player steers it, held still in the world (steady), or by themselves before the body (elbow height, a forearm out; a tool by the side).
+   - **Kept clear of the body, within reach:** at least as far out from its axis as the load needed when taken, and within 0.75 m of the shoulders, which come down by up to 0.7 m and out by up to 0.35 m towards what is held below them (stooping and squatting): what lies before the feet is held where it lies.
+   - **The plan:** they bring it there along a plan in the body's frame, critically damped at 3 Hz, its acceleration within their spare strength, at most 2 m/s, never more than 0.25 m ahead of what they hold.
+   - **The plan's turn:** alike, its angular acceleration within half of what their torque gives the load's moment, never more than 0.5 rad ahead of the load's.
+   - **Supplied as planned:** its weight and the plan's acceleration.
+   - **The body:** bears their last pull back at its centre.
+   - **Dropped only** when it has been beyond the arms' reach (from as far as it was taken from, closing as it comes in) by 0.35 m for half a second.
+   - **Held things pass the body's box.**
+   - **Twist:** a slender load does not twist in the fist beyond the grip's friction (G1.7's rule, kept: `twist.rs`).
+   - **Hand over hand:** a pole's hands move along it at 0.5 m/s when it lags behind where they mean to be the way the body faces, or when they push it forward (over 40 N) and it does not go. So a pole is walked up into its hole.
+3. **Steered by the player** (protocol 30):
+   - **The hold:** sent with every input (`AvatarInput::hold`: the load's centre from the avatar's, its turn, steady), delta-coded and quantised (1 mm, a quarter milliradian), so the client predicts with what the server applies.
+   - **Taken:** it is held where it was, relative to the view.
+   - **The keys** (`creeer_client`'s `holding.rs`):
+     - the view moves it;
+     - the wheel pushes it away or draws it in, 2 cm a notch;
+     - Q with the mouse turns it about the view's up and right axes;
+     - Q with the wheel rolls it;
+     - Ctrl makes all of it, and the view, five times finer;
+     - H holds it steady where it is, the view and the other hand free;
+     - G puts it down; T throws it.
+   - **A hint** of these keys shows while something is held.
+4. **Fastening while holding:**
+   - Held steady, a part is nailed or pegged with the free hand. While that hand works, the other holds it with one hand's strength and torque, so a part too heavy for one hand sags unless it rests on something: tack it where it rests, adjust it, nail the rest.
+   - A lashing takes both hands: the part must be propped.
+
+## Measured and rejected
+
+| Tried | Measured | Why not |
+|---|---|---|
+| G1.4f's soft arms: 445 N/m (an arm's stiffness against unexpected pushes, Perreault), applied as the step's load | A 15 kg box rang at 0.87 Hz, damping ratio 0.47 (about 19 % overshoot, over a second to settle); the user saw held things float, lag and spin | A stiffness in N/m floats more the heavier the load; a load outside the implicit solve cannot be stiff |
+| The hands' whole pull booked as their work over the way the point went | A 1 kg box raised 0.22 m had six of its steps redone by the guard | Within a step the target stands still: the spring is a potential; only the damper's drag at the target's speed is the hands' |
+| Planning on regardless of the load (the plan led it without bound) | A pole lifted by its end fell behind the plan and was dropped "out of reach"; the work scene's boxes were never thrown | The plan is kept within 0.25 m of what is held (the god-object's rule) |
+| Out of reach judged from the arms' reach alone | A pole grabbed where it lay, 1.5 m from the shoulders (the body bent to it), counted as torn from its first tick while its end rose | Judged from as far as it was taken from, that reach closing as it comes in |
+| The plan in the world's frame | Walking off with 45 kg, the plan's spare-strength limit (1.27 m/s²) held the load back; the body walked into it, it trailed, and the hands yanked her over from behind (tipped at tick 219) | Planned in the body's frame: the body's own acceleration reaches the load through the arms, capped by the grip (ADR-0027 had learnt this of G1.4f too) |
+| The held load colliding with the holder's body | 30 kg carried at 0.40 m/s instead of 1.20: the box rubbed along the body's single box (no chest and arms) | It passes the body; the hands keep it clear of it |
+| The turn planned at a set rate (6 rad/s) whatever the load | A 1.4 m branch in one hand fell far behind as the body turned to walk off; the grip swung it round at 14 rad/s | Its angular acceleration within half of what the hand's torque gives its moment, and tied to the load's turn |
+| The fist's twist left to the grip's turn springs (`grip_holds_twist` dropped) | That branch, drooping in one hand at the wrist's cap, spun about its own axis at 150 rad/s in a step | The fist holds a handle's own axis by its friction (G1.7's rule kept) |
+| Hand over hand towards the point of the pole nearest the hands' target | The hands stayed at the very end of a pole raised overhead (the target above its end), and it stalled at 42° | Along it the way the body faces when the load lags, or when they push it forward and it does not go |
+| The arms' reach measured from the standing shoulders alone | A pole lying 0.6 m before the feet, held steady where it lay to be nailed, was lifted 0.58 m in half a second into the arms' reach, off the pole it was to be nailed to ("not on the body as it was"): nothing could be held on the ground or lowered onto it | The shoulders come down and out towards it, as a person stoops and squats |
+
+## Validation
+
+- **The grip** (`grip_tests.rs`):
+  - boxes of 1, 15 and 40 kg settle critically damped, with no overshoot beyond a millimetre (1 and 15 kg within a centimetre of a 0.22 m move at 0.17 s; 40 kg slower, its 392 N weight leaving the hands 183 N);
+  - carried at 1.5 m/s it follows within 2 mm;
+  - 120 kg is not lifted and nothing is thrown;
+  - a 1.2 m stick held at its end turns to the hands' turn within 2° and spins under 3 rad/s while its hands bob 3 cm at 2 Hz;
+  - at most one step redone, as a box comes to rest at the guard's nanojoule floor.
+- **The hands** (`carry_tests.rs`, `raising_tests.rs`, `loose_tests.rs`, `play/work.rs`):
+  - a box is brought to the elbows and carried along, and walking off at once lifts and carries it;
+  - 130 kg is refused; 70 kg is held but stays on the ground; 40 kg is held up, and with 30 kg set on it, it sinks and is still held;
+  - 30 kg is carried at 1.2 m/s; 45 and 55 kg do not tip the body over;
+  - a 3 m, 27 kg pole grabbed at its end is held in both hands, raised by that end, its far end down;
+  - its foot set in a 30 cm hole, steered up and walked under, the pole comes to 18° from upright, the hands moving along it. Let go, it leans in its hole at 20°, its foot 0.55 m down;
+  - a branch picked up and carried walking follows the body's half turn in about half a second, steady to a thousandth of a rad/s after;
+  - in the work scene every blow falls and no box is dropped;
+  - over a slow link, walking with a load is corrected as rarely as before.
+- **Fastening while holding** (`building_tests.rs`): a pole held where it lies before the feet, not steady, is refused a nail ("hold it steady first"), and refused a lashing ("both hands"); held steady, it stays within a centimetre while a nail is driven in its 6 s, and the two poles become one structure. With the stoop taken out, the hands lift it off the other.
+- **The input:** a hold reads back within a millimetre and a quarter milliradian (`inputs.rs`).
+
+## Limits
+
+- **The body:** bears the hands' pull at its centre, a step late; its moment about the body is not on it, and the body does not lean into a push.
+- **The stoop is the hands' alone:** the shoulders come down to what is held low only in the reach; the body's box and legs stand as they were, and the drawn body does not stoop yet.
+- **The held load passes its holder:** the body is one box, without chest and arms, so a load pressed against it would rub along that box; the hands keep it clear of the body's axis instead.
+- **No tiring:** the hands do not tire: a load is held as long as the player holds it.
+- **The two hands are one grip:** at one point, the two hands' torque its cap. Two hands at the load's two ends, each with its own grip, are not modelled.
+- **Fingers:** they close on a handle's section; a load too thick to wrap is not held differently (an open, supporting hand).
+- **Which hands work:** the left hand's work while the right holds (fastening) is the whole of "the other hand": no tool in it is drawn yet.
+- **Fastening while holding:** checks that the part is held steady, not where the free hand is.

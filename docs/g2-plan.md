@@ -138,9 +138,19 @@ A **joint element** between two nodes, in the joint's own frame (normal n along 
   - *log bridge*: lashed and pegged, loaded with crates until it collapses.
 - **Demo:** in survival, a log bridge across a gorge, built by hand with lashings and pegs, loaded with crates until it collapses. On a creative server, the same with nailed timber and the stress overlay.
 
+### G2.10 Holding and placing by hand (after the user's play, 2026-10-28)
+
+The user found holding "absolutely horrible" (things floated, were not held in the hand, spun and passed through the player) and building slow to place. Rebuilt (ADR-0036):
+
+- **Firmly in the hand:** a capped grip in the body's group minimisation, by frequency (8 Hz), its pull and torque within the hands' strength: one hand for a light, short thing, two for the rest.
+- **Steered by the player:** the view moves what is held, the wheel pushes it out or draws it in, Q turns it, Ctrl makes all of it finer, H holds it steady in the world; the hold is sent with each input and predicted.
+- **Placed by holding it there and fastening:** held steady, a part is nailed or pegged with the free hand; a lashing takes both hands, so the part is propped first.
+- **Drawn:** the arms reach the grip, the fingers close on it, and the player's own load is drawn where it is steered.
+- **Performance:** the slow frames the user met (a stone struck with another, a tree felled) and the tree flashing as a branch comes off.
+
 ## Order
 
-G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.6 → G2.7 → G2.8 → the user plays the demo → squash-merge.
+G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.6 → G2.7 → G2.8 → G2.9 → **the user plays** → G2.10 → the user plays the demo → squash-merge.
 
 ## Decided with the user (2026-10-23)
 
@@ -166,5 +176,6 @@ G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.
 | G2.6 Taking apart | Done: undo a joint (U), cut members. Salvage gives no items back yet |
 | G2.7 P2/P3 | Measured: targets not met (ADR-0035). SIMD kernels kept (bit-exact). The user decided (2026-10-24): record the gaps and move on, as for G1. The speed work continues in a later package (members' evaluation in SIMD, sub-cycling struck regions) |
 | G2.8 Scenes | tower, collapse, drop, builders and log bridge exist, with goldens and work ceilings. Gates not met (tower p50 28 ms, worst ≈ 0.5 s; builders p50 26 ms from the loose poles) |
-| G2.9 After the user's play (2026-10-26) | Terrain of 12.5 cm cells near the player, and every blow digs a hole that grows (ADR-0006, ADR-0032): done. Raising a long thing by one end (ADR-0027): done, but walking a post up into its hole throws it off the hole's rim (being fixed). |
+| G2.9 After the user's play (2026-10-26) | Terrain of 12.5 cm cells near the player, and every blow digs a hole that grows (ADR-0006, ADR-0032): done. Raising a long thing by one end (ADR-0027): done; the post thrown off the hole's rim was the terrain's gradient across the rim, fixed (ADR-0005). The raising itself is now the grip's (G2.10) |
 | G2.9 Standing trees | Done (asked by the user, 2026-10-26): a part touching a standing tree's trunk is fastened to it (J/U at the part or the trunk), the tree a fixed support; felling lets go (ADR-0033 G2.9) |
+| G2.10 Holding and placing (2026-10-28) | Being built (ADR-0036). Done: the grip (8 Hz, critically damped whatever the mass; within the hands' strength and torque), the hands steering it where the player means it, the controls (G, wheel, Q, Ctrl, H, J, T) sent with each input; a 3 m pole walked up into its hole, a 70 kg box held but not lifted, 45 kg carried without tipping. Being built: the arms and fingers drawn at the grip, the own load drawn where it is steered, the slow frames and the tree's flash |

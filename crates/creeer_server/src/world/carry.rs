@@ -1,57 +1,74 @@
-//! Carrying and throwing (G1.4f, ADR-0027 decision 6): a player grabs what they reach (G1.4d's
-//! checks) and holds it in both hands. The hands are not a rigid hold but a person's arms
-//! (`hands.rs`): they hold the load's weight up as planned and pull it towards where they mean
-//! to have it with an arm's measured stiffness and damping, no harder than they are strong,
-//! and the same back on the body. They lift it to their height and bring it in (`creeer_sim::
-//! carry::held`: at the elbows, a forearm ahead, the way the body goes), turning it as the
-//! body turns. A load they cannot hold up, or that is torn out of their reach, drops. A throw
-//! lets go, the load given the speed of an overarm throw of its mass (`carry::throw_speed`),
-//! the thrower its reaction.
+//! Carrying and throwing (G1.4f, ADR-0027; held firmly since G2.10, ADR-0036): a player grabs
+//! what they reach (G1.4d's checks) and holds it at the point grabbed, in one hand or two as
+//! its weight and its lever about the hand need. The hands grip it firmly (`hands.rs`: a grip
+//! solved with the physics, as stiff as a hand moving what it means to, capped by the hands'
+//! strength and the wrist's or the two hands' torque), where the player steers it (the view,
+//! the wheel, the turning keys: `creeer_net::message::Hold`), or by themselves before the body.
+//! A load too heavy lags and sags; it drops only when torn out of their reach. A throw lets
+//! go, the load given the speed of an overarm throw of its mass (`carry::throw_speed`), the
+//! thrower its reaction.
 
 use super::*;
 use creeer_math::glam::DQuat;
-use creeer_net::message::Target;
+use creeer_net::message::{Hold, Target};
 use creeer_sim::carry;
 
 /// Below this speed the body keeps facing as it did (m/s).
 pub(super) const TURNING: f64 = 0.3;
 /// How far a load clears the body's front, held (m).
 const CLEAR: f64 = 0.01;
+/// The most one hand carries comfortably (kg: men's one-handed carrying, 9–10 kg) and the
+/// wrist's torque (N·m: radial deviation 11.0, flexion 12.2, Delp et al.): a load heavier, or
+/// levered more about the hand, takes both.
+const ONE_HAND: f64 = 9.0;
+pub(super) const WRIST: f64 = 11.0;
 
 /// A load carried.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Carry {
     pub(super) load: EntityId,
     pub(super) node: usize,
-    /// The point the hands hold, in the load's node frame.
+    /// The point the hands hold, in the load's node frame (moved along a slender load's axis
+    /// hand over hand: `hands.rs`).
     pub(super) grip: DVec3,
-    /// Its turn from the way the body faced (`facing_frame`) when taken: kept as it turns.
+    /// Its turn from the way the body faced (`facing_frame`) when taken: kept as the body
+    /// turns while the player does not steer it.
     pub(super) turn: DQuat,
-    /// Its turn as taken, which the hands bring it from to `turn` along the lift.
-    pub(super) taken: DQuat,
-    /// Where the hands took it, in the body's frame, how long they take to lift it (s), and
-    /// the ticks since.
-    pub(super) from: DVec3,
-    pub(super) lift: f64,
-    pub(super) since: u32,
-    /// The way the body faces (horizontal); how fast it turns (rad/s, about up), and the
-    /// hands' spare strength (m/s² of the load: half of what its weight leaves).
+    /// How far before the body's axis the hands hold it by themselves (m).
+    pub(super) ahead: f64,
+    /// The way the body faces (horizontal), and how fast it turns (rad/s, about up).
     pub(super) facing: DVec3,
     pub(super) spin: f64,
-    pub(super) spare: f64,
-    /// How far before the body's axis the hands hold it (m).
-    pub(super) ahead: f64,
-    /// Where the hands meant to have it the last two ticks, in the body's frame.
-    pub(super) path: [Option<DVec3>; 2],
-    /// The ticks running the hands have given their most, and have had it beyond their give.
-    pub(super) straining: u32,
-    pub(super) torn: u32,
-    /// Held in the right hand at the body's side, as a tool is carried (a made thing: G1.6d),
-    /// not in both hands before it.
+    /// Held in one hand (the right), or two.
     pub(super) one_hand: bool,
-    /// Held by one point, the other end where it lies (G2.9, `raising.rs`): too long or heavy
-    /// to hold level by the grip.
-    pub(super) end: Option<super::raising::End>,
+    /// A made tool, carried in the right hand by the side, its haft forward (G1.6d).
+    pub(super) tool: bool,
+    /// Where the player steers it this tick, if they do.
+    pub(super) input: Option<Hold>,
+    /// Held still in the world (steady, H): where the grip and how turned.
+    pub(super) steady: Option<(DVec3, DQuat)>,
+    /// The hands' plan: where they bring the grip and how fast, the load's turn and spin.
+    pub(super) plan: Plan,
+    /// What the hands pulled the load with over the last step (N): the body bears it back.
+    pub(super) pull: DVec3,
+    /// Ticks it has been out of the hands' reach.
+    pub(super) torn: u32,
+    /// How far from the shoulders the point held may be (m): as far as it was taken from (a
+    /// thing on the ground, the body bent to it), closing to the arms' reach as it comes in.
+    pub(super) reach: f64,
+}
+
+/// Where the hands are bringing what they hold: the grip's place and speed relative to the body's
+/// centre (planned in the body's frame: planned in the world, its spare-strength limit held the
+/// load back as the body walked off, and 45 kg was yanked from behind and tipped it over).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Plan {
+    pub(super) at: DVec3,
+    pub(super) velocity: DVec3,
+    pub(super) turn: DQuat,
+    pub(super) spin: DVec3,
+    /// Whether it is where the hands mean it (within a few centimetres): lifted.
+    pub(super) there: bool,
 }
 
 /// The frame of a body facing `facing` (horizontal) about `up`: z the way it faces, y up.
@@ -72,7 +89,7 @@ impl ServerWorld {
         self.take_hold(by, load, reached.point)
     }
 
-    /// Avatar `by` takes body `load`'s node in both hands, gripping it at `point`.
+    /// Avatar `by` takes body `load`'s node in hand, gripping it at `point`.
     pub(super) fn take_hold(
         &mut self,
         by: EntityId,
@@ -91,31 +108,25 @@ impl ServerWorld {
         if self.players[load].is_some() || self.carrying.values().any(|c| c.load == id) {
             return Err("not to be carried".into());
         }
-        // Lifted with at most half the strength its weight leaves the hands, which move the arms
-        // too; raised by one end, half its weight (the other end where it lies).
+        // Two hands can raise at least one end of what weighs up to twice their strength (its
+        // other end resting where it lies); beyond, nothing moves it.
         let mass = self.mass_of(load);
-        let is_tool = matches!(
-            self.items.bodies.get(&self.ids[load]),
-            Some(creeer_sim::items::Item::Made(_))
-        );
-        let end = (!is_tool).then(|| self.end_hold(load, point)).flatten();
-        let spare = carry::spare(if end.is_some() { 0.5 * mass } else { mass });
-        if spare <= 0.0 {
-            let what = if end.is_some() { "raise" } else { "lift" };
-            return Err(format!("{mass:.0} kg: too heavy to {what}"));
+        let s = &self.world.bodies[i].structure;
+        let centre = s.position[0];
+        let up = character::plumb(&self.world, centre);
+        let g = (self.world.planet.as_ref()).map_or(9.806_65, |p| p.acceleration(centre).length());
+        if mass * g > 2.0 * carry::STRENGTH {
+            return Err(format!("{mass:.0} kg: too heavy to move"));
         }
         if self.wields.remove(&player).is_some() {
             self.changed.push(by);
         }
-        let s = &self.world.bodies[i].structure;
-        let (centre, turn) = (s.position[0], s.orientation[0]);
-        let up = character::plumb(&self.world, centre);
         let facing = (point - centre)
             .reject_from(up)
             .normalize_or(up.any_orthonormal_vector());
         let l = &self.world.bodies[load].structure;
         let (c, q) = (l.position[node], l.orientation[node]);
-        // A made tool in one hand at its balance, its haft forward; anything else in both.
+        // A made tool in one hand at its balance, its haft forward; anything else where grabbed.
         let tool = match self.items.bodies.get(&id) {
             Some(creeer_sim::items::Item::Made(a)) => {
                 let (_, centroid) = super::item_bodies::made_hull(a);
@@ -124,52 +135,46 @@ impl ServerWorld {
             _ => None,
         };
         let grip = tool.unwrap_or(q.conjugate() * (point - c));
-        // Raised by one end, held at a point of its axis.
-        let grip = end.map_or(grip, |e| e.axis * grip.dot(e.axis));
-        let from = turn.conjugate() * (point - centre);
+        // One hand for what is light and levered little about it; else both.
+        let lever = (q * grip).reject_from(up).length();
+        let one_hand = tool.is_some() || (mass <= ONE_HAND && mass * g * lever <= WRIST);
         let ahead = match tool {
             Some(_) => carry::forearm(),
             None => self.ahead((load, node), point, i, facing),
         };
-        // Each half of the way (up, then in) as fast as the spare strength lets: smoothly,
-        // its most acceleration 24·d/T².
-        let held = turn.conjugate()
-            * (match tool {
-                Some(_) => carry::at_side(centre, up, facing),
-                None => carry::held_out(centre, up, facing, ahead),
-            } - centre);
-        let up_here = turn.conjugate() * up;
-        let rise = (held - from).dot(up_here).abs();
-        let inward = (held - from).reject_from(up_here).length();
-        let lift = (24.0 * rise.max(inward) / spare).sqrt();
         self.carrying.insert(
             by,
             Carry {
                 load: id,
                 node,
                 grip,
-                taken: facing_frame(facing, up).conjugate() * q,
                 // (A tool's haft, its x, the way the body faces.)
                 turn: match tool {
                     Some(_) => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),
                     None => facing_frame(facing, up).conjugate() * q,
                 },
-                from,
-                lift,
-                since: 0,
+                ahead,
                 facing,
                 spin: 0.0,
-                spare,
-                ahead,
-                path: [None; 2],
-                straining: 0,
+                one_hand,
+                tool: tool.is_some(),
+                input: None,
+                steady: None,
+                plan: Plan {
+                    at: c + q * grip - centre,
+                    velocity: DVec3::ZERO,
+                    turn: q,
+                    spin: DVec3::ZERO,
+                    there: false,
+                },
+                pull: DVec3::ZERO,
                 torn: 0,
-                one_hand: tool.is_some(),
-                end,
+                reach: f64::INFINITY,
             },
         );
-        // The load in the hands passes the body's box (as a joint's sides did; the box is no
-        // chest and arms: a load swaying in soft hands struck it and tumbled).
+        // What the hands hold passes the body's box (one box is no chest and arms: held against
+        // it, a 30 kg box rubbed along it and was carried at 0.40 m/s); the hands keep it clear
+        // of the body (`hands.rs`).
         self.world.let_pass(i, load);
         // (Told anew, the load is no longer predicted on its own: in the hands.) The player is
         // told what the hands hold (G1.6).
@@ -226,9 +231,7 @@ impl ServerWorld {
     /// Whether avatar `by`'s hands have lifted their load to where they hold it (for scripts:
     /// people lift, then walk off).
     pub fn lifted(&self, by: EntityId) -> bool {
-        self.carrying
-            .get(&by)
-            .is_some_and(|c| f64::from(c.since) * DT >= c.lift)
+        self.carrying.get(&by).is_some_and(|c| c.plan.there)
     }
 
     /// After a save is loaded (who carried what is not saved): the joints the hands held with

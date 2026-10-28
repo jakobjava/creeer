@@ -112,6 +112,11 @@ impl Running {
         true
     }
 
+    /// The steering of what the hands hold, while on the planet (G2.10).
+    pub(super) fn holding(&mut self) -> Option<&mut crate::holding::Holding> {
+        self.planet.as_mut().map(|p| &mut p.holding)
+    }
+
     /// Back to the tech demo.
     fn leave_planet(&mut self) {
         self.planet = None;
@@ -131,6 +136,10 @@ impl Running {
             let speed = if self.fly.running() { RUN } else { WALK };
             let walk = planet.walk(&self.camera, self.fly.walk_axes(), speed);
             let thrust = planet.thrust(walk, self.fly.thrusting());
+            // Where the hands hold what they hold, steered (G2.10): sent with the inputs.
+            planet
+                .holding
+                .update(&self.camera, &mut planet.session.connection);
             planet
                 .session
                 .update(dt, (walk, self.fly.jumping(), thrust));
@@ -224,6 +233,7 @@ impl Running {
             crate::inventory_ui::window(ui.ctx(), planet, &self.camera);
             let target = crate::planet_aim::target(planet, &self.camera);
             planet_ui::crosshair(ui.ctx(), target.as_ref());
+            planet_ui::hold_hint(ui.ctx(), planet.holding.hint());
             crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
             crate::inventory_ui::vitals(ui.ctx(), &planet.session.connection);
             self.profiler

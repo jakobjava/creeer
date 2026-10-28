@@ -101,32 +101,43 @@ fn a_box_is_brought_in_and_held_at_the_elbows_and_carried_along() {
             .all(|j| !j.joins(w.index(id).unwrap()))
     );
 }
-
+/// A load the hands cannot lift is held but stays down, and one set on what they hold sinks it:
+/// neither is dropped for it (G2.10: held firmly, at the strength's limit it lags; G1.4f
+/// dropped it). What two hands could not raise an end of is not taken.
 #[test]
-fn a_load_heavier_than_the_hands_hold_up_drops() {
-    // 70 kg: more than the 58.6 kg a man lifts to his elbows: not lifted.
-    let (mut w, ada, id, _) = ada_and_box(70.0);
+fn a_load_heavier_than_the_hands_hold_up_stays_down_and_is_not_dropped() {
+    // 130 kg: more than twice the hands' 575 N: not taken.
+    let (mut w, ada, id, _) = ada_and_box(130.0);
     let why = w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap_err();
     assert!(why.contains("too heavy"), "{why}");
-    // 40 kg: held.
+    // 70 kg: more than the 58.6 kg a man lifts: held, it stays on the ground.
+    let (mut w, ada, id, _) = ada_and_box(70.0);
+    let (lay, up) = (at(&w, id), at(&w, id).normalize());
+    w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap();
+    wait(&mut w, ada, 120, DVec3::ZERO);
+    assert_eq!(w.carried(ada), Some(id), "held");
+    assert!((at(&w, id) - lay).dot(up) < 0.05, "lifted");
+    // 40 kg: held up.
     let (mut w, ada, id, _) = ada_and_box(40.0);
     w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap();
     wait(&mut w, ada, 120, DVec3::ZERO);
     assert_eq!(w.carried(ada), Some(id), "held");
-    // 30 kg more set on it: 70 kg in the hands, dropped.
-    let p = at(&w, id);
+    let high = at(&w, id);
+    assert!((high - lay).dot(up) > 0.3, "not lifted");
+    // 30 kg more set on it: 70 kg in the hands, it sinks, still held.
     let mut more = Body::rigid(
         Shape::Box {
             half: DVec3::splat(0.2),
         },
         30.0,
-        p + p.normalize() * 0.42,
+        high + high.normalize() * 0.42,
         DT,
     );
     more.structure.orientation[0] = w.world.bodies[w.index(id).unwrap()].structure.orientation[0];
     w.add_body(more, None);
     wait(&mut w, ada, 60, DVec3::ZERO);
-    assert_eq!(w.carried(ada), None, "dropped");
+    assert_eq!(w.carried(ada), Some(id), "dropped");
+    assert!((at(&w, id) - high).dot(up) < -0.05, "did not sink");
 }
 
 #[test]

@@ -294,6 +294,10 @@ impl ServerWorld {
         if self.people.get(&id).is_some_and(people::Person::fallen) {
             return;
         }
+        // Where the player steers what the hands hold (G2.10).
+        if let Some(c) = self.carrying.get_mut(&id) {
+            c.input = input.hold;
+        }
         if let Some(i) = self.index(id) {
             let at = self.world.bodies[i].structure.position[0];
             let water = self.surroundings.sea.as_ref().map(|sea| sea.depth(at));
@@ -334,7 +338,6 @@ pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
 mod posts;
-mod raising;
 #[cfg(test)]
 mod raising_tests;
 #[cfg(test)]
@@ -365,6 +368,7 @@ mod persist;
 pub mod reach;
 mod regions;
 pub mod strikes;
+mod twist;
 pub use regions::Tag;
 mod ageing;
 #[cfg(test)]

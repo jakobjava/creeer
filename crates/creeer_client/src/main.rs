@@ -48,6 +48,7 @@ mod golden;
 mod gpu_passes;
 mod headless;
 mod held;
+mod holding;
 mod hulls;
 mod icon_image;
 mod icons;
