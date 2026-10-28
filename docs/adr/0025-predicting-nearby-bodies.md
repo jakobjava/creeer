@@ -91,3 +91,31 @@ The user's knapping gave 30 ms frames (ADR-0030, amended). Its cause was this pr
 | log_bridge | 144 (tick 143) | 220 (10,584 at tick 1,783) | poles and crates, the bridge breaking |
 
 Each is gated a tenth above at CI's length (`play/tests.rs`, `CLIENT_WORK`). The worst are bodies settling or pushed beside the avatar: a replay's cost is the bodies' steps times the inputs replayed, at every snapshot that mispredicts them. *builders*' and *log_bridge*'s clients take up to 220–317 ms a tick (p99 106–111 ms) and *toolmaking*'s put-down 17 ms: a game's frames there are over budget. They are recorded in `docs/future-improvements.md` (*A client replays every body it predicts*) for the user to schedule. Choosing the bubble by what the avatar can touch within the replay (Unity's prediction switching), or cheaper hulls on the ground (P1's contacts), would cut them.
+
+## Amended in G2.10 (2026-10-28): only what the avatar could touch
+
+A client predicted the twelve nearest bodies within 5.7 m, and each costs its own step in every input replayed: boulders rolling across a pit 4 m away, or crates struck by others, were replayed at every snapshot that mispredicted them though the avatar could not reach them before the next correction.
+
+**Prior work.** Unity's prediction switching predicts ghosts within a radius of the player and keeps them until they pass a margin beyond it, so they do not switch at its edge. Unreal Chaos' resimulation bubble re-simulates only the particles a correction could reach (both above).
+
+**Decision** (`predicted/nearby.rs`, `Reach`, `chosen`):
+- A body is predicted if the sphere about it could meet the avatar's (its box's) or another predicted body's before the next correction, each reaching as far as it moves in that time and a margin of 0.5 m. One touched moves at least as fast as what touches it.
+- The time: the inputs replayed and four ticks more (to the next snapshot, and one lost).
+- The avatar's speed: as now, grown by a jump at once (2.8 m/s) and its jetpack's most thrust (1,500 N on 105 kg: 14 m/s², more than the legs' 4 m/s²).
+- A body predicted stays while within 1 m more (Unity's margin): one at the edge would otherwise switch, and rewind, at every snapshot.
+- The twelve nearest of those at most, within 5.7 m, as before.
+
+**Measured.**
+- Walking into the six crates, the eight placements: the same corrections over 1 cm and the same largest on both links. The replays' work on the lossless link is 16–35 % less (placement 0: 7,482 Newton iterations against 8,944; 0.29 against 0.32 ms a reconciliation). On the slow link it is the same, since all six crates are within reach at its 0.3 s horizon.
+- A client's most work in a tick at CI's length:
+
+| Scene | Before | Now |
+|---|---|---|
+| work | 238 | 94 |
+| quarry | 468 | 5 |
+| toolmaking | 226 | 6 |
+| builders | 1,955 | 1,917 |
+| crowd, lumberjack, log_bridge | 158, 5, 144 | the same |
+
+- The gates are a tenth above (`play/tests.rs`).
+- *builders*' poles lie at its players' feet, so they are rightly predicted. The cost there is each pole's own step on the fine terrain: 7–15 ms a step until it sleeps, against 0.4–0.8 ms on the coarse terrain (`play/poles_probe.rs`). It is being worked on.

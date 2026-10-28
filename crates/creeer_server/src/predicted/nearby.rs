@@ -15,6 +15,7 @@ use creeer_physics::world::hull::Hull;
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::surface::Surface;
 use creeer_physics::world::{Body, World};
+use creeer_sim::character;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
@@ -121,27 +122,102 @@ fn body(shape: &NetShape, matter: &Matter) -> Option<Body> {
     Some(body)
 }
 
-/// The predictable bodies near `at` in `snapshot`, nearest first.
+/// Room for what the motions do not show (m): a body set turning, pushed from outside.
+const MARGIN: f64 = 0.5;
+/// How much farther a body predicted now may go and still be predicted (m): one at the edge
+/// would otherwise come and go at every snapshot, each a rewind (Unity's prediction switching
+/// keeps such a margin).
+const STAY: f64 = 1.0;
+/// Ticks of motion past the inputs replayed that the prediction runs before it is corrected
+/// again: to the next snapshot (one every two ticks) and one lost.
+const AFTER: usize = 4;
+
+/// What the avatar could reach before its next correction.
+pub(super) struct Reach {
+    at: DVec3,
+    /// Its speed at most meanwhile (m/s).
+    speed: f64,
+    /// How long the prediction runs on from the snapshot (s).
+    horizon: f64,
+}
+
+impl Reach {
+    /// From the avatar's `state` at a snapshot, with `replayed` inputs to apply since: its
+    /// speed grown by a jump at once and its jetpack's most thrust (the legs push less).
+    pub(super) fn of(state: &BodyState, replayed: usize) -> Self {
+        #[allow(clippy::cast_precision_loss)] // a few ticks
+        let horizon = (replayed + AFTER) as f64 * DT;
+        let surge = character::JUMP_SPEED + character::THRUST_MOST / character::MASS * horizon;
+        Self {
+            at: state.position(),
+            speed: state.velocity().length() + surge,
+            horizon,
+        }
+    }
+}
+
+/// A shape's reach about its centre (m): its bounding sphere's radius.
+fn radius(shape: &NetShape) -> f64 {
+    match shape {
+        NetShape::Box(half) => half.length(),
+        NetShape::Sphere(r) => *r,
+        NetShape::Hull(corners) => corners.iter().map(|c| c.length()).fold(0.0, f64::max),
+    }
+}
+
+/// The predictable bodies in `snapshot` the avatar could touch before its next correction
+/// (`reach`), at once or through others it could touch: nearest first, at most
+/// [`MOST_NEARBY`], within [`NEARBY`]. Each body is the sphere about it, reaching as far as it
+/// moves in the time (one touched moving at least as fast as what touches it), and a margin.
+/// Those predicted now (`kept`) stay while within [`STAY`] more. (Unreal's resimulation
+/// bubble likewise takes only what the corrected motion could reach; every body predicted
+/// costs its own step in each input replayed.)
 pub(super) fn chosen<'a>(
     snapshot: &'a Snapshot,
     kinds: &'a BTreeMap<EntityId, Kind>,
-    at: DVec3,
+    reach: &Reach,
+    kept: &[EntityId],
 ) -> Vec<(EntityId, &'a BodyState, &'a NetShape, &'a Matter)> {
     // (A little inside the server's radius: what it lists as stale reaches a little further.)
-    let reach = 0.95 * NEARBY;
+    let within = 0.95 * NEARBY;
     let mut near: Vec<_> = (snapshot.states.iter())
         .filter_map(|(id, state)| match kinds.get(id) {
             Some(Kind::Body(shape, matter)) if matter.predicted => {
-                let d = (state.position() - at).length();
-                (d < reach).then_some((d, *id, state, shape, matter))
+                let d = (state.position() - reach.at).length();
+                (d < within).then_some((d, *id, state, shape, matter))
             }
             _ => None,
         })
         .collect();
     near.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-    near.truncate(MOST_NEARBY);
-    near.into_iter()
-        .map(|(_, id, s, sh, m)| (id, s, sh, m))
+    // Spheres that could touch: the avatar's (its box's), then each body one of them reaches.
+    let mut touching = vec![(reach.at, character::torso().length(), reach.speed)];
+    let mut picked = vec![false; near.len()];
+    loop {
+        let mut more = false;
+        for (k, (_, id, state, shape, _)) in near.iter().enumerate() {
+            if picked[k] {
+                continue;
+            }
+            let (p, r, v) = (state.position(), radius(shape), state.velocity().length());
+            let stay = if kept.contains(id) { STAY } else { 0.0 };
+            let by = (touching.iter()).find(|&&(q, rq, s)| {
+                (p - q).length() - rq - r <= (s + v) * reach.horizon + MARGIN + stay
+            });
+            if let Some(&(_, _, s)) = by {
+                picked[k] = true;
+                touching.push((p, r, v.max(s)));
+                more = true;
+            }
+        }
+        if !more {
+            break;
+        }
+    }
+    (near.into_iter().zip(picked))
+        .filter(|(_, p)| *p)
+        .take(MOST_NEARBY)
+        .map(|((_, id, s, sh, m), _)| (id, s, sh, m))
         .collect()
 }
 

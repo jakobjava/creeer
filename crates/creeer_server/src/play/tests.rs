@@ -130,19 +130,21 @@ const WORK: [(&str, u64, u64); 10] = [
 /// game's frame holds its client's work on its main thread (2026-10-28, the user's "30 ms
 /// frames" knapping: *toolmaking*'s knapping took a client 120 iterations and 8 ms a tick while
 /// the struck cores rocked as bodies before their blows; 6 since they are bodies from their
-/// blows on, ADR-0030 amended). The worsts left are bodies settling or pushed beside the players,
-/// predicted and replayed (ADR-0025, amended): *toolmaking*'s hammerstones put down (tick 875),
-/// *quarry*'s boulders, *builders*' loose poles (1,955 at tick 521 here; 317 ms at full length).
+/// blows on, ADR-0030 amended). Since a client predicts only what its avatar could touch before
+/// its next correction (ADR-0025, amended G2.10), *quarry*'s boulders rolling in the pit (468
+/// before), *toolmaking*'s hammerstones put down (226) and *work*'s struck crates (238) cost it
+/// little. The worst left is *builders*' loose poles beside the players (1,917 at tick 521; a
+/// pole on the fine terrain costs 7–15 ms a step, `poles_probe.rs`).
 const CLIENT_WORK: [(&str, u64); 10] = [
     ("crowd", 174),
-    ("work", 262),
+    ("work", 104),
     ("lumberjack", 6),
-    ("quarry", 515),
-    ("toolmaking", 249),
+    ("quarry", 6),
+    ("toolmaking", 7),
     ("tower", 0),
     ("collapse", 0),
     ("drop", 5),
-    ("builders", 2_151),
+    ("builders", 2_109),
     ("log_bridge", 159),
 ];
 

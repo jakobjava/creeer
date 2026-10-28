@@ -214,10 +214,16 @@ impl Predicted {
             return;
         };
         self.reconciled = Some(tick);
+        // The bodies it could touch before the next correction (ADR-0025, amended G2.10).
+        let replayed = self
+            .log
+            .pending()
+            .filter(|i| i.seq > snapshot.last_input)
+            .count();
+        let reach = nearby::Reach::of(state, replayed);
+        let picked = nearby::chosen(snapshot, kinds, &reach, &self.nearby);
         // Predicted as the server had it, and the same bodies near: nothing to correct.
-        let chosen: Vec<EntityId> = (nearby::chosen(snapshot, kinds, state.position()).iter())
-            .map(|c| c.0)
-            .collect();
+        let chosen: Vec<EntityId> = picked.iter().map(|c| c.0).collect();
         if chosen == self.nearby && self.history.agrees(snapshot, avatar, &self.nearby) {
             self.history.forget_before(snapshot.last_input);
             self.log.applied(snapshot.last_input);
@@ -266,7 +272,7 @@ impl Predicted {
         let last_input = snapshot.last_input;
         self.templates.retain(kinds);
         self.nearby.clear();
-        for chosen in nearby::chosen(snapshot, kinds, state.position()) {
+        for chosen in picked {
             let stale = snapshot.stale.binary_search(&chosen.0).is_ok();
             let from = (stale, &self.history, last_input);
             if self.templates.add(&mut world, chosen, from) {
