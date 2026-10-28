@@ -199,7 +199,7 @@ fn only_a_body_in_reach_is_grabbed_and_one_at_a_time() {
     else {
         panic!("a person");
     };
-    assert_eq!((wields, carries), (None, Some(id)));
+    assert_eq!((wields, carries.map(|c| c.load)), (None, Some(id)));
     let why = w.apply(&Command::Grab(top(&w, id)), Some(ada)).unwrap_err();
     assert!(why.contains("hands full"), "{why}");
     assert!(w.apply(&Command::Throw(DVec3::ZERO), Some(ada)).is_err());

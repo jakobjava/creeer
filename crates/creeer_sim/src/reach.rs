@@ -38,6 +38,24 @@ pub fn shoulders(centre: DVec3, up: DVec3) -> DVec3 {
     centre + up.normalize() * heights().2
 }
 
+/// How far the shoulders come down and out towards what the hands reach below them, stooping
+/// and squatting (m; G2.10, ADR-0036): from 0.818 of the stature standing to about 0.43 of it
+/// squatting, the trunk leant forward (Winter's segments: a 1.75 m person's shoulders 0.7 m
+/// lower, 0.35 m on), so the hands reach down to the ground just before the feet.
+pub const STOOP_DOWN: f64 = 0.7;
+pub const STOOP_OUT: f64 = 0.35;
+
+/// The `shoulders` (standing, upright along `up`) as near `target` as stooping and squatting
+/// bring them: down to it by [`STOOP_DOWN`] at most, and out towards it as they come down. The
+/// server's hands reach from there (`creeer_server`'s `hands.rs`), and the drawn body stoops so.
+pub fn stooped(shoulders: DVec3, up: DVec3, target: DVec3) -> DVec3 {
+    let off = target - shoulders;
+    let down = (-off.dot(up)).clamp(0.0, STOOP_DOWN);
+    let out = off.reject_from(up);
+    let on = out.length().min(STOOP_OUT * down / STOOP_DOWN);
+    shoulders - up * down + out.normalize_or_zero() * on
+}
+
 /// Where a character sees from (its head's centre).
 pub fn eye(centre: DVec3, up: DVec3) -> DVec3 {
     centre + up.normalize() * heights().1

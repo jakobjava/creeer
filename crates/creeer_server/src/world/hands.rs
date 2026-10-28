@@ -18,14 +18,9 @@ use creeer_physics::world::grip::Grip;
 use creeer_physics::world::joint::ARM;
 use creeer_sim::{carry, reach};
 
-/// The grip's frequency (Hz) and the hands' plan's (Hz): the grip follows the plan within a
-/// tenth of a second, the plan where they mean it within about a third.
+/// The grip's frequency (Hz): it follows the hands' plan (`carry::PLAN_HZ`, at most
+/// `carry::FASTEST` and `carry::TURNING_AT_MOST`) within a tenth of a second.
 const HZ: f64 = 8.0;
-const PLAN_HZ: f64 = 3.0;
-/// The hands' speed at most (m/s: peak hand speeds in reaching, 1.5–2 m/s) and how fast they
-/// turn what they hold at most (rad/s).
-const FASTEST: f64 = 2.0;
-const TURNING_AT_MOST: f64 = 6.0;
 /// How far the hands' planned turn leads the load's at most (rad).
 const LEAD_TURN: f64 = 0.5;
 /// The farthest the grip is from the shoulders (m: forward grip reach about 0.7 m).
@@ -36,26 +31,18 @@ const LEAD: f64 = 0.25;
 /// away from it, or it was pulled away) for how many ticks (half a second) before it drops.
 const OUT_OF_REACH: f64 = 0.35;
 const TORN: u32 = 30;
-/// How far the shoulders come down and out towards what the hands reach below them, stooping
-/// and squatting (m): from 0.818 of the stature standing to about 0.43 of it squatting, the
-/// trunk leant forward (Winter's segments: a 1.75 m person's shoulders 0.7 m lower, 0.35 m on),
-/// so the hands reach down to the ground just before the feet.
-const STOOP_DOWN: f64 = 0.7;
-const STOOP_OUT: f64 = 0.35;
 /// How fast the body turns the way it goes, at most (rad/s): as the drawn body turns.
 const TURN: f64 = 8.0;
-/// The two hands this far apart (m), each holding at most half the strength.
-const HANDS_APART: f64 = 0.4;
-/// Below this share of its largest moment a load's least is a pole's own axis: held at its
-/// end and too long to follow the hands, it is moved along hand over hand at this speed (m/s).
-pub(super) const SLENDER: f64 = 0.1;
+/// A slender load (`carry::SLENDER`) held at its end and too long to follow the hands is moved
+/// along hand over hand at this speed (m/s).
 const HAND_OVER_HAND: f64 = 0.5;
 /// Pushing a slender load forward this hard (N) and it does not go: hand over hand along it.
 const PUSHING: f64 = 40.0;
 
-/// The most torque two hands hold a load's turn with (N·m).
+/// The most torque two hands hold a load's turn with (N·m): each half the strength,
+/// `carry::HANDS_APART` apart.
 pub(super) fn grip() -> f64 {
-    0.5 * carry::STRENGTH * 0.5 * HANDS_APART
+    0.5 * carry::STRENGTH * 0.5 * carry::HANDS_APART
 }
 
 impl ServerWorld {
@@ -139,7 +126,7 @@ impl ServerWorld {
         };
         let (node, pull) = (c.node, c.pull);
         // A pole held at its end too long to follow: the hands move along it.
-        if least < SLENDER * largest {
+        if least < carry::SLENDER * largest {
             let l = &self.world.bodies[b].structure;
             let (lc, lq) = (l.position[node], l.orientation[node]);
             let k_axis = (0..3).fold(0, |m, k| if moments[k] < moments[m] { k } else { m });
@@ -216,7 +203,7 @@ impl ServerWorld {
         } else {
             target
         };
-        let shoulders = stooped(reach::shoulders(centre, up), up, target);
+        let shoulders = reach::stooped(reach::shoulders(centre, up), up, target);
         let off = target - shoulders;
         let target = if off.length() > REACH {
             shoulders + off * (REACH / off.length())
@@ -236,14 +223,12 @@ impl ServerWorld {
         mass: f64,
         (gravity, (torque, inertia)): (DVec3, (f64, f64)),
     ) -> DVec3 {
-        let w = 2.0 * std::f64::consts::PI * PLAN_HZ;
+        let w = 2.0 * std::f64::consts::PI * carry::PLAN_HZ;
         let p = &mut c.plan;
-        let strength = if c.one_hand { 0.5 } else { 1.0 } * carry::STRENGTH;
-        // The hands' spare strength over the load and the arms (`carry::spare`'s law).
-        let spare = (0.5 * (strength - mass * gravity.length()) / (mass + carry::ARMS)).max(0.5);
+        let spare = carry::plan_spare(mass, gravity.length(), c.one_hand);
         let mut a = (target - p.at) * (w * w) - p.velocity * (2.0 * w);
         a = a.clamp_length_max(spare);
-        p.velocity = (p.velocity + a * DT).clamp_length_max(FASTEST);
+        p.velocity = (p.velocity + a * DT).clamp_length_max(carry::FASTEST);
         p.at += p.velocity * DT;
         // The hands stay with what they hold: a load that cannot follow (too heavy, caught,
         // its end on the ground) keeps the plan within reach of it (planned on regardless, a
@@ -261,7 +246,7 @@ impl ServerWorld {
         let alpha_most = (0.5 * torque / inertia.max(1e-6)).max(0.5);
         let off = creeer_physics::so3::log(turn * p.turn.conjugate());
         let alpha = (off * (w * w) - p.spin * (2.0 * w)).clamp_length_max(alpha_most);
-        p.spin = (p.spin + alpha * DT).clamp_length_max(TURNING_AT_MOST);
+        p.spin = (p.spin + alpha * DT).clamp_length_max(carry::TURNING_AT_MOST);
         p.turn = (creeer_physics::so3::exp(p.spin * DT) * p.turn).normalize();
         let lead = creeer_physics::so3::log(p.turn * held_turn.conjugate());
         if lead.length() > LEAD_TURN {
@@ -292,7 +277,7 @@ impl ServerWorld {
             let shoulders = self.index(by).map_or(held, |i| {
                 let centre = self.world.bodies[i].structure.position[0];
                 let up = character::plumb(&self.world, centre);
-                stooped(reach::shoulders(centre, up), up, held)
+                reach::stooped(reach::shoulders(centre, up), up, held)
             });
             let c = self.carrying.get_mut(&by).expect("a carrier");
             c.pull = force;
@@ -312,14 +297,4 @@ impl ServerWorld {
             self.let_go(by);
         }
     }
-}
-
-/// The `shoulders` (standing, upright along `up`) as near `target` as stooping and squatting
-/// bring them: down to it by [`STOOP_DOWN`] at most, and out towards it as they come down.
-fn stooped(shoulders: DVec3, up: DVec3, target: DVec3) -> DVec3 {
-    let off = target - shoulders;
-    let down = (-off.dot(up)).clamp(0.0, STOOP_DOWN);
-    let out = off.reject_from(up);
-    let on = out.length().min(STOOP_OUT * down / STOOP_DOWN);
-    shoulders - up * down + out.normalize_or_zero() * on
 }

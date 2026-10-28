@@ -1,7 +1,7 @@
 //! Every message reads back as written, and bytes that are no message are refused.
 
 use super::*;
-use crate::entity::{EntityId, Kind};
+use crate::entity::{Carried, EntityId, Kind};
 use crate::entity::{Frame, Look, Matter, Shape};
 use crate::quant::Quantised;
 use inputs::SAME_WALK;
@@ -161,7 +161,11 @@ fn server_messages_read_back() {
             },
             fallen: true,
             wields: None,
-            carries: Some(EntityId(9)),
+            carries: Some(Carried::new(
+                EntityId(9),
+                DVec3::new(0.2, -1.3, 0.05),
+                false,
+            )),
         },
         Kind::Character {
             player: "bob".into(),
@@ -173,7 +177,11 @@ fn server_messages_read_back() {
             },
             fallen: false,
             wields: Some(2),
-            carries: None,
+            carries: Some(Carried::new(
+                EntityId(1 << 20),
+                DVec3::new(0.0, 0.3, 1.4),
+                true,
+            )),
         },
         Kind::Segment {
             person: EntityId(9),

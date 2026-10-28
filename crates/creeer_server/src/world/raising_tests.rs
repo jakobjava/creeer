@@ -66,7 +66,7 @@ pub(super) fn ada_and_pole() -> (ServerWorld, EntityId, EntityId, DVec3, DVec3) 
 }
 
 /// Grabbed at its west end, a pole is held by that point, not level.
-fn grab_the_top(w: &mut ServerWorld, ada: EntityId, id: EntityId, east: DVec3) {
+pub(super) fn grab_the_top(w: &mut ServerWorld, ada: EntityId, id: EntityId, east: DVec3) {
     let s = &w.world.bodies[w.index(id).unwrap()].structure;
     // On its top surface, near its west end.
     let top = s.position[0] - s.orientation[0] * DVec3::X * 1.4 + s.position[0].normalize() * 0.06;

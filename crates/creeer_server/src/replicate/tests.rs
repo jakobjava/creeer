@@ -3,7 +3,7 @@
 
 use super::*;
 use creeer_math::glam::DQuat;
-use creeer_net::entity::Look;
+use creeer_net::entity::{Carried, Look};
 use creeer_physics::structure::Section;
 use creeer_physics::structure::section::STEEL_S235;
 use creeer_physics::structure::shapes::{Base, space_frame};
@@ -74,7 +74,16 @@ fn bodies_are_drawn_as_what_they_are() {
         (false, None, None),
         (true, None, None),
         (false, Some(2), None),
-        (false, None, Some(EntityId(9))),
+        (
+            false,
+            None,
+            Some(Carried::new(EntityId(9), DVec3::new(0.1, -0.2, 0.3), false)),
+        ),
+        (
+            false,
+            None,
+            Some(Carried::new(EntityId(9), DVec3::new(0.0, 0.0, 0.6), true)),
+        ),
     ];
     for (fallen, wields, carries) in cases {
         assert_eq!(

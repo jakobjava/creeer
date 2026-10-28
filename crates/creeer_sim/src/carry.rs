@@ -29,6 +29,29 @@ const BODY: f64 = 80.0;
 /// The hands' strength moves them too, so even a pebble is lifted no faster than an arm moves.
 pub const ARMS: f64 = 2.0 * 0.0494 * BODY;
 
+/// The two hands this far apart on what they hold (m), each holding at most half the strength
+/// (G2.10, ADR-0036: their torque on it, and where they are drawn on a pole).
+pub const HANDS_APART: f64 = 0.4;
+/// Below this share of its largest moment a load's least is about its own long axis: a pole,
+/// held and drawn along that axis (G2.10).
+pub const SLENDER: f64 = 0.1;
+
+/// The hands' plan of where they bring what they hold (G2.10, ADR-0036; `creeer_server`'s
+/// `hands.rs`, and the client drawing its own load ahead of it): critically damped at this
+/// frequency (Hz), at most this fast (m/s: peak hand speeds in reaching, 1.5–2 m/s) and turning
+/// it at most this fast (rad/s).
+pub const PLAN_HZ: f64 = 3.0;
+pub const FASTEST: f64 = 2.0;
+pub const TURNING_AT_MOST: f64 = 6.0;
+
+/// The most the hands' plan accelerates a load of `mass` (kg) in one hand or two, under gravity
+/// `g` (m/s²): half what their strength leaves over its weight gives it and the arms
+/// ([`spare`]'s law), at least 0.5 m/s² (a load too heavy to lift still slides along).
+pub fn plan_spare(mass: f64, g: f64, one_hand: bool) -> f64 {
+    let strength = if one_hand { 0.5 } else { 1.0 } * STRENGTH;
+    (0.5 * (strength - mass * g) / (mass + ARMS)).max(0.5)
+}
+
 /// The acceleration the hands lift a load of `mass` (kg) with: half what their strength leaves
 /// over its weight gives it and the arms (m/s²; not positive: too heavy to lift).
 pub fn spare(mass: f64) -> f64 {

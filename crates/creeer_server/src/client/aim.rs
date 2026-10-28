@@ -276,7 +276,7 @@ impl Connection {
     ) {
         let own = self.welcome.as_ref().map(|w| w.avatar);
         let carries = match own.and_then(|a| self.kinds.get(&a)) {
-            Some(Kind::Character { carries, .. }) => *carries,
+            Some(Kind::Character { carries, .. }) => carries.map(|c| c.load),
             _ => None,
         };
         let (Some(load), Some(from)) = (carries, interpolated) else {

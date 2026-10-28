@@ -56,6 +56,8 @@ pub(super) struct Carry {
     /// How far from the shoulders the point held may be (m): as far as it was taken from (a
     /// thing on the ground, the body bent to it), closing to the arms' reach as it comes in.
     pub(super) reach: f64,
+    /// What clients were last told of the grip (`grip_told.rs`).
+    pub(super) told: Option<super::grip_told::Told>,
 }
 
 /// Where the hands are bringing what they hold: the grip's place and speed relative to the body's
@@ -170,8 +172,10 @@ impl ServerWorld {
                 pull: DVec3::ZERO,
                 torn: 0,
                 reach: f64::INFINITY,
+                told: None,
             },
         );
+        self.grip_taken(by);
         // What the hands hold passes the body's box (one box is no chest and arms: held against
         // it, a 30 kg box rubbed along it and was carried at 0.40 m/s); the hands keep it clear
         // of the body (`hands.rs`).

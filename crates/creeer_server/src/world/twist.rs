@@ -7,8 +7,9 @@
 //! walked was spun about it at 150 rad/s in a step (G2.10), as G1.7's sticks pressed against a
 //! trunk or a crate were, to 450–525 rad/s.
 
-use super::hands::{SLENDER, grip};
+use super::hands::grip;
 use super::*;
+use creeer_sim::carry::SLENDER;
 
 impl ServerWorld {
     /// After the step: each slender load's twist in the fist taken away, up to the grip's.

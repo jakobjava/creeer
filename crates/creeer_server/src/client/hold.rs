@@ -17,7 +17,7 @@ impl Connection {
     pub fn own_load(&self) -> Option<EntityId> {
         let own = self.welcome.as_ref()?.avatar;
         match self.kinds.get(&own) {
-            Some(Kind::Character { carries, .. }) => *carries,
+            Some(Kind::Character { carries, .. }) => carries.map(|c| c.load),
             _ => None,
         }
     }

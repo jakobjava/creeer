@@ -168,6 +168,8 @@ pub use server::{Age, Inventory, ItemView, MachineView, Plastic, ServerMessage, 
 pub use trees::TreeCut;
 
 #[cfg(test)]
+mod carried_tests;
+#[cfg(test)]
 mod items_tests;
 #[cfg(test)]
 mod tests;

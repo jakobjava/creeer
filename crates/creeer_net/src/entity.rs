@@ -1,6 +1,7 @@
 //! What a client is told about an entity once, when it comes into view: its shape, and whose
 //! avatar it is. Its state then comes in snapshots (`snapshot.rs`).
 
+use crate::quant::Quantised;
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
 use creeer_math::glam::DVec3;
 
@@ -97,8 +98,8 @@ pub enum Kind {
         fallen: bool,
         /// The tool in its right hand (G1.4c: an index into the tools' table), if any.
         wields: Option<u8>,
-        /// What it carries in both hands, if anything (G1.4f).
-        carries: Option<EntityId>,
+        /// What its hands hold, if anything (G1.4f), where and in how many (G2.10).
+        carries: Option<Carried>,
     },
     /// A segment of a fallen character's ragdoll (G1.3e): whose (the avatar, its pelvis) and
     /// which (`creeer_sim::character::bones::SEGMENT_NAMES`, 1 to 14), and its shape.
@@ -111,6 +112,33 @@ pub enum Kind {
     Structure(Frame),
     /// A felled tree's part (G1.7): grown again from its species, seed and size.
     Tree(TreePart),
+}
+
+/// Steps of a grip's point per metre (about a millimetre, as a hold's offset:
+/// [`crate::message::OFFSET_SCALE`]).
+pub const GRIP_SCALE: f64 = crate::message::OFFSET_SCALE;
+
+/// What a character's hands hold (G1.4f; G2.10, ADR-0036): the thing, the point they hold it
+/// at (in the frame the thing is drawn in, its node 0's, to [`GRIP_SCALE`]; told anew as it
+/// moves along a pole hand over hand: `creeer_server`'s `grip_told.rs`), and whether in one
+/// hand (the right: what is light and levered little, or held while the other fastens) or both.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Carried {
+    pub load: EntityId,
+    pub grip: DVec3,
+    pub one_hand: bool,
+}
+
+impl Carried {
+    /// `load` held at `grip`, quantised as it is sent (so the same for the server and every
+    /// client).
+    pub fn new(load: EntityId, grip: DVec3, one_hand: bool) -> Self {
+        Self {
+            load,
+            grip: Quantised::new(grip, GRIP_SCALE).value(GRIP_SCALE),
+            one_hand,
+        }
+    }
 }
 
 /// A felled tree's part as a client draws it (`creeer_sim::trees::Part`): its tree (to grow it
@@ -187,9 +215,11 @@ impl Encode for Kind {
                 w.put(look);
                 w.u8(u8::from(*fallen));
                 w.u8(wields.unwrap_or(crate::message::NONE));
-                w.u8(u8::from(carries.is_some()));
-                if let Some(id) = carries {
-                    w.put(id);
+                // Nothing held (0), held in both hands (1) or one (2); then what and where.
+                w.u8(carries.map_or(0, |c| 1 + u8::from(c.one_hand)));
+                if let Some(c) = carries {
+                    w.put(&c.load);
+                    Quantised::new(c.grip, GRIP_SCALE).write(w, Quantised::default());
                 }
             }
             Self::Segment {
@@ -261,7 +291,15 @@ impl Decode for Kind {
                 look: r.get()?,
                 fallen: flag(r)?,
                 wields: Some(r.u8()?).filter(|&t| t != crate::message::NONE),
-                carries: if flag(r)? { Some(r.get()?) } else { None },
+                carries: match r.u8()? {
+                    0 => None,
+                    hands @ (1 | 2) => Some(Carried {
+                        load: r.get()?,
+                        grip: Quantised::read(r, Quantised::default())?.value(GRIP_SCALE),
+                        one_hand: hands == 2,
+                    }),
+                    _ => return Err(r.error("held in neither one hand nor two")),
+                },
             },
             5 => Self::Segment {
                 person: r.get()?,

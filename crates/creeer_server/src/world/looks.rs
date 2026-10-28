@@ -5,7 +5,7 @@
 //! one picked from their name. A fallen character's segments say whose they are and which.
 
 use super::{ServerWorld, people};
-use creeer_net::entity::{EntityId, Look};
+use creeer_net::entity::{Carried, EntityId, Look};
 use creeer_sim::character::bones::STARTING_OUTFIT;
 
 /// The player colours, skin tones and hair colours of the base pack (`data/art`): what a name
@@ -24,10 +24,10 @@ pub enum Drawn {
         player: String,
         look: Look,
         fallen: bool,
-        /// The tool in its right hand (G1.4c), if any, and whether it carries something
-        /// (G1.4f).
+        /// The tool in its right hand (G1.4c), if any, and what its hands hold (G1.4f), where
+        /// and in how many as last told (G2.10: `grip_told.rs`).
         wields: Option<u8>,
-        carries: Option<EntityId>,
+        carries: Option<Carried>,
     },
     /// Segment `index` of the fallen character whose avatar is `person`.
     Segment { person: EntityId, index: u8 },
@@ -97,7 +97,7 @@ impl ServerWorld {
                 // Given when the avatar was (`avatar_of`).
                 look: (self.looks.get(&player).cloned()).unwrap_or_else(|| self.new_look(&player)),
                 wields: self.wields.get(&player).copied(),
-                carries: self.carried(id),
+                carries: self.told_grip(id),
                 player,
                 fallen,
             };

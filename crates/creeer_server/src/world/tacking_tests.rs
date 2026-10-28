@@ -10,7 +10,7 @@ use creeer_net::message::Target;
 
 /// Ada, a pole lying across her way 0.6 m before her (the one she will hold), and on it, along
 /// her way, another crossing it 10 cm from its near end: their ids and where they cross.
-fn across() -> (ServerWorld, EntityId, EntityId, EntityId, DVec3) {
+pub(super) fn across() -> (ServerWorld, EntityId, EntityId, EntityId, DVec3) {
     let mut w = world();
     w.creative = true;
     let ada = w.avatar_of("ada");
@@ -53,7 +53,12 @@ fn across() -> (ServerWorld, EntityId, EntityId, EntityId, DVec3) {
 }
 
 /// Ada's hold of `part` where it lies now, held steady or not (G2.10).
-fn held_where_it_lies(w: &ServerWorld, ada: EntityId, part: EntityId, steady: bool) -> AvatarInput {
+pub(super) fn held_where_it_lies(
+    w: &ServerWorld,
+    ada: EntityId,
+    part: EntityId,
+    steady: bool,
+) -> AvatarInput {
     let s = &w.world.bodies[w.index(part).expect("there")].structure;
     AvatarInput {
         hold: Some(creeer_net::message::Hold {

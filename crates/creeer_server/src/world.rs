@@ -359,6 +359,9 @@ mod trees_tests;
 mod unbuilding;
 use spawn::ground_under;
 pub use spawn::spawn_point;
+mod grip_told;
+#[cfg(test)]
+mod grip_told_tests;
 mod hands;
 #[cfg(test)]
 mod lod_tests;
