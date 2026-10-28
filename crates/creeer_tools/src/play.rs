@@ -40,6 +40,14 @@ fn print(name: &str, what: &str, report: &Report) {
         report.percentile_ms(100.0),
         report.hash
     );
+    // A client's own work (its prediction), which a game's frame holds.
+    let (tick, work) = report.most_client_work();
+    println!(
+        "{:10} a client: {:6.3} p99 {:6.3} worst ms | work {work} (tick {tick})",
+        "",
+        report.client_percentile_ms(99.0),
+        report.client_percentile_ms(100.0)
+    );
 }
 
 /// `--headings <n>`: the scene played turned about the spawn to `n` headings (an ensemble, as

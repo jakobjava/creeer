@@ -8,7 +8,7 @@ use crate::predicted::Predicted;
 use creeer_math::glam::DVec3;
 use creeer_net::channel::{RELIABLE, TICK_RATE, UNRELIABLE, config};
 use creeer_net::entity::{EntityId, Kind};
-use creeer_net::interp::{Playback, Pose, sample};
+use creeer_net::interp::Playback;
 use creeer_net::link::MemoryEnd;
 use creeer_net::message::{ClientMessage, Command, ServerMessage, from_bytes, to_bytes};
 use creeer_net::predict::INPUT_EVERY;
@@ -109,6 +109,10 @@ pub struct Connection {
     receiver: Receiver,
     playback: Playback,
     drawn_at: f64,
+    /// The shapes aimed at, built once each (`aim.rs`).
+    aim_shapes: aim::AimShapes,
+    /// What changes the drawn world, held until its round is drawn (`held.rs`).
+    held: held::Held,
     terrain: Option<Arc<Terrain>>,
     pub(crate) predicted: Option<Predicted>,
     /// Whether this tick is a send round (every [`INPUT_EVERY`]: the inputs, and renet's
@@ -161,6 +165,8 @@ impl Connection {
             receiver: Receiver::default(),
             playback: Playback::new(DELAY),
             drawn_at: 0.0,
+            aim_shapes: aim::AimShapes::default(),
+            held: held::Held::default(),
             terrain: None,
             predicted: None,
             due: true,
@@ -274,6 +280,7 @@ impl Connection {
         self.drawn_at = self
             .playback
             .advance(dt.as_secs_f64() * f64::from(TICK_RATE), newest);
+        self.apply_drawn();
         if let Some(p) = &mut self.predicted {
             p.advance(dt.as_secs_f64());
         }
@@ -358,22 +365,6 @@ impl Connection {
             .unwrap_or_default()
     }
 
-    /// The player's own avatar as drawn, once it has come.
-    pub fn avatar(&self) -> Option<Pose> {
-        if self.fallen {
-            // Down: its pelvis as the server has it.
-            let pelvis = self.welcome.as_ref()?.avatar;
-            let poses = sample(&self.receiver, self.drawn_at, 1.0 / f64::from(TICK_RATE));
-            return poses.get(&pelvis).copied();
-        }
-        self.predicted.as_ref()?.pose()
-    }
-
-    /// The server tick drawn at (fractional; a little in the past).
-    pub fn drawn_at(&self) -> f64 {
-        self.drawn_at
-    }
-
     /// How the connection fares: round trip, loss, bytes a second each way.
     pub fn network(&self) -> creeer_net::renet::NetworkInfo {
         self.renet.network_info()
@@ -394,4 +385,5 @@ mod aim;
 pub use aim::Aimed;
 mod apply;
 mod draw;
+mod held;
 mod receive;

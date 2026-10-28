@@ -11,7 +11,9 @@ use creeer_physics::world::ray::ground_ray;
 use creeer_physics::world::shape::Shape;
 use creeer_sim::TerrainGround;
 use creeer_sim::character;
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// What a ray met.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,6 +25,60 @@ pub struct Aimed {
     pub distance: f64,
     /// The server tick it was drawn at (fractional).
     pub seen: f64,
+}
+
+/// The shapes rays are cast against, by entity: each one's reach about its pose (a ball it
+/// lies within, from its kind's corners alone), and its shape, built the first time a ray
+/// passes within that reach and kept while the entity is what it is (2026-10-28: a felled
+/// part's hull of a few hundred corners took 0.7 ms to build, and every part's was built
+/// anew at every aim, twice a frame: 6 ms a frame beside four felled trees). With the number
+/// built so far.
+#[derive(Debug, Default)]
+pub(crate) struct AimShapes(Mutex<BTreeMap<EntityId, AimShape>>, AtomicU64);
+
+/// An entity's reach, and its shape once built (none: one aimed past).
+type AimShape = (f64, Option<Option<Shape>>);
+
+impl Connection {
+    /// The shapes aimed at built so far (each once while its entity is what it is).
+    pub fn aim_shapes_built(&self) -> u64 {
+        self.aim_shapes.1.load(Ordering::Relaxed)
+    }
+}
+
+impl AimShapes {
+    /// Entity `id` is something else now, or gone.
+    pub(crate) fn forget(&mut self, id: EntityId) {
+        self.0
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&id);
+    }
+}
+
+/// A ball about an entity's pose that holds the shape `shape` gives it (m): never smaller than
+/// that shape's own bounding radius, so a ray it keeps clear of misses the shape too.
+fn reach_of(kind: &Kind) -> f64 {
+    // A hull about its centroid: its corners are within twice their spread about their mean.
+    let about_mean = |corners: &[DVec3]| {
+        #[allow(clippy::cast_precision_loss)] // corners
+        let mean = corners.iter().sum::<DVec3>() / corners.len().max(1) as f64;
+        2.0 * corners
+            .iter()
+            .map(|c| (*c - mean).length())
+            .fold(0.0, f64::max)
+    };
+    match kind {
+        Kind::Body(shape, _) | Kind::Segment { shape, .. } => match shape {
+            NetShape::Box(half) => half.length(),
+            NetShape::Sphere(radius) => *radius,
+            NetShape::Hull(corners) => about_mean(corners),
+        },
+        Kind::Character { .. } => character::torso().length(),
+        Kind::Structure(_) => 0.0,
+        // About the centre of mass, its corners as they are.
+        Kind::Tree(t) => t.hull.iter().map(|p| p.length()).fold(0.0, f64::max),
+    }
 }
 
 /// The shape an entity is drawn with, as the physics knows shapes (none: one aimed past).
@@ -60,6 +116,7 @@ impl Connection {
             .collect();
         let at_own = self.predicted.as_ref().and_then(|p| p.tick());
         let mut best: Option<Aimed> = None;
+        let mut shapes = (self.aim_shapes.0.lock()).unwrap_or_else(PoisonError::into_inner);
         for (id, pose) in self.poses() {
             // A built structure (G2.3): its members as drawn, each a capsule round its axis.
             if let Some(Kind::Structure(frame)) = self.kinds.get(&id)
@@ -91,16 +148,23 @@ impl Connection {
                 }
                 continue;
             }
-            let Some(shape) = (Some(id) != own)
-                .then(|| self.kinds.get(&id))
-                .flatten()
-                .and_then(shape)
-            else {
+            let Some(kind) = (Some(id) != own).then(|| self.kinds.get(&id)).flatten() else {
                 continue;
             };
-            // Too far from the line to reach it.
+            // Too far from the line to reach it (its reach first, its shape's own radius then).
             let along = (pose.position - origin).dot(direction);
             let off = (pose.position - origin - direction * along).length();
+            let (reach, built) = shapes.entry(id).or_insert_with(|| (reach_of(kind), None));
+            if off > *reach || along > length + *reach {
+                continue;
+            }
+            let build = || {
+                self.aim_shapes.1.fetch_add(1, Ordering::Relaxed);
+                shape(kind)
+            };
+            let Some(shape) = built.get_or_insert_with(build).as_ref() else {
+                continue;
+            };
             if off > shape.bounding_radius() || along > length + shape.bounding_radius() {
                 continue;
             }

@@ -106,6 +106,7 @@ mod system_sim;
 mod system_ui;
 mod system_view;
 mod terrain_mesh;
+mod tree_draw;
 mod tree_view;
 mod water_bench;
 

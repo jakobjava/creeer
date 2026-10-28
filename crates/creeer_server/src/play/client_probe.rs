@@ -29,9 +29,21 @@ fn client_work() {
             .join(", ")
     };
     let mut replayed = vec![Duration::ZERO; play.players()];
+    let mut most = (0.0, 0.0, 0);
     for t in 0..ticks {
         let acts = (s.script)(t, &play);
         let c = play.tick(&acts);
+        most = (
+            c.ms.max(most.0),
+            c.client_ms.max(most.1),
+            c.client_work.max(most.2),
+        );
+        if t + 1 == ticks {
+            println!(
+                "{ticks} ticks: the server's worst {:.2} ms; a client's worst {:.2} ms, its most work {}",
+                most.0, most.1, most.2
+            );
+        }
         if c.client_ms > 2.0 {
             println!("tick {t}: clients' phases {}", phases(&c.client_phases));
             println!("tick {t}: server's phases {}", phases(&c.phases));

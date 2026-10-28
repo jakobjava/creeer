@@ -184,6 +184,7 @@ fn server_messages_read_back() {
         back(&ServerMessage::Spawn(EntityId(3), kind));
     }
     back(&ServerMessage::Despawn(EntityId(1 << 30)));
+    back(&ServerMessage::Round(u32::MAX - 7));
     back(&ServerMessage::Own {
         gas: 2.25,
         health: 0.75,

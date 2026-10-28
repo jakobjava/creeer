@@ -131,18 +131,73 @@ mod tests {
     use super::*;
     use crate::play::scenes::{scene, terrain};
 
+    /// The stems of `trees` player `k` draws now (m): each standing tree's up to its cut if
+    /// felled, and the felled parts in view.
+    fn drawn_stems(play: &Play, k: usize, trees: &[Standing]) -> f64 {
+        let c = play.client(k);
+        let forest = play.server.world.forest().expect("a forest");
+        let standing: f64 = (trees.iter())
+            .map(|t| match c.trees.get(&t.id).filter(|cut| cut.felled) {
+                Some(cut) => cut.z,
+                None => forest.grow(t).height,
+            })
+            .sum();
+        let poses = c.poses();
+        let parts: f64 = (c.kinds.iter())
+            .filter(|(id, _)| poses.contains_key(id))
+            .filter_map(|(_, kind)| match kind {
+                creeer_net::entity::Kind::Tree(p) => Some(p.to - p.from),
+                _ => None,
+            })
+            .sum();
+        standing + parts
+    }
+
     /// The whole scene: every tree goes over, and blows then fall on the trunks where they lie.
+    /// Every client draws the four trees' stems whole every tick (2026-10-28, the user: "the
+    /// tree flashes when the branch gets removed"): a part limbed or bucked was drawn by none
+    /// for 3 ticks, its pieces drawn only once the past drawn reached them (`client/held.rs`).
     #[test]
     fn the_lumberjacks_fell_their_trees_and_buck_them() {
         let s = scene("lumberjack").expect("the scene");
         let mut play = Play::new((s.build)(terrain()), s.name, s.players, &terrain());
         let chosen = trees(&play.server.world);
         assert_eq!(chosen.len(), 4, "four trees to fell");
+        let whole: Vec<f64> = (0..4).map(|k| drawn_stems(&play, k, &chosen)).collect();
         let (mut asked, mut fell, mut on_trunks) = (0, 0, 0);
         for t in 0..s.ticks.0 {
             let acts = (s.script)(t, &play);
             asked += acts.iter().map(|a| a.commands.len()).sum::<usize>();
             play.tick(&acts);
+            // (Less only the kerfs, a few centimetres each.)
+            for (k, whole) in whole.iter().enumerate() {
+                let drawn = drawn_stems(&play, k, &chosen);
+                assert!(
+                    drawn > whole - 0.3,
+                    "tick {t}: player {k} draws {drawn:.2} m of the stems' {whole:.2} m"
+                );
+            }
+            // Aimed at along every felled part, twice: the second builds no shape (2026-10-28:
+            // every part's hull was built at every aim, 0.7 ms each, twice a frame).
+            if t % 60 == 0 {
+                let c = play.client(0);
+                let eye = c
+                    .avatar()
+                    .map_or(DVec3::ZERO, |a| a.position + a.position.normalize() * 1.6);
+                let poses = c.poses();
+                let rays: Vec<DVec3> = (c.kinds.iter())
+                    .filter(|(_, k)| matches!(k, creeer_net::entity::Kind::Tree(_)))
+                    .filter_map(|(id, _)| Some((poses.get(id)?.position - eye).normalize()))
+                    .collect();
+                let mut built = Vec::new();
+                for _ in 0..2 {
+                    for &d in &rays {
+                        let _ = c.aim(eye, d, 40.0);
+                    }
+                    built.push(c.aim_shapes_built());
+                }
+                assert_eq!(built[0], built[1], "tick {t}: shapes built again");
+            }
             let blows = play.server.world.take_blows();
             let parts = play.server.world.tree_parts();
             on_trunks += blows

@@ -24,16 +24,17 @@ impl Connection {
             }
             ServerMessage::Refused(why) => self.status = Status::Refused(why),
             ServerMessage::Spawn(id, kind) => {
+                self.despawn_now(id);
                 self.broken.remove(&id);
+                self.aim_shapes.forget(id);
                 self.kinds.insert(id, kind);
             }
-            ServerMessage::Despawn(id) => {
-                self.kinds.remove(&id);
-                self.broken.remove(&id);
-                self.ages.remove(&id);
-                self.swings.remove(&id);
-                self.items.remove(&id);
-            }
+            ServerMessage::Round(tick) => self.round(tick),
+            // What the world drawn in the past shows changes when its round is drawn (`held.rs`).
+            m @ (ServerMessage::Despawn(_)
+            | ServerMessage::Taken(_)
+            | ServerMessage::Laid(_)
+            | ServerMessage::Trees(_)) => self.hold(m),
             ServerMessage::Age(id, age) => {
                 self.ages.insert(id, age);
             }
@@ -53,25 +54,9 @@ impl Connection {
             ServerMessage::Machines(list) => self.machines = list,
             ServerMessage::Profile(report) => self.profile = Some(report),
             ServerMessage::Inventory(inventory) => self.inventory = inventory,
-            ServerMessage::Taken(ids) => {
-                for id in &ids {
-                    self.laid.remove(id);
-                }
-                self.taken.extend(ids);
-            }
             ServerMessage::Note(note) => self.noted = Some((note, std::time::Instant::now())),
             ServerMessage::Item(id, look) => {
                 self.items.insert(id, look);
-            }
-            ServerMessage::Laid(laid) => {
-                for l in laid {
-                    self.laid.insert(l.id, l);
-                }
-            }
-            ServerMessage::Trees(cuts) => {
-                for c in cuts {
-                    self.trees.insert(c.id, c);
-                }
             }
             ServerMessage::Refusal(why) => self.refused = Some((why, std::time::Instant::now())),
             ServerMessage::Own {
