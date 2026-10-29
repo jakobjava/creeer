@@ -15,6 +15,11 @@
 //! the damping (both act on the same length, and the step's velocity is (d − d̂)/β), clamped:
 //! convex, so the minimisation's guarantees hold.
 //!
+//! A strut may also carry a walk ([`Walk`], G2.10): a damper across its direction, between A
+//! and B's point, towards a speed asked for and within a least and a most force each way (a
+//! character's walk and its soles' grip on the body it stands on). Its drive's work is booked
+//! as a grip's is (`joint/strut.rs`).
+//!
 //! Struts are set for one step by whoever owns them, and taken off by them after it; they are
 //! not saved.
 
@@ -38,6 +43,34 @@ pub struct Strut {
     pub stiffness: f64,
     pub damping: f64,
     pub most: f64,
+    /// Along the ground: a damper on A's speed over B's point (none: it only pushes).
+    pub walk: Option<Walk>,
+}
+
+/// A strut's damper along the ground (G2.10): a character's walk and its soles' grip on the
+/// body it stands on, solved in the step with them. Along each of its two axes, its force on A
+/// is c·(the speed asked for − A's speed over B's point at the step's end), within `most`
+/// (the least and the most, N): a Huber spring of c/β in the step, convex.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Walk {
+    /// Its two axes (world; unit, across the strut's direction).
+    pub axes: [DVec3; 2],
+    /// A's speed over B's point asked for along each (m/s).
+    pub speed: [f64; 2],
+    /// Its damping (N·s/m), and its least and most force along each axis (N; the least at
+    /// most nought, the most at least).
+    pub damping: f64,
+    pub most: [[f64; 2]; 2],
+}
+
+impl Walk {
+    /// Its force on A along each axis at A's speed `over` B's point there (m/s).
+    pub fn force(&self, over: [f64; 2]) -> [f64; 2] {
+        [0, 1].map(|k| {
+            let [least, most] = self.most[k];
+            (self.damping * (self.speed[k] - over[k])).clamp(least, most)
+        })
+    }
 }
 
 impl Strut {
@@ -72,6 +105,11 @@ impl World {
         self.struts.len() - 1
     }
 
+    /// Strut `k` (`add_strut`'s index), to change before the step.
+    pub fn strut_mut(&mut self, k: usize) -> &mut Strut {
+        &mut self.struts[k]
+    }
+
     /// What the struts push each body with as the bodies stand and move now (after a step:
     /// at its end, as the step's own force), by body and node: A along its direction, B
     /// against it (N). (A body's velocity change in the step less its gravity and loads is
@@ -86,8 +124,13 @@ impl World {
         };
         let mut out = Vec::new();
         for s in &self.struts {
-            let apart = (velocity(Some(s.a), s.at_a) - velocity(s.b, s.at_b)).dot(s.direction);
-            let push = s.direction * s.force(s.length(self), -apart);
+            let over = velocity(Some(s.a), s.at_a) - velocity(s.b, s.at_b);
+            let apart = over.dot(s.direction);
+            let mut push = s.direction * s.force(s.length(self), -apart);
+            if let Some(walk) = &s.walk {
+                let f = walk.force(walk.axes.map(|axis| over.dot(axis)));
+                push += walk.axes[0] * f[0] + walk.axes[1] * f[1];
+            }
             out.push((s.a.0, s.a.1, push));
             if let Some((b, n)) = s.b {
                 out.push((b, n, -push));

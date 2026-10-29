@@ -162,3 +162,81 @@ That is P1's work (the large group's contact solve), brought forward from G1.8 t
 - **Stopping brakes at the legs' most.** Letting go of the keys, the walk eased to a stop with its own response (0.25 s), creeping on for 1.3 s and 1.4 m from a 3 m/s walk while the legs stepped on (the user: "walks way too long after stopping"). People stop in about a step (Ridge et al. 2013). The client marks the inputs of the second after the last walk as stopping (`AvatarInput::stopping`, protocol 25), and the legs then close the gap in 0.05 s, within their 420 N: from 3 m/s it stands within 0.9 s and 1.2 m (`it_stops_from_a_walk_or_a_run_within_a_second`). A body pushed while standing is not braked so: braking every slowing (and standing still) stiffly toppled a player struck by a rolling trunk and worsened prediction against crates.
 - **A held jump waits for the landing.** Held, the key jumped again at the legs' first touch, still falling, so the push only cancelled part of the fall and the character bounced in 0.2 m hops on its legs' tips. A jump now needs the legs to bear half the weight and the fall stopped (`running_with_jump_held_it_lands_between_full_jumps`).
 - **The drawn stop** (`creeer_client::animate::stop`) finishes the step in hand and the other foot's closing step, then stands; a foot steps into place only past 15 cm once the body is at rest. The hips give a landing leg a stance's bent knee through late swing (it snapped 13° in the landing frame).
+
+## Amended in G2.10 (2026-10-28): standing on a light body
+
+A loose green spruce pole (1.6 m, 50 mm, 2.5 kg, a 16-sided prism) lying near the players cost 7–15 ms a server tick for 105 ticks, and *builders*' first 100 ticks 20–30 ms. It had been put down to the terrain's 12.5 cm cells near players. It was a player standing on it: the players spawn 0, 2, 4, … m east of the spawn, and the third stands where *builders*' first pair (and the probe's pole) lies, 4 m east. The same pole 4 m north, among the same players, costs what it does on coarse terrain: 244 world steps in 240 ticks, no turn redone, about 560 Newton iterations of its own (580 on coarse terrain).
+
+### How it was measured
+
+- `play/poles_probe.rs` (by hand): the pole under the third player (`poles_settling`, `COUNT=1 POLES=lower`; `FIRST=2` moves it 4 m north), the same pole alone on coarse terrain (`a_pole_settling`), *builders* tick by tick at CI's length with its clients (`builders_first_ticks`) and its heavy ticks' groups and its poles' fastest spin (`builders_heavy_ticks`). Physics counters with `--features creeer_physics/profile`.
+- Temporary prints, not kept: the turn check's turns (`world/turn.rs`), each step of the pole's group (velocities before and after the impulses, the impact's budget), the hull's ground detection (`ground_hull.rs`), and the loads the feet put on the body under them (`character::steer`).
+
+### Prior work
+
+| Source | What it does | For Creëer |
+|---|---|---|
+| Jolt's `CharacterVirtual` (`CharacterVirtual.h`: `mMass` 70 kg "used to push down objects with gravity when the character is standing on top", `mMaxStrength` 100 N "maximum force with which the character can push other bodies") | A kinematic character presses what it stands on with its weight and pushes others with a capped force | What a character puts on a body under it is a push where it stands, within a strength; nothing turns the body but where the push lands |
+| PhysX's character controller (`PxUserControllerHitReport::onShapeHit`) | Kinematic; pushing dynamic bodies is left to the game, an impulse at the body's centre scaled by the masses (the samples skip vertical pushes as "useless stress on the solver") | A load at the centre ignores where and how the feet press |
+| Winter, "Human balance and posture control during standing and walking" (*Gait & Posture* 3, 1995); Horak & Nashner, *J. Neurophysiol.* 55 (1986) | The ankle's torque on the ground is the normal force times the centre of pressure's offset, which stays within the base of support | The balance's torque reaches a body only as far as the soles' patch on it lets the pressure's centre move |
+| Winter, *Biomechanics and Motor Control of Human Movement* (2009), table 4.1 | Foot length 0.152 of the stature | The feet's reach about the point under the hips: 0.133 m for 1.75 m |
+| Catto, "Solver2D" (box2d.org, 2024): soft steps; Baraff & Witkin, "Large steps in cloth simulation" (SIGGRAPH 1998) | A constraint or damper solved with both bodies' masses is stable whatever their ratio; taken explicitly a damper c is stable only on a mass above c·h/2 | The walk's damper on a pole's top (0.94 kg) at 420 N·s/m and 60 Hz is not; solved in the step, it is |
+| Coulomb's friction cone; Lubkin (1951) for the torsion over a contact (as `contact/twist.rs`) | Within the cone a sole grips; beyond it slides with μ·N against the slip; a patch's torsion is μ·N times its mean distance | The walk's grip and the balance's torsion are bounded so |
+
+### Found
+
+1. **The balance's torque was put whole on the body stood on, at its centre.** A person leaning a few milliradians puts 10.8 N·m on it, 7.1 about the pole's own axis of 7.85·10⁻⁴ kg·m²: 9,000 rad/s². One step turned the pole 1.1–1.9 rad and left it at over 100 rad/s; the turn check (`MAX_TURN`, G1.8, unchanged) redid every tick in 16 substeps, 17 world steps a tick even at rest.
+2. **The legs' strut pressed a point of the body turning with it.** Under a person's 2 kN a pole was an inverted pendulum about its axis, −N·r = −50 N·m/rad, and rolled out from under the foot at 30–40 rad/s.
+3. **The walk was a damper put on as a load from the speeds as the step began.** That is stable only on what is heavier than c·h/2 where it pushes, 3.5 kg at 420 N·s/m and 60 Hz; a rolling pole's top is 0.94 kg. It rolled the pole at up to 76 rad/s, back and forth tick by tick.
+4. **A foot on a body steeper than the friction holds** put the part of the legs' push that friction does not hold on as a load for the step: 800–980 N where a foot met a pole's side 43–51° steep near its end, 400–560 N·m about its middle. A pole spun at 790 rad/s.
+5. **The legs' vertical push on a tilted face holds friction of N·sin φ itself** (a sole gripping). It acts whether or not the sole grips. With the walk's grip set at μ·N·cos φ − N·sin φ both ways, a body slipping under the soles was held by μ·cos φ − 2·sin φ of N only, and a pole spun under a standing player at 30–40 rad/s for 20 ticks.
+
+And every impact in the group under the person stopped every body of it dead: the impact's budget forgot the legs before the step (`world/stepping.rs`), a change of its own.
+
+### Kept
+
+| Change | Where | Measured |
+|---|---|---|
+| **A strut's points move with their sides' turns to first order**, p = x + a₀ + θ × a₀ from the step's start: a sole presses a round body through its axis however it turns, and a plank pressed at its end is turned by the lever it was pressed at. The rows are the length's slope by the solver's turn (J⁻¹(θ), checked by finite differences) | `world/joint/strut.rs` | No inverted pendulum (Found 2) |
+| **A foot sliding on a body presses along its friction cone's edge**: the strut turned that way, its rest giving that force as the step begins; none of it a load | `character/feet.rs` `slides` | No 400–560 N·m kicks (Found 4) |
+| **The walk on a body is the strut's** (`world::strut::Walk`): a damper along the ground on the person's speed over the body's point, towards the speed asked for within the walk's strength, solved in the step; its drive booked as a grip's (`walk_work`); its grip μ·N·cos φ − N·sin φ uphill, μ·N·cos φ + N·sin φ downhill, μ·N·cos φ across, so a body slipping under the soles meets μ·N against the slip; asking for a walk wakes the person and the body | `world/strut.rs`, `world/joint/strut.rs`, `character/feet.rs` `walks` | What rolls under the soles carries the person (Found 3, 5) |
+| **The balance's torque reaches a body only through the soles' patch on it**: the face of its shape the legs' ray met, clipped to the feet's reach, 0.133 m. About the axes in its plane the pressure's centre stays within the patch, a moment N·r × n; about its normal μ·N times the patch's mean distance from that centre (exact, by fans). The person's balance is the same torque: what the feet do not carry it does not get. A ball carries none; a face that holds the whole of the feet holds them as the ground does. | `character/feet.rs` `carried` | A pole's 9.75 mm faces carry 4.9 N·m about its axis under 1 kN (Found 1) |
+
+Fixed ground under the feet keeps all of it as it was: the balance whole (its 600 N·m), the walk a load (steady on what does not yield), the legs' strut on a fixed point.
+
+### Measured and rejected
+
+Measured with the impact's budget mended too (its own change):
+
+| What | Measured | Why rejected |
+|---|---|---|
+| **The walk through the body's mobility at the step's start**, (1 + c·h·W)·F = c·(wanted − going) as the step's load (`docs/adr/0023/walk-through-mobility.rs.txt`) | Stable, but it holds nothing within the step: with the strut's turning point, the pole under the person 1,507 world steps and 164 turns redone; with the patch and the first-order point, *builders*' poles up to 790 rad/s (Found 4 not yet kept), then 169 rad/s with it | The soles grip within the step or not at all: superseded by the walk in the strut |
+| The walk in the strut, its grip μ·cos φ − sin φ both ways | *builders*: 48 ticks with a pole over 20 rad/s, one spinning under a standing player at 30–40 rad/s for 20 ticks | Found 5 |
+| The patch clipped to the feet's reach on every face | On a crate a quarter of the ground's 600 N·m: *crowd*'s players landing on crates fell over where on the ground they stand | A face that holds the whole of the feet holds them as the ground does |
+| The walk in the strut, its work unbooked | A person asked to walk on a crate on ice went at 0.4 mm/s: the energy guard took the walk's gain for the step's and stopped it | Its work is the person's, as a grip's is the hands' |
+| The legs pushing along the face's normal, all the friction the walk's (considered, not built) | A damper alone holds a person on a tilted face only by creeping: 0.47 m/s on a pole's 11° face at 420 N·s/m | A sole's grip needs an anchor, as the contacts' friction has (`docs/future-improvements.md`) |
+
+### Validation
+
+- `world/strut_tests.rs`: a pole stood on over its axis, set rolling, comes to rest under the foot; a walk gets its speed over the body within its most, momentum kept to 10⁻⁹.
+- `world/joint/strut.rs`: a body turned under a strut by up to 0.6 rad is pressed where it lies (a turning point falls by r·(1 − cos θ)), the rows the length's slope at a turned state; the walk's spring each way its own most.
+- `character/feet_tests.rs`: a pole's top face carries 1 kN times half its 9.75 mm about its axis and half a foot along it, μ·N times the strip's mean distance about the vertical; a crate holds the feet whole and, near its edge, keeps the pressure's centre on it; a ball nothing; fixed ground the torque whole; a square's mean distance from its centre and a corner, a strip clipped to the feet.
+- `character/tests.rs` unchanged: walking on a crate on ice keeps momentum within 10⁻³, slopes hold at 25° and slide at 36°.
+
+### Measured (development machine; g2 at d6a86c7 → this change)
+
+| | before | now |
+|---|---|---|
+| The pole under the third player, 240 ticks: world steps, turns redone, Newton iterations (players' 1,208 in) | 1,072, 96, 10,901 | 248, 0, 3,200 |
+| Its sleep | asleep at tick 105 | awake at tick 240, 1.2–1.4 ms a tick: every impact under the person still stops it dead (the impact's budget) |
+| The same pole 4 m north among the players; alone on coarse terrain | 244 steps, no redo, 1,769 iterations; asleep at tick 110 | the same |
+| *builders*' first 100 server ticks, mean and worst | 33.2 ms, 55.0 ms | 13.2 ms, 25.8 ms |
+| *builders* at CI's length: most work in a tick; a client's most | 1,537 at tick 5; 1,917 at tick 521 | 1,039 at tick 5; 1,667 at tick 539 |
+| *builders* at CI's length: worst tick; a client's worst | 69.5 ms; 106.6 ms | 28.5 ms; 60.9 ms |
+| *builders*' poles: the fastest; ticks with one over 20 rad/s | 49 rad/s; 13 | 27 rad/s; 2 |
+
+### Where this leaves G2.10
+
+- **The impact's budget** forgets the legs before the step, and every impact under a person stops it and what it stands on dead: the pole under the third player never sleeps. Its own change.
+- *builders*' first 100 ticks are not under 5 ms: past the players' arrival its eight crossed pairs of poles rock at 2–40 mrad/s and never sleep, about 0.6–0.8 ms a pair a tick, the upper pole on the lower (ADR-0024, G2.0's hull contacts; `docs/future-improvements.md`).
+- A pole on its own needs no rolling resistance: its faces already hold it with a lever of R·sin(π/16) = 4.9 mm (above dry sand's 4.2 mm by Bekker's law and wood on wood's 0.5–1 mm, Blau 1905) and it sleeps within 2 s. A smooth cylinder with a measured rolling resistance would be the better body (`docs/future-improvements.md`).

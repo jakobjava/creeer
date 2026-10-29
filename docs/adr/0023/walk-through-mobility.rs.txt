@@ -1,0 +1,40 @@
+// Rejected (G2.10, ADR-0023 "Amended in G2.10: standing on a light body"): the walk's force on
+// a body taken through the body's mobility at the step's start, as an implicit damper's impulse
+// against a yielding point, (1 + c·h·W)·F = c·(wanted − going), applied as the step's load.
+// Called in `character::steer` after the stride's clamp to STRIDE_MOST:
+//
+//     stride = feet::yielding(world, &hit, up, (c, world.dt()), stride);
+//
+// Stable on any body, but it held nothing within the step: the legs' push pressing a pole off
+// its axis rolled it out as if nothing held its top. Superseded by the walk in the strut
+// (`world::strut::Walk`). Measured in the ADR's table.
+
+/// The walk's force `stride` (N, along the ground: a damper `c`, N·s/m, on the feet's speed
+/// over what they stand on) as the body `hit` found under them yields to it within the step
+/// `h`: the speed it closes is the speed at the step's end, the body's point there pushed back
+/// through its mobility W (as an impulse's, `world::impact`), (1 + c·h·W)·F = c·(wanted −
+/// going). Fixed ground does not yield: the walk as it was.
+pub(super) fn yielding(world: &World, hit: &Hit, up: DVec3, (c, h): (f64, f64), stride: DVec3) -> DVec3 {
+    let Some((b, node)) = hit.body else {
+        return stride;
+    };
+    let s = &world.bodies[b].structure;
+    let r = hit.point - s.position[node];
+    let turn = DMat3::from_quat(s.orientation[node]);
+    let inertia = turn * s.inertia_of(node) * turn.transpose();
+    let skew = DMat3::from_cols(
+        DVec3::new(0.0, r.z, -r.y),
+        DVec3::new(-r.z, 0.0, r.x),
+        DVec3::new(r.y, -r.x, 0.0),
+    );
+    let turning = if inertia.determinant() > 0.0 {
+        -(skew * inertia.inverse() * skew)
+    } else {
+        DMat3::ZERO
+    };
+    let mobility = DMat3::IDENTITY / s.masses()[node] + turning;
+    // Along the ground, as the walk is.
+    let flat = DMat3::IDENTITY - DMat3::from_cols(up * up.x, up * up.y, up * up.z);
+    let yields = DMat3::IDENTITY + flat * mobility * flat * (c * h);
+    flat * (yields.inverse() * stride)
+}

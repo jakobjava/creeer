@@ -115,19 +115,6 @@ pub fn body(feet: DVec3, up: DVec3, dt: f64) -> Body {
     body
 }
 
-/// A force (and torque) put on another body for one step: taken off by [`release`].
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Reaction {
-    pub body: usize,
-    pub node: usize,
-    pub force: DVec3,
-    pub torque: DVec3,
-    /// Whether the body was stepped as held (`Body::held`) before it was pushed.
-    pub held: bool,
-    /// The body's mass after the step (a jetpack's gas spent in it), if it changes.
-    pub mass: Option<f64>,
-}
-
 /// What a player asks of their character for one step.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Intent {
@@ -206,7 +193,7 @@ pub fn steer(
     // The legs' spring and damper: a strut from the body's centre to the foot on what the
     // ray found, solved in the step with it (`world/strut.rs`; a load from it on a light body
     // threw it). Set even asleep: a support that wakes wakes the character.
-    if let Some(hit) = standing {
+    let leg = standing.map(|hit| {
         let b = hit.body;
         let at_b = b.map_or(hit.point, |(b, n)| {
             let s = &world.bodies[b].structure;
@@ -222,8 +209,9 @@ pub fn steer(
             stiffness: LEG_STIFFNESS,
             damping: LEG_DAMPING,
             most: LEG_MOST,
-        });
-    }
+            walk: None,
+        })
+    });
     // Asleep and asked for nothing: it stands as it fell asleep. (Its walk's force taken
     // again from where it rests differs from the force it fell asleep under in its last
     // bits, and a changed load wakes a body: it never slept, and was never parked.)
@@ -256,7 +244,8 @@ pub fn steer(
             wanted = wanted.normalize() * MOST_SPEED;
         }
         let stop = usize::from(intent.stopping && wanted == DVec3::ZERO);
-        let mut stride = (wanted - going) * (MASS / [RESPONSE.0, RESPONSE.1][stop]);
+        let c = MASS / [RESPONSE.0, RESPONSE.1][stop];
+        let mut stride = (wanted - going) * c;
         if stride.length() > STRIDE_MOST {
             stride = stride.normalize() * STRIDE_MOST;
         }
@@ -268,7 +257,8 @@ pub fn steer(
         let foot = up * legs + stride;
         let pressing = foot.dot(n).max(0.0);
         let mut sliding = foot - n * foot.dot(n);
-        if sliding.length() > mu * pressing {
+        let slides = sliding.length() > mu * pressing;
+        if slides {
             sliding = sliding.normalize_or_zero() * mu * pressing;
         }
         // The foot's force in all; the strut gives its legs' part (as it is when the step ends,
@@ -278,6 +268,15 @@ pub fn steer(
             ground: Some(n),
         };
         force = footing.legs - up * legs;
+        // On a body the legs' strut carries the foot's force (`feet.rs`): sliding, along its
+        // friction cone's edge; else the walk too, as a damper along the ground.
+        let leg = (leg.expect("standing"), &hit);
+        force = if slides {
+            feet::slides(world, leg, (x, v), footing.legs)
+        } else {
+            feet::walks(world, leg, (up, going + stride / c), (c, legs, mu))
+        }
+        .unwrap_or(force);
         // Upright, within the body's strength; and the feet hold its spin about the vertical.
         let tilt = (q * DVec3::Y).cross(up);
         let (k, c, most) = BALANCE;
@@ -286,6 +285,8 @@ pub fn steer(
         if torque.length() > most {
             torque = torque.normalize() * most;
         }
+        // On a body, what the feet can carry to it through the face under them (`feet.rs`).
+        torque = feet::carried(world, &hit, (pressing, mu), torque);
         if let Some((b, node)) = hit.body {
             let s = &world.bodies[b].structure;
             mine = Some(Reaction {
@@ -360,21 +361,6 @@ pub fn steer(
     footing
 }
 
-/// Takes the step's reactions off the bodies they were put on, and the legs' struts off.
-pub fn release(world: &mut World, reactions: &mut Vec<Reaction>) {
-    world.clear_struts();
-    for r in reactions.drain(..) {
-        if let Some(body) = world.bodies.get_mut(r.body) {
-            body.take_load(r.node, r.force);
-            body.structure.torque[r.node] -= r.torque;
-            body.held = r.held;
-            if let Some(mass) = r.mass {
-                body.solver.set_mass(&mut body.structure, r.node, mass);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests;
 
@@ -384,6 +370,10 @@ pub mod bones;
 mod drawn_tests;
 #[cfg(test)]
 mod fall_tests;
+mod feet;
+#[cfg(test)]
+mod feet_tests;
+pub use feet::{Reaction, release};
 /// Injury from impacts.
 pub mod injury;
 mod jetpack;

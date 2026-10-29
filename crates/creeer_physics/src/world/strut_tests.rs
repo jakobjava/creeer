@@ -1,7 +1,9 @@
 //! Struts: a body on one rests at its spring's compression under its weight; a heavy body on
 //! one standing on a light plate on the ground presses the plate down and does not throw it
-//! (a load put on the plate before the step did); between two free bodies one keeps their
-//! momentum, pushes only, and at most its most; its damper damps as a damped oscillator's.
+//! (a load put on the plate before the step did); a pole stood on comes to rest under the foot;
+//! a walk gets its speed over the body within its most; between two free bodies one keeps
+//! their momentum, pushes only, and at most its most; its damper damps as a damped
+//! oscillator's.
 
 use super::shape::{Shape, StaticShape};
 use super::strut::Strut;
@@ -38,6 +40,7 @@ fn leg(a: usize, b: Option<(usize, usize)>, at_b: DVec3) -> Strut {
         stiffness: 30_000.0,
         damping: 2000.0,
         most: 3600.0,
+        walk: None,
     }
 }
 
@@ -119,6 +122,95 @@ fn a_heavy_body_standing_on_a_light_plate_presses_it_down_unthrown() {
         (weight - 105.6 * G).abs() < 0.02 * 105.6 * G,
         "the floor carries {weight} N"
     );
+}
+
+#[test]
+fn a_strut_on_a_round_body_presses_it_where_it_lies() {
+    // A 16-sided spruce pole (2.5 kg, 50 mm) on the floor, a 105 kg body standing on its top
+    // over its axis, the pole set rolling at 0.5 rad/s: its rolling dies away under the foot
+    // (the strut's point on it moving with its turn to first order: `joint/strut.rs`).
+    let mut world = floor();
+    let points: Vec<DVec3> = (0..32)
+        .map(|k| {
+            let a = f64::from(k % 16) * std::f64::consts::TAU / 16.0 + std::f64::consts::PI / 16.0;
+            let (s, c) = creeer_math::det::sin_cos(a);
+            DVec3::new(if k < 16 { -0.8 } else { 0.8 }, 0.025 * c, 0.025 * s)
+        })
+        .collect();
+    let hull = super::hull::Hull::new(&points).expect("a prism").0;
+    let r = hull.vertices().iter().map(|v| v.y).fold(0.0, f64::max);
+    let mut pole = Body::rigid(
+        Shape::Hull(std::sync::Arc::new(hull)),
+        2.5,
+        DVec3::new(0.0, r, 0.0),
+        DT,
+    );
+    pole.structure.gravity = DVec3::new(0.0, -G, 0.0);
+    pole.structure.angular_velocity[0] = DVec3::X * 0.5;
+    pole.solver.reset_history(&pole.structure);
+    let pole = world.add(pole);
+    let body = world.add(ball(DVec3::new(0.0, 2.0 * r + 1.0, 0.0), 105.0));
+    let mut fastest = 0.0f64;
+    for _ in 0..120 {
+        // The foot where the pole lies under the body, found again each step (a leg's ray).
+        let s = &world.bodies[pole].structure;
+        let top = DVec3::new(world.bodies[body].structure.position[0].x, 2.0 * r, 0.0);
+        let at_b = s.orientation[0].conjugate() * (top - s.position[0]);
+        let strut = Strut {
+            rest: 1.0 + 105.0 * G / 30_000.0,
+            ..leg(body, Some((pole, 0)), at_b)
+        };
+        run(&mut world, &[strut], 1);
+        fastest = fastest.max(world.bodies[pole].structure.angular_velocity[0].length());
+    }
+    let spin = world.bodies[pole].structure.angular_velocity[0].length();
+    assert!(fastest < 1.0, "the pole rolled at up to {fastest} rad/s");
+    assert!(spin < 0.05, "the pole rolls at {spin} rad/s after 2 s");
+}
+
+#[test]
+fn a_walk_gets_its_speed_over_the_body_within_its_most() {
+    // Two free bodies, no gravity: A (105 kg) on a strut on B (50 kg), its walk asking for
+    // 1 m/s over B along x, at most 200 N either way. A gets its speed over B, B is pushed
+    // back, momentum is kept, and no step pushes harder than the walk's most.
+    let mut world = World::new(DT);
+    let mut free = |at: DVec3, mass: f64| {
+        let mut b = ball(at, mass);
+        b.structure.gravity = DVec3::ZERO;
+        b.solver.reset_history(&b.structure);
+        world.add(b)
+    };
+    let (a, b) = (
+        free(DVec3::new(0.0, 1.0, 0.0), 105.0),
+        free(DVec3::ZERO, 50.0),
+    );
+    let walk = super::strut::Walk {
+        axes: [DVec3::X, DVec3::Z],
+        speed: [1.0, 0.0],
+        damping: 420.0,
+        most: [[-200.0, 200.0], [-200.0, 200.0]],
+    };
+    let strut = Strut {
+        rest: 1.0 + 0.01,
+        walk: Some(walk),
+        ..leg(a, Some((b, 0)), DVec3::ZERO)
+    };
+    let mut hardest = 0.0f64;
+    for _ in 0..120 {
+        let before = world.bodies[a].structure.velocity[0].x;
+        run(&mut world, &[strut], 1);
+        hardest = hardest.max((world.bodies[a].structure.velocity[0].x - before) * 105.0 / DT);
+    }
+    let v = |i: usize| world.bodies[i].structure.velocity[0];
+    assert!(
+        (v(a).x - v(b).x - 1.0).abs() < 0.01,
+        "{} over {}",
+        v(a),
+        v(b)
+    );
+    assert!(v(b).x < -0.3, "B is pushed back at {}", v(b));
+    assert!((v(a) * 105.0 + v(b) * 50.0).length() < 1e-9, "momentum");
+    assert!(hardest <= 200.0 * (1.0 + 1e-6), "{hardest} N");
 }
 
 #[test]
