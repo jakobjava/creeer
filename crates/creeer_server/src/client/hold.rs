@@ -22,6 +22,11 @@ impl Connection {
     }
 }
 
+/// How far to the right of the body's middle one hand carries (m).
+const ONE_HAND_ASIDE: f64 = 0.12;
+/// How far before the body's axis a thing placed is held at least (m).
+const IN_FRONT: f64 = 0.3;
+
 /// The view `view`'s heading, upright along `up`: the view turned level about its own right
 /// axis. What the hands hold turns with it, not as the eyes look up or down (G2.10: taken
 /// looking down, a lying stick stood upright once the view came level).
@@ -78,7 +83,12 @@ impl Connection {
         let eye = reach::eye(avatar.position, up);
         let turn = (heading(view, up) * turn).normalize();
         let grip = turn * carried.grip;
-        let held = reach::within_arms(avatar.position, up, eye + view * at + grip);
+        // Placed before the body, never beside or behind it: a person turns to what they place.
+        let forward = heading(view, up) * DVec3::NEG_Z;
+        let meant = eye + view * at + grip;
+        let ahead = (meant - avatar.position).dot(forward);
+        let meant = meant + forward * (IN_FRONT - ahead).max(0.0);
+        let held = reach::within_arms(avatar.position, up, meant);
         let node = held - grip;
         let hold = Hold {
             offset: node - avatar.position,
@@ -86,5 +96,29 @@ impl Connection {
             steady,
         };
         Some((hold, view.conjugate() * (node - eye)))
+    }
+}
+
+impl Connection {
+    /// The hold carrying what the hands hold before the chest, the way the view `view` heads,
+    /// turned `turn` from that heading (as taken, or as turned since): it goes with the body
+    /// whatever the eyes look at, and the body faces it (G2.10: steered with the view, the body
+    /// stooped and reached about after it).
+    pub fn carry_hold(&self, view: DQuat, turn: DQuat) -> Option<Hold> {
+        let carried = self.own_carried()?;
+        let avatar = self.avatar()?;
+        let up = avatar.position.normalize();
+        let heading = heading(view, up);
+        // Before the chest, as the server's hands carry by themselves (`carry::held`).
+        let chest = creeer_sim::carry::held(avatar.position, up, heading * DVec3::NEG_Z)
+            // In one hand, the right, before its own half of the chest: at the middle, the
+            // forearm crossed the body.
+            + (heading * DVec3::X) * if carried.one_hand { ONE_HAND_ASIDE } else { 0.0 };
+        let turn = (heading * turn).normalize();
+        Some(Hold {
+            offset: chest - turn * carried.grip - avatar.position,
+            turn,
+            steady: false,
+        })
     }
 }

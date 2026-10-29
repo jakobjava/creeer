@@ -335,7 +335,8 @@ fn knapping_stones_lying_about_costs_the_world_next_to_nothing() {
     }
     // Measured 43 with the struck stone a body for its blow's second, rocking on its laid pose
     // (as bodies, flakes took 250); 6 since it is a body only from its blow on (2026-10-28,
-    // ADR-0030 amended): a tenth above.
+    // ADR-0030 amended): a tenth above. 9 since the hands carry before the chest (the forearms
+    // raised 30°, the user's G2.10 play): the hammerstone struck from higher in the hands.
     println!("{most} Newton iterations at most in a tick");
-    assert!(most <= 7, "{most} Newton iterations in a tick");
+    assert!(most <= 10, "{most} Newton iterations in a tick");
 }

@@ -90,9 +90,23 @@ pub fn forearm() -> f64 {
     hold().1
 }
 
-/// How far above the body's centre the elbows are, and how far ahead of the body's axis the
-/// hands then hold (m), from the skeleton standing.
+/// How far the forearms are raised from level carrying (rad): things are carried before the
+/// chest (the user, 2026-10-29: "things are usually carried in front of the chest and not at
+/// some random position close to the body"), held against it, the upper arms hanging.
+const FOREARMS_RAISED: f64 = 30.0 * std::f64::consts::PI / 180.0;
+
+/// How far above the body's centre the hands hold what they carry, and how far ahead of the
+/// body's axis (m), from the skeleton standing: the elbows at the body's sides, the forearms
+/// raised [`FOREARMS_RAISED`] from level.
 fn hold() -> (f64, f64) {
+    let (elbow, forearm) = elbows();
+    let (up, ahead) = creeer_math::det::sin_cos(FOREARMS_RAISED);
+    (elbow + forearm * up, forearm * ahead)
+}
+
+/// How far above the body's centre the elbows are, and the forearm's length to the hand's
+/// centre (m), from the skeleton standing.
+fn elbows() -> (f64, f64) {
     let joints = bones::joints();
     let at = |child: usize| {
         joints
@@ -131,14 +145,16 @@ mod tests {
     }
 
     #[test]
-    fn a_load_is_held_at_the_elbows_a_forearm_ahead() {
+    fn a_load_is_carried_before_the_chest() {
         let (centre, up) = (DVec3::new(0.0, 1.0, 0.0), DVec3::Y);
         let feet = centre - up * character::heights().0;
         let p = held(centre, up, DVec3::Z);
-        // About a metre up (people's elbows about 1.1 m), 0.25–0.4 m ahead.
+        // Before the lower chest (the user, 2026-10-29): the breastbone's lower end is about 0.72
+        // of the stature up, 1.33 m on the 1.85 m engineer (elbows about 1.1 m); a forearm, raised
+        // 30°, ahead of the elbows.
         let (height, ahead) = ((p - feet).y, p.z);
-        assert!((0.95..1.2).contains(&height), "{height} m up");
-        assert!((0.2..0.45).contains(&ahead), "{ahead} m ahead");
+        assert!((1.25..1.4).contains(&height), "{height} m up");
+        assert!((0.15..0.35).contains(&ahead), "{ahead} m ahead");
         // The hands hold up what a man lifts to his elbows.
         assert!((STRENGTH - 574.7).abs() < 0.1);
     }

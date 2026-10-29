@@ -77,23 +77,32 @@ pub fn holding_sheet(
     board: &Scene,
 ) -> Image {
     let mut images = Vec::new();
-    for (k, load) in loads().into_iter().enumerate() {
-        let person = DrawnPerson {
-            key: 100 + u32::try_from(k).unwrap_or(0),
+    // The four standing; then the box and the stick carried walking at a walk's pace (1.4 m/s),
+    // seen mid-stride (G2.10, the user: "when moving forward the arm goes through the body").
+    let frames = (0..4).map(|k| (k, 0.0)).chain([(0, 1.4), (2, 1.4)]);
+    for (n, (k, speed)) in frames.enumerate() {
+        let start = loads()[k];
+        let mut person = DrawnPerson {
+            key: 100 + u32::try_from(n).unwrap_or(0),
             look: look(&bones::STARTING_OUTFIT),
             body: crate::animate::Body::Standing(centre(), DQuat::IDENTITY),
             wields: None,
             swing: None,
-            holding: Some(load),
+            holding: Some(start),
             made: None,
         };
         let mut scene = board.clone();
         scene.characters.clear();
-        for _ in 0..60 {
+        let (mut load, mut walked) = (start, DVec3::ZERO);
+        for f in 0..=75 {
+            walked = DVec3::Z * (speed * f64::from(f) / 60.0);
+            load.frame = Frame64::new(start.frame.position + walked, start.frame.rotation);
+            person.body = crate::animate::Body::Standing(centre() + walked, DQuat::IDENTITY);
+            person.holding = Some(load);
             let mut warm = Scene::default();
-            people.draw(std::slice::from_ref(&person), 1.0 / 60.0, &Flat, &mut warm);
+            let into = if f == 75 { &mut scene } else { &mut warm };
+            people.draw(std::slice::from_ref(&person), 1.0 / 60.0, &Flat, into);
         }
-        people.draw(std::slice::from_ref(&person), 1.0 / 60.0, &Flat, &mut scene);
         #[allow(clippy::cast_possible_truncation)] // metres, to the GPU's f32
         let size = (load.half * 2.0).as_vec3();
         scene.add(
@@ -107,7 +116,7 @@ pub fn holding_sheet(
             },
         );
         // Between his chest and what he holds.
-        let look_at = 0.5 * (centre() + DVec3::Y * 0.3 + load.held());
+        let look_at = 0.5 * (centre() + walked + DVec3::Y * 0.3 + load.held());
         let at = look_at + DVec3::new(-1.9, 0.35, 2.2);
         let d = look_at - at;
         let mut camera = Camera::new(at);

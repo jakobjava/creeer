@@ -29,12 +29,14 @@ struct Held {
     tilt: f64,
     drawn_off: f64,
     held: bool,
+    /// The least it was held before the body's axis the way the view heads (m).
+    ahead: f64,
 }
 
 /// Ada, over `link`, takes the user's stick (spruce C24, 0.95 m, 46 mm: 0.67 kg) from the ground
 /// a metre before her, turns her view 90° and up to level over a second, walks 3 m/s the way
 /// she looks for two, and turns back walking for one.
-fn steered(link: Option<Conditions>) -> Held {
+fn steered(link: Option<Conditions>, carried: bool) -> Held {
     let mut game = Game::new(crate::world::tests::world());
     game.join("ada", link);
     game.run(120, super::still);
@@ -70,12 +72,20 @@ fn steered(link: Option<Conditions>) -> Held {
     };
     let start = view_at(0.0);
     let mut kept = game.clients[0].0.held_in_view(start).expect("drawn");
-    let mut out = Held::default();
+    let mut out = Held {
+        ahead: f64::INFINITY,
+        ..Held::default()
+    };
     for tick in 0..240u32 {
         let t = f64::from(tick) / 60.0;
         let view = view_at(t);
         let client = &mut game.clients[0].0;
-        let hold = client.hold_in_view(view, kept, false).expect("held");
+        let hold = if carried {
+            let hold = client.carry_hold(view, kept.1).expect("held");
+            (hold, kept.0)
+        } else {
+            client.hold_in_view(view, kept, false).expect("held")
+        };
         kept.0 = hold.1;
         client.set_hold(Some(hold.0));
         let ahead = if (1.0..4.0).contains(&t) {
@@ -98,6 +108,8 @@ fn steered(link: Option<Conditions>) -> Held {
         if t > 0.5 {
             let reachable = reach::within_arms(centre, up, grip);
             out.beyond = out.beyond.max((grip - reachable).length());
+            let forward = (view * DVec3::NEG_Z).reject_from(up).normalize();
+            out.ahead = out.ahead.min((grip - centre).dot(forward));
             let axis = q * DVec3::X;
             out.tilt = out
                 .tilt
@@ -117,30 +129,58 @@ fn steered(link: Option<Conditions>) -> Held {
     out
 }
 
-/// Measured (2026-10-29), lossless and over 100 ms each way: the grip never beyond the arms'
-/// reach on the server (0, 0 m); the stick tilted at most 1.3° and 1.1° from level; its grip
-/// drawn at most 3.8 cm and 20.8 cm beyond the reach of the avatar as drawn (the own load
-/// drawn where it is steered, its model of the server's hands without their plan's lead). Each
-/// gated a little above. Steered as before, from the camera 4.5 m behind the avatar (the
-/// user's case): tilted 28° (it stood up as the view came level) and drawn 66 cm beyond the
-/// hands' reach, the arm reaching through the body.
+/// Placed (left Alt held): where the view aims from the eyes, before the body and within the
+/// arms' reach. Measured (2026-10-29), lossless and over 100 ms each way: the grip never beyond
+/// the arms' reach on the server; the stick tilted at most 1.3° and 1.1° from level; its grip
+/// drawn at most 3.8 cm and 20.8 cm beyond the reach of the avatar as drawn (the own load drawn
+/// where it is steered, its model of the server's hands without their plan's lead). Steered as
+/// before, from the camera 4.5 m behind the avatar (the user's case): tilted 28° (it stood up
+/// as the view came level) and drawn 66 cm beyond the hands' reach, the arm through the body.
 #[test]
-fn a_stick_steered_with_the_view_stays_in_the_hands() {
-    let lossless = steered(None);
-    eprintln!("lossless: {lossless:?}");
+fn a_stick_placed_with_the_view_stays_in_the_hands() {
+    let lossless = steered(None, false);
+    eprintln!("placed, lossless: {lossless:?}");
     assert!(
         lossless.held && lossless.beyond < 0.01 && lossless.tilt < 0.05,
         "{lossless:?}"
     );
-    assert!(lossless.drawn_off < 0.06, "{lossless:?}");
-    let slow = steered(Some(Conditions {
-        latency: Duration::from_millis(100),
-        jitter: Duration::from_millis(30),
-        loss: 0.05,
-    }));
-    eprintln!("slow: {slow:?}");
+    assert!(
+        lossless.drawn_off < 0.06 && lossless.ahead > 0.2,
+        "{lossless:?}"
+    );
+    let slow = steered(Some(slow()), false);
+    eprintln!("placed, slow: {slow:?}");
     assert!(
         slow.held && slow.beyond < 0.01 && slow.tilt < 0.05 && slow.drawn_off < 0.25,
         "{slow:?}"
     );
+}
+
+/// Carried (the user, 2026-10-29: "things are usually carried in front of the chest and not at
+/// some random position close to the body (like behind the back)"): the stick goes with the body
+/// before the chest the way the view heads, whatever the eyes look at, the view turning and the
+/// body walking.
+#[test]
+fn a_stick_carried_goes_with_the_body_before_the_chest() {
+    for link in [None, Some(slow())] {
+        let carried = steered(link, true);
+        eprintln!(
+            "carried, {}: {carried:?}",
+            link.map_or("lossless", |_| "slow")
+        );
+        assert!(carried.held && carried.beyond < 0.01, "{carried:?}");
+        // Before the torso's front (its box 0.16 m before its axis): measured at least 0.52 m
+        // ahead lossless, 0.18 m over the slow link as the view turns (the hold a round trip
+        // late), level within 1.7°.
+        assert!(carried.tilt < 0.05 && carried.ahead > 0.15, "{carried:?}");
+    }
+}
+
+/// 100–130 ms each way, one packet in twenty lost.
+fn slow() -> Conditions {
+    Conditions {
+        latency: Duration::from_millis(100),
+        jitter: Duration::from_millis(30),
+        loss: 0.05,
+    }
 }
