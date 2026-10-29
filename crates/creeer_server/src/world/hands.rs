@@ -23,8 +23,6 @@ use creeer_sim::{carry, reach};
 const HZ: f64 = 8.0;
 /// How far the hands' planned turn leads the load's at most (rad).
 const LEAD_TURN: f64 = 0.5;
-/// The farthest the grip is from the shoulders (m: forward grip reach about 0.7 m).
-const REACH: f64 = 0.75;
 /// How far the hands' plan leads what they hold at most (m).
 const LEAD: f64 = 0.25;
 /// How far beyond the arms' reach of the shoulders the point held may be (m: the body moved
@@ -203,14 +201,7 @@ impl ServerWorld {
         } else {
             target
         };
-        let shoulders = reach::stooped(reach::shoulders(centre, up), up, target);
-        let off = target - shoulders;
-        let target = if off.length() > REACH {
-            shoulders + off * (REACH / off.length())
-        } else {
-            target
-        };
-        (target, turn)
+        (reach::within_arms(centre, up, target), turn)
     }
 
     /// Carrier `c`'s plan one step on towards `(target, turn)`: critically damped, its
@@ -282,7 +273,7 @@ impl ServerWorld {
             let c = self.carrying.get_mut(&by).expect("a carrier");
             c.pull = force;
             let from = (held - shoulders).length();
-            c.reach = c.reach.min(from.max(REACH));
+            c.reach = c.reach.min(from.max(reach::ARM));
             c.torn = if from > c.reach + OUT_OF_REACH {
                 c.torn + 1
             } else {

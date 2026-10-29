@@ -356,3 +356,6 @@ fn a_client_is_told_each_crates_age_and_its_wear_when_it_changes() {
 
 #[path = "steered_tests.rs"]
 mod steered;
+
+#[path = "held_view_tests.rs"]
+mod held_view;

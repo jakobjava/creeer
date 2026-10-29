@@ -56,6 +56,24 @@ pub fn stooped(shoulders: DVec3, up: DVec3, target: DVec3) -> DVec3 {
     shoulders - up * down + out.normalize_or_zero() * on
 }
 
+/// The farthest what the hands hold is from the shoulders (m: forward grip reach about 0.7 m;
+/// G2.10, ADR-0036).
+pub const ARM: f64 = 0.75;
+
+/// `target` brought within the arms' reach of the shoulders as they stoop to it ([`stooped`]),
+/// for a body at `centre` upright along `up`: where the hands can hold a point meant there. The
+/// server's hands hold there (`hands.rs`), and a client steers there (G2.10: a hold meant
+/// beyond it was drawn where no hand reached, the arm through the body).
+pub fn within_arms(centre: DVec3, up: DVec3, target: DVec3) -> DVec3 {
+    let shoulders = stooped(shoulders(centre, up), up, target);
+    let off = target - shoulders;
+    if off.length() > ARM {
+        shoulders + off * (ARM / off.length())
+    } else {
+        target
+    }
+}
+
 /// Where a character sees from (its head's centre).
 pub fn eye(centre: DVec3, up: DVec3) -> DVec3 {
     centre + up.normalize() * heights().1

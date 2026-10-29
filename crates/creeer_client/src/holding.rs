@@ -1,22 +1,25 @@
 //! Steering what the hands hold (G2.10, ADR-0036): held where the player means it, as people
-//! hold things before them. Taken, it is held where it was, relative to the view; it moves with
-//! the view; the wheel pushes it away or draws it in; Q with the mouse turns it (left–right and
-//! up–down about the view), Q with the wheel rolls it; Ctrl makes all of it five times finer;
+//! hold things before them. Taken, it is held where it was, from the avatar's eyes (not the
+//! camera behind them) in the view's frame; it moves with the view within the arms' reach,
+//! turning with the view's heading only; the wheel pushes it away or draws it in; Q with the
+//! mouse turns it (left–right and up–down about the heading), Q with the wheel rolls it; Ctrl
+//! makes all of it five times finer;
 //! H holds it still where it is (steady), the view and the other hand free to fasten it (J).
 //! Sent with each input (`creeer_net::message::Hold`): the server's hands bring it there as
 //! fast and as firmly as their strength allows (`creeer_server`'s `hands.rs`).
 
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_net::entity::EntityId;
-use creeer_net::message::Hold;
+
 use creeer_render::Camera;
 use creeer_server::Connection;
 use winit::keyboard::KeyCode;
 
-/// How far a notch of the wheel moves it (m), and how far from the eyes it is held (m).
+/// How far a notch of the wheel moves it (m), and how far from the eyes it is held (m: at most
+/// to the ground before the feet; the arms' reach holds it nearer, `reach::within_arms`).
 const NOTCH: f64 = 0.02;
 const NEAREST: f64 = 0.25;
-const FARTHEST: f64 = 1.1;
+const FARTHEST: f64 = 1.9;
 /// How far the mouse turns it (rad per pixel), and a notch rolls it (rad).
 const PER_PIXEL: f64 = 0.006;
 const ROLL: f64 = 0.08;
@@ -92,40 +95,40 @@ impl Holding {
         (true, fine)
     }
 
-    /// Each frame: what is held now (taken: held where it is, relative to the view `camera`),
-    /// and the hold sent with the inputs from now on.
+    /// Each frame: what is held now (taken: held where it is, from the avatar's eyes in the
+    /// view `camera`'s frame), and the hold sent with the inputs from now on, within the arms'
+    /// reach (`Connection::hold_in_view`).
     pub fn update(&mut self, camera: &Camera, connection: &mut Connection) {
+        let view = camera.rotation();
         let load = connection.own_load();
         if load != self.load {
             self.load = load;
             self.steady = false;
-            self.take(camera, connection);
+            self.take(view, connection);
         }
-        let (Some(_), Some(avatar)) = (self.load, connection.avatar()) else {
-            connection.set_hold(None);
-            return;
-        };
         // Let go of steady: held from where it is now (it does not jump back).
-        if !self.steady && self.was_steady {
-            self.take(camera, connection);
+        if self.load.is_some() && !self.steady && self.was_steady {
+            self.take(view, connection);
         }
         self.was_steady = self.steady;
-        let view = camera.rotation();
-        connection.set_hold(Some(Hold {
-            offset: camera.position + view * self.at - avatar.position,
-            turn: (view * self.turn).normalize(),
-            steady: self.steady,
-        }));
+        let held = self
+            .load
+            .and_then(|_| connection.hold_in_view(view, (self.at, self.turn), self.steady));
+        if let Some((_, at)) = held
+            && !self.steady
+        {
+            // Meant beyond the arms' reach, it is held at their reach: the wheel and the view
+            // go on from there.
+            self.at = at;
+        }
+        connection.set_hold(held.map(|h| h.0));
     }
 
-    /// Held from where it is now, relative to the view.
-    fn take(&mut self, camera: &Camera, connection: &Connection) {
-        let pose = self.load.and_then(|l| connection.poses().get(&l).copied());
-        let back = camera.rotation().conjugate();
-        (self.at, self.turn) = match pose {
-            Some(p) => (back * (p.position - camera.position), back * p.orientation),
-            None => (DVec3::new(0.0, -0.3, -0.6), DQuat::IDENTITY),
-        };
+    /// Held from where it is drawn now, from the eyes in the view `view`'s frame.
+    fn take(&mut self, view: DQuat, connection: &Connection) {
+        (self.at, self.turn) = connection
+            .held_in_view(view)
+            .unwrap_or((DVec3::new(0.0, -0.5, -0.6), DQuat::IDENTITY));
     }
 
     /// The keys' hint while something is held.
