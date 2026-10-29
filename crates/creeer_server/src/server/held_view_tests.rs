@@ -81,7 +81,7 @@ fn steered(link: Option<Conditions>, carried: bool) -> Held {
         let view = view_at(t);
         let client = &mut game.clients[0].0;
         let hold = if carried {
-            let hold = client.carry_hold(view, kept.1).expect("held");
+            let hold = client.carry_hold(view, kept.1, 0.0).expect("held");
             (hold, kept.0)
         } else {
             client.hold_in_view(view, kept, false).expect("held")
@@ -169,10 +169,12 @@ fn a_stick_carried_goes_with_the_body_before_the_chest() {
             link.map_or("lossless", |_| "slow")
         );
         assert!(carried.held && carried.beyond < 0.01, "{carried:?}");
-        // Before the torso's front (its box 0.16 m before its axis): measured at least 0.52 m
-        // ahead lossless, 0.18 m over the slow link as the view turns (the hold a round trip
-        // late), level within 1.7°.
-        assert!(carried.tilt < 0.05 && carried.ahead > 0.15, "{carried:?}");
+        // Before the body: measured at least 0.52 m ahead of its axis lossless; over the slow
+        // link 0.095 m as the view turns 90° (the hold a round trip late, held low as the view
+        // starts looking down), level within 3.2° (debug) and 2.6° (release); 28° steered from the
+        // camera before.
+        let least = if link.is_some() { 0.05 } else { 0.4 };
+        assert!(carried.tilt < 0.1 && carried.ahead > least, "{carried:?}");
     }
 }
 

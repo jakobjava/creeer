@@ -5,18 +5,15 @@
 //! (its turns' hold), so it is known after a save and wherever the structure goes.
 
 use super::building::{UnderWay, Work};
-use super::tree_joints::Touched;
 use super::*;
 use creeer_physics::structure::{ImplicitSolver, Scheme};
 
 impl ServerWorld {
-    /// What player `by`'s fastening of `part` at `at` with the catalogue's fastener `k` is:
-    /// held, a part is nailed or pegged by the free hand while the other keeps it steady (H),
-    /// or tacked by a lashing's first turns; hands free, a lashing tacked there is finished,
-    /// anything else fastened whole. Refused unless the parts touch there.
+    /// What fastening `part` at `at` with the catalogue's fastener `k` is: a lashing tacked
+    /// there (by an older save's rule) finished, anything else fastened whole. Refused unless the
+    /// parts touch there.
     pub(super) fn fastening_work(
         &self,
-        by: EntityId,
         part: EntityId,
         at: DVec3,
         k: usize,
@@ -26,31 +23,14 @@ impl ServerWorld {
             fastener.kind,
             creeer_building::fasteners::Kind::Lashing { .. }
         );
-        let tacked = lashing && self.tack_near(part, at, k).is_some();
-        let Some(c) = self.carrying.get(&by) else {
-            if tacked {
-                return Ok(Work::Finish);
-            }
-            self.touching_any(part, at)?;
-            return Ok(Work::Fasten);
-        };
-        if tacked {
-            return Err("finishing a lashing takes both hands: let go first (G)".into());
+        // A lashing tacked before (an older save's) is finished; anything else is fastened whole,
+        // held or not: held, the hands keep it still while the other works (`hands.rs`; G2.10,
+        // the user: "i cant get things to fasten").
+        if lashing && self.tack_near(part, at, k).is_some() {
+            return Ok(Work::Finish);
         }
-        if !c.tool && c.steady.is_none() {
-            return Err("hold it steady first (H), then fasten it".into());
-        }
-        let (other, _) = self.touching_any(part, at)?;
-        if !lashing {
-            return Ok(Work::Fasten);
-        }
-        // One hand holds one of the parts in place; the other wraps (not round a tool in hand).
-        let holds_one = c.load == part || matches!(other, Touched::Part(id) if id == c.load);
-        if holds_one && !c.tool && fastener.tacked().is_some() {
-            Ok(Work::Tack)
-        } else {
-            Err("a lashing takes both hands: put down what you hold".into())
-        }
+        self.touching_any(part, at)?;
+        Ok(Work::Fasten)
     }
 
     /// The joint of built structure `id` nearest `at` (within reach of it), if it is a tack of

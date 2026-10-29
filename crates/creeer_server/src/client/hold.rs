@@ -22,6 +22,14 @@ impl Connection {
     }
 }
 
+/// How far the hands go up or down as the view looks up or down (m per unit of the sine of the
+/// view's pitch: looking 45° down lays it on the ground before the feet, as one looks there to
+/// place it), at most down (to the ground, stooping) and up (above the
+/// head); and how far the wheel holds it out beyond the chest at most (m).
+const LOOKED: f64 = 1.6;
+const LOWEST: f64 = 1.35;
+const HIGHEST: f64 = 0.5;
+const MOST_OUT: f64 = 0.45;
 /// How far to the right of the body's middle one hand carries (m).
 const ONE_HAND_ASIDE: f64 = 0.12;
 /// How far before the body's axis a thing placed is held at least (m).
@@ -100,23 +108,34 @@ impl Connection {
 }
 
 impl Connection {
-    /// The hold carrying what the hands hold before the chest, the way the view `view` heads,
-    /// turned `turn` from that heading (as taken, or as turned since): it goes with the body
-    /// whatever the eyes look at, and the body faces it (G2.10: steered with the view, the body
-    /// stooped and reached about after it).
-    pub fn carry_hold(&self, view: DQuat, turn: DQuat) -> Option<Hold> {
+    /// The hold for what the hands hold: before the chest the way the view `view` heads, `out`
+    /// m farther out (the wheel), lowered as the view looks down and raised as it looks up (to
+    /// lay it on what lies low, or lift it onto what stands high), turned `turn` from that
+    /// heading. It goes with the body; within the arms' reach the body stoops to it (G2.10,
+    /// the user's play: one way to hold and place, the body leading).
+    pub fn carry_hold(&self, view: DQuat, turn: DQuat, out: f64) -> Option<Hold> {
         let carried = self.own_carried()?;
         let avatar = self.avatar()?;
         let up = avatar.position.normalize();
         let heading = heading(view, up);
-        // Before the chest, as the server's hands carry by themselves (`carry::held`).
-        let chest = creeer_sim::carry::held(avatar.position, up, heading * DVec3::NEG_Z)
-            // In one hand, the right, before its own half of the chest: at the middle, the
-            // forearm crossed the body.
-            + (heading * DVec3::X) * if carried.one_hand { ONE_HAND_ASIDE } else { 0.0 };
+        let forward = heading * DVec3::NEG_Z;
+        // Before the chest, as the server's hands carry by themselves (`carry::held`); in one
+        // hand, the right, before its own half of the chest (at the middle, the forearm
+        // crossed the body).
+        let aside = if carried.one_hand {
+            ONE_HAND_ASIDE
+        } else {
+            0.0
+        };
+        let looked = (view * DVec3::NEG_Z).dot(up).clamp(-1.0, 1.0);
+        let chest = creeer_sim::carry::held(avatar.position, up, forward)
+            + (heading * DVec3::X) * aside
+            + forward * out.clamp(0.0, MOST_OUT)
+            + up * (looked * LOOKED).clamp(-LOWEST, HIGHEST);
         let turn = (heading * turn).normalize();
+        let grip = reach::within_arms(avatar.position, up, chest);
         Some(Hold {
-            offset: chest - turn * carried.grip - avatar.position,
+            offset: grip - turn * carried.grip - avatar.position,
             turn,
             steady: false,
         })

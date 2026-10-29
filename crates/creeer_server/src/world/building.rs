@@ -96,7 +96,7 @@ impl ServerWorld {
         let k = (self.building.fasteners.iter())
             .position(|f| f.name == fastener)
             .ok_or_else(|| format!("no fastener {fastener}"))?;
-        let work = self.fastening_work(by, part, at, k)?;
+        let work = self.fastening_work(part, at, k)?;
         let whole = &self.building.fasteners[k];
         let tack = whole.tacked().map_or(0.0, |t| t.seconds);
         let (seconds, doing) = match work {

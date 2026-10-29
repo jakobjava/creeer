@@ -1,28 +1,18 @@
-//! What the hands hold (G2.10, ADR-0036): carried as people carry things, the body leading and
-//! the thing going with it (the user, 2026-10-29: "things are usually carried in front of the
-//! chest"); placed by aiming it, the body turning and bending to it.
-//! - Carried (by default): before the chest, the way the view heads, whatever the eyes look at
-//!   (`Connection::carry_hold`). Q with the mouse turns it, Q with the wheel rolls it.
-//! - Placed (left Alt held): where the view aims from the avatar's eyes, before the body and
-//!   within the arms' reach (`Connection::hold_in_view`); the wheel pushes it away or draws it
-//!   in. Let go of Alt, it is carried again.
-//! - Ctrl makes all of it five times finer; H holds it still where it is (steady), the view and
-//!   the other hand free to fasten it (J).
-//!
-//! Sent with each input (`creeer_net::message::Hold`): the server's hands bring it there as
-//! fast and as firmly as their strength allows (`creeer_server`'s `hands.rs`).
+//! What the hands hold (G2.10, ADR-0036), one way (the user, 2026-10-29: one simple way to hold
+//! and place, the body leading): held before the chest, going with the body the way the view
+//! heads; lowered as the view looks down and raised as it looks up, to lay it on what lies low
+//! or lift it onto what stands high; the wheel holds it farther out or nearer; Q with the mouse
+//! turns it, Q with the wheel rolls it; Ctrl makes all of it five times finer. J fastens it
+//! where it touches: the hands keep it still meanwhile (`Connection::carry_hold`).
 
-use creeer_math::glam::{DQuat, DVec3};
+use creeer_math::glam::DQuat;
 use creeer_net::entity::EntityId;
 use creeer_render::Camera;
 use creeer_server::Connection;
 use winit::keyboard::KeyCode;
 
-/// How far a notch of the wheel moves it (m), and how far from the eyes it is placed (m: at
-/// most to the ground before the feet; the arms' reach holds it nearer, `reach::within_arms`).
-const NOTCH: f64 = 0.02;
-const NEAREST: f64 = 0.25;
-const FARTHEST: f64 = 1.9;
+/// How far a notch of the wheel holds it out (m).
+const NOTCH: f64 = 0.03;
 /// How far the mouse turns it (rad per pixel), and a notch rolls it (rad).
 const PER_PIXEL: f64 = 0.006;
 const ROLL: f64 = 0.08;
@@ -34,19 +24,12 @@ const FINE: f64 = 0.2;
 pub struct Holding {
     /// The thing held, as the server told it.
     load: Option<EntityId>,
-    /// Where its centre is placed, from the eyes in the view's frame (x right, y up, −z ahead),
-    /// and its turn from the view's heading (carried or placed).
-    at: DVec3,
+    /// How far beyond the chest it is held out (m), and its turn from the view's heading.
+    out: f64,
     turn: DQuat,
-    /// Held still where it is (H).
-    pub steady: bool,
-    /// Left Alt held: placing it. Q held: the mouse and the wheel turn it. Ctrl held: finer.
-    placing: bool,
+    /// Q held: the mouse and the wheel turn it. Ctrl held: finer.
     turning: bool,
     pub fine: bool,
-    /// Whether it was held steady, and placed, last frame.
-    was_steady: bool,
-    was_placing: bool,
 }
 
 impl Holding {
@@ -55,46 +38,41 @@ impl Holding {
         self.load.is_some()
     }
 
-    /// A key (Alt, Q, H, Ctrl); whether it was one for what is held. Alt, Q and Ctrl are
-    /// followed with nothing held too: let go of while Q was down, the next thing taken turned
-    /// with the mouse.
+    /// A key (Q, Ctrl); whether it was one for what is held. Followed with nothing held too:
+    /// let go of while Q was down, the next thing taken turned with the mouse.
     pub fn key(&mut self, code: KeyCode, pressed: bool) -> bool {
         match code {
-            KeyCode::AltLeft => self.placing = pressed,
             KeyCode::KeyQ => self.turning = pressed,
             KeyCode::ControlLeft | KeyCode::ControlRight => self.fine = pressed,
-            KeyCode::KeyH if pressed && self.holding() => self.steady = !self.steady,
-            KeyCode::KeyH => {}
             _ => return false,
         }
         self.holding()
     }
 
-    /// A turn of the wheel while something is held: rolled with Q; placing, pushed away or
-    /// drawn in. Whether it took it (carried, the wheel is the camera's).
+    /// A turn of the wheel while something is held: rolled with Q, else held out farther or
+    /// nearer. Whether it took it.
     pub fn wheel(&mut self, notches: f64) -> bool {
-        if !self.holding() || self.steady || !(self.turning || self.placing) {
+        if !self.holding() {
             return false;
         }
         let gain = if self.fine { FINE } else { 1.0 };
         if self.turning {
             self.turn = DQuat::from_rotation_z(-notches * ROLL * gain) * self.turn;
         } else {
-            let distance = (self.at.length() + notches * NOTCH * gain).clamp(NEAREST, FARTHEST);
-            self.at = self.at.normalize_or(DVec3::NEG_Z) * distance;
+            self.out = (self.out + notches * NOTCH * gain).clamp(0.0, 0.45);
         }
         true
     }
 
     /// The mouse moved: with Q held it turns what is held (and not the view). Whether it took
-    /// it, and how much the view turns with the mouse (Ctrl held: finer, for placing it).
+    /// it, and how much the view turns with the mouse (Ctrl held: finer).
     pub fn mouse(&mut self, (dx, dy): (f64, f64)) -> (bool, f64) {
         let fine = if self.holding() && self.fine {
             FINE
         } else {
             1.0
         };
-        if !(self.holding() && self.turning) || self.steady {
+        if !(self.holding() && self.turning) {
             return (false, fine);
         }
         let gain = PER_PIXEL * fine;
@@ -103,59 +81,27 @@ impl Holding {
         (true, fine)
     }
 
-    /// Each frame: what is held now (taken: its turn from the view's heading as it lies), and
-    /// the hold sent with the inputs from now on: carried before the chest, placed where the
-    /// view aims (`Connection::hold_in_view`), or held still.
+    /// Each frame: what is held now (taken: its turn from the view's heading as it lies, held
+    /// at the chest), and the hold sent with the inputs from now on.
     pub fn update(&mut self, camera: &Camera, connection: &mut Connection) {
         let view = camera.rotation();
         let load = connection.own_load();
         if load != self.load {
             self.load = load;
-            self.steady = false;
-            self.take(view, connection);
+            self.out = 0.0;
+            self.turn = (connection.held_in_view(view)).map_or(DQuat::IDENTITY, |h| h.1);
         }
-        // Placing from where it is now, or let go of steady there (it does not jump).
-        let placing = self.placing && !self.steady;
-        if self.load.is_some()
-            && ((placing && !self.was_placing) || (!self.steady && self.was_steady))
-        {
-            self.take(view, connection);
-        }
-        (self.was_steady, self.was_placing) = (self.steady, placing);
-        let hold = if self.load.is_none() {
-            None
-        } else if self.steady || placing {
-            let held = connection.hold_in_view(view, (self.at, self.turn), self.steady);
-            if let Some((_, at)) = held
-                && !self.steady
-            {
-                // Meant beyond the arms' reach, it is held at their reach: the wheel and the
-                // view go on from there.
-                self.at = at;
-            }
-            held.map(|h| h.0)
-        } else {
-            connection.carry_hold(view, self.turn)
-        };
+        let hold = self
+            .load
+            .and_then(|_| connection.carry_hold(view, self.turn, self.out));
         connection.set_hold(hold);
-    }
-
-    /// Placed from where it is drawn now, from the eyes in the view `view`'s frame.
-    fn take(&mut self, view: DQuat, connection: &Connection) {
-        (self.at, self.turn) = connection
-            .held_in_view(view)
-            .unwrap_or((DVec3::new(0.0, -0.5, -0.6), DQuat::IDENTITY));
     }
 
     /// The keys' hint while something is held.
     pub fn hint(&self) -> Option<&'static str> {
-        self.holding().then_some(if self.steady {
-            "held steady · J fasten · K fastener · H let it move · G put down"
-        } else if self.placing {
-            "placing: aim it · wheel nearer/farther · Q+mouse turn · Ctrl fine · H steady · let go of Alt: carry"
-        } else {
-            "carrying · hold Alt: place · Q+mouse turn · Q+wheel roll · H steady · G put down · T throw"
-        })
+        self.holding().then_some(
+            "look down/up: lower/raise · wheel: out/in · Q+mouse: turn · J: fasten where it touches · G: put down · T: throw",
+        )
     }
 }
 
@@ -163,11 +109,9 @@ impl Holding {
 mod tests {
     use super::*;
 
-    /// Holding something at the default place before the eyes.
     fn held() -> Holding {
         Holding {
             load: Some(EntityId(5)),
-            at: DVec3::new(0.0, -0.3, -0.6),
             ..Holding::default()
         }
     }
@@ -175,39 +119,33 @@ mod tests {
     #[test]
     fn nothing_held_takes_no_keys_wheel_or_mouse() {
         let mut h = Holding::default();
-        assert!(!h.key(KeyCode::KeyQ, true) && !h.key(KeyCode::KeyH, true));
-        assert!(!h.wheel(1.0));
+        assert!(!h.key(KeyCode::KeyQ, true) && !h.wheel(1.0));
         assert_eq!(h.mouse((10.0, 0.0)), (false, 1.0));
-        assert!(h.hint().is_none() && !h.steady);
+        assert!(h.hint().is_none());
     }
 
     #[test]
-    fn placing_the_wheel_moves_it_two_centimetres_a_notch_within_reach_and_finer_with_ctrl() {
+    fn the_wheel_holds_it_out_a_notch_at_a_time_finer_with_ctrl_and_within_reach() {
         let mut h = held();
-        // Carried, the wheel is the camera's.
-        assert!(!h.wheel(1.0));
-        assert!(!h.key(KeyCode::AltLeft, true) || h.placing);
-        let from = h.at.length();
         assert!(h.wheel(1.0));
-        assert!((h.at.length() - from - NOTCH).abs() < 1e-12);
-        assert!(h.key(KeyCode::ControlLeft, true));
+        assert!((h.out - NOTCH).abs() < 1e-12);
+        h.key(KeyCode::ControlLeft, true);
         h.wheel(1.0);
-        assert!((h.at.length() - from - NOTCH * (1.0 + FINE)).abs() < 1e-12);
+        assert!((h.out - NOTCH * (1.0 + FINE)).abs() < 1e-12);
         assert_eq!(h.mouse((0.0, 0.0)), (false, FINE), "the view finer too");
         for _ in 0..1000 {
             h.wheel(1.0);
         }
-        assert!((h.at.length() - FARTHEST).abs() < 1e-12);
+        assert!((h.out - 0.45).abs() < 1e-12);
         for _ in 0..1000 {
             h.wheel(-1.0);
         }
-        assert!((h.at.length() - NEAREST).abs() < 1e-12);
+        assert!(h.out.abs() < 1e-12);
     }
 
     #[test]
     fn with_q_the_mouse_turns_it_and_the_wheel_rolls_it() {
         let mut h = held();
-        let at = h.at;
         assert!(h.key(KeyCode::KeyQ, true));
         assert_eq!(h.mouse((100.0, 0.0)), (true, 1.0), "not the view");
         let yaw = h.turn.angle_between(DQuat::IDENTITY);
@@ -215,19 +153,7 @@ mod tests {
         h.turn = DQuat::IDENTITY;
         h.wheel(2.0);
         assert!((h.turn.angle_between(DQuat::IDENTITY) - 2.0 * ROLL).abs() < 1e-9);
-        assert_eq!(h.at, at, "rolled, not moved");
-    }
-
-    #[test]
-    fn held_steady_neither_the_wheel_nor_the_mouse_moves_it() {
-        let mut h = held();
-        assert!(h.key(KeyCode::KeyH, true) && h.steady);
-        assert!(h.key(KeyCode::KeyH, false) && h.steady, "a press toggles");
-        h.key(KeyCode::KeyQ, true);
-        assert!(!h.wheel(1.0) && !h.mouse((5.0, 5.0)).0);
-        assert!(h.hint().is_some_and(|t| t.contains("J fasten")));
-        h.key(KeyCode::KeyH, true);
-        assert!(!h.steady);
+        assert!(h.out.abs() < 1e-12, "rolled, not held out");
     }
 
     #[test]

@@ -55,19 +55,15 @@
 3. **Steered by the player** (protocol 30, with ADR-0008's round 31; the grip told, 32):
    - **The hold:** sent with every input (`AvatarInput::hold`: the load's centre from the avatar's, its turn, steady), delta-coded and quantised (1 mm, a quarter milliradian), so the client predicts with what the server applies.
    - **Taken:** it is held where it was, relative to the view.
-   - **The keys** (`creeer_client`'s `holding.rs`; carrying and placing apart: the user, 2026-10-29):
-     - carried by default: before the chest, the forearms raised 30° from level, the upper arms hanging, the load against the body (`carry::held`; one hand before its own half of the chest), the way the view heads, whatever the eyes look at;
-     - left Alt held, placed: where the view aims from the avatar's eyes, before the body (at least 0.3 m) and within the arms' reach; let go of Alt, carried again;
-     - placing, the wheel pushes it away or draws it in, 2 cm a notch;
-     - Q with the mouse turns it about the view's up and right axes;
-     - Q with the wheel rolls it;
-     - Ctrl makes all of it, and the view, five times finer;
-     - H holds it steady where it is, the view and the other hand free;
-     - G puts it down; T throws it.
+   - **The keys** (`creeer_client`'s `holding.rs`; one way, the body leading: the user, 2026-10-29, after rejecting the modes below):
+     - held before the chest, the forearms raised 30°, the load against the body (`carry::held`; one hand before its own half of the chest), the way the view heads;
+     - lowered as the view looks down and raised as it looks up (1.6 m per unit of the pitch's sine: 45° down lays it on the ground before the feet), the body stooping within the arms' reach;
+     - the wheel holds it up to 0.45 m farther out; Q with the mouse turns it, Q with the wheel rolls it; Ctrl makes all of it five times finer;
+     - J fastens it where it touches: the hands keep it still while the other hand works, lashings too; G puts it down; T throws it.
    - **A hint** of these keys shows while something is held.
 4. **Fastening while holding:**
-   - **Held steady,** a part is nailed or pegged with the free hand. While that hand works, the other holds it with one hand's strength and torque, so a part too heavy for one hand sags unless it rests on something: tack it where it rests, adjust it, nail the rest.
-   - **A lashing is tacked, then finished** (`tacking.rs`; the user chose it, 2026-10-28). Held steady, the free hand makes the lashing's first turns (its `tack` in `data/fasteners.ron`: 2 of the bast lashing's 4, in their share of its time, 15 s), as a lone builder starts a square lashing: laid against the first turns, a crossbar is held by them. Let go, the tack holds the part (half the whole lashing's clamp and hold); J with both hands free draws the rest of its turns (the other 15 s), the joint made anew with the whole lashing where its parts lie. The tack is told from a whole lashing by what its joint keeps (its turns' hold apart), so it is known after a save and wherever its structure goes. The strip is taken by the tack.
+   - **J fastens what is held where it touches**, held or not, nails, pegs and lashings alike: while the other hand works the hands keep the part still where it was (`hands.rs`: steady while the fastening is under way), with one hand's strength and torque, so a part too heavy for one hand sags unless it rests on something (the user, 2026-10-29: "i cant get things to fasten"; tested as the player builds, `server/build_flow_tests.rs`: a pole lowered onto another by looking down touches in 2.6 s and is nailed, or lashed, into one structure).
+   - A lashing tacked under the rule before (an older save's) is finished with J (`tacking.rs`).
    - **Fastened, the hands let go:** the joint holds the part, and a part made a structure has other nodes than the one gripped (held on, it was yanked towards the old node's frame).
 5. **Drawn** (the client: `creeer_client`'s `animate/grasp.rs`, `arms.rs`, `holding.rs`, `hands_rest.rs`; the own load in `creeer_server`'s `client/steered.rs`):
    - **The grip told** (protocol 32): `Kind::Character`'s `carries` is a `Carried`: the load, the point held in the frame the load is drawn in (its node 0's, to 1/1024 m) and one hand or two (one too while the other fastens). It is told when taken; again at once when the hands change, and when the point has moved over 1 cm along a pole hand over hand, at most every 6 ticks, as a structure's shape is (`grip_told.rs`).

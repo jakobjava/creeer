@@ -86,7 +86,7 @@ impl ServerWorld {
             let step = angle.clamp(-TURN * DT, TURN * DT);
             c.facing = (DQuat::from_axis_angle(up, step) * c.facing).normalize();
         }
-        let (target, turn) = Self::meant(c, centre, up);
+        let (target, turn) = Self::meant(c, centre, up, busy);
         let l = &self.world.bodies[b].structure;
         let held = l.position[c.node] + l.orientation[c.node] * c.grip;
         let turning = (if c.one_hand || busy { WRIST } else { grip() }, largest);
@@ -171,11 +171,14 @@ impl ServerWorld {
     }
 
     /// Where carrier `c`'s hands mean the grip, and the load's turn: as the player steers it
-    /// (held still where it was when steadied), or by themselves before the body (by the side,
-    /// a tool); within the arms' reach of the shoulders.
-    fn meant(c: &mut Carry, centre: DVec3, up: DVec3) -> (DVec3, DQuat) {
+    /// (held still where it was when steadied or while it is fastened), or by themselves before
+    /// the body (by the side, a tool); within the arms' reach of the shoulders.
+    fn meant(c: &mut Carry, centre: DVec3, up: DVec3, busy: bool) -> (DVec3, DQuat) {
+        // Fastening it (the other hand at work), held still where it was: the player need not
+        // steady it first (G2.10, the user: "i cant get things to fasten").
+        let still = busy || c.input.is_some_and(|h| h.steady);
         let (target, turn) = match c.input {
-            Some(h) if h.steady => *c.steady.get_or_insert((centre + c.plan.at, c.plan.turn)),
+            _ if still => *c.steady.get_or_insert((centre + c.plan.at, c.plan.turn)),
             // (The player steers the load's own place and turn; the hands hold it at the grip.)
             Some(h) => (centre + h.offset + h.turn * c.grip, h.turn),
             None => {
@@ -187,7 +190,7 @@ impl ServerWorld {
                 (at, facing_frame(c.facing, up) * c.turn)
             }
         };
-        if !c.input.is_some_and(|h| h.steady) {
+        if !still {
             c.steady = None;
         }
         // Clear of the body: at least as far out from its axis as it was found to need when
