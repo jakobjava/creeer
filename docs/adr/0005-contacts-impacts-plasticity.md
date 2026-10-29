@@ -517,11 +517,44 @@ Found by printing, for each face's deepest sampled point, its depth with and wit
 ### Measured (development machine)
 - Every play and stress hash is unchanged at both lengths (`play --check`, `stress --check`, short and full): no scene's projection left the paths where the field falls as a distance, and there they are as before, bit for bit. So no scene's cost moved.
 
-### Not settled (2026-10-29, for the coordinator)
-- **`rim_tests.rs` at 20°: 0.087 m/s at the end (gate 0.05).** The pole never comes to rest there, before or now. It rolls about its own axis every other step (0.9 rad/s), and the guard stops it dead between: its last tick samples a step of the two. As projected before it ended at 0.018 m/s, the rolling slowly dying away, and passed; now the rolling grows to 0.087 m/s at tick 240, and over 15 s it bursts to 0.2 m/s and creeps 15 cm down the hole. In both, half the steps end with energy the guard takes back, every scheme having gained it (155 such steps in 4 s before, 106 now). Not yet found; likely the friction on lagged normal forces at a rolling face (G2P: friction updated within Newton's iterations).
-- **`building_tests.rs`, the pole let go in its hole, now stands** (0.07° after 3 s; the test wants it fallen past 30°). Stood exactly upright on its sawn end, 10 cm across, its centre of mass 1 m up, it tips only past 2.9°: it stands, as a real one would. As projected before, it "fell" because it was thrown: at its second tick it stood dead, at its third it left the hole at 6.7 m/s and 11 rad/s and landed 7.9 m away. Proposed (`docs/adr/0005/post-let-go-leaning.diff`, not applied): let it go leaning 5°, past its tipping angle; the set post as it is, bit for bit. With it the test passes.
+### Two tests it unsettled (settled by the user, 2026-10-29)
+- **`rim_tests.rs` at 20°** ends at 0.087 m/s (gate 0.05). The pole rolls about its own axis every other step, at about 0.9 rad/s, and creeps 15 cm down the hole in 15 s, as it did before this amendment; before, its last tick happened to read 0.018 m/s. Its cause was found, and its fix measured and set aside for G2P's P1 (below, "Friction anchors loaded beyond sticking"). Its case is now its own test, ignored with its assertions kept, and a rest over the whole last second added: `a_pole_leaning_20_degrees_on_a_narrow_holes_rim_is_still`. 10° and 30° pass as they were.
+- **`building_tests.rs`: the pole let go in its hole now stands** (0.07° after 3 s; the test wants it fallen past 30°). Stood exactly upright on its sawn end, 10 cm across, its centre of mass 1 m up, it tips only past 2.9°: it stands, as a real one would. As projected before, it "fell" because it was thrown: at its second tick it stood dead, at its third it left the hole at 6.7 m/s and 11 rad/s and landed 7.9 m away. The user chose to let it go leaning 5°, past its tipping angle (`docs/adr/0005/post-let-go-leaning.diff`). The set post is as it was, bit for bit.
 
 ### Limits (`docs/future-improvements.md`)
 - **A ridge of the field is taken as clear by its guarantee**, not measured to its nearest ground: a point moving farther in one step than the guarantee would press a ground that is not there.
 - **One curvature for a whole face** (F5): fitted from its outline's normals. Over a junction it reaches 50–80 m⁻¹ where the ground is plane but for a rounded edge. With the feet the nearest it no longer moves the depths where they were found, only over the step's travel t, by ½·S·t² (about 1 cm at 80 m⁻¹ and 1.6 cm a step).
 - **A slender face is split as a square one**: a 3 m × 2.4 cm face of a pole over the junction took the 1,024 triangles of the cap for its length alone, every corner projected.
+
+
+### Friction anchors loaded beyond sticking (found; its fix set aside for G2P P1)
+The 20° rim case was traced in the physics alone, in a field dug as the terrain digs (`world/ground/rim_probe.rs`, ignored). Each step's energy was split by part, with its contacts and its friction offsets as the step starts.
+- **The cycle.** The even steps were impacts: the rolling faces met the wall at 0.05–0.12 m/s. Their backward-Euler step gained about 32 mJ (kinetic −11 mJ, gravity +7 mJ, contacts +36 mJ), and the guard stopped the pole. The odd steps (BDF2, from rest) let the contacts' surplus out as rolling.
+- **Ruled out, measured:**
+  - the lagged normal forces of friction (the pole still rolled at 0.55 rad/s without their refresh);
+  - Newton's starting point (from the step's start, the same);
+  - the stick distance (ten times smaller, the same);
+  - the faces' fitted curvature (6–10 m⁻¹, sound).
+  Without friction there was no cycle.
+- **The cause.** Contacts began their steps with friction offsets of 0.4–3.9 mm, against a stick distance of 0.1 mm.
+  - They were the corners of the pole's 3 m faces, 9–13 cm from the wall their faces pressed on. A face's corner is anchored at its foot, 10 cm off along the normal.
+  - Each step's normal is found afresh and turned 1–2°, and that offset along the old normal came out 2–4 mm across the new one.
+  - The friction loaded so pushes the body as it lets go, and the energy guard books no friction.
+- **Prior work:**
+  - Li et al., "Incremental Potential Contact" (*SIGGRAPH*, 2020): friction as a smoothed lagged potential, its normal force and tangent basis from the last iterate. No friction stores more than its smoothing holds.
+  - Kikuchi & Oden, *Contact Problems in Elasticity* (SIAM, 1988), and Wriggers, *Computational Contact Mechanics* (2006): regularised Coulomb friction, an elastic stick below a slip limit and sliding beyond, the stick point moved on as the contact slides. An anchor farther than the stick distance belongs to a sliding contact, not to stored elasticity.
+  - Catto, Box2D's persistent contact manifolds: contact points matched by feature from step to step, their impulses carried over.
+
+**Measured and rejected** (the user set it aside for G2P's P1, 2026-10-29). The fix was two halves, both in `docs/adr/0005/anchors-kept-and-clamped.diff`. After a step, an anchor off its point along the normal by more than the stick distance is kept under its point with its stick offset (`Contacts::kept_anchor`). A new contact's anchor is clamped to the stick distance across its normal (`anchor::within_stick`).
+
+| Tried | Measured | Why set aside |
+|---|---|---|
+| **Both halves** (the patch) | **The 20° pole rests:** 0 m/s, 0 rad/s, its foot not moving over its last second, against 0.087 m/s, 0.88 rad/s and 13 mm. **Scenes, full lengths, three runs each:** *crowd*'s worst tick 69 → 19 ms (most work 11,606 → 4,340, p99 20 → 10.5 ms); *builders* 53 → 35 ms (1,031 → 859); *log_bridge*'s breaking tick 2.6 → 2.0 s (445,513 → 342,005 iterations, but p50 1.05 → 1.18 ms and p99 42.8 → 46.2 ms); *toolmaking* 121 → 108. **But:** *lumberjack*'s worst tick 34.5 → 64 ms and p99 14.7 → 17.2 ms (at tick 1319 a 69 kg and an 82 kg trunk land together, 145 Newton iterations against 73); *drop*'s worst tick 2,554 → 2,738 iterations; the lossless crate prediction's worst share 0.0552 → 0.0613 (gate 0.061); **the lone felled trunk of `play/rest_tests.rs` never sleeps** (0.00031 m/s, 0.059 rad/s after 6 s). At 10° the pole ends 2 cm higher than without (0.80 m down) and falls into the round-bottom cycle (G2P P1, below); at 30° a bump found anew pressed in (0.28 mm, 0.70 J against the 0.04 J the last step left) still rattles it (0.078 m/s, 0.10 rad/s, 1.2 mm) | The trunk's rest and *lumberjack*'s time; P1 starts from the patch and these tests |
+| Kept under the point only | All three leans rest (10°: 0.016 m/s; 30°: still); the trunk sleeps; *builders* 2,264 at tick 214, over its ceiling of 1,134 (p99 29 ms at CI's length); *lumberjack* p99 23.1 ms, worst 41.5 ms; *crowd* 5,733 | *builders* |
+| Clamped at a new contact only | The trunk sleeps; the 20° pole still rolls every other step, at 0.04 rad/s, a fallback each step | The rim pole |
+| Both, with a new contact's anchor put under its point instead of clamped | *lumberjack* p99 16.5 ms, worst 55 ms; the trunk does not sleep; 10° still cycles | The trunk |
+
+- **Two defects these tests also show** (G2P P1's gates, `plan.md`; `docs/future-improvements.md`):
+  - a bump of the ground found anew already pressed in (30°, with the patch);
+  - a pole's foot at a hole's round bottom (10°, with the patch; in the dug field with the old anchors too). It falls freely two steps (0.163 and 0.327 m/s), lands, ends the next step 1.1 cm higher with about 27 J in its contacts, and is stopped dead, over and over.
+- **Without the patch, over the last second:** 10° at 0.021 m/s; 30° at 0.054 m/s and 1.18 rad/s, its foot 12.5 mm on. Neither is yet at rest over a whole second.

@@ -235,7 +235,16 @@ fn builders_heavy_ticks() {
                             })
                         })
                         .collect();
-                    (height, touching)
+                    let s = &w.world.bodies[i].structure;
+                    let radial = s.velocity[0].dot(x.normalize());
+                    let kinetic = s.node_energy().0;
+                    (
+                        height,
+                        x.length() - 1.0e6 * (x.length() / 1.0e6).floor(),
+                        radial,
+                        kinetic,
+                        touching,
+                    )
                 });
                 println!("  {tick}: {:?} {what:.2?}", before[k].1);
             }

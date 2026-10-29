@@ -37,6 +37,8 @@ pub(super) const BULGE: f64 = 1e-3;
 #[cfg(test)]
 mod hole_tests;
 mod projection;
+#[cfg(test)]
+mod rim_probe;
 pub use projection::closest;
 pub(super) use projection::{estimate, project};
 

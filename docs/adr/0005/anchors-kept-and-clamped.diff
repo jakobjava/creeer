@@ -1,0 +1,113 @@
+diff --git a/crates/creeer_physics/src/world/anchor.rs b/crates/creeer_physics/src/world/anchor.rs
+index aa28bbc..0802099 100644
+--- a/crates/creeer_physics/src/world/anchor.rs
++++ b/crates/creeer_physics/src/world/anchor.rs
+@@ -7,7 +7,7 @@
+ //! (`friction.rs`).
+ 
+ use super::Body;
+-use super::contact::{Contacts, Side};
++use super::contact::{Contact, Contacts, STICK_DISTANCE, Side};
+ use crate::structure::NodeId;
+ use crate::structure::group::MemberState;
+ use creeer_math::glam::DVec3;
+@@ -88,6 +88,52 @@ pub fn bumps(anchors: &[Anchor]) -> HashMap<(usize, NodeId), Vec<(DVec3, f64)>>
+ /// come back to within rounding.
+ pub const SAME_BUMP: f64 = 1.0e-4;
+ 
++/// A new contact's anchor (as found, or kept from the last step), brought to within the stick
++/// distance of A's point `at` across its normal, if it lay farther: its contact was sliding,
++/// and its anchor follows, as after a step (`Contacts::moved_anchor`). An anchor farther holds
++/// friction loaded beyond what sticking holds, which the step lets go as motion: the energy
++/// guard books no friction. A face's corner a hole's depth from the wall it presses on (a
++/// pole's 3 m face, its corner 10 cm out) had its anchor at its foot, 10 cm off along the
++/// normal; the next step's normal, turned 1–2°, put that 2–4 mm across it, and a pole leaning
++/// in a hole rolled about its axis every other step, stopped dead by the guard between (G2.10).
++pub(super) fn within_stick(
++    bodies: &[Body],
++    b: Option<(usize, NodeId)>,
++    contact: &mut Contact,
++    at: DVec3,
++) {
++    let world = |side: Side| match (side, b) {
++        (Side::Node { node, local, .. }, Some((body, _))) => {
++            let s = &bodies[body].structure;
++            Some(s.position[node] + s.orientation[node] * local)
++        }
++        (Side::Fixed(p), _) => Some(p),
++        _ => None,
++    };
++    let Some(anchor) = world(contact.anchor) else {
++        return;
++    };
++    let n = contact.normal;
++    let off = at - anchor;
++    let slip = off - n * n.dot(off);
++    let length = slip.length();
++    if length <= STICK_DISTANCE {
++        return;
++    }
++    let moved = anchor + slip * (1.0 - STICK_DISTANCE / length);
++    contact.anchor = match (contact.anchor, b) {
++        (Side::Node { member, node, .. }, Some((body, _))) => {
++            let s = &bodies[body].structure;
++            Side::Node {
++                member,
++                node,
++                local: s.orientation[node].conjugate() * (moved - s.position[node]),
++            }
++        }
++        _ => Side::Fixed(moved),
++    };
++}
++
+ /// The anchor among `candidates` (of the contact's pair) nearest its point, if one is near.
+ fn find<'a>(candidates: impl Iterator<Item = &'a Anchor>, local_a: DVec3) -> Option<Kept> {
+     candidates
+@@ -131,7 +177,7 @@ pub fn after_step(bodies: &[&mut Body], group: &[usize], contacts: &Contacts) ->
+             let kept = if c.rolls() || c.projected {
+                 Kept::Slip(contacts.end_slip(i, &states))
+             } else {
+-                let moved = contacts.moved_anchor(i, &states);
++                let moved = contacts.kept_anchor(i, &states);
+                 Kept::Point(match c.anchor {
+                     Side::Node {
+                         member: mb,
+diff --git a/crates/creeer_physics/src/world/contact/mod.rs b/crates/creeer_physics/src/world/contact/mod.rs
+index 3d5f4b1..867659d 100644
+--- a/crates/creeer_physics/src/world/contact/mod.rs
++++ b/crates/creeer_physics/src/world/contact/mod.rs
+@@ -350,6 +350,19 @@ impl Contacts {
+             .then(|| point(anchor, states).0 + slip * (1.0 - STICK_DISTANCE / length))
+     }
+ 
++    /// Where contact `i`'s anchor is kept after the step ([`Self::moved_anchor`]), and under
++    /// A's point if it lies off it along the normal by more than [`STICK_DISTANCE`] (a face's
++    /// corner pressing from afar), its stick offset kept: the next step's normal turns, and an
++    /// offset along this one would come out across it (`anchor::within_stick`).
++    pub fn kept_anchor(&self, i: usize, states: &[MemberState<'_>]) -> Option<DVec3> {
++        let c = &self.list[i];
++        let (pa, anchor) = (point(c.a, states).0, point(c.anchor, states).0);
++        if c.normal.dot(pa - anchor).abs() <= STICK_DISTANCE {
++            return self.moved_anchor(i, states);
++        }
++        Some(pa - self.end_slip(i, states))
++    }
++
+     /// The stick offset of contact `i` after the step, at most [`STICK_DISTANCE`] long: what
+     /// a rolling contact carries into the next step (`anchor.rs`).
+     pub fn end_slip(&self, i: usize, states: &[MemberState<'_>]) -> DVec3 {
+diff --git a/crates/creeer_physics/src/world/pass.rs b/crates/creeer_physics/src/world/pass.rs
+index e702296..99f2e4d 100644
+--- a/crates/creeer_physics/src/world/pass.rs
++++ b/crates/creeer_physics/src/world/pass.rs
+@@ -372,6 +372,9 @@ impl World {
+                 None => Side::Fixed(point),
+             };
+         }
++        if !(contact.rolls() || contact.projected) {
++            anchor::within_stick(&self.bodies, b, &mut contact, raw.point_a);
++        }
+         let mass_of = |body: usize, node: NodeId| self.bodies[body].structure.masses()[node];
+         let inverse = 1.0 / mass_of(a, na) + b.map_or(0.0, |(b, nb)| 1.0 / mass_of(b, nb));
+         contact.mass = 1.0 / inverse;

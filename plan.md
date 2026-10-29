@@ -361,16 +361,26 @@ Detailed plan: `docs/g2-plan.md`. Re-planned 2026-10-23, before G2, with the use
 Added 2026-10-29 with the user, after G2's play. G1 and G2 closed with their performance packages part done: P1's first pass (G1), P2's first pass and P3 measured (G2), their gaps recorded and left (2026-10-24, as for G1). Speed is never for later, and G3's machines and production add bodies to every scene, so the rest is done before G3, in this order (the user's choice). Its detailed plan (`docs/g2p-plan.md`) is written at its start, research first.
 
 - **P1's rest: piles at rest and fallen players.** It is felt in every survival session.
-  - Rattling contacts made consistent: crossed loose poles never sleep (about 0.6 ms a pair a tick in *builders*); the 100 kg trunk rocks between its faces (ADR-0024's hull–hull contact).
+  - Rattling contacts made consistent: crossed loose poles never sleep (about 0.6 ms a pair a tick in *builders*); the 100 kg trunk rocks between its faces (ADR-0024's hull–hull contact). Found in G2.10 (ADR-0005, "friction anchors loaded beyond sticking"): P1 starts from `docs/adr/0005/anchors-kept-and-clamped.diff` and its tests. Its gates:
+    - `rim_tests.rs`'s pole at rest over a whole second at 20° (`a_pole_leaning_20_degrees_on_a_narrow_holes_rim_is_still`, ignored until then: it rolls about its axis at 0.9 rad/s every other step and creeps 15 cm in 15 s), and at 10° and 30°;
+    - with the patch, *lumberjack*'s trunk landing at tick 1319 no slower (34.5 ms worst, not 64), and `rest_tests.rs`'s lone trunk asleep, as without it.
+
+    The patch also showed:
+    - a bump of the ground found anew already pressed in (0.28 mm, 0.70 J against the 0.04 J the last step left: a pole leaning 30° on a hole's rim rattles);
+    - a pole's foot at a hole's round bottom (leaning 10°) falls freely two steps, lands, ends the next 1.1 cm higher with about 27 J in its contacts and is stopped dead, over and over.
   - Cheaper faces over curved ground.
   - Friction updated within Newton's iterations.
   - Ragdolls stepped as one articulated body in reduced coordinates (RedMax's hybrid): a fallen player cost up to 11,600 Newton iterations a tick in *crowd* (2026-10-29).
-  - A felled trunk's fall: 17 ms on the server; measured first.
+  - A felled trunk's fall: 17 ms on the server; measured first. With the anchor patch above, *lumberjack*'s worst tick 34.5 → 64 ms and p99 14.7 → 17.2 ms, at tick 1319 where a 69 kg and an 82 kg trunk land together (145 Newton iterations against 73).
   - Consensus ADMM across cores, if large piles still need it.
   - Gates: P1's (rock pile worst ≤ 5 ms, p99 ≤ 2; 50 crates on terrain no slower than on a plane ×1.2), and *builders*' poles asleep once at rest (its first 100 ticks under 5 ms).
 - **P3: struck structures.** Collapsing buildings are G2's core, and G6's crashes and G9's explosions need the same machinery.
   - Subcycling the struck region (Prakash–Hjelmstad).
   - Targets: the bridge struck ≤ 5 ms (32.8 now); the crash ≤ 5 ms (its frame is struck whole, so its members' plastic splits need another method); the 10 t block's drop (worst about 0.6 s) and *log_bridge*'s breaking tick within the play gates.
+  - *log_bridge*'s breaking tick (941, measured at G2.10):
+    - 445,513 Newton iterations and 2.59 s, then 47,618 (209 ms) and 12,627 (53 ms).
+    - The stringer breaks into about 19 pieces of 1–32 kg, spinning at 15–306 rad/s and one at 831 rad/s: the plank's strain energy released into small fragments.
+    - With P1's anchor patch: 342,005 iterations and 2.19 s, its p50 1.05 → 1.18 ms and p99 42.8 → 46.2 ms. *drop*'s worst tick 2,554 → 2,738 iterations, its p99 340 → 241 ms.
 - **P2's second pass: large steel frames.** It bites only on large builds, so it comes last.
   - The members' evaluation in SIMD, bit for bit (ADR-0035's next step).
   - Targets: the reference tick ≤ 8 ms projected; *tower*'s p50 (about 27 ms) within the play gates.
