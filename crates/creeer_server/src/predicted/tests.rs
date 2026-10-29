@@ -56,9 +56,15 @@ fn walking_into_crates_is_predicted() {
     // slow and lossy 5-25 of 148 (median 16), the largest 12.8 cm. The old spawn, by the pole,
     // measured lossless 0-1 and slow 3-10 (median 6.5): on level ground the character's box
     // meets upright crates face to face, a contact a quantum of tilt turns (ADR-0025, amended).
+    // G2.10, an impact's budget counting the joints before the step (ADR-0005): every impact in
+    // a group with the person's legs had stopped the whole group dead, the crates struck
+    // included, alike on the server and the client. They now fly on as struck: lossless 1-9 of
+    // 163 over 1 cm (median 1.5, the largest 2.6 cm), the worst share 0.0245 → 0.0552; slow
+    // 13-28 of 148 (the largest 9.1 cm), the median share 0.108 → 0.141. Those two gates a tenth
+    // above (0.027 → 0.061, 0.12 → 0.156); the rest are not moved.
     for (link, median, worst, largest) in [
-        (None, 0.014, 0.027, 0.032),
-        (Some(slow()), 0.12, 0.19, 0.14),
+        (None, 0.014, 0.061, 0.032),
+        (Some(slow()), 0.156, 0.19, 0.14),
     ] {
         let mut shares = Vec::new();
         for placement in 0..PLACEMENTS {

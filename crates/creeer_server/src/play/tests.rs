@@ -124,7 +124,10 @@ const WORK: [(&str, u64, u64); 10] = [
     // G2.10, standing on a light body (ADR-0023): 1,537 → 1,031 at tick 5, the third player
     // landing on the first pair of poles where it spawns no longer spinning them. A tenth above.
     ("builders", 1_134, 1_134),
-    ("log_bridge", 84, 84),
+    // G2.10, an impact's budget counting the joints before the step (ADR-0005): every impact
+    // in a group with a person's legs had stopped the group dead. Its two builders' first step
+    // on their legs at the spawn now lands as they fall: 78–82 → 110 at tick 1. A tenth above.
+    ("log_bridge", 121, 121),
 ];
 
 /// Each scene's most work one client's prediction took in a tick at CI's length (Newton
@@ -137,10 +140,14 @@ const WORK: [(&str, u64, u64); 10] = [
 /// before), *toolmaking*'s hammerstones put down (226) and *work*'s struck crates (238) cost it
 /// little. *builders*' poles under the players' feet (1,917 at tick 521) cost it 1,176 at tick
 /// 211 since the feet press, walk and balance on a body within what their soles carry (ADR-0023,
-/// G2.10; the pole thought slow on the fine terrain was stood on, `poles_probe.rs`).
+/// G2.10; the pole thought slow on the fine terrain was stood on, `poles_probe.rs`). Since an
+/// impact's budget counts the joints before the step (ADR-0005, G2.10), an impact in a group
+/// with a person's legs or a load in their hands no longer stops the group dead, on the client
+/// as on the server: *work*'s 94 → 136 at tick 103 and *log_bridge*'s 156 → 176 at tick 11,
+/// a tenth above.
 const CLIENT_WORK: [(&str, u64); 10] = [
     ("crowd", 174),
-    ("work", 104),
+    ("work", 150),
     ("lumberjack", 6),
     ("quarry", 6),
     ("toolmaking", 7),
@@ -148,7 +155,7 @@ const CLIENT_WORK: [(&str, u64); 10] = [
     ("collapse", 0),
     ("drop", 5),
     ("builders", 1_294),
-    ("log_bridge", 159),
+    ("log_bridge", 194),
 ];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).
