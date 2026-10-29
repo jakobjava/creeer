@@ -1,6 +1,7 @@
 //! Struts: a body on one rests at its spring's compression under its weight; a heavy body on
 //! one standing on a light plate on the ground presses the plate down and does not throw it
-//! (a load put on the plate before the step did); a pole stood on comes to rest under the foot;
+//! (a load put on the plate before the step did); a light body landing under one on its legs
+//! stops only itself; a pole stood on comes to rest under the foot;
 //! a walk gets its speed over the body within its most; between two free bodies one keeps
 //! their momentum, pushes only, and at most its most; its damper damps as a damped
 //! oscillator's.
@@ -122,6 +123,59 @@ fn a_heavy_body_standing_on_a_light_plate_presses_it_down_unthrown() {
         (weight - 105.6 * G).abs() < 0.02 * 105.6 * G,
         "the floor carries {weight} N"
     );
+}
+
+#[test]
+fn a_light_body_landing_under_one_on_its_legs_stops_only_itself() {
+    // A plank of 2.5 kg (a pole's) 0.5 mm above the floor, a body of 105 kg standing on it on
+    // its legs, pressed under its weight, both coming down at 0.1 m/s. The plank lands, an
+    // impact, and bounces as its restitution says (0.2: 0.02 m/s); the body goes on down on its
+    // legs, which take 0.03 m/s off it in the step. (The impact's budget counted the legs'
+    // 17.7 J after the step and not before it: below nought, it stopped both dead, G2.10.)
+    let mut world = floor();
+    let mut plank = Body::rigid(
+        Shape::Box {
+            half: DVec3::new(0.3, 0.025, 0.05),
+        },
+        2.5,
+        DVec3::new(0.0, 0.0255, 0.0),
+        DT,
+    );
+    plank.structure.gravity = DVec3::new(0.0, -G, 0.0);
+    plank.structure.velocity[0] = DVec3::new(0.0, -0.1, 0.0);
+    plank.solver.reset_history(&plank.structure);
+    let plank = world.add(plank);
+    let mut body = ball(DVec3::new(0.0, 1.0505, 0.0), 105.0);
+    body.structure.velocity[0] = DVec3::new(0.0, -0.1, 0.0);
+    body.solver.reset_history(&body.structure);
+    let body = world.add(body);
+    let strut = Strut {
+        rest: 1.0 + 105.0 * G / 30_000.0,
+        ..leg(body, Some((plank, 0)), DVec3::new(0.0, 0.025, 0.0))
+    };
+    world.add_strut(strut);
+    // The bodies' energy and the legs' (the floor's contact holds next to nothing).
+    let energy = |w: &World| {
+        let pressed = (strut.rest - strut.length(w)).max(0.0);
+        let bodies: f64 = w.bodies.iter().map(|b| b.structure.energy()).sum();
+        bodies + 0.5 * strut.stiffness * pressed * pressed
+    };
+    let before = energy(&world);
+    world.step();
+    let after = energy(&world);
+    world.clear_struts();
+    let v = |i: usize| world.bodies[i].structure.velocity[0].y;
+    assert!(
+        (0.0..=0.2 * 0.1 + 1e-6).contains(&v(plank)),
+        "the plank moves at {} m/s",
+        v(plank)
+    );
+    assert!(
+        v(body) < -0.05,
+        "the body on its legs moves at {} m/s",
+        v(body)
+    );
+    assert!(after <= before + 1e-6, "{before} J became {after} J");
 }
 
 #[test]

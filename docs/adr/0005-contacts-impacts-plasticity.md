@@ -469,3 +469,7 @@ Found by printing, for the pole's group, every contact's gap and normal, the con
 - **Energy left in contacts after a surplus becomes the next step's.** The guard takes energy found anew from the motion only. What the contacts still hold at the step's end is what the next step holds them to. A body set down 0.3 m into the ground (673 kJ) is pushed out at up to 13.5 m/s.
 - **Bodies moved between steps are not held to the last step's books** (the rejected change above).
 - **A projection trusts |∇d|.** Exactly on a brush's axis the gradient is the round's share alone, about none, and `ground::project`'s step d/|∇d| is unbounded there. Only exactly on the axis, where no contact point has been seen.
+
+## Amended in G2.10 (2026-10-28): an impact's budget counts the joints before the step
+
+An impact's rebound may not lift the group's energy above what it had before the step (`world/stepping.rs`). The energy before counted the bodies only, and the energy after the bodies, the contacts and the joints (struts and grips). A person's legs, 17–41 J pressed under their weight, came off the budget, which fell below nought, and `impact::cap` stopped every body of the group dead at every impact under the person's feet. The energy before now counts the joints' and struts' too; the contacts found pressed in at the step's start still do not (their energy never existed). Found, measured and validated with the character standing on a light body (ADR-0023, "Amended in G2.10"; `world/strut_tests.rs`, `a_light_body_landing_under_one_on_its_legs_stops_only_itself`).

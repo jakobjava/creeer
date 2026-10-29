@@ -147,11 +147,16 @@ fn substep(bodies: &mut [&mut Body], contacts: &mut Contacts, impact: bool, reso
         })
         .collect();
     contacts.start_turning(&states);
-    // The bodies' energy only: contacts found pressed into each other at the step's start hold
-    // energy that never existed (a ball found inside a crate held 290 kJ, and the rebound was
-    // allowed to give some of it back, F5).
+    // The bodies' energy and their joints' and struts' (a character's legs on what it stands on),
+    // not the contacts': contacts found pressed into each other at the step's start hold energy
+    // that never existed (a ball found inside a crate held 290 kJ, and the rebound was allowed
+    // to give some of it back, F5). The budget after counts the legs too: left out here, a
+    // character's legs, 17–41 J pressed under its weight, came off its budget, which fell below
+    // nought, and every impact under its feet stopped it and what it stood on dead (a pole it
+    // stood on, every other 1 ms substep, G2.10).
     let before = if impact {
         bodies.iter().map(|b| b.structure.energy()).sum::<f64>()
+            + contacts.joints.elastic_energy(&states)
     } else {
         0.0
     };

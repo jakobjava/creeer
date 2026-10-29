@@ -331,4 +331,6 @@ mod rest_stick_probe;
 #[cfg(test)]
 mod rest_tests;
 #[cfg(test)]
+mod stood_on_tests;
+#[cfg(test)]
 mod tests;

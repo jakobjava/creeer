@@ -191,12 +191,13 @@ A loose green spruce pole (1.6 m, 50 mm, 2.5 kg, a 16-sided prism) lying near th
 4. **A foot on a body steeper than the friction holds** put the part of the legs' push that friction does not hold on as a load for the step: 800–980 N where a foot met a pole's side 43–51° steep near its end, 400–560 N·m about its middle. A pole spun at 790 rad/s.
 5. **The legs' vertical push on a tilted face holds friction of N·sin φ itself** (a sole gripping). It acts whether or not the sole grips. With the walk's grip set at μ·N·cos φ − N·sin φ both ways, a body slipping under the soles was held by μ·cos φ − 2·sin φ of N only, and a pole spun under a standing player at 30–40 rad/s for 20 ticks.
 
-And every impact in the group under the person stopped every body of it dead: the impact's budget forgot the legs before the step (`world/stepping.rs`), a change of its own.
+6. **The impact's budget forgot the legs before the step** (`world/stepping.rs`, ADR-0005). It counted the bodies' energy before the step and, after it, the bodies', the contacts' and the joints' (struts and grips). A person's legs hold 17–41 J under them. The budget fell below nought, and every impact in the group stopped every body of it dead: the pole and the person on it, every other 1 ms substep, the pole hanging 7–10 mm above the ground, its contacts found and lost in turn. It had hidden Found 1–4: with it mended alone, *builders*' poles spun at up to 290 rad/s.
 
 ### Kept
 
 | Change | Where | Measured |
 |---|---|---|
+| **The impact's budget counts the joints' and struts' energy before the step as after** | `world/stepping.rs` (ADR-0005) | The pole under a person: 1,072 → 344 world steps, 96 → 2 turns redone, 10,901 → 2,530 Newton iterations (this change alone); with the rest it sleeps (Found 6) |
 | **A strut's points move with their sides' turns to first order**, p = x + a₀ + θ × a₀ from the step's start: a sole presses a round body through its axis however it turns, and a plank pressed at its end is turned by the lever it was pressed at. The rows are the length's slope by the solver's turn (J⁻¹(θ), checked by finite differences) | `world/joint/strut.rs` | No inverted pendulum (Found 2) |
 | **A foot sliding on a body presses along its friction cone's edge**: the strut turned that way, its rest giving that force as the step begins; none of it a load | `character/feet.rs` `slides` | No 400–560 N·m kicks (Found 4) |
 | **The walk on a body is the strut's** (`world::strut::Walk`): a damper along the ground on the person's speed over the body's point, towards the speed asked for within the walk's strength, solved in the step; its drive booked as a grip's (`walk_work`); its grip μ·N·cos φ − N·sin φ uphill, μ·N·cos φ + N·sin φ downhill, μ·N·cos φ across, so a body slipping under the soles meets μ·N against the slip; asking for a walk wakes the person and the body | `world/strut.rs`, `world/joint/strut.rs`, `character/feet.rs` `walks` | What rolls under the soles carries the person (Found 3, 5) |
@@ -206,10 +207,10 @@ Fixed ground under the feet keeps all of it as it was: the balance whole (its 60
 
 ### Measured and rejected
 
-Measured with the impact's budget mended too (its own change):
-
 | What | Measured | Why rejected |
 |---|---|---|
+| **The impact's budget alone** | *builders* at CI's length: poles up to 290 rad/s, 57 ticks with one over 20 rad/s (49 and 13 before), most work 2,555 at tick 493 (ceiling 1,659) | The zeroing had hidden the loads' spin-ups (Found 1–4); kept with the rest |
+| The budget counting the joints as the lesser of before and after (a strut is set anew each step: on a landing it starts pressed by what it never stored) | The raising test and *log_bridge*'s ceilings pass, but the pole under the third player 213 Newton iterations at its landing and 9.5 rad/s; *work*'s client 150, the crate walk's prediction as below; *crowd* at full length still two players toppled | It takes back a strut's real release, and keeps what moves the other gates |
 | **The walk through the body's mobility at the step's start**, (1 + c·h·W)·F = c·(wanted − going) as the step's load (`docs/adr/0023/walk-through-mobility.rs.txt`) | Stable, but it holds nothing within the step: with the strut's turning point, the pole under the person 1,507 world steps and 164 turns redone; with the patch and the first-order point, *builders*' poles up to 790 rad/s (Found 4 not yet kept), then 169 rad/s with it | The soles grip within the step or not at all: superseded by the walk in the strut |
 | The walk in the strut, its grip μ·cos φ − sin φ both ways | *builders*: 48 ticks with a pole over 20 rad/s, one spinning under a standing player at 30–40 rad/s for 20 ticks | Found 5 |
 | The patch clipped to the feet's reach on every face | On a crate a quarter of the ground's 600 N·m: *crowd*'s players landing on crates fell over where on the ground they stand | A face that holds the whole of the feet holds them as the ground does |
@@ -218,25 +219,30 @@ Measured with the impact's budget mended too (its own change):
 
 ### Validation
 
-- `world/strut_tests.rs`: a pole stood on over its axis, set rolling, comes to rest under the foot; a walk gets its speed over the body within its most, momentum kept to 10⁻⁹.
+- `world/strut_tests.rs`: a 2.5 kg plank landing under a 105 kg body on its legs stops only itself, the body going on down on its legs and no energy gained (fails before: both stopped dead); a pole stood on over its axis, set rolling, comes to rest under the foot; a walk gets its speed over the body within its most, momentum kept to 10⁻⁹.
 - `world/joint/strut.rs`: a body turned under a strut by up to 0.6 rad is pressed where it lies (a turning point falls by r·(1 − cos θ)), the rows the length's slope at a turned state; the walk's spring each way its own most.
 - `character/feet_tests.rs`: a pole's top face carries 1 kN times half its 9.75 mm about its axis and half a foot along it, μ·N times the strip's mean distance about the vertical; a crate holds the feet whole and, near its edge, keeps the pressure's centre on it; a ball nothing; fixed ground the torque whole; a square's mean distance from its centre and a corner, a strip clipped to the feet.
 - `character/tests.rs` unchanged: walking on a crate on ice keeps momentum within 10⁻³, slopes hold at 25° and slide at 36°.
+- **The gate** (`play/stood_on_tests.rs`): *builders*' players by a pole where the third spawns: at most 121 Newton iterations a tick (110 measured, at the landing in tick 0), the pole's spin at most 7.1 rad/s (6.5 at the landing, under 0.001 rad/s after the first second), asleep by tick 117 (106). Before: 405 iterations, 125 rad/s within each tick's first step. *builders*' work ceilings a tenth above what it measures now (1,134 and its client's 1,294).
 
-### Measured (development machine; g2 at d6a86c7 → this change)
+### Measured (development machine; g2 at d6a86c7 → the feet alone (the first commit) → with the impact's budget)
 
-| | before | now |
-|---|---|---|
-| The pole under the third player, 240 ticks: world steps, turns redone, Newton iterations (players' 1,208 in) | 1,072, 96, 10,901 | 248, 0, 3,200 |
-| Its sleep | asleep at tick 105 | awake at tick 240, 1.2–1.4 ms a tick: every impact under the person still stops it dead (the impact's budget) |
-| The same pole 4 m north among the players; alone on coarse terrain | 244 steps, no redo, 1,769 iterations; asleep at tick 110 | the same |
-| *builders*' first 100 server ticks, mean and worst | 33.2 ms, 55.0 ms | 13.2 ms, 25.8 ms |
-| *builders* at CI's length: most work in a tick; a client's most | 1,537 at tick 5; 1,917 at tick 521 | 1,039 at tick 5; 1,667 at tick 539 |
-| *builders* at CI's length: worst tick; a client's worst | 69.5 ms; 106.6 ms | 28.5 ms; 60.9 ms |
-| *builders*' poles: the fastest; ticks with one over 20 rad/s | 49 rad/s; 13 | 27 rad/s; 2 |
+| | before | the feet | with the budget |
+|---|---|---|---|
+| The pole under the third player, 240 ticks: world steps, turns redone, Newton iterations (players' 1,208 in) | 1,072, 96, 10,901 | 248, 0, 3,200 | 248, 0, 1,927 |
+| Its ticks (the players' own 0.3 ms in) and sleep | 7–18 ms for 105 ticks, then asleep | 1.2–1.4 ms, awake at tick 240 (every impact under the person stops it dead) | 6.8 ms at the landing, 1.2–2.0 ms to tick 30, 0.6–1.0 ms to tick 106, then asleep |
+| The same pole 4 m north among the players; alone on coarse terrain | 244 steps, no redo, 1,769 iterations; asleep at tick 110 | the same | the same |
+| *builders*' first 100 server ticks, mean and worst | 33.2 ms, 55.0 ms | 13.2 ms, 25.8 ms | 6.6 ms, 29.4 ms |
+| *builders* at CI's length: most work in a tick; a client's most | 1,537 at tick 5; 1,917 at tick 521 | 1,039; 1,667 | 1,031 at tick 5; 1,176 at tick 211 |
+| *builders* at CI's length: worst tick; a client's worst | 69.5 ms; 106.6 ms | 28.5 ms; 60.9 ms | 34.6 ms; 47.2 ms |
+| *builders*' poles: the fastest; ticks with one over 20 rad/s | 49 rad/s; 13 | 27 rad/s; 2 | 45 rad/s; 7 |
 
 ### Where this leaves G2.10
 
-- **The impact's budget** forgets the legs before the step, and every impact under a person stops it and what it stands on dead: the pole under the third player never sleeps. Its own change.
+- **Five gates move with the impact's budget alone, not raised here (for the user).** Impacts under a person no longer stop everything in its group dead, and what rested on that moves:
+  - `world::raising_tests::walked_up_its_foot_in_a_hole_a_pole_comes_up_to_stand`: the hands' pull draws the pole's foot 0.77 m out of the hole's mouth while it is raised (the zeroing held it there); it comes up to 20° and, let go, falls to 89°. The steering it scripts, or what it asks, is a gameplay matter.
+  - `predicted::tests::walking_into_crates_is_predicted`, lossless: one placement of eight has 5.5 % of its corrections over 1 cm (gate 2.7 %; the others 0.6–2.5 %, the median 0.9 %): a player walking into a crate is no longer stopped dead on both sides alike.
+  - *log_bridge*'s work 110 at tick 1 (ceiling 84; 94 with the budget alone, 78–82 without) and its client's 176 (159): the players standing on the logs as they settle. *work*'s client 136 (104; 94 without).
+  - At full length *crowd* has players toppled off its piles of crates (three in 1,800 ticks, none before; with the budget alone, one), each a ragdoll of 1,500–3,700 Newton iterations a tick, the worst 11,606: p99 2.0 → 20.6 ms, the worst tick 3.1 → 68.9 ms. *log_bridge*'s breaking tick 941 takes 445,513 Newton iterations (368,146 before, 428,020 with the feet alone).
 - *builders*' first 100 ticks are not under 5 ms: past the players' arrival its eight crossed pairs of poles rock at 2–40 mrad/s and never sleep, about 0.6–0.8 ms a pair a tick, the upper pole on the lower (ADR-0024, G2.0's hull contacts; `docs/future-improvements.md`).
 - A pole on its own needs no rolling resistance: its faces already hold it with a lever of R·sin(π/16) = 4.9 mm (above dry sand's 4.2 mm by Bekker's law and wood on wood's 0.5–1 mm, Blau 1905) and it sleeps within 2 s. A smooth cylinder with a measured rolling resistance would be the better body (`docs/future-improvements.md`).

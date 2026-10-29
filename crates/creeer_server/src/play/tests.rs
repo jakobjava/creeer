@@ -121,7 +121,9 @@ const WORK: [(&str, u64, u64); 10] = [
     ("tower", 6, 6),
     ("collapse", 6, 6),
     ("drop", 427, 427),
-    ("builders", 1_659, 1_659),
+    // G2.10, standing on a light body (ADR-0023): 1,537 → 1,031 at tick 5, the third player
+    // landing on the first pair of poles where it spawns no longer spinning them. A tenth above.
+    ("builders", 1_134, 1_134),
     ("log_bridge", 84, 84),
 ];
 
@@ -133,8 +135,9 @@ const WORK: [(&str, u64, u64); 10] = [
 /// blows on, ADR-0030 amended). Since a client predicts only what its avatar could touch before
 /// its next correction (ADR-0025, amended G2.10), *quarry*'s boulders rolling in the pit (468
 /// before), *toolmaking*'s hammerstones put down (226) and *work*'s struck crates (238) cost it
-/// little. The worst left is *builders*' loose poles beside the players (1,917 at tick 521; a
-/// pole on the fine terrain costs 7–15 ms a step, `poles_probe.rs`).
+/// little. *builders*' poles under the players' feet (1,917 at tick 521) cost it 1,176 at tick
+/// 211 since the feet press, walk and balance on a body within what their soles carry (ADR-0023,
+/// G2.10; the pole thought slow on the fine terrain was stood on, `poles_probe.rs`).
 const CLIENT_WORK: [(&str, u64); 10] = [
     ("crowd", 174),
     ("work", 104),
@@ -144,7 +147,7 @@ const CLIENT_WORK: [(&str, u64); 10] = [
     ("tower", 0),
     ("collapse", 0),
     ("drop", 5),
-    ("builders", 2_109),
+    ("builders", 1_294),
     ("log_bridge", 159),
 ];
 
