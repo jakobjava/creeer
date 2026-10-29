@@ -473,3 +473,55 @@ Found by printing, for the pole's group, every contact's gap and normal, the con
 ## Amended in G2.10 (2026-10-28): an impact's budget counts the joints before the step
 
 An impact's rebound may not lift the group's energy above what it had before the step (`world/stepping.rs`). The energy before counted the bodies only, and the energy after the bodies, the contacts and the joints (struts and grips). A person's legs, 17–41 J pressed under their weight, came off the budget, which fell below nought, and `impact::cap` stopped every body of the group dead at every impact under the person's feet. The energy before now counts the joints' and struts' too; the contacts found pressed in at the step's start still do not (their energy never existed). Found, measured and validated with the character standing on a light body (ADR-0023, "Amended in G2.10"; `world/strut_tests.rs`, `a_light_body_landing_under_one_on_its_legs_stops_only_itself`).
+
+## Amended in G2.10 (2026-10-29): the ground's surface where its density is not a distance
+
+The raising test was set up anew (ADR-0036, Measured and rejected): its pole lies in a slot dug beside the hole, as linemen dig one to walk a pole up into its hole. Raised by its top, it stood still one step and moved at 11.4 m/s the next. A face of its 16-sided prism was found holding 602 kJ at a step's start (7.8 MJ in the step redone), while every gap measured to the terrain was 1.9 cm or more.
+
+### The causes: three ways a projection left the ground
+Found by printing, for each face's deepest sampled point, its depth with and without the face's curvature, its foot's distance, the density at the foot and at the point, and the gradient's length; then reproduced in a field built as the terrain builds it (`world/ground/hole_tests.rs`: level ground, a hole and a slot dug with the terrain's rounds).
+- **A gradient far shorter than a distance's.** Where the slot met the hole, the two digs' rounds took a weighted mean of gradients pointing apart (`creeer_terrain::edit_gradient`): 0.125 long 7 cm from the walls. Newton's step d/|∇d| reached 0.79 m along the slot to a point still in the air (density +0.067 there). Its tangent plane put a point 6.5 cm in the air 9.0 cm into the ground.
+- **Feet that are not the nearest.** With the steps bounded (below), the path follows the gradient as it turns and ends on the ground, but not where the ground is nearest. Points 11 cm in the air came to feet 14 cm away and 8 cm to the side. The face's curvature, fitted from its outline's normals across the junction at 50–80 m⁻¹, then took ½·S·t² over that 8 cm: the points were 2–8 cm into the ground. The test's pole, swung up and rolled, found 2.6 kJ anew and was stopped dead by the guard again and again.
+- **A ridge of the field.** On the slot's mid-plane above its axis, open to the sky, the gradient lies in the plane and never turns off it, towards the walls 14 cm to either side. The steps went up and down above the floor for good. Newton's two steps ended 8 cm out in the air, taken as the ground: a point 14 cm from the walls was given a gap of none.
+
+### Decision (`world/ground/projection.rs`, split from `ground.rs`)
+- **Steps never past what the field guarantees clear** (Hart's sphere tracing). Every part of the terrain's density rises at least a metre a metre: the generated ground's is the height along the vertical (its gradient 1 along it, more on a slope), and a brush's is its distance. Their rounds' weighted means are no steeper than their steepest. Where |∇d| < 1 the step is d itself, not d/|∇d|. The cheap estimate of a distance (`estimate`) is the same, so a body's quick rejection never misses ground under it.
+- **Newton's two steps where the field falls as a distance does**: |∇d| ≥ 1 on the way, and the second step under a tenth of the first and a millimetre. There every result is the same as before, bit for bit.
+- **Else to the surface and to the nearest point.** The steps go on until one is under 10 µm. Then the point slides sideways to the foot of `p` on the tangent plane and back onto the surface (Hartmann's foot point), until the normal passes through `p`: at most 16 times.
+- **Where no path reaches the ground**, `p` is taken as clear of it, or in it, by the field's guarantee d/max(|∇d|, 1), along its gradient. A path reaches no ground when its density has not halved over four steps, or after 32. Such a point is never nearer the ground than it is, nor deeper in it.
+- `closest` (round bodies) takes the bounded steps, and converges where the field is shallow.
+
+### Prior work
+| Source | What it does | For Creëer |
+|---|---|---|
+| Hart, "Sphere tracing" (*The Visual Computer*, 1996) | Steps along a field by its value over its Lipschitz constant: never past the surface | The bounded step: the terrain's density rises at most a metre a metre |
+| Taubin, "Distance approximations for rasterizing implicit curves" (*ACM TOG*, 1994) | \|f\|/\|∇f\|, the first-order distance, asymptotically the distance near regular points of the curve | Newton's step, right where the field is a distance; wrong where rounds' gradients cancel |
+| Quilez, "Smooth minimum" (iquilezles.org) | Rounded unions and intersections of distance fields; the result is a bound, not a distance | Why the dug terrain's gradient falls short of 1 where two digs meet |
+| Hartmann, "On the curvature of curves and surfaces defined by normalforms" (*CAGD*, 1999), and his foot-point algorithm | A point onto an implicit surface first, then along its tangent plane to the foot point, where the normal passes through the point | The slides to the nearest point |
+| Macklin, Erleben, Müller, Chentanez, Jeschke & Corse, "Local optimization for robust signed distance field collision" (*PACMCGIT*, 2020) | For each mesh element, the closest point of the SDF's isosurface by local optimisation (projected gradient descent, Frank–Wolfe, golden-section search); PhysX's SDF contacts | The same per sampled point. It assumes a true distance field, which the terrain's rounds are not: hence the guarantee where no path reaches the ground |
+| Guendelman, Bridson & Fedkiw, "Nonconvex rigid bodies with stacking" (*SIGGRAPH*, 2003) | A body's points against the other's level set: the depth φ, the normal ∇φ, the level set kept a distance by reinitialising it | The terrain is not reinitialised: its density is not the depth wherever edits meet |
+
+### Measured and rejected
+| Tried | Measured | Why rejected |
+|---|---|---|
+| **The steps bounded alone**, the feet where the steps end (`docs/adr/0005/ground-steps-capped-only.diff`) | The raising walked up (the foot 0.45 m down). In the field test the pole swung at 1.5 rad/s and rolled at 4 rad/s found 2.6 kJ anew, four times stopped dead in 2 s | The feet are not the nearest, and the face's curvature about them puts points in the air into the ground (above) |
+| The steps bounded and the feet slid to the nearest, a ridge left to Newton's two steps | 252 of the field test's 12,744 points, on the slot's mid-plane, given feet up to 13 cm out in the air (gap none, 14 cm from the walls) | The fallback to the field's guarantee (above) |
+
+### Validation added
+- `world/ground/hole_tests.rs` (`creeer_physics`):
+  - Around where the slot meets the hole, 12,744 points within 0.2 m of the ground, 5,036 of them with a gradient under 0.9 long. Every one is projected onto the ground (the density at its foot within 0.1 mm of none), or, on the ridge (252), taken as clear by the field's guarantee. Each lies on its side of the tangent plane there, and no nearer than the field allows. Projected as before, 3,156 of them were given feet off the ground (up to 1.66 m), and 142 in the air were put up to 22.5 cm into it.
+  - The pole lying in the slot with its foot 20 cm down the hole: at rest, swung up about its foot at 1.5 rad/s, rolled at 4 rad/s, and both. Its energy, its contacts' included, never rises above where it started (gate 10 mJ: none), and it is never faster than its start's energy lets it be (2.09 m/s at most, against 4.86). Projected as before, swung up it gained 53 MJ.
+- `raising_tests.rs`: the pole walked up from the slot, its hold within reach (ADR-0036). It comes to 23° from upright with its foot 0.39 m down the hole (0.45 m at most), the hands 1.6 m along it. Projected as before it came to 46°, then was thrown back to 88° with its foot out of the hole.
+- `rim_tests.rs` and the leaning probe keep the hole alone, as G2.9 measured them (`ada_and_pole_dug(false)`): the slot would put the pole's lean over open ground.
+
+### Measured (development machine)
+- Every play and stress hash is unchanged at both lengths (`play --check`, `stress --check`, short and full): no scene's projection left the paths where the field falls as a distance, and there they are as before, bit for bit. So no scene's cost moved.
+
+### Not settled (2026-10-29, for the coordinator)
+- **`rim_tests.rs` at 20°: 0.087 m/s at the end (gate 0.05).** The pole never comes to rest there, before or now. It rolls about its own axis every other step (0.9 rad/s), and the guard stops it dead between: its last tick samples a step of the two. As projected before it ended at 0.018 m/s, the rolling slowly dying away, and passed; now the rolling grows to 0.087 m/s at tick 240, and over 15 s it bursts to 0.2 m/s and creeps 15 cm down the hole. In both, half the steps end with energy the guard takes back, every scheme having gained it (155 such steps in 4 s before, 106 now). Not yet found; likely the friction on lagged normal forces at a rolling face (G2P: friction updated within Newton's iterations).
+- **`building_tests.rs`, the pole let go in its hole, now stands** (0.07° after 3 s; the test wants it fallen past 30°). Stood exactly upright on its sawn end, 10 cm across, its centre of mass 1 m up, it tips only past 2.9°: it stands, as a real one would. As projected before, it "fell" because it was thrown: at its second tick it stood dead, at its third it left the hole at 6.7 m/s and 11 rad/s and landed 7.9 m away. Proposed (`docs/adr/0005/post-let-go-leaning.diff`, not applied): let it go leaning 5°, past its tipping angle; the set post as it is, bit for bit. With it the test passes.
+
+### Limits (`docs/future-improvements.md`)
+- **A ridge of the field is taken as clear by its guarantee**, not measured to its nearest ground: a point moving farther in one step than the guarantee would press a ground that is not there.
+- **One curvature for a whole face** (F5): fitted from its outline's normals. Over a junction it reaches 50–80 m⁻¹ where the ground is plane but for a rounded edge. With the feet the nearest it no longer moves the depths where they were found, only over the step's travel t, by ½·S·t² (about 1 cm at 80 m⁻¹ and 1.6 cm a step).
+- **A slender face is split as a square one**: a 3 m × 2.4 cm face of a pole over the junction took the 1,024 triangles of the cap for its length alone, every corner projected.

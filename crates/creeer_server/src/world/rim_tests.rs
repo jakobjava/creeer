@@ -4,7 +4,7 @@
 //! the hole's axis, where the terrain's distance has its ridge (`creeer_terrain::
 //! edit_gradient`).
 
-use super::raising_tests::{ada_and_pole, wait};
+use super::raising_tests::{ada_and_pole_dug, wait};
 use creeer_math::glam::{DQuat, DVec3};
 
 /// Leaning `lean` degrees west from the vertical, its foot 0.3 m down the hole against its
@@ -12,7 +12,7 @@ use creeer_math::glam::{DQuat, DVec3};
 /// where it started (J; kinetic and gravity's), its speed at the end and its foot's depth
 /// below the mouth (m).
 fn lean_in_the_hole(lean: f64) -> (f64, f64, f64, f64) {
-    let (mut w, ada, id, east, mouth) = ada_and_pole();
+    let (mut w, ada, id, east, mouth) = ada_and_pole_dug(false);
     let up = mouth.normalize();
     let i = w.index(id).unwrap();
     let (s, c) = creeer_math::det::sin_cos(lean.to_radians());

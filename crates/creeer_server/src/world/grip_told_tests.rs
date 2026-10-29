@@ -4,7 +4,6 @@
 use super::raising_tests::{self, ada_and_pole, grab_the_top};
 use super::tacking_tests::{across, held_where_it_lies};
 use super::*;
-use creeer_math::glam::DQuat;
 use creeer_net::message::Target;
 
 /// What clients are told `ada` holds.
@@ -77,22 +76,10 @@ fn walked_up_hand_over_hand_the_grip_is_told_as_it_moves_and_rarely() {
     let start = w.carrying.get(&ada).expect("held").grip;
     let ticks = 360;
     for t in 0..ticks {
-        let s = &w.world.bodies[w.index(id).expect("there")].structure;
-        let (axis, q) = (s.orientation[0] * DVec3::X, s.orientation[0]);
-        let up = w.world.bodies[w.index(ada).expect("there")]
-            .structure
-            .position[0]
-            .normalize();
-        // As the raising test steers it: its top up at head height, walked under it.
-        let turn = DQuat::from_rotation_arc(axis, -up) * q;
-        let grip = w.carrying.get(&ada).map_or(DVec3::ZERO, |c| c.grip);
+        // As the raising test steers it: turned up about its foot, walked under it.
         let input = AvatarInput {
             walk: if t < 90 { DVec3::ZERO } else { east * 0.5 },
-            hold: Some(creeer_net::message::Hold {
-                offset: up * 0.75 + east * 0.45 - turn * grip,
-                turn,
-                steady: false,
-            }),
+            hold: Some(raising_tests::reachable_hold(&w, ada, id, east)),
             ..AvatarInput::default()
         };
         w.steer(ada, &input);

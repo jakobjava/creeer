@@ -1,0 +1,24 @@
+diff --git a/crates/creeer_server/src/world/building_tests.rs b/crates/creeer_server/src/world/building_tests.rs
+index 4ad8eb4..5ec90ba 100644
+--- a/crates/creeer_server/src/world/building_tests.rs
++++ b/crates/creeer_server/src/world/building_tests.rs
+@@ -252,11 +252,16 @@ fn a_pole_set_in_a_hole_stands_and_one_let_go_falls() {
+             ),
+             Vec::new(),
+         );
+-        // Upright, its foot 0.28 m down in the hole.
+-        let id = w.add_item(pole, ground + up * 0.72, false);
++        // Its foot 0.28 m down in the hole; set, upright; let go, leaning 5°. (Let go exactly
++        // upright on its sawn end, 10 cm across under its centre of mass 1 m up, it stands: it
++        // tips only past 2.9°. Before G2.10 it "fell" only because it was thrown out of the
++        // hole at 6.7 m/s, its feet over the hole's centre projected off the ground, ADR-0005.)
++        let (s5, c5) = creeer_math::det::sin_cos(if set { 0.0 } else { 5f64.to_radians() });
++        let axis = up * c5 + east * s5;
++        let id = w.add_item(pole, ground - up * 0.28 + axis, false);
+         let i = w.index(id).expect("there");
+         let s = &mut w.world.bodies[i].structure;
+-        s.orientation[0] = DQuat::from_rotation_arc(DVec3::X, up);
++        s.orientation[0] = DQuat::from_rotation_arc(DVec3::X, axis);
+         if set {
+             w.set_post(id).expect("set");
+         }

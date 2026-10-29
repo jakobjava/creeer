@@ -2,8 +2,9 @@
 //!
 //! The physics crate does not know the terrain; it sees a [`Ground`]: a field that is
 //! negative inside the solid, with a gradient pointing out of it. The distance to the
-//! surface is about density / |gradient|; contact points are refined by one projection
-//! step, and the contact normal is the gradient direction at the surface point.
+//! surface is about density / |gradient|, never more than the density itself where the
+//! gradient is shorter than a distance's; contact points are projected onto the surface
+//! (`ground/projection.rs`), and the contact normal is the gradient direction there.
 //!
 //! - **Spheres** (balls, structure joints): one contact, centre to surface.
 //! - **Boxes:** every face turned towards the ground within the margin is a contact patch
@@ -33,28 +34,11 @@ pub(super) const BOX_SAMPLE_SPACING: f64 = 0.5;
 /// How much farther than the corner plane a surface point must reach to count (m).
 pub(super) const BULGE: f64 = 1e-3;
 
-/// Distance (m) from `p` to the ground's surface (negative inside), to first order.
-pub(super) fn estimate(ground: &dyn Ground, p: DVec3) -> Option<f64> {
-    let (d, g) = ground.density_gradient(p);
-    let length = g.length();
-    (length > 1e-9).then(|| d / length)
-}
-
-/// The surface point nearest `p` and the outward normal there: two projection steps.
-pub(super) fn project(ground: &dyn Ground, p: DVec3) -> Option<(DVec3, DVec3)> {
-    let mut q = p;
-    let mut normal = DVec3::Y;
-    for _ in 0..2 {
-        let (d, g) = ground.density_gradient(q);
-        let length = g.length();
-        if length <= 1e-9 {
-            return None;
-        }
-        normal = g / length;
-        q -= normal * (d / length);
-    }
-    Some((q, normal))
-}
+#[cfg(test)]
+mod hole_tests;
+mod projection;
+pub use projection::closest;
+pub(super) use projection::{estimate, project};
 
 /// Step of the finite differences for the ground's curvature (m).
 const CURVATURE_STEP: f64 = 0.02;
@@ -88,36 +72,6 @@ pub fn curvature(ground: &dyn Ground, q: DVec3, n: DVec3) -> Option<DMat3> {
 /// Ground curving less than this is flat (m⁻¹): a sphere a million kilometres across, flatter
 /// than any planet; over a metre it sags 10⁻¹⁰ m.
 pub(super) const FLAT: f64 = 1e-9;
-
-/// The point of the ground closest to `c` and the outward normal there, starting the search
-/// from the surface point `start`: alternately onto the surface along the gradient and
-/// sideways to the foot of `c`. A round contact on the ground is measured with it at every
-/// evaluation of its energy: the distance to the closest point is a smooth function of `c`
-/// whose gradient is the normal there, so energy and force agree, and no geometry is frozen
-/// for the step (a ball rolling at 3 m/s over 5 mm bumps saw its normal force swing from
-/// 108 to 1,125 N against 284 N with the ground frozen at the start of each 60 Hz step,
-/// measured in F5).
-pub fn closest(ground: &dyn Ground, c: DVec3, start: DVec3) -> Option<(DVec3, DVec3)> {
-    let mut q = start;
-    let mut normal = DVec3::Y;
-    for k in 0..CLOSEST_STEPS {
-        let (d, g) = ground.density_gradient(q);
-        let length = g.length();
-        if length <= 1e-9 {
-            return None;
-        }
-        normal = g / length;
-        q -= normal * (d / length);
-        if k + 1 < CLOSEST_STEPS {
-            let towards = c - q;
-            q += towards - normal * normal.dot(towards);
-        }
-    }
-    Some((q, normal))
-}
-
-/// Projection steps of [`closest`].
-const CLOSEST_STEPS: usize = 4;
 
 /// A contact of point `p` (with `offset` for a sphere's radius) with the ground.
 pub(super) fn point_contact(

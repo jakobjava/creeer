@@ -222,7 +222,22 @@ fn builders_heavy_ticks() {
         if let (Ok(k), Ok(from)) = (std::env::var("WATCH"), std::env::var("FROM")) {
             let (k, from): (usize, u32) = (k.parse().expect("k"), from.parse().expect("from"));
             if tick >= from {
-                println!("  {tick}: {:?}", before[k].1);
+                let w = &play.server.world;
+                let id = play.client(k).welcome.as_ref().map(|w| w.avatar);
+                let what = id.and_then(|id| w.index(id)).map(|i| {
+                    let x = w.world.bodies[i].structure.position[0];
+                    let height = (x - w.ground_under(x)).dot(x.normalize());
+                    let touching: Vec<String> = (w.world.touching(i, 0.005).iter())
+                        .map(|t| {
+                            t.other.map_or("the ground".into(), |(j, _)| {
+                                let m: f64 = w.world.bodies[j].structure.masses().iter().sum();
+                                format!("{:?} {m:.0} kg", w.ids()[j])
+                            })
+                        })
+                        .collect();
+                    (height, touching)
+                });
+                println!("  {tick}: {:?} {what:.2?}", before[k].1);
             }
         }
         for (k, (was, pose)) in before.iter().enumerate() {

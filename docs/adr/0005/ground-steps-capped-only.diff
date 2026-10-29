@@ -1,0 +1,90 @@
+diff --git a/crates/creeer_physics/src/world/ground.rs b/crates/creeer_physics/src/world/ground.rs
+index fb594a1..9d47961 100644
+--- a/crates/creeer_physics/src/world/ground.rs
++++ b/crates/creeer_physics/src/world/ground.rs
+@@ -33,25 +33,53 @@ pub(super) const BOX_SAMPLE_SPACING: f64 = 0.5;
+ /// How much farther than the corner plane a surface point must reach to count (m).
+ pub(super) const BULGE: f64 = 1e-3;
+ 
+-/// Distance (m) from `p` to the ground's surface (negative inside), to first order.
++/// Distance (m) from `p` to the ground's surface (negative inside), to first order, never
++/// farther than the field guarantees ([`towards`]).
+ pub(super) fn estimate(ground: &dyn Ground, p: DVec3) -> Option<f64> {
+     let (d, g) = ground.density_gradient(p);
+     let length = g.length();
+-    (length > 1e-9).then(|| d / length)
++    (length > 1e-9).then(|| towards(d, length))
+ }
+ 
+-/// The surface point nearest `p` and the outward normal there: two projection steps.
++/// The step towards the surface from a point of density `d` whose gradient is `slope` long:
++/// Newton's, d/|∇d|, where the field is as steep as a distance, and else the most the field
++/// guarantees clear, d (Hart's sphere tracing, 1996). Every part of the field rises at least a
++/// metre a metre: the generated ground's density is the height above it along the vertical
++/// (its gradient 1 along it, more on a slope), a brush's its distance. A gradient less steep
++/// is parts' slopes cancelling in an edit's round (a weighted mean of their gradients,
++/// `creeer_terrain::edit_gradient`), where the field does not fall as its gradient says:
++/// where a slot dug beside a hole met it, the gradient was 0.125 long 7 cm from the walls,
++/// d/|∇d| reached 0.8 m along the slot to a point still in the air, and its tangent plane put
++/// a face's point 9 cm into the ground (G2.10, ADR-0005).
++fn towards(d: f64, slope: f64) -> f64 {
++    d / slope.max(1.0)
++}
++
++/// Most steps of a projection where the field is shallower than a distance ([`towards`]).
++const MOST_STEPS: usize = 32;
++/// A projection there ends once its step is shorter than this (m).
++const PROJECTED: f64 = 1e-5;
++
++/// The surface point nearest `p` and the outward normal there: two projection steps, and
++/// where the field is shallower than a distance ([`towards`]) as many as reach the surface
++/// (at most [`MOST_STEPS`]).
+ pub(super) fn project(ground: &dyn Ground, p: DVec3) -> Option<(DVec3, DVec3)> {
+     let mut q = p;
+     let mut normal = DVec3::Y;
+-    for _ in 0..2 {
++    let mut shallow = false;
++    for k in 0..MOST_STEPS {
+         let (d, g) = ground.density_gradient(q);
+         let length = g.length();
+         if length <= 1e-9 {
+             return None;
+         }
+         normal = g / length;
+-        q -= normal * (d / length);
++        let step = towards(d, length);
++        q -= normal * step;
++        shallow |= length < 1.0;
++        if k >= 1 && (!shallow || step.abs() < PROJECTED) {
++            break;
++        }
+     }
+     Some((q, normal))
+ }
+@@ -100,17 +128,22 @@ pub(super) const FLAT: f64 = 1e-9;
+ pub fn closest(ground: &dyn Ground, c: DVec3, start: DVec3) -> Option<(DVec3, DVec3)> {
+     let mut q = start;
+     let mut normal = DVec3::Y;
+-    for k in 0..CLOSEST_STEPS {
++    let mut shallow = false;
++    for k in 0..CLOSEST_STEPS + MOST_STEPS {
+         let (d, g) = ground.density_gradient(q);
+         let length = g.length();
+         if length <= 1e-9 {
+             return None;
+         }
+         normal = g / length;
+-        q -= normal * (d / length);
++        let step = towards(d, length);
++        q -= normal * step;
++        shallow |= length < 1.0;
+         if k + 1 < CLOSEST_STEPS {
+-            let towards = c - q;
+-            q += towards - normal * normal.dot(towards);
++            let sideways = c - q;
++            q += sideways - normal * normal.dot(sideways);
++        } else if !shallow || step.abs() < PROJECTED {
++            break;
+         }
+     }
+     Some((q, normal))
