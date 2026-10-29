@@ -174,7 +174,7 @@ G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.
 | G2.4 Ground | Done: soil springs (Broms), set a post (P) |
 | G2.5 Collapse | Partly done: lateral-torsional buckling validated, and structures fall apart into bodies. Members of one structure colliding with each other: being built |
 | G2.6 Taking apart | Done: undo a joint (U), cut members. Salvage gives no items back yet |
-| G2.7 P2/P3 | Measured: targets not met (ADR-0035). SIMD kernels kept (bit-exact). The user decided (2026-10-24): record the gaps and move on, as for G1. The speed work continues in a later package (members' evaluation in SIMD, sub-cycling struck regions) |
+| G2.7 P2/P3 | Measured: targets not met (ADR-0035). SIMD kernels kept (bit-exact). The user decided (2026-10-24): record the gaps and move on, as for G1. The speed work continues in G2P, the performance milestone before G3 (plan.md, added with the user 2026-10-29): P1's rest, P3, then P2's second pass |
 | G2.8 Scenes | tower, collapse, drop, builders and log bridge exist, with goldens and work ceilings. Gates not met (tower p50 28 ms, worst ≈ 0.5 s; builders p50 26 ms from the loose poles) |
 | G2.9 After the user's play (2026-10-26) | Terrain of 12.5 cm cells near the player, and every blow digs a hole that grows (ADR-0006, ADR-0032): done. Raising a long thing by one end (ADR-0027): done; the post thrown off the hole's rim was the terrain's gradient across the rim, fixed (ADR-0005). The raising itself is now the grip's (G2.10) |
 | G2.9 Standing trees | Done (asked by the user, 2026-10-26): a part touching a standing tree's trunk is fastened to it (J/U at the part or the trunk), the tree a fixed support; felling lets go (ADR-0033 G2.9) |
