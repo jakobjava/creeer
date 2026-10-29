@@ -371,6 +371,7 @@ Added 2026-10-29 with the user, after G2's play. G1 and G2 closed with their per
   - Cheaper faces over curved ground.
   - Friction updated within Newton's iterations.
   - Ragdolls stepped as one articulated body in reduced coordinates (RedMax's hybrid): a fallen player cost up to 11,600 Newton iterations a tick in *crowd* (2026-10-29).
+    - One of *crowd*'s falls is the legs' (ADR-0023, G2.10). Player 5, tipped over a 200 kg crate, still rises 0.82 m at up to 2.35 m/s and 596 J: the legs are one vertical ray, and leant 40° they push straight up. Their force–velocity limit took it down from 1.1 m, 3.93 m/s and 1,024 J. To measure: the legs' most scaled by how upright the body is, nothing at the knocked-down lean of 45°.
   - A felled trunk's fall: 17 ms on the server; measured first. With the anchor patch above, *lumberjack*'s worst tick 34.5 → 64 ms and p99 14.7 → 17.2 ms, at tick 1319 where a 69 kg and an 82 kg trunk land together (145 Newton iterations against 73).
   - Consensus ADMM across cores, if large piles still need it.
   - Gates: P1's (rock pile worst ≤ 5 ms, p99 ≤ 2; 50 crates on terrain no slower than on a plane ×1.2), and *builders*' poles asleep once at rest (its first 100 ticks under 5 ms).

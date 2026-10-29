@@ -41,6 +41,7 @@ fn leg(a: usize, b: Option<(usize, usize)>, at_b: DVec3) -> Strut {
         stiffness: 30_000.0,
         damping: 2000.0,
         most: 3600.0,
+        fastest: f64::INFINITY,
         walk: None,
     }
 }

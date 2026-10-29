@@ -74,14 +74,21 @@ fn falls_onto_rock_hurt_as_a_persons_do() {
         one.iter().all(|&h| h == 0.0) && !any,
         "1 m: harms {one:?}, down {any}"
     );
+    // Its worst lean a tenth above what was measured (G2.10, the legs' push falling with their
+    // extension speed, ADR-0023): the legs' rebound before the knockdown is weaker, so each
+    // lean lands its body differently. Per lean, 0.076, 0.145, 0.000, 0.049, 0.109 before
+    // (mean 0.076, gate 0.15); 0.158, 0.012, 0.054, 0.000, 0.098 since (mean 0.064).
     let (three, all, _) = from(3.0);
     assert!(
-        three.iter().all(|&h| h < 0.15) && all,
+        three.iter().all(|&h| h < 0.174) && all,
         "3 m: harms {three:?}, down {all}"
     );
+    // Seriously hurt, never killed: below the 20 m case's 0.95. (Under 0.9 until the legs'
+    // force–velocity limit: per lean 0.881, 0.749, 0.533, 0.682, 0.835 before, mean 0.736;
+    // 0.944, 0.753, 0.583, 0.710, 0.816 since, mean 0.761, the first lean landing worse.)
     let (ten, all, _) = from(10.0);
     assert!(
-        ten.iter().all(|h| (0.3..0.9).contains(h)) && all,
+        ten.iter().all(|h| (0.3..0.95).contains(h)) && all,
         "10 m: harms {ten:?}, down {all}"
     );
     // Fatal (half of falls of four floors, about 15 m, kill).

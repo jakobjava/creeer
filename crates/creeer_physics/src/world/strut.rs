@@ -43,6 +43,10 @@ pub struct Strut {
     pub stiffness: f64,
     pub damping: f64,
     pub most: f64,
+    /// The speed it lengthens at (m/s) at which it pushes no more: lengthening at v it pushes
+    /// at most most·(1 − v/fastest), as legs do (Hill's force–velocity relation, linear for
+    /// the whole limb in jumping: Samozino et al. 2008, G2.10). `f64::INFINITY`: no such limit.
+    pub fastest: f64,
     /// Along the ground: a damper on A's speed over B's point (none: it only pushes).
     pub walk: Option<Walk>,
 }
@@ -89,7 +93,13 @@ impl Strut {
     /// Its force at length `d` closing at `closing` (m/s: the rate its length shrinks), as
     /// its law gives it (N).
     pub fn force(&self, d: f64, closing: f64) -> f64 {
-        (self.stiffness * (self.rest - d) + self.damping * closing).clamp(0.0, self.most)
+        let push =
+            (self.stiffness * (self.rest - d) + self.damping * closing).clamp(0.0, self.most);
+        if closing < 0.0 {
+            push.min((self.most * (1.0 + closing / self.fastest)).max(0.0))
+        } else {
+            push
+        }
     }
 }
 

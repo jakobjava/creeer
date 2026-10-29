@@ -247,3 +247,30 @@ fn it_stops_from_a_walk_or_a_run_within_a_second() {
         );
     }
 }
+
+/// Legs found pressed deep into their length (ground suddenly just under the hip: a step up,
+/// or a crate's top under a person tipping over it) push no faster than legs extend (G2.10,
+/// ADR-0023): pressed 0.45 m, the body leaves the ground no faster than about 2.6 m/s (2.14
+/// measured), a squat jump's from that depth, its push falling from 3,600 N to nothing at
+/// 3.5 m/s. (Pushing its whole 3,600 N as it straightened, it left at 3.01 m/s.)
+#[test]
+fn legs_pressed_deep_push_no_faster_than_legs_extend() {
+    let mut world = ground(DVec3::Y, 0.6);
+    let c = world.add(body(DVec3::new(0.0, -0.45, 0.0), DVec3::Y, DT));
+    let mut fastest = 0.0f64;
+    let mut reactions = Vec::new();
+    for _ in 0..60 {
+        steer(
+            &mut world,
+            c,
+            Intent::default(),
+            (DVec3::Y, None),
+            &mut reactions,
+        );
+        world.step();
+        release(&mut world, &mut reactions);
+        fastest = fastest.max(world.bodies[c].structure.velocity[0].y);
+    }
+    eprintln!("left the ground at {fastest:.2} m/s");
+    assert!(fastest < 2.6, "left the ground at {fastest:.2} m/s");
+}

@@ -246,3 +246,38 @@ Fixed ground under the feet keeps all of it as it was: the balance whole (its 60
   - At full length *crowd* has players toppled off its piles of crates (three in 1,800 ticks, none before; with the budget alone, one), each a ragdoll of 1,500–3,700 Newton iterations a tick, the worst 11,606: p99 2.0 → 20.6 ms, the worst tick 3.1 → 68.9 ms. *log_bridge*'s breaking tick 941 takes 445,513 Newton iterations (368,146 before, 428,020 with the feet alone).
 - *builders*' first 100 ticks are not under 5 ms: past the players' arrival its eight crossed pairs of poles rock at 2–40 mrad/s and never sleep, about 0.6–0.8 ms a pair a tick, the upper pole on the lower (ADR-0024, G2.0's hull contacts; `docs/future-improvements.md`).
 - A pole on its own needs no rolling resistance: its faces already hold it with a lever of R·sin(π/16) = 4.9 mm (above dry sand's 4.2 mm by Bekker's law and wood on wood's 0.5–1 mm, Blau 1905) and it sleeps within 2 s. A smooth cylinder with a measured rolling resistance would be the better body (`docs/future-improvements.md`).
+
+## Amended in G2.10 (2026-10-29): the legs push no faster than legs extend
+
+In *crowd* (full length), player 5 jumped (2.69 m/s up, the jump's own 2.8), met a 200 kg crate mid-air and tipped over it. With nothing touching its body, its upward speed then grew from 0.57 to 3.93 m/s in nine ticks: its kinetic energy rose from 160 to 1,024 J in 0.15 s, and it rose 1.1 m in all (`play/poles_probe.rs`, `WATCH`). The legs did it.
+- The legs are a ray from the hip to what lies below it, and a spring of 30 kN/m to their length, at most 3,600 N.
+- The ray found the crate's top just under the hip: the spring 0.5–0.65 m short of its length, so it pushed its whole 3,600 N as it extended, some 2 kJ.
+- A person's squat jump gives about a quarter of that. Any step up the ray finds suddenly would do the same.
+- Since an impact's budget counts the joints (ADR-0005, G2.10), such a push is no longer stopped dead at the next impact.
+
+### Prior work
+| Source | What it measured | For Creëer |
+|---|---|---|
+| Hill, "The heat of shortening and the dynamic constants of muscle" (*Proc. R. Soc. B*, 1938) | A muscle's force falls as it shortens faster: hyperbolic in the fibre, with a most force at no speed and a speed at which it pushes no more | The legs' push falls as they extend |
+| Samozino, Morin, Hintzy & Belli, "A simple method for measuring force, velocity and power output during squat jump" (*J. Biomech.* 41, 2008) | The lower limbs' force–velocity relation in jumping, linear over the whole push: F = F₀·(1 − v/V₀), from body mass, jump height and push-off distance; within 3 % of force plates | The law's shape: linear in the extension speed, the legs' own (the whole limb, not one fibre) |
+| Jiménez-Reyes, Samozino, Brughelli & Morin, "Effectiveness of an individualized training based on force-velocity profiling during jumping" (*Front. Physiol.* 7:677, 2017) | 84 athletes' squat-jump profiles: F₀ 29.1 ± 4.1 to 43.4 ± 6.1 N/kg by group (controls 31.9 ± 6.8), V₀ 2.21 ± 0.16 to 4.29 ± 0.93 m/s (controls 3.05 ± 0.82), the most power 23–31 W/kg | V₀ = 3.5 m/s, within their spread; F₀ the legs' 3,600 N, 34 N/kg of the 105 kg body with its suit and pack |
+| Thirteen judokas' countermovement jumps, Samozino's method against a force plate (PMC6714365, 2019) | V₀ 2.98 ± 0.64 m/s (3.06 ± 0.42 on the plate) | The same range |
+| Jolt's `CharacterVirtual`, PhysX's character controller | Characters stepped up by a step height and kept on the ground by a stick-down distance, not by legs | No legs to push with: no comparison for a push's work |
+
+### Decision (`world/strut.rs`, `world/joint/strut.rs`, `creeer_sim::character`)
+- **A strut's push falls with the speed it lengthens at**: at most `most`·(1 − v/`fastest`) lengthening at v, as Samozino measures legs. Compressing, at most `most` as before. In the step the strut's force is the least of falling lines in its length: the spring's, its most, and this one. So its energy stays convex for the minimisation (`joint/strut.rs`, `pushing`).
+- **The legs: at most 3,600 N at no extension speed, nothing at 3.5 m/s** (`LEG_FASTEST`). Their most power is then 3,600 × 3.5 / 4 = 3.15 kW, 30 W/kg: the top of Jiménez-Reyes' range.
+- Where the line never binds before the spring lets go, the strut is the one-sided Huber spring it was, bit for bit: standing, walking, carrying and landing (where the legs shorten).
+
+### Validation
+- `character/tests.rs`, `legs_pressed_deep_push_no_faster_than_legs_extend`: legs pressed 0.45 m under the body leave the ground at 2.14 m/s (gate 2.6, a squat jump's from that depth). Without the limit they left at 3.01 m/s.
+- `world/joint/push.rs`: the push matches its energy's slope (finite differences) and never rises with the strut's length. It stays under the line and under the spring, and equals the Huber spring bit for bit standing, landing and still.
+- Unchanged: standing, walking, slopes, the jump (2.8 m/s), the step down, stopping from a run, sleeping (`character/tests.rs`); carrying, and the whole server suite.
+- **The 3 m fall onto rock** (`fall_tests.rs`): the legs' rebound before the knockdown is weaker, and each lean lands its body differently.
+  - Per lean before: 0.076, 0.145, 0.000, 0.049, 0.109 (mean 0.076).
+  - Since: 0.158, 0.012, 0.054, 0.000, 0.098 (mean 0.064).
+  - The worst lean's gate is 0.15 → 0.174, a tenth above.
+- **The 10 m fall** the same: per lean 0.881, 0.749, 0.533, 0.682, 0.835 before (mean 0.736), 0.944, 0.753, 0.583, 0.710, 0.816 since (mean 0.761). Its gate kept its meaning, seriously hurt but never killed: under 0.95, the 20 m case's killed (0.9 before), not a tenth above (1.04 would let a 10 m fall kill).
+
+### Not settled (G2P P1, `plan.md`)
+*crowd*'s player 5 still rises after tipping over the crate: 0.82 m, at up to 2.35 m/s and 596 J, against 1.1 m, 3.93 m/s and 1,024 J without the limit; it still falls (tick 1760). The legs are one vertical ray, and leant 40° over the crate they push straight up. At 2.35 m/s their line still allows 1.2 kN, above the body's weight. An option to measure there: the legs' most scaled by how upright the body is, nothing at the knocked-down lean of 45°.

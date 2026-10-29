@@ -16,6 +16,7 @@
 //! the foot at 30–40 rad/s, G2.10.)
 
 use super::group::Joints;
+use super::push::{huber, pushing};
 use super::rows::{Row, Scalar};
 use crate::so3;
 use crate::structure::group::{MemberState, StepInfo};
@@ -94,18 +95,6 @@ fn measured(
         value: (states[s.a.0].position[s.a.1] + arm_a - pb).dot(n),
         a: row(n, turn_a),
         b: row(-n, -turn_b),
-    }
-}
-
-/// A one-sided Huber spring's energy at compression `u` with stiffness `k`, at most `most`;
-/// its force and its stiffness there.
-fn huber(u: f64, k: f64, most: f64) -> (f64, f64, f64) {
-    if u <= 0.0 || k <= 0.0 {
-        (0.0, 0.0, 0.0)
-    } else if k * u <= most {
-        (0.5 * k * u * u, k * u, k)
-    } else {
-        (most * u - 0.5 * most * most / k, most, 0.0)
     }
 }
 
@@ -207,7 +196,17 @@ impl Joints {
             let c = s.damping / self.beta();
             let stiff = s.stiffness + c;
             let rest = (s.stiffness * s.rest + c * hat) / stiff;
-            let (energy, force, weight) = huber(rest - d.value, stiff, s.most);
+            // Its push falls with the speed it lengthens at (`push.rs`), if it has one.
+            let (energy, force, weight) = if s.fastest.is_finite() {
+                pushing(
+                    d.value,
+                    (stiff, rest),
+                    s.most,
+                    (hat, self.beta() * s.fastest),
+                )
+            } else {
+                huber(rest - d.value, stiff, s.most)
+            };
             total += energy;
             each(k, &d, -force, weight);
             // The walk: a damper of c towards the speed asked for, (ŝ + β·v − s)·c/β; it stores
@@ -266,6 +265,7 @@ mod tests {
             stiffness: 30_000.0,
             damping: 0.0,
             most: 3600.0,
+            fastest: f64::INFINITY,
             walk: None,
         };
         fn states<'s>(x: &'s [[DVec3; 1]; 2], q: &'s [[DQuat; 1]; 2]) -> [MemberState<'s>; 2] {

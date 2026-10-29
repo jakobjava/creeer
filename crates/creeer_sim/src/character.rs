@@ -53,6 +53,12 @@ pub const LEG_STIFFNESS: f64 = 30_000.0;
 const LEG_DAMPING: f64 = 1.2 * 1774.8;
 /// The most the legs push (N): about 3.5 times the body's weight.
 pub const LEG_MOST: f64 = 3600.0;
+/// The speed the legs extend at (m/s) at which they push no more: their push falls linearly
+/// with it from [`LEG_MOST`], as jumpers' do (Samozino et al. 2008; Jiménez-Reyes et al. 2017
+/// measured 2.2–4.3 m/s, about 3.0 on average; G2.10, ADR-0023). (Without it, legs that found
+/// a crate's top just under the hip pushed their whole 3,600 N as they straightened, and a
+/// person tipping over it rose 1.1 m at 3.9 m/s.)
+pub const LEG_FASTEST: f64 = 3.5;
 /// The most the legs push sideways for walking (N): about 4 m/s² of this mass.
 const STRIDE_MOST: f64 = 420.0;
 /// The time a walk closes the gap to the velocity asked for (s); stopping, at the legs' most.
@@ -209,6 +215,7 @@ pub fn steer(
             stiffness: LEG_STIFFNESS,
             damping: LEG_DAMPING,
             most: LEG_MOST,
+            fastest: LEG_FASTEST,
             walk: None,
         })
     });
