@@ -42,7 +42,7 @@ impl Running {
     /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
     /// the crosshair is on in both hands, or puts down what they hold (G1.4f); E, F and I put
     /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`); the left click strikes
-    /// with what the hands hold, T throws it, R strips bark from it, B binds the head the
+    /// with what the hands hold, T throws it, X strips bark from it, B binds the head the
     /// crosshair is on to it (G1.6d). Returns whether it
     /// was one.
     pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
@@ -75,7 +75,12 @@ impl Running {
                 planet.send(creeer_net::message::Command::Throw(self.camera.forward()));
                 return true;
             }
-            KeyCode::KeyR => {
+            // First person, or the camera behind to look at the build (G2.10).
+            KeyCode::F5 => {
+                planet.first_person = !planet.first_person;
+                return true;
+            }
+            KeyCode::KeyX => {
                 planet.send(creeer_net::message::Command::Strip);
                 return true;
             }
@@ -136,10 +141,20 @@ impl Running {
             let speed = if self.fly.running() { RUN } else { WALK };
             let walk = planet.walk(&self.camera, self.fly.walk_axes(), speed);
             let thrust = planet.thrust(walk, self.fly.thrusting());
-            // Where the hands hold what they hold, steered (G2.10): sent with the inputs.
-            planet
-                .holding
-                .update(&self.camera, &mut planet.session.connection);
+            // Where the hands hold what they hold, placed where the crosshair meets something
+            // (G2.10): sent with the inputs. Standing trees are aimed at too.
+            let surface = planet.holding.holding().then(|| {
+                let c = &planet.session.connection;
+                let trees = planet.trees.as_ref();
+                c.surface_aimed(self.camera.rotation(), |from, along, most| {
+                    trees.and_then(|t| t.aim(c, from, along, most)).map(|a| a.2)
+                })
+            });
+            planet.holding.update(
+                &self.camera,
+                &mut planet.session.connection,
+                surface.flatten(),
+            );
             planet
                 .session
                 .update(dt, (walk, self.fly.jumping(), thrust));
@@ -170,12 +185,17 @@ impl Running {
             Overlay::Off,
         );
         if let Some(people) = &mut self.people {
+            // In first person the player's own body is not drawn: the eyes are in it (G2.10).
+            let own = (planet.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
+            let drawn_people: Vec<_> = (snapshot.people.iter())
+                .filter(|p| !(planet.first_person && Some(p.key) == own))
+                .cloned()
+                .collect();
             let ground = crate::people_ground::PlanetGround {
                 terrain: &planet.terrain,
             };
             // The made tools in hands as their pieces, as the world's made things are drawn.
-            for (c, q, half, [r, g, b]) in
-                people.draw(&snapshot.people, dt, &ground, &mut self.scene)
+            for (c, q, half, [r, g, b]) in people.draw(&drawn_people, dt, &ground, &mut self.scene)
             {
                 let colour = [r, g, b].map(|x| f32::from(x) / 255.0);
                 let material = creeer_render::Material::dielectric(colour, 0.85);
@@ -234,6 +254,7 @@ impl Running {
             let target = crate::planet_aim::target(planet, &self.camera);
             planet_ui::crosshair(ui.ctx(), target.as_ref());
             planet_ui::hold_hint(ui.ctx(), planet.holding.hint());
+            planet_ui::work_ring(ui.ctx(), planet.session.connection.noted.as_ref());
             crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
             crate::inventory_ui::vitals(ui.ctx(), &planet.session.connection);
             self.profiler

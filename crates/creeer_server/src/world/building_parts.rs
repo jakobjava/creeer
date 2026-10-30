@@ -155,6 +155,15 @@ impl ServerWorld {
     ) -> Result<(), String> {
         self.make_built(x)?;
         self.make_built(y)?;
+        // Whether the joint would hold, the parts still apart: refused after they were made one,
+        // they stayed one with no joint, and the hands lifted both (G2.10). Refused, the hands
+        // set them down where they rest (made structures, their nodes are not the one gripped).
+        if x != y
+            && let Err(why) = self.would_hold(x, y, point, fastener)
+        {
+            self.hands_off(&[x, y]);
+            return Err(why);
+        }
         let xi = self.index(x).ok_or("it is gone")?;
         let first = self.world.bodies[xi].structure.element_count();
         if x != y {
@@ -174,13 +183,25 @@ impl ServerWorld {
         if x == y {
             return Err("that is one part".into());
         }
-        let (a, ea, ta) = self.node_at(x, point, 0..first)?;
-        let (b, eb, tb) = self.node_at(x, point, first..end)?;
-        let law = self.joint_law(x, [(a, ea, ta), (b, eb, tb)], fastener)?;
+        // The nodes put in where they cross change the structure: its solver is made anew
+        // whether the joint is then made or refused (refused after them, a nail too short for
+        // the parts, the next step met a node its solver did not have and the server fell over:
+        // G2.10).
+        let joined = (|| {
+            let (a, ea, ta) = self.node_at(x, point, 0..first)?;
+            let (b, eb, tb) = self.node_at(x, point, first..end)?;
+            let law = self.joint_law(x, [(a, ea, ta), (b, eb, tb)], fastener)?;
+            self.world.bodies[xi].structure.join(a, b, &law);
+            Ok::<(), String>(())
+        })();
         let body = &mut self.world.bodies[xi];
-        body.structure.join(a, b, &law);
         body.solver = ImplicitSolver::new(&body.structure, Scheme::Newmark, DT, 1);
         body.wake();
+        if let Some(r) = self.building.built.get_mut(&x) {
+            r.woods
+                .resize(self.world.bodies[xi].structure.element_count(), None);
+        }
+        joined?;
         if let Some(r) = self.building.built.get_mut(&x) {
             r.woods
                 .resize(self.world.bodies[xi].structure.element_count(), None);
@@ -284,4 +305,45 @@ fn piece_profile(p: &Piece) -> Result<(DVec3, DVec3, Profile), String> {
 /// A log's form as an item: a rod of its mean radius.
 fn log_form(radius: f64, length: f64) -> Form {
     Form::Rod { radius, length }
+}
+
+impl ServerWorld {
+    /// Whether a joint of `fastener` between built structures `x` and `y` where they touch at
+    /// `point` would hold (its law could be made), found without changing either: each one's
+    /// member nearest `point`, the point on its axis there and its thickness.
+    fn would_hold(
+        &self,
+        x: EntityId,
+        y: EntityId,
+        point: DVec3,
+        fastener: &Fastener,
+    ) -> Result<(), String> {
+        let near = |id: EntityId| -> Result<(String, f64, DVec3), String> {
+            let s = &self.world.bodies[self.index(id).ok_or("it is gone")?].structure;
+            let (e, thick, at) = (0..s.element_count())
+                .filter_map(|e| s.member(e).map(|m| (e, m)))
+                .map(|(e, (a, b, thick))| {
+                    let (pa, pb) = (s.position[a], s.position[b]);
+                    let d = pb - pa;
+                    let t = ((point - pa).dot(d) / d.length_squared()).clamp(0.0, 1.0);
+                    (e, thick, pa + d * t)
+                })
+                .min_by(|p, q| (p.2 - point).length().total_cmp(&(q.2 - point).length()))
+                .ok_or("no member there")?;
+            let wood = (self.building.built.get(&id))
+                .and_then(|r| r.woods.get(e).cloned().flatten())
+                .ok_or("a joint is no part")?;
+            Ok((wood, thick, at))
+        };
+        let ((wa, ta, pa), (wb, tb, pb)) = (near(x)?, near(y)?);
+        let materials = self.building.materials.as_ref().ok_or("no materials")?;
+        let at = Placement {
+            count: 1,
+            spread: 0.0,
+            contact: ta.min(tb) * ta.min(tb),
+        };
+        let (sa, sb) = (side(self.wood(&wa)?, ta)?, side(self.wood(&wb)?, tb)?);
+        fastener.law(materials, (&sa, &sb), &at, (pb - pa).length())?;
+        Ok(())
+    }
 }

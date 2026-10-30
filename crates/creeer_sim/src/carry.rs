@@ -12,7 +12,7 @@
 //! only 2.4 in speed). Its energy A was 94–179 J, 128 J on average.
 
 use crate::character::{self, bones};
-use creeer_math::glam::DVec3;
+use creeer_math::glam::{DQuat, DVec3};
 
 /// Standard gravity (m/s²).
 const G: f64 = 9.806_65;
@@ -43,6 +43,27 @@ pub const SLENDER: f64 = 0.1;
 pub const PLAN_HZ: f64 = 3.0;
 pub const FASTEST: f64 = 2.0;
 pub const TURNING_AT_MOST: f64 = 6.0;
+/// How fast the hands turn a thing the player aims (rad/s: a flick of the wrists; G2.10, the
+/// first-person placing, `creeer_server`'s `hands.rs` and the client drawing its own load): it
+/// moves at most [`FASTEST`] (as fast as hands reach; at 4 m/s a post driven into its hole
+/// struck its floor and was thrown).
+pub const AIMED_TURN: f64 = 8.0;
+
+/// One step of `dt` s of the hands bringing a thing the player aims from `(at, turn)` to where
+/// it is aimed, `(to, to_turn)`: straight there, at most [`FASTEST`] and [`AIMED_TURN`]. Returns
+/// where and how it is turned then, its velocity and its spin. The server's hands and the client
+/// drawing its own load step by this one law, so the drawn load goes where the server's will.
+pub fn aimed_step(
+    (at, turn): (DVec3, DQuat),
+    (to, to_turn): (DVec3, DQuat),
+    dt: f64,
+) -> (DVec3, DQuat, DVec3, DVec3) {
+    let velocity = ((to - at) / dt).clamp_length_max(FASTEST);
+    let spin = ((to_turn * turn.conjugate()).normalize().to_scaled_axis() / dt)
+        .clamp_length_max(AIMED_TURN);
+    let turned = (DQuat::from_scaled_axis(spin * dt) * turn).normalize();
+    (at + velocity * dt, turned, velocity, spin)
+}
 
 /// The most the hands' plan accelerates a load of `mass` (kg) in one hand or two, under gravity
 /// `g` (m/s²): half what their strength leaves over its weight gives it and the arms

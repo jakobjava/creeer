@@ -298,3 +298,36 @@ pub fn hold_hint(ctx: &egui::Context, hint: Option<&str>) {
         egui::Color32::from_white_alpha(200),
     );
 }
+
+/// The work under way (fastening, backfilling a post: G2.10), as a ring filling round the
+/// crosshair over its time, from the server's note ("fastening: 2 s") when it came.
+pub fn work_ring(ctx: &egui::Context, noted: Option<&(String, std::time::Instant)>) {
+    let Some((note, when)) = noted else { return };
+    let Some(seconds) = ["fastening: ", "backfilling: ", "finishing the lashing: "]
+        .iter()
+        .find_map(|w| note.strip_prefix(w))
+        .and_then(|rest| rest.trim_end_matches(" s").parse::<f32>().ok())
+    else {
+        return;
+    };
+    let done = when.elapsed().as_secs_f32() / seconds.max(0.1);
+    if done >= 1.0 {
+        return;
+    }
+    let center = ctx.content_rect().center();
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("work ring"),
+    ));
+    let points: Vec<egui::Pos2> = (0..=64)
+        .map(|k| {
+            #[allow(clippy::cast_precision_loss)] // 64 steps
+            let a = std::f32::consts::TAU * done * (k as f32) / 64.0 - std::f32::consts::FRAC_PI_2;
+            center + egui::vec2(a.cos(), a.sin()) * 18.0
+        })
+        .collect();
+    painter.add(egui::Shape::line(
+        points,
+        egui::Stroke::new(3.0, egui::Color32::from_rgb(240, 160, 60)),
+    ));
+}

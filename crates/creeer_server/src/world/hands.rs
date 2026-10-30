@@ -23,6 +23,8 @@ use creeer_sim::{carry, reach};
 const HZ: f64 = 8.0;
 /// How far the hands' planned turn leads the load's at most (rad).
 const LEAD_TURN: f64 = 0.5;
+/// A thing reaching this far from its middle (m) is long: aimed, it is turned with both hands.
+const LONG: f64 = 0.3;
 /// How far the hands' plan leads what they hold at most (m).
 const LEAD: f64 = 0.25;
 /// How far beyond the arms' reach of the shoulders the point held may be (m: the body moved
@@ -78,6 +80,22 @@ impl ServerWorld {
         // The other hand at work (fastening what this one holds steady): held in one.
         let busy = self.building.under_way.contains_key(&by);
         let c = self.carrying.get_mut(&by).expect("a carrier");
+        // Aimed, a thing is held at its balance point (its node's centre: the hands find it, as a
+        // beam is carried by its middle), so it sits steady where it is aimed, never drooping
+        // (the user, 2026-10-30: "only limit what you can lift"); a tool by its haft. By
+        // themselves the hands hold it where it was taken (a pole raised by its end).
+        // (Its plan moved with the grip, to where the hands now hold: else it lurched by the
+        // shift.)
+        if c.input.is_some() && !c.tool && c.grip != DVec3::ZERO {
+            c.plan.at -= c.plan.turn * c.grip;
+            c.grip = DVec3::ZERO;
+        }
+        // Aimed, a long thing is turned with both hands (in one, by the wrist, a 1.6 m pole took
+        // over a second to come across the view, G2.10).
+        let long = (self.world.bodies[b].shapes.iter()).any(|(_, s)| s.bounding_radius() >= LONG);
+        if c.input.is_some() && !c.tool && long {
+            c.one_hand = false;
+        }
         // The body turns the way it goes, no faster than it is drawn turning.
         let going = v.reject_from(up);
         if going.length() > TURNING {
@@ -86,17 +104,25 @@ impl ServerWorld {
             let step = angle.clamp(-TURN * DT, TURN * DT);
             c.facing = (DQuat::from_axis_angle(up, step) * c.facing).normalize();
         }
-        let (target, turn) = Self::meant(c, centre, up, busy);
         let l = &self.world.bodies[b].structure;
         let held = l.position[c.node] + l.orientation[c.node] * c.grip;
         let turning = (if c.one_hand || busy { WRIST } else { grip() }, largest);
         let held_turn = l.orientation[c.node];
-        let plan = Self::planned(
-            c,
-            (target - centre, turn, held - centre, held_turn),
-            mass,
-            (gravity, turning),
-        );
+        let (target, turn) = Self::meant(c, (centre, up), busy, (held, held_turn));
+        // Aimed by the player, it goes where it is aimed, steady (the user, 2026-10-30: "anything
+        // lifted sits steady exactly where aimed"): the grip follows the aim directly, not a
+        // plan that lagged behind it. By themselves the hands plan their way.
+        let steered = c.input.is_some();
+        let plan = if steered {
+            Self::directly(c, target - centre, turn)
+        } else {
+            Self::planned(
+                c,
+                (target - centre, turn, held - centre, held_turn),
+                mass,
+                (gravity, turning),
+            )
+        };
         let one_hand = c.one_hand || busy;
         let strength = if one_hand {
             0.5 * carry::STRENGTH
@@ -124,7 +150,7 @@ impl ServerWorld {
         };
         let (node, pull) = (c.node, c.pull);
         // A pole held at its end too long to follow: the hands move along it.
-        if least < carry::SLENDER * largest {
+        if least < carry::SLENDER * largest && !steered {
             let l = &self.world.bodies[b].structure;
             let (lc, lq) = (l.position[node], l.orientation[node]);
             let k_axis = (0..3).fold(0, |m, k| if moments[k] < moments[m] { k } else { m });
@@ -173,12 +199,20 @@ impl ServerWorld {
     /// Where carrier `c`'s hands mean the grip, and the load's turn: as the player steers it
     /// (held still where it was when steadied or while it is fastened), or by themselves before
     /// the body (by the side, a tool); within the arms' reach of the shoulders.
-    fn meant(c: &mut Carry, centre: DVec3, up: DVec3, busy: bool) -> (DVec3, DQuat) {
+    fn meant(
+        c: &mut Carry,
+        (centre, up): (DVec3, DVec3),
+        busy: bool,
+        (held, held_turn): (DVec3, DQuat),
+    ) -> (DVec3, DQuat) {
         // Fastening it (the other hand at work), held still where it was: the player need not
         // steady it first (G2.10, the user: "i cant get things to fasten").
         let still = busy || c.input.is_some_and(|h| h.steady);
         let (target, turn) = match c.input {
-            _ if still => *c.steady.get_or_insert((centre + c.plan.at, c.plan.turn)),
+            // Where it is, not where the plan was: a beam resting on two posts' tops lay a few
+            // centimetres from where it was aimed, and held at the plan while nailed, it was
+            // lifted 4 cm off them and the nail found nothing to fasten (G2.10).
+            _ if still => *c.steady.get_or_insert((held, held_turn)),
             // (The player steers the load's own place and turn; the hands hold it at the grip.)
             Some(h) => (centre + h.offset + h.turn * c.grip, h.turn),
             None => {
@@ -190,9 +224,13 @@ impl ServerWorld {
                 (at, facing_frame(c.facing, up) * c.turn)
             }
         };
-        if !still {
-            c.steady = None;
+        if still {
+            // Held still where it is (the other hand at work): not pulled clear of the body or
+            // within the placing reach of the eyes, which dragged a beam 7 cm off two posts as its
+            // holder swayed back while nailing it (G2.10). Too far, it is torn from the hands.
+            return (target, turn);
         }
+        c.steady = None;
         // Clear of the body: at least as far out from its axis as it was found to need when
         // taken (`Carry::ahead`). Held things pass the body's box (one box is no chest and
         // arms: a 30 kg box held against it rubbed along it, and was carried at 0.40 m/s, not
@@ -204,7 +242,33 @@ impl ServerWorld {
         } else {
             target
         };
+        // Aimed by the player, within the placing reach of the eyes (the user, 2026-10-30: "a
+        // couple of metres, later ... an arm extender"); by themselves, within the arms' reach.
+        if c.input.is_some() {
+            let eye = reach::eye(centre, up);
+            let off = target - eye;
+            let target = eye + off * (reach::PLACING / off.length().max(reach::PLACING));
+            return (target, turn);
+        }
         (reach::within_arms(centre, up, target), turn)
+    }
+
+    /// Carrier `c`'s plan put at `(at, turn)` at once (from the body's centre): the load aimed by
+    /// the player goes where it is aimed, its plan's speed the change. Returns no acceleration
+    /// to hold up beyond its weight (a step's change is no acceleration the hands plan).
+    fn directly(c: &mut Carry, at: DVec3, turn: DQuat) -> DVec3 {
+        // As fast as hands move and turn a thing aimed, no faster: stood up (R) at once, a pole
+        // was swung round at 94 rad/s and knocked its holder down.
+        let (at, turn, velocity, spin) =
+            carry::aimed_step((c.plan.at, c.plan.turn), (at, turn), DT);
+        c.plan = super::carry::Plan {
+            at,
+            velocity,
+            turn,
+            spin,
+            there: true,
+        };
+        DVec3::ZERO
     }
 
     /// Carrier `c`'s plan one step on towards `(target, turn)`: critically damped, its
@@ -268,6 +332,10 @@ impl ServerWorld {
             let (force, _) = grip.pull(&self.world);
             let s = &self.world.bodies[b].structure;
             let held = s.position[grip.a.1] + s.orientation[grip.a.1] * grip.at_a;
+            let eye = self.index(by).map_or(held, |i| {
+                let centre = self.world.bodies[i].structure.position[0];
+                reach::eye(centre, character::plumb(&self.world, centre))
+            });
             let shoulders = self.index(by).map_or(held, |i| {
                 let centre = self.world.bodies[i].structure.position[0];
                 let up = character::plumb(&self.world, centre);
@@ -275,8 +343,20 @@ impl ServerWorld {
             });
             let c = self.carrying.get_mut(&by).expect("a carrier");
             c.pull = force;
-            let from = (held - shoulders).length();
-            c.reach = c.reach.min(from.max(reach::ARM));
+            // Aimed by the player, it reaches as far as it is placed from the eyes.
+            let steered = c.input.is_some();
+            let (from, least) = if steered {
+                ((held - eye).length(), reach::PLACING)
+            } else {
+                ((held - shoulders).length(), reach::ARM)
+            };
+            // Aimed, it is torn only beyond the placing reach (the reach found while it lay
+            // before it was aimed, from the shoulders, dropped a post held 2 m off: G2.10).
+            c.reach = if steered {
+                least
+            } else {
+                c.reach.min(from.max(least))
+            };
             c.torn = if from > c.reach + OUT_OF_REACH {
                 c.torn + 1
             } else {

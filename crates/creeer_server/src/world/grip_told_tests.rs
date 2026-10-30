@@ -30,15 +30,19 @@ fn the_grip_is_told_where_it_was_taken() {
     assert_eq!(first.load, part);
     assert!((first.grip - grabbed).length() < 1e-3, "{first:?}");
     assert!(first.one_hand, "light and levered little: one hand");
-    // Held where it lies, it is not told again.
+    // Aimed where it lies (first-person placing, G2.10): the hands go to its balance point, a
+    // long pole in both; told once, then not again.
     let still = held_where_it_lies(&w, ada, part, false);
     w.take_changed();
+    let mut tells = 0;
     for _ in 0..120 {
         w.steer(ada, &still);
         w.step();
-        assert!(!w.take_changed().contains(&ada), "told again");
+        tells += usize::from(w.take_changed().contains(&ada));
     }
-    assert_eq!(told(&w, ada), Some(first));
+    let aimed = told(&w, ada).expect("held");
+    assert_eq!(tells, 1, "told {tells} times");
+    assert!(aimed.grip.length() < 1e-9 && !aimed.one_hand, "{aimed:?}");
 }
 
 #[test]
@@ -76,10 +80,11 @@ fn walked_up_hand_over_hand_the_grip_is_told_as_it_moves_and_rarely() {
     let start = w.carrying.get(&ada).expect("held").grip;
     let ticks = 360;
     for t in 0..ticks {
-        // As the raising test steers it: turned up about its foot, walked under it.
+        // Held by the hands themselves (not aimed: an aimed thing is held at its balance point),
+        // walked under it: they move along it hand over hand.
         let input = AvatarInput {
             walk: if t < 90 { DVec3::ZERO } else { east * 0.5 },
-            hold: Some(raising_tests::reachable_hold(&w, ada, id, east)),
+            hold: None,
             ..AvatarInput::default()
         };
         w.steer(ada, &input);

@@ -6,6 +6,10 @@
 
 use super::building::{UnderWay, Work};
 use super::*;
+use creeer_building::fasteners::Fastener;
+
+/// How many crossings besides the one aimed at one J fastens at most.
+const MOST_MORE: usize = 4;
 use creeer_physics::structure::{ImplicitSolver, Scheme};
 
 impl ServerWorld {
@@ -100,6 +104,48 @@ impl ServerWorld {
             .collect();
         for by in holding {
             self.let_go(by);
+        }
+    }
+}
+
+impl ServerWorld {
+    /// What was held and fastened into structure `x` fastened with the catalogue's fastener
+    /// `k` (`fastener`) wherever else it touches another part: each such crossing the hand at
+    /// work can make (`would_hold`), a fastener at hand for each in survival. Those refused are
+    /// left (and told).
+    pub(super) fn fasten_the_rest(
+        &mut self,
+        by: EntityId,
+        x: EntityId,
+        (k, fastener): (usize, &Fastener),
+    ) {
+        for _ in 0..MOST_MORE {
+            let Some(i) = self.index(x) else { return };
+            let next = (self
+                .world
+                .touching(i, super::building::TOUCHING)
+                .into_iter())
+            .filter_map(|t| t.other.map(|(j, _)| (j, t.point)))
+            .filter(|(j, _)| *j != i && self.players[*j].is_none())
+            .map(|(j, p)| (self.ids[j], p))
+            .find(|(id, _)| {
+                self.items.bodies.contains_key(id) || self.building.built.contains_key(id)
+            });
+            let Some((other, point)) = next else { return };
+            let Ok(from) = self.fastener_at_hand(by, k) else {
+                return;
+            };
+            if let Err(why) = self.fasten(x, other, point, fastener) {
+                self.note(by, format!("not fastened there too: {why}"));
+                return;
+            }
+            self.hands_off(&[x, other]);
+            if let Some((pocket, slot)) = from {
+                let item = self.change_pockets(by, |p| p[pocket].take(slot));
+                if let (Some(item), Some(b)) = (item, self.building.built.get_mut(&x)) {
+                    b.items.push(item);
+                }
+            }
         }
     }
 }

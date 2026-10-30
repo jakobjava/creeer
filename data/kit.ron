@@ -11,4 +11,15 @@
     (name: "stick", material: "spruce_c24", form: Rod(radius: 0.012, length: 0.45)),
     // A spruce crate of 18 mm boards: 50 × 40 × 40 cm outside, 61 l inside, 7.8 kg.
     (name: "crate", material: "spruce_c24", form: Block(size: (0.5, 0.4, 0.4)), wall: 0.018),
+    // G2's demo parts (the first-person builds, 2026-10-30), in green spruce as felled. To add
+    // one: a name, a material and a form; the kit lists them in this order.
+    // A post, 1.6 m and 100 mm: 10 kg; set 0.6 m in a hole.
+    (name: "post", material: "spruce_green", form: Rod(radius: 0.05, length: 1.6)),
+    // A rail, 1.6 m and 60 mm: 3.6 kg; a 100 mm nail through it reaches 40 mm into what it
+    // crosses (24 mm needed).
+    (name: "rail", material: "spruce_green", form: Rod(radius: 0.03, length: 1.6)),
+    // A pole, 3 m and 120 mm: 27 kg, about half what two hands lift.
+    (name: "pole", material: "spruce_green", form: Rod(radius: 0.06, length: 3.0)),
+    // A squared sill, 2.4 m and 150 mm: 43 kg; a log bridge's stringer (it does not roll).
+    (name: "sill", material: "spruce_green", form: Block(size: (2.4, 0.15, 0.15))),
 ]

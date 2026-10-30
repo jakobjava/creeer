@@ -264,7 +264,7 @@ fn hint(
                 keys.push(format!("click: dig ({blow})"));
             }
             if h.word == "stick" {
-                keys.push("R: strip bark".into());
+                keys.push("X: strip bark".into());
                 if on_stone {
                     keys.push("B: bind it on as a head".into());
                 }

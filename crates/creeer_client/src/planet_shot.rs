@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
 //!
-//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]`
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -8,6 +8,7 @@
 
 use crate::DemoMeshes;
 use crate::physics_view;
+use crate::planet_shot_build::play;
 use crate::planet_view::PlanetView;
 use creeer_math::det;
 use creeer_math::glam::DVec3;
@@ -17,28 +18,6 @@ use creeer_terrain::edits::{Brush, Edit};
 use creeer_terrain::elevation::fibonacci_sphere;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-/// Runs the game for `seconds` of real time (the hosted server steps on its own; the client
-/// takes in what it is told), first until the client has joined.
-fn play(view: &mut PlanetView, seconds: f64) -> Result<(), String> {
-    let start = Instant::now();
-    let step = Duration::from_millis(10);
-    while view.session.connection.status() != &creeer_server::client::Status::Joined {
-        if start.elapsed() > Duration::from_secs(10) {
-            return Err("the hosted server did not welcome the client".into());
-        }
-        view.session
-            .update(step.as_secs_f64(), (DVec3::ZERO, false, DVec3::ZERO));
-        std::thread::sleep(step);
-    }
-    let start = Instant::now();
-    while start.elapsed().as_secs_f64() < seconds {
-        view.session
-            .update(step.as_secs_f64(), (DVec3::ZERO, false, DVec3::ZERO));
-        std::thread::sleep(step);
-    }
-    Ok(())
-}
 
 /// Renders one planet view and saves it.
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -173,6 +152,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let eye = ground(north * 8.0) + up * 1.7;
             crate::planet_view::place(eye, (ground(east * 2.5 + north * 8.0) - eye).normalize())
         }
+        other if crate::planet_shot_build::VIEWS.contains(&other) => {
+            crate::planet_shot_build::camera(&mut view, other)?
+        }
         other => return Err(format!("unknown planet view `{other}`").into()),
     };
 
@@ -209,10 +191,11 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
     // The players' characters (G1.3e).
     let mut people = crate::people::People::register(&mut renderer)?;
+    let drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
     let ground = crate::people_ground::PlanetGround {
         terrain: &view.terrain,
     };
-    people.draw(&snapshot.people, 0.0, &ground, &mut scene);
+    people.draw(&drawn, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,
@@ -254,7 +237,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 pair,
                 crate::demo::Overlay::Off,
             );
-            people.draw(&snapshot.people, 0.0, &ground, &mut scene);
+            people.draw(&drawn, 0.0, &ground, &mut scene);
             renderer.render_offscreen(Frame {
                 camera: &camera,
                 scene: &scene,

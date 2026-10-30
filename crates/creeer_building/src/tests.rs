@@ -127,7 +127,7 @@ fn a_lashing_clamps_by_its_turns() {
     );
 }
 
-/// Tacked (G2.10), the bast lashing is its first two turns, in half its 30 s: half the clamp
+/// Tacked (G2.10), the bast lashing is its first two turns, in half its 8 s: half the clamp
 /// and half the hold apart, told from the whole by the hold its joint keeps. A nail is not
 /// tacked: one hand drives it whole.
 #[test]
@@ -135,11 +135,7 @@ fn a_lashing_tacked_is_its_first_turns_in_their_time() {
     let (all, m) = catalogue();
     let whole = named(&all, "bast_lashing");
     let tacked = whole.tacked().expect("a lashing is tacked");
-    assert!(
-        (tacked.seconds - 15.0).abs() < 1e-12,
-        "{} s",
-        tacked.seconds
-    );
+    assert!((tacked.seconds - 4.0).abs() < 1e-12, "{} s", tacked.seconds);
     let sides = (&c24(&m, 0.15), &c24(&m, 0.15));
     let (law, full) = (
         tacked.law(&m, sides, &ONE, 0.15).expect("holds"),

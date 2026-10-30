@@ -127,7 +127,11 @@ const WORK: [(&str, u64, u64); 10] = [
     // G2.10, an impact's budget counting the joints before the step (ADR-0005): every impact
     // in a group with a person's legs had stopped the group dead. Its two builders' first step
     // on their legs at the spawn now lands as they fall: 78–82 → 110 at tick 1. A tenth above.
-    ("log_bridge", 121, 121),
+    // G2.10, first-person placing (2026-10-30, the user's OK): nails take 2 s, not 6, so the
+    // builders' nails are made at tick 360, inside CI's 600 ticks (at 600 before, its last).
+    // Making them took 129 (the joints made with the stringer less settled); 106 at tick 1
+    // with the old times. A tenth above.
+    ("log_bridge", 142, 142),
 ];
 
 /// Each scene's most work one client's prediction took in a tick at CI's length (Newton
@@ -155,7 +159,9 @@ const CLIENT_WORK: [(&str, u64); 10] = [
     ("collapse", 0),
     ("drop", 5),
     ("builders", 1_294),
-    ("log_bridge", 194),
+    // Its nails made at tick 361 since they take 2 s (2026-10-30, the user's OK): 382, the
+    // client predicting the joints made (G2P's, docs/future-improvements.md). A tenth above.
+    ("log_bridge", 420),
 ];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).

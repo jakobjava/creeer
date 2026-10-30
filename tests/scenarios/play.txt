@@ -6,8 +6,6 @@ toolmaking 1100 f909c307d0470f53
 tower 60 a505874d2c54191a
 collapse 120 7478f4905f87da6a
 drop 120 49d075ce28e9d38c
-builders 600 f9c436e680cf6b12
-log_bridge 600 ac1ae238699d55e5
 crowd 1800 1b3ec3e160ddc15e
 work 1800 b7a797046056a0d4
 lumberjack 1800 a1ab72a1ac381e95
@@ -16,5 +14,7 @@ toolmaking 1800 9dd46817c034d872
 tower 600 2248821f4b6bac0e
 collapse 600 a6757c66464a3d9d
 drop 300 0d63d35f82755fa4
-builders 1800 abcccd12d26b5470
+builders 600 dc77ff9caf169d71
+log_bridge 600 76a2d8d6d3c6bc89
+builders 1800 0300e798ee7a4d77
 log_bridge 1800 4cb60c605bcc94b5

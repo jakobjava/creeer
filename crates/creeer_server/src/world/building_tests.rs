@@ -91,10 +91,10 @@ fn two_crossed_poles_nailed_become_one_structure() {
     let (mut w, ada, below, above, at) = crossed(true);
     let bodies = w.world.bodies.len();
     fasten(&mut w, ada, above, at, "nail_100").expect("begins");
-    // Not before its time (6 s).
-    wait(&mut w, ada, 300);
+    // Not before its time (2 s).
+    wait(&mut w, ada, 100);
     assert!(w.index(below).is_some(), "fastened too soon");
-    wait(&mut w, ada, 70);
+    wait(&mut w, ada, 30);
     assert!(
         w.index(below).is_none(),
         "the second part is now the first's: {:?}",

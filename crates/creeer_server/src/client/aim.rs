@@ -110,7 +110,19 @@ impl Connection {
     /// What the ray from `origin` along unit `direction` meets first within `length` (m): a
     /// body as drawn now (the player's own avatar left out), or the terrain.
     pub fn aim(&self, origin: DVec3, direction: DVec3, length: f64) -> Option<Aimed> {
+        self.aim_skipping(origin, direction, length, None)
+    }
+
+    /// As [`Self::aim`], passing through `skip` too (what the hands hold, placing it).
+    pub fn aim_skipping(
+        &self,
+        origin: DVec3,
+        direction: DVec3,
+        length: f64,
+        skip: Option<EntityId>,
+    ) -> Option<Aimed> {
         let own = self.welcome.as_ref().map(|w| w.avatar);
+        let aside = |id: EntityId| Some(id) == own || Some(id) == skip;
         let predicted: Vec<EntityId> = (self.predicted.iter())
             .flat_map(|p| p.nearby().map(|(id, _)| id))
             .collect();
@@ -120,7 +132,7 @@ impl Connection {
         for (id, pose) in self.poses() {
             // A built structure (G2.3): its members as drawn, each a capsule round its axis.
             if let Some(Kind::Structure(frame)) = self.kinds.get(&id)
-                && Some(id) != own
+                && !aside(id)
             {
                 let hit = (frame.members.iter().zip(&frame.radii))
                     .filter(|(_, r)| **r > 0.0)
@@ -148,7 +160,7 @@ impl Connection {
                 }
                 continue;
             }
-            let Some(kind) = (Some(id) != own).then(|| self.kinds.get(&id)).flatten() else {
+            let Some(kind) = (!aside(id)).then(|| self.kinds.get(&id)).flatten() else {
                 continue;
             };
             // Too far from the line to reach it (its reach first, its shape's own radius then).

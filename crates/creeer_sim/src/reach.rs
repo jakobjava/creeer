@@ -60,6 +60,10 @@ pub fn stooped(shoulders: DVec3, up: DVec3, target: DVec3) -> DVec3 {
 /// G2.10, ADR-0036).
 pub const ARM: f64 = 0.75;
 
+/// How far from the eyes a player places what their hands hold (m; G2.10, the user,
+/// 2026-10-30: "a couple of metres", as far as tools reach, [`REACH`]; an arm extender later).
+pub const PLACING: f64 = REACH;
+
 /// `target` brought within the arms' reach of the shoulders as they stoop to it ([`stooped`]),
 /// for a body at `centre` upright along `up`: where the hands can hold a point meant there. The
 /// server's hands hold there (`hands.rs`), and a client steers there (G2.10: a hold meant

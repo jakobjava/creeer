@@ -1,9 +1,9 @@
-//! The user's case (G2.10, 2026-10-29: "things move around when you move the mouse (float
-//! away), things are not held in the hand ... the arm go through the body"): a 0.95 m stick
-//! taken from the ground and steered as the client steers it (`Connection::hold_in_view`, the
-//! client's `holding.rs`), the view turning and pitching as the mouse turns it, then walked
-//! with. It stays in the hands: within the arms' reach of the stooped shoulders, never torn
-//! from them, lying as it was taken, and drawn where the server has it.
+//! The user's case (G2.10, 2026-10-30: "moving the view around makes the character and the item
+//! completly loose its mind"): a 0.95 m stick taken from the ground and placed as the client
+//! places it in first person (`Connection::surface_aimed`, `Connection::place_hold`, the
+//! client's `holding.rs`), the view sweeping round and up as the mouse turns it, then walked
+//! with. It stays in the hands, within reach of the eyes, lying level, drawn where the server
+//! has it, and never flung: it goes no faster than the hands steer it.
 
 use super::Game;
 use creeer_math::glam::{DMat3, DQuat, DVec3};
@@ -19,24 +19,28 @@ fn looking(forward: DVec3, up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(right, right.cross(forward), -forward)).normalize()
 }
 
-/// What happens to the stick over a game: the most its grip was beyond the arms' reach (m), the
-/// most its axis tilted from level (rad), the most its grip was drawn beyond the reach of the
-/// avatar (m), and
+/// What happens to the stick over a game: the most it was beyond reach of the eyes (m), the
+/// most its axis tilted from level (rad), its fastest (m/s), as drawn (from the avatar drawn) the
+/// most it was off where the server has it (from its own avatar) and the most it moved in a frame
+/// (m), the longest round trip (ticks), how far off it was drawn at rest at the end (m), and
 /// whether it was held to the end.
 #[derive(Debug, Default)]
 struct Held {
     beyond: f64,
     tilt: f64,
     drawn_off: f64,
+    jump: f64,
+    trip: f64,
+    at_rest: f64,
+    fastest: f64,
     held: bool,
-    /// The least it was held before the body's axis the way the view heads (m).
-    ahead: f64,
 }
 
 /// Ada, over `link`, takes the user's stick (spruce C24, 0.95 m, 46 mm: 0.67 kg) from the ground
-/// a metre before her, turns her view 90° and up to level over a second, walks 3 m/s the way
-/// she looks for two, and turns back walking for one.
-fn steered(link: Option<Conditions>, carried: bool) -> Held {
+/// a metre before her, looking down at it; turns her view 90° and up to level over a second (the
+/// stick then before the eyes, meeting nothing), walks 3 m/s the way she looks for two, and turns
+/// back walking for one, looking down again.
+fn swept(link: Option<Conditions>) -> Held {
     let mut game = Game::new(crate::world::tests::world());
     game.join("ada", link);
     game.run(120, super::still);
@@ -62,119 +66,76 @@ fn steered(link: Option<Conditions>, carried: bool) -> Held {
     game.run(30, super::still);
     let ada = game.clients[0].0.welcome.as_ref().expect("joined").avatar;
     assert_eq!(game.server.world.carried(ada), Some(id), "taken");
-    // Looking down at it, east, as the player did to take it.
     let view_at = |t: f64| {
         let turned = (t.clamp(0.0, 1.0) - (t - 3.0).clamp(0.0, 1.0)) * std::f64::consts::FRAC_PI_2;
-        let pitch = -0.8 * (1.0 - t.clamp(0.0, 1.0));
+        let pitch = -0.8 * (1.0 - t.clamp(0.0, 1.0) + (t - 3.0).clamp(0.0, 1.0));
         let (s, c) = creeer_math::det::sin_cos(turned);
         let (ps, pc) = creeer_math::det::sin_cos(pitch);
         looking((east * c + north * s) * pc + up * ps, up)
     };
-    let start = view_at(0.0);
-    let mut kept = game.clients[0].0.held_in_view(start).expect("drawn");
-    let mut out = Held {
-        ahead: f64::INFINITY,
-        ..Held::default()
-    };
-    for tick in 0..240u32 {
+    let mut out = Held::default();
+    let mut last: Option<DVec3> = None;
+    for tick in 0..300u32 {
         let t = f64::from(tick) / 60.0;
         let view = view_at(t);
         let client = &mut game.clients[0].0;
-        let hold = if carried {
-            let hold = client.carry_hold(view, kept.1, 0.0).expect("held");
-            (hold, kept.0)
-        } else {
-            client.hold_in_view(view, kept, false).expect("held")
-        };
-        kept.0 = hold.1;
-        client.set_hold(Some(hold.0));
+        let surface = client.surface_aimed(view, |_, _, _| None);
+        let hold = client.place_hold(view, surface, (0.0, 0.0, 0.0));
+        client.set_hold(hold);
         let ahead = if (1.0..4.0).contains(&t) {
             (view * DVec3::NEG_Z).reject_from(up).normalize() * 3.0
         } else {
             DVec3::ZERO
         };
         game.tick(|_| (ahead, false));
-        let Some(load) = game.server.world.index(id) else {
-            break;
-        };
         if game.server.world.carried(ada) != Some(id) {
             return out;
         }
-        let centre = game.avatar(0);
+        let load = game.server.world.index(id).expect("there");
         let s = &game.server.world.world.bodies[load].structure;
-        let (p, q) = (s.position[0], s.orientation[0]);
-        let carried = game.clients[0].0.own_carried().expect("told");
-        let grip = p + q * carried.grip;
+        let (p, q, v) = (s.position[0], s.orientation[0], s.velocity[0]);
+        out.fastest = out.fastest.max(v.length());
         if t > 0.5 {
-            let reachable = reach::within_arms(centre, up, grip);
-            out.beyond = out.beyond.max((grip - reachable).length());
-            let forward = (view * DVec3::NEG_Z).reject_from(up).normalize();
-            out.ahead = out.ahead.min((grip - centre).dot(forward));
+            let eye = reach::eye(game.avatar(0), up);
+            out.beyond = out.beyond.max((p - eye).length() - reach::PLACING);
             let axis = q * DVec3::X;
             out.tilt = out
                 .tilt
                 .max(creeer_math::det::asin(axis.dot(up).abs().min(1.0)));
-            // In the hands as drawn: the load drawn where it is steered (ahead of the server's,
-            // whose hands follow at their plan's pace), its grip within the arms' reach of the
-            // avatar as drawn (predicted).
+            // In the hands as drawn: from the avatar drawn, as the server has it from its own.
             let client = &game.clients[0].0;
             let me = client.avatar().expect("drawn").position;
-            let pose = client.poses()[&id];
-            let grip = pose.position + pose.orientation * carried.grip;
-            let reachable = reach::within_arms(me, me.normalize(), grip);
-            out.drawn_off = out.drawn_off.max((grip - reachable).length());
+            let drawn = client.poses()[&id].position - me;
+            let off = (drawn - (p - game.avatar(0))).length();
+            out.drawn_off = out.drawn_off.max(off);
+            out.at_rest = off;
+            out.jump = last.map_or(0.0, |l: DVec3| out.jump.max((drawn - l).length()));
+            last = Some(drawn);
+            let (newest, applied) = client.steered_inputs();
+            out.trip = out.trip.max(f64::from(newest) - applied);
         }
     }
     out.held = game.server.world.carried(ada) == Some(id);
     out
 }
 
-/// Placed (left Alt held): where the view aims from the eyes, before the body and within the
-/// arms' reach. Measured (2026-10-29), lossless and over 100 ms each way: the grip never beyond
-/// the arms' reach on the server; the stick tilted at most 1.3° and 1.1° from level; its grip
-/// drawn at most 3.8 cm and 20.8 cm beyond the reach of the avatar as drawn (the own load drawn
-/// where it is steered, its model of the server's hands without their plan's lead). Steered as
-/// before, from the camera 4.5 m behind the avatar (the user's case): tilted 28° (it stood up
-/// as the view came level) and drawn 66 cm beyond the hands' reach, the arm through the body.
+/// Looked round, walked with, lossless and over 100 ms each way: held, within reach, level, no
+/// faster than walking and the hands together; drawn moving no faster than the hands, off the
+/// server's while gliding by no more than the hands go in a round trip, and where it is at rest.
+/// Measured (2026-10-30, lossless): a frame moved it 48 mm at most; off by 122 mm gliding (the
+/// round trip 6.5 ticks: 217 mm at the hands' speed), 0.4 mm at rest; slow, 49 mm, 401 mm (24
+/// ticks: 791 mm) and 6 mm. Drawn at the newest hold
+/// at once, it was 2.48 m off as the view swept from the ground to before the eyes.
 #[test]
-fn a_stick_placed_with_the_view_stays_in_the_hands() {
-    let lossless = steered(None, false);
-    eprintln!("placed, lossless: {lossless:?}");
-    assert!(
-        lossless.held && lossless.beyond < 0.01 && lossless.tilt < 0.05,
-        "{lossless:?}"
-    );
-    assert!(
-        lossless.drawn_off < 0.06 && lossless.ahead > 0.2,
-        "{lossless:?}"
-    );
-    let slow = steered(Some(slow()), false);
-    eprintln!("placed, slow: {slow:?}");
-    assert!(
-        slow.held && slow.beyond < 0.01 && slow.tilt < 0.05 && slow.drawn_off < 0.25,
-        "{slow:?}"
-    );
-}
-
-/// Carried (the user, 2026-10-29: "things are usually carried in front of the chest and not at
-/// some random position close to the body (like behind the back)"): the stick goes with the body
-/// before the chest the way the view heads, whatever the eyes look at, the view turning and the
-/// body walking.
-#[test]
-fn a_stick_carried_goes_with_the_body_before_the_chest() {
+fn a_stick_held_in_first_person_stays_put_as_the_view_sweeps_and_walks() {
     for link in [None, Some(slow())] {
-        let carried = steered(link, true);
-        eprintln!(
-            "carried, {}: {carried:?}",
-            link.map_or("lossless", |_| "slow")
-        );
-        assert!(carried.held && carried.beyond < 0.01, "{carried:?}");
-        // Before the body: measured at least 0.52 m ahead of its axis lossless; over the slow
-        // link 0.095 m as the view turns 90° (the hold a round trip late, held low as the view
-        // starts looking down), level within 3.2° (debug) and 2.6° (release); 28° steered from the
-        // camera before.
-        let least = if link.is_some() { 0.05 } else { 0.4 };
-        assert!(carried.tilt < 0.1 && carried.ahead > least, "{carried:?}");
+        let held = swept(link);
+        eprintln!("{}: {held:?}", link.map_or("lossless", |_| "slow"));
+        assert!(held.held && held.beyond < 0.05, "{held:?}");
+        assert!(held.tilt < 0.1 && held.fastest < 6.0, "{held:?}");
+        let gliding = creeer_sim::carry::FASTEST * held.trip / 60.0 + 0.05;
+        assert!(held.drawn_off < gliding && held.at_rest < 0.02, "{held:?}");
+        assert!(held.jump < 0.07, "{held:?}");
     }
 }
 

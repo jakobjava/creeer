@@ -64,6 +64,8 @@ pub struct PlanetView {
     pub session: PlanetSession,
     /// Whether the player walks their avatar (else the camera flies free).
     pub walking: bool,
+    /// Seen from the avatar's eyes (G2.10: building is done in first person), or from behind.
+    pub first_person: bool,
     /// The tool the player asked to hold (G1.4c), by its index in the tools' table.
     pub wielding: Option<u8>,
     /// Whether the inventory window is shown (G1.6a), and what lies loose about (G1.6c).
@@ -136,6 +138,7 @@ impl PlanetView {
         Self {
             session,
             walking: false,
+            first_person: true,
             wielding: None,
             inventory: false,
             holding: crate::holding::Holding::default(),
@@ -230,7 +233,8 @@ impl PlanetView {
         (avatar.position.normalize() + walk.normalize_or_zero() * 0.4).clamp_length_max(1.0)
     }
 
-    /// Puts the camera behind and above the avatar, looking the way it looks, never in the
+    /// Puts the camera at the avatar's eyes (first person) or behind and above it, looking the way
+    /// it looks, never in the
     /// ground.
     pub fn follow(&self, camera: &mut Camera) {
         let Some(avatar) = self.session.connection.avatar() else {
@@ -238,7 +242,12 @@ impl PlanetView {
         };
         let up = avatar.position.normalize();
         camera.level_to(up);
-        camera.position = avatar.position + up * 1.2 - camera.forward() * 4.5;
+        // First person, at the eyes (G2.10: building is done looking at the work); else behind.
+        camera.position = if self.first_person {
+            creeer_sim::reach::eye(avatar.position, up)
+        } else {
+            avatar.position + up * 1.2 - camera.forward() * 4.5
+        };
         self.constrain_camera(camera);
     }
     /// Keeps the camera level with the local horizon and above the ground.

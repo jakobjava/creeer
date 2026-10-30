@@ -20,9 +20,10 @@ const TICKS: f64 = 60.0;
 /// How far from the point aimed at two parts may touch to be fastened there (m): faces lying on
 /// each other touch over their whole overlap, its contact's point anywhere in it.
 pub(super) const NEAR: f64 = 0.3;
-/// A gap two parts may have and still be fastened (m: they must touch, as near as a nail draws
-/// them together; a part resting on another rocks by millimetres).
-pub(super) const TOUCHING: f64 = 0.01;
+/// A gap two parts may have and still be fastened (m: as near as a nail or a lashing draws them
+/// together; a part resting on another rocks by millimetres, and 1 cm left a beam on two posts
+/// 1.6 cm apart in height nailed to one only, G2.10).
+pub(super) const TOUCHING: f64 = 0.03;
 
 /// What is being built, and what was.
 #[derive(Debug, Default)]
@@ -148,7 +149,11 @@ impl ServerWorld {
 
     /// Whether `by` has fastener `k` at hand: on a creative server always; in survival a
     /// lashing's strip in the pockets, and no nails or pegs before G3.
-    fn fastener_at_hand(&self, by: EntityId, k: usize) -> Result<Option<(usize, usize)>, String> {
+    pub(super) fn fastener_at_hand(
+        &self,
+        by: EntityId,
+        k: usize,
+    ) -> Result<Option<(usize, usize)>, String> {
         if self.creative {
             return Ok(None);
         }
@@ -205,6 +210,12 @@ impl ServerWorld {
             Work::Tack => whole.tacked().ok_or("it cannot be tacked")?,
             _ => whole.clone(),
         };
+        // Held, it is fastened wherever else it touches a part too (a beam held on two posts'
+        // tops is nailed to both by one J): let go after one nail, a beam pivoted on it and slid
+        // off the second post's narrow top (G2.10).
+        let held = self
+            .carried(by)
+            .filter(|l| *l == u.part || matches!(other, Touched::Part(id) if id == *l));
         match other {
             Touched::Part(id) => {
                 self.fasten(u.part, id, point, &fastener)?;
@@ -214,6 +225,9 @@ impl ServerWorld {
                 self.fasten_to_tree(u.part, tree, point, &fastener)?;
                 self.hands_off(&[u.part]);
             }
+        }
+        if held.is_some() {
+            self.fasten_the_rest(by, u.part, (u.fastener, &fastener));
         }
         if let Some((pocket, k)) = from {
             let item = self.change_pockets(by, |p| p[pocket].take(k));

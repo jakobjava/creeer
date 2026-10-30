@@ -203,17 +203,21 @@ impl ServerWorld {
         point: DVec3,
         fastener: &Fastener,
     ) -> Result<(), String> {
-        let (node, axis, law) = self.tree_joint(part, tree, point, fastener)?;
+        // Its solver made anew whether the joint is made or refused: the node put in where it
+        // touches changes the structure (refused after it, the next step fell over, G2.10).
+        let joint = self.tree_joint(part, tree, point, fastener);
         let i = self.index(part).ok_or("it is gone")?;
         let body = &mut self.world.bodies[i];
-        body.structure.fix_to(node, axis, &law);
+        if let Ok((node, axis, law)) = &joint {
+            body.structure.fix_to(*node, *axis, law);
+        }
         body.solver = ImplicitSolver::new(&body.structure, Scheme::Newmark, DT, 1);
         body.wake();
         if let Some(r) = self.building.built.get_mut(&part) {
             r.woods
                 .resize(self.world.bodies[i].structure.element_count(), None);
         }
-        Ok(())
+        joint.map(|_| ())
     }
 
     /// Where a joint of `fastener` from part `part` (made a structure) to standing tree `tree`

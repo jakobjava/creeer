@@ -196,6 +196,9 @@ fn a_pole_grabbed_at_its_end_is_raised_by_that_end() {
 }
 
 #[test]
+#[ignore = "superseded by first-person placing (G2.10, 2026-10-30): an aimed pole is held at its \
+            balance point and stood up (R), `build_flow_tests::a_heavy_pole_stood_up_and_set_in_its_hole`; \
+            raising one too heavy to lift by its end returns with docs/future-improvements.md"]
 fn walked_up_its_foot_in_a_hole_a_pole_comes_up_to_stand() {
     let (mut w, ada, id, east, mouth) = ada_and_pole();
     grab_the_top(&mut w, ada, id, east);

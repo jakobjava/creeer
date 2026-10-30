@@ -10,8 +10,9 @@ use creeer_terrain::geology::rocks::Strength;
 
 /// The longest buried length one soil spring stands for (m).
 const SPAN: f64 = 0.1;
-/// How long backfilling a hole round a post takes by hand (s: an estimate).
-const BACKFILLING: f64 = 30.0;
+/// How long backfilling a hole round a post takes by hand (s: short, as the user chose for all
+/// the building work, 2026-10-30; the post held upright meanwhile).
+const BACKFILLING: f64 = 8.0;
 /// How far beside a post its ground is judged (m): beyond the hole dug for it.
 const BESIDE: f64 = 0.6;
 
@@ -177,8 +178,11 @@ impl ServerWorld {
         id: EntityId,
         at: DVec3,
     ) -> Result<(), String> {
-        if self.carried(by).is_some() {
-            return Err("both hands are needed: put down what you hold (prop it)".into());
+        // Held upright in its hole, the hands keep the post still while it is backfilled (the
+        // user, 2026-10-30: "i do not understand how to set a log in a hole"); anything else
+        // held takes the hands.
+        if self.carried(by).is_some_and(|held| held != id) {
+            return Err("put down what you hold, or hold the post itself".into());
         }
         self.part_geometry(id)?;
         if !self.creative && self.dug_ground(by).is_none() {
@@ -217,6 +221,8 @@ impl ServerWorld {
             )
         };
         self.set_post(u.part)?;
+        // Set, the ground holds it: the hands let go (a part made a structure has other nodes).
+        self.hands_off(&[u.part]);
         if let Some((pocket, k)) = from {
             self.change_pockets(by, |p| p[pocket].take(k));
         }
