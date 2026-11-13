@@ -115,7 +115,8 @@ pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) ->
                 tick: 0,
                 adapter: "headless",
             };
-            crate::hud::draw(ui.ctx(), view, camera, &perf, &mut profiler);
+            let bindings = crate::bindings::Bindings::default();
+            crate::hud::draw(ui.ctx(), view, camera, (&perf, &mut profiler), &bindings);
         })
     };
     let mut textures = egui::TexturesDelta::default();

@@ -168,10 +168,11 @@ fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
     }
 }
 
-/// Under the crosshair (G1.6): what the hands hold, what the keys would do with it and what the
-/// crosshair is on, and what came of the last thing done (or why it was refused) for a few
-/// seconds. Nothing a player does is silent, and no key has to be found by trying.
-pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet_aim::Target>) {
+/// Under the crosshair (G1.6): what the hands hold, what the keys would do (`keys`, from the
+/// prompts and the controls' table), and what came of the last thing done (or why it was
+/// refused) for a few seconds. Nothing a player does is silent, and no key has to be found by
+/// trying.
+pub fn told(ctx: &egui::Context, view: &PlanetView, keys: &str) {
     let c = &view.session.connection;
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
@@ -191,10 +192,7 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
     let hands = c.inventory.hands.as_ref();
     let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
     line(&held, egui::Color32::from_white_alpha(200));
-    line(
-        &hint(hands, aimed, view.fastening.name()),
-        egui::Color32::from_rgb(160, 200, 230),
-    );
+    line(keys, egui::Color32::from_rgb(160, 200, 230));
     let recent = |told: &Option<(String, std::time::Instant)>| {
         told.as_ref()
             .filter(|(_, when)| when.elapsed().as_secs_f64() < 5.0)
@@ -217,63 +215,6 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, aimed: Option<&crate::planet
         line(&text, colour);
         ctx.request_repaint();
     }
-}
-
-/// What the keys would do now, with what the hands hold and what the crosshair is on in reach,
-/// with what can be felt (G1.9): a thing's mass, a blow's energy. The keys, not recipes: what
-/// makes a good tool is the player's to know.
-fn hint(
-    hands: Option<&creeer_net::message::ItemView>,
-    aimed: Option<&crate::planet_aim::Target>,
-    fastener: Option<&str>,
-) -> String {
-    let aimed = aimed.filter(|t| t.in_reach);
-    let on_thing = aimed.is_some_and(|t| t.loose.is_some() || t.aimed.body.is_some());
-    let on_tree = aimed.is_some_and(|t| t.tree.is_some());
-    let on_ground = aimed.is_some() && !on_thing && !on_tree;
-    let on_stone = aimed.is_some_and(|t| {
-        ["stone", "flake", "worked stone", "rock"]
-            .iter()
-            .any(|w| t.what.starts_with(w))
-    });
-    let lift = match aimed.and_then(|t| t.mass) {
-        Some(m) => format!("G: take in the hands ({m:.1} kg)"),
-        None => "G: take in the hands".into(),
-    };
-    let mut keys: Vec<String> = Vec::new();
-    match hands {
-        None => {
-            if on_thing {
-                keys.extend([lift, "E: into a pocket".into()]);
-                // (Two parts touching there are fastened: the hands must be free, G2.3.)
-                if let Some(f) = fastener {
-                    keys.push(format!(
-                        "J: fasten with {f} (K: another) · U: take a joint apart"
-                    ));
-                }
-            }
-            if on_ground {
-                keys.push("click: dig with the hands".into());
-            }
-        }
-        Some(h) => {
-            let blow = format!("{}, {:.1} kg, {:.0} J", h.word, h.mass, h.swing);
-            if on_thing || on_tree {
-                keys.push(format!("click: strike ({blow})"));
-            } else if on_ground {
-                keys.push(format!("click: dig ({blow})"));
-            }
-            if h.word == "stick" {
-                keys.push("X: strip bark".into());
-                if on_stone {
-                    keys.push("B: bind it on as a head".into());
-                }
-            }
-            keys.extend(["G: put down", "T: throw", "E: into a pocket"].map(String::from));
-        }
-    }
-    keys.push("I: what you carry".into());
-    keys.join("  ·  ")
 }
 
 /// The vitals (G1.9), at the bottom left: health, what each of the body's parts has taken, and

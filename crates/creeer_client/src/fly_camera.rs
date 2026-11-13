@@ -5,9 +5,9 @@
 
 use creeer_math::det;
 
+use crate::bindings::Action;
 use creeer_render::Camera;
 use std::f64::consts::FRAC_PI_2;
-use winit::keyboard::KeyCode;
 
 /// Radians of rotation per pixel of mouse movement.
 const LOOK_SENSITIVITY: f64 = 0.0025;
@@ -46,16 +46,17 @@ impl Default for FlyCamera {
 }
 
 impl FlyCamera {
-    /// Records a key press or release. Returns whether the key is a camera control.
-    pub fn key(&mut self, code: KeyCode, pressed: bool) -> bool {
-        let flag = match code {
-            KeyCode::KeyW => &mut self.forward,
-            KeyCode::KeyS => &mut self.back,
-            KeyCode::KeyA => &mut self.left,
-            KeyCode::KeyD => &mut self.right,
-            KeyCode::Space => &mut self.up,
-            KeyCode::ControlLeft => &mut self.down,
-            KeyCode::ShiftLeft => &mut self.fast,
+    /// Records a key of the controls' table (`bindings.rs`) going down or up. Returns whether
+    /// it is a camera control.
+    pub fn key(&mut self, action: Action, pressed: bool) -> bool {
+        let flag = match action {
+            Action::Forward => &mut self.forward,
+            Action::Back => &mut self.back,
+            Action::Left => &mut self.left,
+            Action::Right => &mut self.right,
+            Action::Jump => &mut self.up,
+            Action::Jetpack => &mut self.down,
+            Action::Run => &mut self.fast,
             _ => return false,
         };
         *flag = pressed;
@@ -137,7 +138,7 @@ mod tests {
     fn holding_w_moves_forward_at_speed() {
         let mut camera = Camera::new(DVec3::new(0.0, 500_000.0, 0.0));
         let mut fly = FlyCamera::default();
-        fly.key(KeyCode::KeyW, true);
+        fly.key(Action::Forward, true);
         fly.update(&mut camera, 0.5);
         let moved = camera.position - DVec3::new(0.0, 500_000.0, 0.0);
         assert!(
@@ -150,8 +151,8 @@ mod tests {
     fn diagonal_movement_is_not_faster() {
         let mut camera = Camera::new(DVec3::ZERO);
         let mut fly = FlyCamera::default();
-        fly.key(KeyCode::KeyW, true);
-        fly.key(KeyCode::KeyD, true);
+        fly.key(Action::Forward, true);
+        fly.key(Action::Right, true);
         fly.update(&mut camera, 1.0);
         assert!((camera.position.length() - 10.0).abs() < 1e-9);
     }
@@ -169,7 +170,7 @@ mod tests {
     fn release_all_keeps_speed() {
         let mut fly = FlyCamera::default();
         fly.scroll(2.0);
-        fly.key(KeyCode::KeyW, true);
+        fly.key(Action::Forward, true);
         fly.release_all();
         assert!((fly.speed - 15.625).abs() < 1e-9);
         let mut camera = Camera::new(DVec3::ZERO);

@@ -282,23 +282,6 @@ fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
     }
 }
 
-/// The keys for what the hands hold (G2.10), low on the screen while something is held.
-pub fn hold_hint(ctx: &egui::Context, hint: Option<&str>) {
-    let Some(hint) = hint else { return };
-    let rect = ctx.content_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("hold hint"),
-    ));
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 48.0),
-        egui::Align2::CENTER_BOTTOM,
-        hint,
-        egui::FontId::proportional(13.0),
-        egui::Color32::from_white_alpha(200),
-    );
-}
-
 /// The work under way (fastening, backfilling a post: G2.10), as a ring filling round the
 /// crosshair over its time, from the server's note ("fastening: 2 s") when it came.
 pub fn work_ring(ctx: &egui::Context, noted: Option<&(String, std::time::Instant)>) {

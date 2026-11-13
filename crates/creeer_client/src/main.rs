@@ -38,6 +38,8 @@
 
 mod animate;
 mod app;
+mod bindings;
+mod bindings_keys;
 mod circuit_bench;
 mod content;
 mod control_panel;
@@ -53,6 +55,7 @@ mod held;
 mod held_load;
 mod holding;
 mod hud;
+mod hud_seen;
 mod hud_shot;
 mod hulls;
 mod icon_image;
@@ -98,7 +101,9 @@ mod powerhouse_panel;
 mod profiler_ui;
 #[cfg(test)]
 mod profiler_ui_tests;
+mod prompts;
 mod sandbox;
+mod settings;
 mod shimmer;
 #[cfg(test)]
 mod struck_bench_tests;
@@ -135,9 +140,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{
-    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
-};
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, Window, WindowId};

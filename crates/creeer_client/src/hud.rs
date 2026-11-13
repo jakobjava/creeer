@@ -1,6 +1,7 @@
 //! The planet game's screen, drawn over the world each frame: one function the game and the
 //! headless frames (`hud_shot.rs`) both call, so a frame shows what the player sees.
 
+use crate::bindings::Bindings;
 use crate::planet_ui::{self, Request};
 use crate::planet_view::PlanetView;
 use crate::profiler_ui::ProfilerWindow;
@@ -12,17 +13,22 @@ pub(crate) fn draw(
     ctx: &egui::Context,
     planet: &mut PlanetView,
     camera: &Camera,
-    perf: &PerfInfo<'_>,
-    profiler: &mut ProfilerWindow,
+    (perf, profiler): (&PerfInfo<'_>, &mut ProfilerWindow),
+    bindings: &Bindings,
 ) -> Request {
     perf_window(ctx, perf);
     let request = planet_ui::window(ctx, planet, camera);
     crate::inventory_ui::window(ctx, planet, camera);
     let target = crate::planet_aim::target(planet, camera);
     planet_ui::crosshair(ctx, target.as_ref());
-    planet_ui::hold_hint(ctx, planet.holding.hint());
     planet_ui::work_ring(ctx, planet.session.connection.noted.as_ref());
-    crate::inventory_ui::told(ctx, planet, target.as_ref());
+    let (seen, _) = crate::hud_seen::seen(planet, target.as_ref());
+    let (state, prompts) = crate::prompts::prompts(&seen);
+    let line: Vec<String> = (prompts.iter())
+        .map(|p| format!("{} {}", bindings.name(p.action), p.verb))
+        .chain(state)
+        .collect();
+    crate::inventory_ui::told(ctx, planet, &line.join("  ·  "));
     crate::inventory_ui::vitals(ctx, &planet.session.connection);
     profiler.window(ctx, Some(&mut planet.session.connection));
     request

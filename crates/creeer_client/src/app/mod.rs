@@ -3,6 +3,7 @@
 use super::*;
 
 mod content_reload;
+mod input;
 mod planet;
 mod sandbox_ui;
 pub(crate) mod system;
@@ -68,6 +69,10 @@ struct Running {
     started: Instant,
     last_frame: Instant,
     settings: Settings,
+    /// The player's settings and controls (G2.11 A3: `settings.rs`), and where they are kept.
+    game: crate::settings::GameSettings,
+    #[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
+    game_file: Option<std::path::PathBuf>,
     adapter_label: String,
     /// The data packs' watcher, and what its last reload did.
     watcher: creeer_data::Watcher,
@@ -108,49 +113,29 @@ impl ApplicationHandler for App {
                 app.fly.release_all();
                 app.set_looking(false);
             }
-            WindowEvent::KeyboardInput { event, .. } if !response.consumed => {
+            // Keys and buttons, through the controls' table (`input.rs`). A key going up always
+            // counts, so none stays held; one going down into a text field, or a click on a
+            // window, is the window's.
+            WindowEvent::KeyboardInput { event, .. } if !event.repeat => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
-                    // What the hands hold takes its keys first (G2.10: Q, H, Ctrl).
-                    let held = !event.repeat && app.holding().is_some_and(|h| h.key(code, pressed));
-                    if !held && !(pressed && !event.repeat && app.key(code)) {
-                        app.fly.key(code, pressed);
+                    if !(pressed && response.consumed) {
+                        app.input(crate::bindings::Input::Key(code), pressed);
                     }
                 }
             }
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Right,
-                ..
-            } => {
+            WindowEvent::MouseInput { state, button, .. } => {
                 let pressed = state == ElementState::Pressed;
-                if !pressed || !app.egui_ctx.egui_wants_pointer_input() {
-                    app.set_looking(pressed);
-                }
-            }
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Left,
-                ..
-            } if !response.consumed && !app.egui_ctx.egui_wants_pointer_input() => {
-                if let Some(planet) = &mut app.planet {
-                    planet.use_tool(&app.camera);
-                }
-                if let Some(system) = &app.system
-                    && !system.map
-                {
-                    system.dig(&app.camera, system.snapshot().current.anchor);
+                let on_ui = response.consumed || app.egui_ctx.egui_wants_pointer_input();
+                if !(pressed && on_ui) {
+                    app.input(crate::bindings::Input::Mouse(button), pressed);
                 }
             }
             WindowEvent::MouseWheel { delta, .. } if !response.consumed => {
-                let notches = match delta {
+                app.wheel(match delta {
                     MouseScrollDelta::LineDelta(_, y) => f64::from(y),
                     MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
-                };
-                let held = app.holding().is_some_and(|h| h.wheel(notches));
-                if !held && !app.system_scroll(notches) {
-                    app.fly.scroll(notches);
-                }
+                });
             }
             WindowEvent::RedrawRequested => app.frame(),
             _ => {}
@@ -159,11 +144,7 @@ impl ApplicationHandler for App {
 
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
         if let (Some(app), DeviceEvent::MouseMotion { delta }) = (&mut self.running, event) {
-            // Q held, the mouse turns what the hands hold; Ctrl, the view finer (G2.10).
-            let (turned, gain) = app.holding().map_or((false, 1.0), |h| h.mouse(delta));
-            if !turned && app.looking && !app.system_mouse(delta.0, delta.1) {
-                app.fly.mouse_motion(delta.0 * gain, delta.1 * gain);
-            }
+            app.mouse_moved(delta);
         }
     }
 
@@ -223,6 +204,8 @@ impl Running {
 
         let camera = demo::camera_preset("overview", DVec3::ZERO).expect("preset exists");
         let now = Instant::now();
+        let game_file = crate::settings::path();
+        let game = (game_file.as_deref()).map(crate::settings::GameSettings::load);
         Ok(Self {
             window,
             renderer,
@@ -254,6 +237,8 @@ impl Running {
             started: now,
             last_frame: now,
             settings,
+            game: game.unwrap_or_default(),
+            game_file,
             adapter_label,
             watcher: crate::content::watcher(),
             content: content_reload::ContentStatus::default(),

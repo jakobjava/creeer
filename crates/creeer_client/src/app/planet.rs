@@ -2,6 +2,7 @@
 //! singleplayer game, or a dedicated server's), leave it, walk or fly, and draw a frame.
 
 use super::*;
+use crate::bindings::Action;
 use crate::planet_ui::Request;
 use crate::planet_view::PlanetView;
 
@@ -38,77 +39,75 @@ impl Running {
         Ok(())
     }
 
-    /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
-    /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
-    /// the crosshair is on in both hands, or puts down what they hold (G1.4f); E, F and I put
-    /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`); the left click strikes
-    /// with what the hands hold, T throws it, X strips bark from it, B binds the head the
-    /// crosshair is on to it (G1.6d). Returns whether it
-    /// was one.
-    pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
-        use winit::keyboard::KeyCode;
+    /// An action of the planet game (the controls' table, `bindings.rs`): walk or fly; take what
+    /// the crosshair is on in both hands, or put down what they hold (G1.4f); put away, put in
+    /// and show what is carried (G1.6a, `inventory_ui.rs`); throw, strip bark, bind a head on
+    /// (G1.6d); fasten, set a post, take a joint apart, choose a fastener (G2); a tool in hand
+    /// (G1.4c), the same again or put away. Returns whether it was one.
+    pub(super) fn planet_act(&mut self, action: Action) -> bool {
         let Some(planet) = &mut self.planet else {
             return false;
         };
-        let tool = match code {
-            KeyCode::KeyV => {
+        let camera = &self.camera;
+        let tool = match action {
+            Action::WalkOrFly => {
                 planet.walking = !planet.walking;
                 return true;
             }
-            KeyCode::KeyG => {
-                planet.grab_or_drop(&self.camera);
+            Action::Take => {
+                planet.grab_or_drop(camera);
                 return true;
             }
-            KeyCode::KeyE => {
-                planet.stow(&self.camera);
+            Action::Pocket => {
+                planet.stow(camera);
                 return true;
             }
-            KeyCode::KeyF => {
-                planet.put_in_or_open(&self.camera);
+            Action::PutIn => {
+                planet.put_in_or_open(camera);
                 return true;
             }
-            KeyCode::KeyI => {
+            Action::Inventory => {
                 planet.inventory = !planet.inventory;
                 return true;
             }
-            KeyCode::KeyT => {
-                planet.send(creeer_net::message::Command::Throw(self.camera.forward()));
+            Action::Throw => {
+                planet.send(creeer_net::message::Command::Throw(camera.forward()));
                 return true;
             }
             // First person, or the camera behind to look at the build (G2.10).
-            KeyCode::F5 => {
+            Action::Camera => {
                 planet.first_person = !planet.first_person;
                 return true;
             }
-            KeyCode::KeyX => {
+            Action::Strip => {
                 planet.send(creeer_net::message::Command::Strip);
                 return true;
             }
-            KeyCode::KeyJ => {
-                planet.fasten(&self.camera);
+            Action::Fasten => {
+                planet.fasten(camera);
                 return true;
             }
-            KeyCode::KeyP => {
-                planet.set_post(&self.camera);
+            Action::SetPost => {
+                planet.set_post(camera);
                 return true;
             }
-            KeyCode::KeyU => {
-                planet.unfasten(&self.camera);
+            Action::Unfasten => {
+                planet.unfasten(camera);
                 return true;
             }
-            KeyCode::KeyK => {
+            Action::NextFastener => {
                 planet.fastening.next();
                 return true;
             }
-            KeyCode::KeyB => {
-                planet.bind(&self.camera);
+            Action::Bind => {
+                planet.bind(camera);
                 return true;
             }
-            KeyCode::Digit1 => Some(0),
-            KeyCode::Digit2 => Some(1),
-            KeyCode::Digit3 => Some(2),
-            KeyCode::Digit4 => Some(3),
-            KeyCode::Digit0 => None,
+            Action::Tool1 => Some(0),
+            Action::Tool2 => Some(1),
+            Action::Tool3 => Some(2),
+            Action::Tool4 => Some(3),
+            Action::ToolAway => None,
             _ => return false,
         };
         let tool = if tool == planet.wielding { None } else { tool };
@@ -246,7 +245,13 @@ impl Running {
                 tick,
                 adapter: &self.adapter_label,
             };
-            request = crate::hud::draw(ui.ctx(), planet, &self.camera, &perf, &mut self.profiler);
+            request = crate::hud::draw(
+                ui.ctx(),
+                planet,
+                &self.camera,
+                (&perf, &mut self.profiler),
+                &self.game.bindings,
+            );
         });
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);
