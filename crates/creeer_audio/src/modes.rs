@@ -282,10 +282,12 @@ pub fn ball(material: &Acoustic, radius: f64, mass: f64, blow: &Blow, extra: f64
 }
 
 /// A rod of `diameter` m standing `length` m out of what holds it (a nail), its free end struck
-/// across with impulse `across` (N·s) no faster than `speed` (m/s), the contact `contact` s.
+/// across with impulse `across` (N·s) no faster than `speed` (m/s), the contact `contact` s. Its
+/// ringing leaks into its holder of loss factor `held` (wood), which damps it as the holder's own
+/// modes are damped (an approximation: the clamp's loss is not measured).
 pub fn cantilever(
     material: &Acoustic,
-    (length, diameter): (f64, f64),
+    (length, diameter, held): (f64, f64, f64),
     across: f64,
     speed: f64,
     contact: f64,
@@ -303,7 +305,7 @@ pub fn cantilever(
         let v = (across * tip / mass).min(speed) * pulse_share(f, contact);
         modes.push(
             f,
-            material.decay(f),
+            material.decay(f) + PI * f * held,
             radiated(f, v, length * diameter, diameter),
         );
     }
@@ -311,7 +313,8 @@ pub fn cantilever(
 }
 
 /// A bar set ringing by `energy` J (a member snapping back as it breaks): its bending modes
-/// across the width take the energy as a released bend would, the n-th by 1/(βₙL)⁴.
+/// across its thinner side (the way it bent) take the energy as a released bend would, the n-th
+/// by 1/(βₙL)⁴.
 pub fn released(material: &Acoustic, shape: &Shape, mass: f64, energy: f64) -> Modes {
     let mut modes = Modes::default();
     let Shape::Bar {
@@ -323,7 +326,8 @@ pub fn released(material: &Acoustic, shape: &Shape, mass: f64, energy: f64) -> M
     else {
         return modes;
     };
-    let kappa = if round { w / 4.0 } else { w / 12f64.sqrt() };
+    let (h, d) = (w.min(d), w.max(d));
+    let kappa = if round { h / 4.0 } else { h / 12f64.sqrt() };
     let weights: Vec<f64> = (0..10).map(|n| free_free(n).powi(-4)).collect();
     let total: f64 = weights.iter().sum();
     for (n, share) in weights.iter().enumerate() {

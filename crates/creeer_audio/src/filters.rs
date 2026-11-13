@@ -43,6 +43,12 @@ impl Biquad {
         Self::from([k, -1.0 - c, k], [1.0 + alpha, -2.0 * c, 1.0 - alpha])
     }
 
+    /// A first-order high-pass at `f` Hz (6 dB an octave below it; bilinear).
+    pub fn highpass1(f: f32, rate: f32) -> Self {
+        let k = (PI * corner(f, rate) / rate).tan();
+        Self::from([1.0, -1.0, 0.0], [1.0 + k, k - 1.0, 0.0])
+    }
+
     /// A band-pass at `f` Hz of quality `q`, its peak at unit gain.
     pub fn bandpass(f: f32, q: f32, rate: f32) -> Self {
         let w = 2.0 * PI * corner(f, rate) / rate;

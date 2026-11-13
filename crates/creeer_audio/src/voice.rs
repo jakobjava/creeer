@@ -18,12 +18,30 @@ pub enum Bus {
 
 /// The click of a body stopped short (Koss and Alfredson 1973): Pa at a metre per unit of its
 /// drive, how long its contact lasts (s, the click's rise) and the corner below which it radiates
-/// little (Hz).
+/// less (Hz). In open air a body stopped short radiates as a dipole, falling as f² below the
+/// corner; `baffled`, against the ground (a foot, a thing landing), the ground's patch moving with
+/// it radiates as a piston in a baffle, falling only as f (Fahy and Gardonio 2007).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Click {
     pub gain: f32,
     pub contact: f32,
     pub corner: f32,
+    pub baffled: bool,
+}
+
+impl Click {
+    /// About the most its click reaches for a drive of 1 (Pa at a metre): a step through its
+    /// contact's low-pass (corner 1/(πτ)) and its radiation's high-pass. A contact much longer than
+    /// the corner's period passes only its slope (baffled) or its curvature (open air).
+    pub fn reach(&self) -> f32 {
+        let r = 1.0 / (std::f32::consts::PI * self.contact.max(1e-7) * self.corner.max(1.0));
+        let share = if self.baffled {
+            r / (r + 2.2)
+        } else {
+            r * r / (r * r + 2.0)
+        };
+        self.gain * share
+    }
 }
 
 /// How a grain burst's rate runs through it.
@@ -153,7 +171,11 @@ impl Voice {
             spec,
             bank: Bank::new(&spec.modes, rate),
             contact,
-            radiate: Biquad::highpass(spec.click.corner, 0.707, rate),
+            radiate: if spec.click.baffled {
+                Biquad::highpass1(spec.click.corner, rate)
+            } else {
+                Biquad::highpass(spec.click.corner, 0.707, rate)
+            },
             noise: Biquad::lowpass(1000.0, 0.707, rate),
             noisy: 1.0,
             gust: (0.0, OnePole::default()),
@@ -254,9 +276,10 @@ impl Voice {
             }
             Excite::Rub { force, .. } => {
                 self.level += 0.002 * (if self.stopping { 0.0 } else { force } - self.level);
-                // The force's impulse this sample (N·s), its noise of unit RMS.
+                // The force's impulse this sample (N·s), its noise of unit RMS; the contact patch's
+                // own shaking through the click (its gain per N of the force).
                 let noise = self.noise.run(self.rng.signed()) * self.noisy;
-                (noise * self.level * self.dt, 0.0)
+                (noise * self.level * self.dt, noise * self.level)
             }
             Excite::Creak { rate, level } => {
                 self.level += 0.002 * (if self.stopping { 0.0 } else { level } - self.level);

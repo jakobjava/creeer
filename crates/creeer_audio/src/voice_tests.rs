@@ -160,6 +160,7 @@ fn a_blows_click_is_brighter_the_shorter_its_contact() {
                 gain: 1.0,
                 contact,
                 corner: 500.0,
+                baffled: false,
             },
             excite: Excite::Blow,
             peak: 1.0,

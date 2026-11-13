@@ -23,7 +23,7 @@ fn voice(at: DVec3, modes: Modes, click: Click, excite: Excite, seed: u64) -> Vo
         modes,
         click,
         excite,
-        peak: (modes.peak() + f64::from(click.gain)) as f32,
+        peak: modes.peak() as f32 + click.reach(),
         seed,
     }
 }
@@ -64,6 +64,7 @@ pub fn crack(body: &Body<'_>, share: f64, seed: u64) -> VoiceSpec {
         gain: gain as f32,
         contact: 1e-4,
         corner: corner as f32,
+        baffled: false,
     };
     let excite = Excite::Grains {
         count: m.crack.grains as f32,
@@ -93,7 +94,8 @@ pub fn creak(body: &Body<'_>, utilisation: f64, key: u64, seed: u64) -> Option<V
     // A slip of energy e into the modes: the impulse √(2·m·e) (each mode set for 1 N·s).
     let slip = (2.0 * body.mass * c.energy * x * x).sqrt();
     // Struck where it is most bent, across, and as a slip is slow: half a millisecond.
-    let modes = body.modes(body.centre, body.turn * DVec3::Y, 5e-4);
+    let across = body.turn * (DVec3::Y + DVec3::Z) * std::f64::consts::FRAC_1_SQRT_2;
+    let modes = body.modes(body.centre, across, 5e-4);
     let excite = Excite::Creak {
         rate: (c.rate * x * x * x) as f32,
         level: slip as f32,
@@ -149,6 +151,7 @@ pub fn footstep(
             gain: (gain * speed) as f32,
             contact: tau as f32,
             corner: corner as f32,
+            baffled: true,
         },
         Excite::Blow,
         seed,
@@ -172,6 +175,7 @@ pub fn footstep(
                 gain: (gain * v * count.sqrt()) as f32,
                 contact: tau as f32,
                 corner: corner as f32,
+                baffled: true,
             },
             Excite::Grains {
                 count: count as f32,
@@ -196,18 +200,33 @@ pub fn rub(
     key: u64,
     seed: u64,
 ) -> VoiceSpec {
-    // The friction force's fluctuation (a share of μ·m·g with μ ½) and the roughness's wavelength.
-    let (share, wavelength) = if rolling { (0.02, 0.01) } else { (0.15, 0.001) };
+    // The friction force's fluctuation (a share of μ·m·g with μ ½), the roughness's wavelength,
+    // the contact patch's radius, and its shaking (a share of the speed). Estimates.
+    let (share, wavelength, patch, shake) = if rolling {
+        (0.02, 0.01, 0.01, 0.01)
+    } else {
+        (0.15, 0.001, 0.02, 0.05)
+    };
     let force = share * 0.5 * body.mass * 9.81;
     let corner = (speed / wavelength).clamp(30.0, 15_000.0);
-    let modes = body.modes(at, body.turn * DVec3::Y, 1e-3);
+    let across = body.turn * (DVec3::Y + DVec3::Z) * std::f64::consts::FRAC_1_SQRT_2;
+    let modes = body.modes(at, across, 1e-3);
     let excite = Excite::Rub {
         force: force as f32,
         corner: corner as f32,
     };
-    let mut spec = voice(at, modes, Click::default(), excite, seed);
+    // The patch radiates as a piston in the ground's baffle, per N of the force's fluctuation.
+    let (gain, radiates) = click(patch);
+    // (Its contact's low-pass at the roughness's corner, so `reach` sees the noise's band.)
+    let click = Click {
+        gain: (gain * shake * speed / force.max(1e-6)) as f32,
+        contact: (1.0 / (PI * corner)) as f32,
+        corner: radiates as f32,
+        baffled: true,
+    };
+    let mut spec = voice(at, modes, click, excite, seed);
     spec.key = key;
-    spec.peak = (modes.peak() * force * 0.01) as f32;
+    spec.peak = (modes.peak() * force * 0.01) as f32 + click.reach() * force as f32;
     spec
 }
 

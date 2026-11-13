@@ -144,24 +144,33 @@ pub fn impact(
             stop = (gain * j / b.mass, corner);
         }
     }
-    spec(point, modes, stop, tau, seed)
+    let baffled = matches!(other, Other::Ground(_));
+    spec(point, modes, (stop, baffled), tau, seed)
 }
 
 /// A blow's sound: its modes rung once and its click.
 #[allow(clippy::cast_possible_truncation)] // Pa, s and Hz as f32
-fn spec(at: DVec3, modes: Modes, (gain, corner): (f64, f64), tau: f64, seed: u64) -> VoiceSpec {
+fn spec(
+    at: DVec3,
+    modes: Modes,
+    ((gain, corner), baffled): ((f64, f64), bool),
+    tau: f64,
+    seed: u64,
+) -> VoiceSpec {
+    let click = Click {
+        gain: gain as f32,
+        contact: tau as f32,
+        corner: corner as f32,
+        baffled,
+    };
     VoiceSpec {
         at,
         bus: Bus::Effects,
         key: 0,
         modes,
-        click: Click {
-            gain: gain as f32,
-            contact: tau as f32,
-            corner: corner as f32,
-        },
+        click,
         excite: Excite::Blow,
-        peak: (modes.peak() + gain) as f32,
+        peak: modes.peak() as f32 + click.reach(),
         seed,
     }
 }
@@ -195,7 +204,7 @@ pub fn driven(
     seed: u64,
 ) -> VoiceSpec {
     let Some(head_matter) = lib.matter(&driver.head) else {
-        return spec(point, Modes::default(), (0.0, 1000.0), 1e-3, seed);
+        return spec(point, Modes::default(), ((0.0, 1000.0), false), 1e-3, seed);
     };
     let blows = f64::from(driver.blows.max(1));
     let k = f64::from(blow.min(driver.blows - 1));
@@ -240,14 +249,20 @@ pub fn driven(
         // The fastener's standing part, struck across by a glancing share of the blow.
         modes.extend(&cantilever(
             &rod.acoustic,
-            (standing, diameter),
+            (standing, diameter, part.matter.acoustic.loss),
             GLANCE * j,
             speed,
             tau,
         ));
     }
     let (gain, corner) = click(head.shape.size());
-    spec(point, modes, (gain * 1.5 * speed, corner), tau, seed)
+    spec(
+        point,
+        modes,
+        ((gain * 1.5 * speed, corner), false),
+        tau,
+        seed,
+    )
 }
 
 #[cfg(test)]

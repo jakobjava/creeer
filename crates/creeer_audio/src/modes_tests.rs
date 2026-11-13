@@ -196,7 +196,7 @@ fn a_nail_rings_higher_as_it_is_driven() {
         loss: 1e-3,
     };
     let lowest = |standing: f64| {
-        let m = cantilever(&steel, (standing, 0.0031), 0.3, 1.0, 5e-5);
+        let m = cantilever(&steel, (standing, 0.0031, 0.02), 0.3, 1.0, 5e-5);
         m.as_slice().iter().map(|m| m.freq).fold(f32::MAX, f32::min)
     };
     // f ∝ 1/L²: from 50 mm out to 25 mm out, four times higher.
