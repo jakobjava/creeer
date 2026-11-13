@@ -134,6 +134,32 @@ fn a_crate_under_the_feet_holds_them_as_the_ground_does() {
     assert!((back.z + 1000.0 * 0.133).abs() < 1e-6, "{back}");
 }
 
+/// A structure's node with two members' shapes, a sill's (first) and a board's: the feet stand on
+/// the board, half a metre from the sill, and it carries their balance whole, as the ground
+/// would. (Read from the node's first shape, the sill, the patch lay off the soles: nothing was
+/// carried, or the torque the other way, and a player walking off a nailed deck toppled: G2.11.)
+#[test]
+fn on_a_node_of_two_members_the_one_stood_on_carries_the_balance() {
+    let mut world = World::new(1.0 / 60.0);
+    let sill = Shape::Box {
+        half: DVec3::new(0.075, 0.2, 0.6),
+    };
+    let mut body = Body::rigid(sill, 60.0, DVec3::ZERO, 1.0 / 60.0);
+    let board = Shape::Box {
+        half: DVec3::new(1.5, 0.025, 0.3),
+    };
+    body.shapes.push((0, board));
+    let b = world.add(body);
+    let hit = Hit {
+        distance: 1.0,
+        point: DVec3::new(0.5, 0.025, 0.0),
+        normal: DVec3::Y,
+        body: Some((b, 0)),
+    };
+    let whole = DVec3::new(300.0, 20.0, 500.0);
+    assert_eq!(carried(&world, &hit, (1000.0, 0.6), whole), whole);
+}
+
 #[test]
 fn a_ball_under_the_feet_carries_no_balance() {
     let mut world = World::new(1.0 / 60.0);
