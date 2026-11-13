@@ -95,6 +95,7 @@ impl Overlay {
 /// Draws the game's screen over `view` seen from `camera`, as `shot` asks.
 pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) -> Overlay {
     let ctx = egui::Context::default();
+    creeer_ui::theme::apply(&ctx);
     ctx.set_zoom_factor(shot.scale);
     // As the game does while the player walks: the crosshair aims from the avatar.
     view.walking = true;
@@ -229,7 +230,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     let (off, command) = match name {
         "heavy" => (1.8, Command::Crate(ground(me + north * 1.8) + up * 0.6)),
         _ => {
-            let off = if name == "aim-far" { 4.5 } else { 1.3 };
+            let off = if name == "aim-far" { 3.6 } else { 1.3 };
             let at = ground(me + north * off) + up * 0.15;
             let item = kit_item("pole")?;
             (off, Command::Kit { item, at })

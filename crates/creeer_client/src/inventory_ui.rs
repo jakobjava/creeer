@@ -168,17 +168,15 @@ fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
     }
 }
 
-/// Under the crosshair (G1.6): what the hands hold, what the keys would do (`keys`, from the
-/// prompts and the controls' table), and what came of the last thing done (or why it was
-/// refused) for a few seconds. Nothing a player does is silent, and no key has to be found by
-/// trying.
-pub fn told(ctx: &egui::Context, view: &PlanetView, keys: &str) {
+/// Above the crosshair (G1.6): what the hands hold, and what came of the last thing done (or
+/// why it was refused) for a few seconds. Nothing a player does is silent.
+pub fn told(ctx: &egui::Context, view: &PlanetView) {
     let c = &view.session.connection;
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("told"),
     ));
-    let mut at = ctx.content_rect().center() + egui::vec2(0.0, 40.0);
+    let mut at = ctx.content_rect().center() - egui::vec2(0.0, 90.0);
     let mut line = |text: &str, colour: egui::Color32| {
         painter.text(
             at,
@@ -192,7 +190,6 @@ pub fn told(ctx: &egui::Context, view: &PlanetView, keys: &str) {
     let hands = c.inventory.hands.as_ref();
     let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
     line(&held, egui::Color32::from_white_alpha(200));
-    line(keys, egui::Color32::from_rgb(160, 200, 230));
     let recent = |told: &Option<(String, std::time::Instant)>| {
         told.as_ref()
             .filter(|(_, when)| when.elapsed().as_secs_f64() < 5.0)

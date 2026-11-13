@@ -9,8 +9,8 @@ fn walking() -> Seen {
     }
 }
 
-fn actions(seen: &Seen) -> Vec<Action> {
-    prompts(seen).1.into_iter().map(|p| p.action).collect()
+fn actions(prompts: &[Prompt]) -> Vec<Action> {
+    prompts.iter().map(|p| p.action).collect()
 }
 
 fn pole(in_reach: bool, mass: f64) -> Aimed {
@@ -29,15 +29,14 @@ fn a_part_in_reach_with_empty_hands_is_taken_or_fastened() {
         aimed: Some(pole(true, 27.0)),
         ..walking()
     };
-    let (state, prompts) = prompts(&seen);
-    assert!(state.is_empty());
-    let actions: Vec<Action> = prompts.iter().map(|p| p.action).collect();
+    let p = prompts(&seen);
+    assert!(p.state.is_empty() && p.hands.is_empty());
     assert_eq!(
-        actions,
+        actions(&p.aimed),
         [Action::Take, Action::Fasten, Action::NextFastener]
     );
-    assert_eq!(prompts[0].verb, "Take");
-    assert_eq!(prompts[1].verb, "Fasten (bast lashing)");
+    assert_eq!(p.aimed[0].verb, "Take");
+    assert_eq!(p.aimed[1].verb, "Fasten (bast lashing)");
 }
 
 #[test]
@@ -46,9 +45,9 @@ fn out_of_reach_it_is_named_too_far_and_nothing_is_offered() {
         aimed: Some(pole(false, 27.0)),
         ..walking()
     };
-    let (state, prompts) = prompts(&seen);
-    assert_eq!(state, ["too far"]);
-    assert!(prompts.is_empty());
+    let p = prompts(&seen);
+    assert_eq!(p.state, ["too far"]);
+    assert!(p.aimed.is_empty() && p.hands.is_empty());
 }
 
 #[test]
@@ -57,20 +56,20 @@ fn a_thing_too_heavy_is_not_offered_to_be_taken_and_its_weight_is_told() {
         aimed: Some(pole(true, 200.0)),
         ..walking()
     };
-    let (state, _) = prompts(&heavy);
-    assert_eq!(state, ["too heavy (200 kg)"]);
-    assert!(!actions(&heavy).contains(&Action::Take));
+    let p = prompts(&heavy);
+    assert_eq!(p.state, ["too heavy (200 kg)"]);
+    assert!(!actions(&p.aimed).contains(&Action::Take));
     let one_end = Seen {
         aimed: Some(pole(true, 70.0)),
         ..walking()
     };
-    let (state, prompts) = prompts(&one_end);
-    assert_eq!(state, ["heavy (70 kg)"]);
-    assert_eq!(prompts[0].verb, "Lift one end");
+    let p = prompts(&one_end);
+    assert_eq!(p.state, ["heavy (70 kg)"]);
+    assert_eq!(p.aimed[0].verb, "Lift one end");
 }
 
 #[test]
-fn holding_a_part_offers_the_holding_keys_and_fastening_where_it_touches() {
+fn holding_a_part_offers_the_holding_keys_by_the_hands_and_fastening_at_the_crosshair() {
     let seen = Seen {
         hands: Some("stick".into()),
         holding: true,
@@ -81,31 +80,29 @@ fn holding_a_part_offers_the_holding_keys_and_fastening_where_it_touches() {
         }),
         ..walking()
     };
-    let a = actions(&seen);
-    assert_eq!(a[0], Action::Take, "put down first");
-    for wanted in [
-        Action::Fasten,
-        Action::StandOrLay,
-        Action::Turn,
-        Action::Slide,
-        Action::SetPost,
-        Action::Throw,
-        Action::Fine,
-    ] {
-        assert!(a.contains(&wanted), "{wanted:?} in {a:?}");
-    }
-    assert!(
-        !a.contains(&Action::Use),
-        "what is held is not struck with itself"
+    let p = prompts(&seen);
+    assert_eq!(
+        actions(&p.aimed),
+        [Action::Fasten, Action::NextFastener],
+        "where it touches"
     );
-    assert!(
-        !a.contains(&Action::Pocket),
-        "a part does not go in a pocket"
+    assert_eq!(
+        actions(&p.hands),
+        [
+            Action::Take,
+            Action::StandOrLay,
+            Action::Turn,
+            Action::Slide,
+            Action::SetPost,
+            Action::Throw,
+            Action::Fine
+        ]
     );
+    assert_eq!(p.hands[0].verb, "Put down");
 }
 
 #[test]
-fn a_stick_in_hand_strips_bark_and_binds_a_stone_aimed_at() {
+fn a_stick_in_hand_strikes_strips_bark_and_binds_a_stone_aimed_at() {
     let stone = Aimed {
         what: What::Thing,
         in_reach: true,
@@ -119,9 +116,10 @@ fn a_stick_in_hand_strips_bark_and_binds_a_stone_aimed_at() {
         aimed: Some(stone),
         ..walking()
     };
-    let a = actions(&seen);
-    assert_eq!(a[0], Action::Use, "strike it");
-    assert!(a.contains(&Action::Strip) && a.contains(&Action::Bind) && a.contains(&Action::Pocket));
+    let p = prompts(&seen);
+    assert_eq!(actions(&p.aimed), [Action::Use, Action::Bind]);
+    let hands = actions(&p.hands);
+    assert!(hands.contains(&Action::Strip) && hands.contains(&Action::Pocket));
 }
 
 #[test]
@@ -134,9 +132,9 @@ fn the_ground_is_dug_with_bare_hands_or_a_tool() {
         aimed: Some(ground),
         ..walking()
     };
-    assert_eq!(prompts(&bare).1[0].verb, "Dig with your hands");
+    assert_eq!(prompts(&bare).aimed[0].verb, "Dig with your hands");
     let armed = Seen { tool: true, ..bare };
-    assert_eq!(prompts(&armed).1[0].verb, "Dig");
+    assert_eq!(prompts(&armed).aimed[0].verb, "Dig");
 }
 
 #[test]
@@ -150,7 +148,7 @@ fn a_standing_post_is_set_and_a_built_part_taken_apart() {
         aimed: Some(post),
         ..walking()
     };
-    let a = actions(&seen);
+    let a = actions(&prompts(&seen).aimed);
     assert!(
         a.contains(&Action::SetPost) && a.contains(&Action::Unfasten),
         "{a:?}"
@@ -163,7 +161,7 @@ fn flying_a_click_is_the_sandbox_tools() {
         fly_tool: Some("dig".into()),
         ..Seen::default()
     };
-    let (_, prompts) = prompts(&seen);
-    assert_eq!(prompts[0].verb, "dig at the crosshair");
-    assert_eq!(prompts[1].action, Action::WalkOrFly);
+    let p = prompts(&seen);
+    assert_eq!(p.aimed[0].verb, "dig at the crosshair");
+    assert_eq!(p.hands[0].action, Action::WalkOrFly);
 }

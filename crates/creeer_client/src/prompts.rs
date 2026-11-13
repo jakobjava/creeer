@@ -73,109 +73,117 @@ pub struct Prompt {
     pub verb: String,
 }
 
-/// What can be told of the aim (out of reach, too heavy) and what can be done, in order of how
-/// likely it is wanted.
-pub fn prompts(seen: &Seen) -> (Vec<String>, Vec<Prompt>) {
-    let mut state = Vec::new();
-    let mut out = Vec::new();
-    let mut add = |action: Action, verb: &str| {
-        out.push(Prompt {
-            action,
-            verb: verb.to_owned(),
-        });
-    };
+/// The prompts: what is told of the aim (too far, too heavy), what can be done with what the
+/// crosshair is on (shown beside it), and with what the hands hold (shown at the bottom, near
+/// the hands), each in order of how likely it is wanted.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Prompts {
+    pub state: Vec<String>,
+    pub aimed: Vec<Prompt>,
+    pub hands: Vec<Prompt>,
+}
+
+fn prompt(action: Action, verb: &str) -> Prompt {
+    Prompt {
+        action,
+        verb: verb.to_owned(),
+    }
+}
+
+/// What the player can do now.
+pub fn prompts(seen: &Seen) -> Prompts {
+    let mut out = Prompts::default();
     if !seen.walking {
         if let Some(tool) = &seen.fly_tool {
-            add(Action::Use, &format!("{tool} at the crosshair"));
+            out.aimed
+                .push(prompt(Action::Use, &format!("{tool} at the crosshair")));
         }
-        add(Action::WalkOrFly, "Walk");
-        return (state, out);
+        out.hands.push(prompt(Action::WalkOrFly, "Walk"));
+        return out;
     }
-    let aimed = seen.aimed.filter(|a| a.in_reach);
     if seen
         .aimed
         .is_some_and(|a| !a.in_reach && a.what != What::Ground)
     {
-        state.push("too far".to_owned());
+        out.state.push("too far".to_owned());
     }
+    if let Some(a) = seen.aimed.filter(|a| a.in_reach) {
+        aimed(seen, a, &mut out);
+    }
+    if let Some(word) = &seen.hands {
+        let mut add = |action, verb| out.hands.push(prompt(action, verb));
+        add(Action::Take, "Put down");
+        if seen.holding {
+            add(Action::StandOrLay, "Stand up or lay down");
+            add(Action::Turn, "Turn (hold, move the mouse)");
+            add(Action::Slide, "Slide along itself");
+        }
+        if seen.hands_part {
+            add(Action::SetPost, "Set it in the ground");
+        } else {
+            add(Action::Pocket, "Put in a pocket");
+        }
+        if word == "stick" && !seen.hands_part {
+            add(Action::Strip, "Strip bark");
+        }
+        add(Action::Throw, "Throw");
+        if seen.holding {
+            add(Action::Fine, "Finer (hold)");
+        }
+    }
+    out
+}
+
+/// What can be done with `a`, within reach.
+fn aimed(seen: &Seen, a: Aimed, out: &mut Prompts) {
     let fastener = seen.fastener.as_deref().unwrap_or("nothing chosen");
     let fasten = format!("Fasten ({fastener})");
     let armed = seen.tool || seen.hands.is_some();
+    let empty = seen.hands.is_none();
+    let mut add = |action, verb: &str| out.aimed.push(prompt(action, verb));
     // A click: strike with what is in hand, or dig.
-    match aimed.map(|a| a.what) {
-        Some(What::Thing | What::Tree) if armed && !aimed.is_some_and(|a| a.in_hands) => {
-            add(Action::Use, "Strike");
-        }
-        Some(What::Ground) if armed => add(Action::Use, "Dig"),
-        Some(What::Ground) => add(Action::Use, "Dig with your hands"),
+    match a.what {
+        What::Thing | What::Tree if armed && !a.in_hands => add(Action::Use, "Strike"),
+        What::Ground if armed => add(Action::Use, "Dig"),
+        What::Ground => add(Action::Use, "Dig with your hands"),
         _ => {}
     }
-    match &seen.hands {
-        Some(word) => {
-            add(Action::Take, "Put down");
-            let on_part = aimed.is_some_and(|a| a.part || a.what == What::Tree);
-            if on_part {
-                add(Action::Fasten, &fasten);
+    if a.what == What::Thing && empty {
+        match a.mass {
+            Some(m) if m > seen.lifts.1 => out.state.push(format!("too heavy ({m:.0} kg)")),
+            Some(m) if m > seen.lifts.0 => {
+                out.state.push(format!("heavy ({m:.0} kg)"));
+                add(Action::Take, "Lift one end");
             }
-            if seen.holding {
-                add(Action::StandOrLay, "Stand up or lay down");
-                add(Action::Turn, "Turn (hold, move the mouse)");
-                add(Action::Slide, "Slide along itself");
-            }
-            if word == "stick" {
-                add(Action::Strip, "Strip bark");
-                if aimed.is_some_and(|a| a.stone) {
-                    add(Action::Bind, "Bind on as a head");
-                }
-            }
-            if aimed.is_some_and(|a| a.container) {
-                add(Action::PutIn, "Put inside");
-            }
-            if seen.hands_part {
-                add(Action::SetPost, "Set it in the ground");
-            } else {
-                add(Action::Pocket, "Put in a pocket");
-            }
-            add(Action::Throw, "Throw");
-            if seen.holding {
-                add(Action::Fine, "Finer (hold)");
-            }
-            if on_part {
-                add(Action::NextFastener, "Another fastener");
-            }
+            _ => add(Action::Take, "Take"),
         }
-        None => {
-            if let Some(a) = aimed.filter(|a| a.what == What::Thing) {
-                match a.mass {
-                    Some(m) if m > seen.lifts.1 => state.push(format!("too heavy ({m:.0} kg)")),
-                    Some(m) if m > seen.lifts.0 => {
-                        state.push(format!("heavy ({m:.0} kg)"));
-                        add(Action::Take, "Lift one end");
-                    }
-                    _ => add(Action::Take, "Take"),
-                }
-                if a.pocketable {
-                    add(Action::Pocket, "Put in a pocket");
-                }
-                if a.container {
-                    add(Action::PutIn, "Look inside");
-                }
-                if a.part {
-                    add(Action::Fasten, &fasten);
-                }
-                if a.part && a.standing {
-                    add(Action::SetPost, "Set it in the ground");
-                }
-                if a.built {
-                    add(Action::Unfasten, "Take apart");
-                }
-                if a.part {
-                    add(Action::NextFastener, "Another fastener");
-                }
-            }
+        if a.pocketable {
+            add(Action::Pocket, "Put in a pocket");
         }
     }
-    (state, out)
+    if a.container {
+        add(
+            Action::PutIn,
+            if empty { "Look inside" } else { "Put inside" },
+        );
+    }
+    if a.stone && seen.hands.as_deref() == Some("stick") {
+        add(Action::Bind, "Bind on as a head");
+    }
+    // Fastening where parts touch (a part held against another, or to a tree's trunk).
+    let fastens = a.part || (a.what == What::Tree && seen.holding);
+    if fastens {
+        add(Action::Fasten, &fasten);
+    }
+    if a.part && a.standing && empty {
+        add(Action::SetPost, "Set it in the ground");
+    }
+    if a.built && empty {
+        add(Action::Unfasten, "Take apart");
+    }
+    if fastens {
+        add(Action::NextFastener, "Another fastener");
+    }
 }
 
 #[cfg(test)]

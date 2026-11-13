@@ -192,6 +192,7 @@ impl Running {
             .ok();
 
         let egui_ctx = egui::Context::default();
+        creeer_ui::theme::apply(&egui_ctx);
         #[allow(clippy::cast_possible_truncation)] // DPI scale factors are small (1.0–4.0)
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),

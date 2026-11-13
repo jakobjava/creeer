@@ -20,15 +20,11 @@ pub(crate) fn draw(
     let request = planet_ui::window(ctx, planet, camera);
     crate::inventory_ui::window(ctx, planet, camera);
     let target = crate::planet_aim::target(planet, camera);
-    planet_ui::crosshair(ctx, target.as_ref());
     planet_ui::work_ring(ctx, planet.session.connection.noted.as_ref());
-    let (seen, _) = crate::hud_seen::seen(planet, target.as_ref());
-    let (state, prompts) = crate::prompts::prompts(&seen);
-    let line: Vec<String> = (prompts.iter())
-        .map(|p| format!("{} {}", bindings.name(p.action), p.verb))
-        .chain(state)
-        .collect();
-    crate::inventory_ui::told(ctx, planet, &line.join("  ·  "));
+    let (seen, name) = crate::hud_seen::seen(planet, target.as_ref());
+    let prompts = crate::prompts::prompts(&seen);
+    crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, bindings);
+    crate::inventory_ui::told(ctx, planet);
     crate::inventory_ui::vitals(ctx, &planet.session.connection);
     profiler.window(ctx, Some(&mut planet.session.connection));
     request

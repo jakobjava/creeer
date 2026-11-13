@@ -854,7 +854,9 @@ dependencies = [
 name = "creeer_ui"
 version = "0.0.1"
 dependencies = [
+ "creeer_art",
  "creeer_core",
+ "creeer_data",
  "creeer_render",
  "egui",
  "egui_plot",

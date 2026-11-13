@@ -65,7 +65,12 @@ fn look(shape: &Shape) -> Look {
 fn named(word: &str, l: Look, standing: bool, along: f64) -> String {
     let rod = l.length >= SLENDER * l.thickness;
     if !(rod && l.length >= PART) {
-        return word.to_owned();
+        // The sandbox's metre-wide boxes are drawn as crates.
+        return if word == "box" && l.thickness >= 0.6 {
+            "crate".to_owned()
+        } else {
+            word.to_owned()
+        };
     }
     let name = match (standing, word) {
         (true, _) => "post",
@@ -205,6 +210,8 @@ mod tests {
         assert_eq!(named("stick", stick, false, 0.0), "stick");
         let crate_ = look(&Shape::Box(DVec3::new(0.25, 0.2, 0.2)));
         assert_eq!(named("block", crate_, false, 0.24), "block");
+        let sandbox_crate = look(&Shape::Box(DVec3::splat(0.5)));
+        assert_eq!(named("box", sandbox_crate, false, 0.0), "crate");
         let ball = look(&Shape::Sphere(0.04));
         assert!((ball.volume - 0.08 * 0.08 * 0.08).abs() < 1e-12);
     }
