@@ -27,6 +27,8 @@ struct InstanceIn {
     @location(5) origin: vec4<f32>,
     // The body's rotation (body-fixed → world), a quaternion.
     @location(6) rotation: vec4<f32>,
+    // xyz: the chunk origin within the ground's pattern (body-fixed, modulo PATTERN_PERIOD).
+    @location(7) pattern: vec4<f32>,
 };
 
 struct VertexOut {
@@ -34,8 +36,9 @@ struct VertexOut {
     @builtin(position) @invariant clip: vec4<f32>,
     @location(0) world: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    // Chunk-local position: the detail texture repeats every 32 m, and every chunk origin
-    // is a multiple of 32 m, so it is seamless and fixed to the ground.
+    // Where the point lies in the ground's pattern: body-fixed, modulo PATTERN_PERIOD (each
+    // chunk is told its origin's place in it), so the pattern is fixed to the ground and
+    // continuous across chunks of every size.
     @location(2) local: vec3<f32>,
     @location(3) color: vec3<f32>,
     // x: roughness, y: openness.
@@ -44,7 +47,7 @@ struct VertexOut {
 
 // Steps of the aerial-perspective ray march.
 const AIR_STEPS: u32 = 10u;
-// Period of the detail texture (m).
+// Period of the detail texture (m); it divides PATTERN_PERIOD (terrain_pass.rs, 1024 m).
 const DETAIL_PERIOD: f32 = 32.0;
 
 fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
@@ -61,7 +64,7 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.clip = globals.view_proj * vec4<f32>(world, 1.0);
     out.world = world;
     out.normal = rotate(i.rotation, normalize(mix(v.normal.xyz, v.coarse_normal.xyz, m)));
-    out.local = v.position;
+    out.local = v.position + i.pattern.xyz;
     out.color = srgb_to_linear(v.color.rgb);
     out.material = vec2<f32>(v.color.a, clamp(v.normal.w, 0.0, 1.0));
     return out;

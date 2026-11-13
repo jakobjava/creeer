@@ -1,6 +1,7 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
 //!
-//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]
+//! [--ao <off|low|medium|high>] [--frames <n>]` (`--frames`: the view drawn n times more, timed, GPU pass by pass)
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -159,6 +160,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut renderer = pollster::block_on(Renderer::new_headless((1600, 900)))?;
+    renderer.set_ao(creeer_render::renderer::AoSettings {
+        quality: crate::headless::ao_quality(args)?,
+        ..renderer.ao_settings()
+    });
     let meshes = DemoMeshes::register_for(&mut renderer);
     // Stream until settled.
     let start = Instant::now();
@@ -225,6 +230,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| args.get(i + 1)?.parse::<usize>().ok());
     if let Some(n) = frames {
         let mut stats = creeer_core::TimingStats::new(n);
+        let mut passes = crate::gpu_passes::GpuPasses::default();
         for _ in 0..n {
             let started = Instant::now();
             let snapshot = view.snapshot();
@@ -251,6 +257,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 clear_color: crate::BACKGROUND,
             });
             stats.push(started.elapsed());
+            passes.push(renderer.gpu_times());
         }
         let p = |q| stats.percentile_ms(q).unwrap_or(0.0);
         println!(
@@ -260,6 +267,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             snapshot.rods.len(),
             snapshot.blobs.len()
         );
+        println!("{}", passes.report());
     }
     Ok(())
 }

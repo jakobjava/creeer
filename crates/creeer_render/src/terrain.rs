@@ -71,6 +71,21 @@ impl TerrainVertex {
     }
 }
 
+/// The ground's pattern repeats every this many metres along each body-fixed axis
+/// (`terrain.wgsl`'s noise periods divide it). Each chunk is told its origin modulo this, so
+/// the pattern is fixed to the ground and continuous across chunks of every size. (G2.9's 4 m
+/// chunks broke the old rule that every chunk origin was a multiple of the pattern's 32 m: each
+/// small chunk drew the same piece of it, and their borders showed as facets.)
+pub(crate) const PATTERN_PERIOD: f64 = 1024.0;
+
+/// Where `origin` (body-fixed, m) lies within the ground's pattern: each coordinate modulo
+/// [`PATTERN_PERIOD`], in [0, period).
+pub(crate) fn pattern_offset(origin: creeer_math::glam::DVec3) -> [f32; 3] {
+    #[allow(clippy::cast_possible_truncation)] // within [0, 1024): exact enough in f32
+    let wrap = |x: f64| x.rem_euclid(PATTERN_PERIOD) as f32;
+    [wrap(origin.x), wrap(origin.y), wrap(origin.z)]
+}
+
 /// A chunk's mesh on the CPU.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TerrainMeshData {
@@ -136,6 +151,31 @@ mod tests {
             (w.coarse_normal, w.morph, w.normal),
             ([127, 0, 0, 0], -1.5, v.normal)
         );
+    }
+
+    /// Two neighbouring chunks of any level see their common face at the same place in the
+    /// pattern (up to whole periods), however far from the planet's centre (the facets of
+    /// G2.11: 4 m chunks each drew the same 4 m of a 32 m pattern).
+    #[test]
+    fn neighbouring_chunks_meet_in_the_pattern() {
+        use creeer_math::glam::DVec3;
+        for size in [4.0, 8.0, 16.0, 32.0, 4096.0] {
+            for k in [-130_001.0, -3.0, 0.0, 255.0, 256.0, 124_999.0] {
+                let a = DVec3::new(k * size, -7.0 * size, 501_000.0 - (501_000.0 % size));
+                let b = a + DVec3::X * size;
+                let (pa, pb) = (pattern_offset(a), pattern_offset(b));
+                // A's far face at x = size, B's near face at x = 0.
+                #[allow(clippy::cast_possible_truncation)]
+                let gap = f64::from(pa[0] + size as f32 - pb[0]);
+                let periods = gap / PATTERN_PERIOD;
+                assert!(
+                    (periods - periods.round()).abs() < 1e-6,
+                    "size {size}, chunk {k}: {pa:?} + {size} vs {pb:?}"
+                );
+                assert!(pa.iter().chain(&pb).all(|&x| (0.0..1024.0).contains(&x)));
+                assert_eq!((pa[1], pa[2]), (pb[1], pb[2]));
+            }
+        }
     }
 
     #[test]
