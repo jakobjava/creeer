@@ -43,11 +43,17 @@ Surveyed 2026-11-13 from its Steam page, its community threads and a review summ
 
 Sources: store.steampowered.com/app/1800940; steamcommunity.com/app/1800940/discussions/0/4355618325415441334 and …/4029097331154053604; vaporlens.app/app/1800940.
 
-**What it means for Creëer:** Enjenir places pieces without carrying them, which is at odds with G2's "hands are hands". Which of the two the user wants is asked before the building stream starts (below). Either way Creëer takes from it: gridless free-form building, a part attached where it is pointed at, structures that fail at their fasteners, and failure that is easy to read (Enjenir's weakness, Creëer's solver's strength).
+**What it means for Creëer:** Enjenir places pieces without carrying them, which is at odds with G2's "hands are hands". The user was shown both ways of laying a beam across two posts, step by step, and decided (2026-11-13):
+
+- **Parts are carried by hand, as now.** Not placed from a menu.
+- **Real pieces only.** A part has the length it was cut to; nothing is pulled to length.
+- **Fastened by hand, quickly:** aim where two parts touch, one key, one nail, about a second and a hammer blow. The player chooses where nails go and how many.
+
+So Creëer takes from Enjenir its feel, not its placing: gridless free-form building, a part put against what is pointed at, full control of how a part is turned, structures that fail at their fasteners, and failure that is easy to read (Enjenir's weakness, Creëer's solver's strength).
 
 ## Streams
 
-Each stream is one agent in its own git worktree. Streams A1–A7 do not depend on the building design and start at once. B waits for the user's answer.
+Each stream is one agent in its own git worktree. Streams A1–A7 do not depend on the building design and started at once; B and C started after the user's answer above.
 
 | # | Stream | The player's problem | Owns (other streams keep out) |
 |---|---|---|---|
@@ -58,7 +64,8 @@ Each stream is one agent in its own git worktree. Streams A1–A7 do not depend 
 | A5 | **Frame time** | Stutter while building: the client's prediction 44–85 ms a frame | `creeer_server/src/{client,predicted}`; `creeer_client/src/{play_bench,planet_net}.rs` |
 | A6 | **Tick time** | The game freezes 2 s when a plank breaks; loose poles never rest | `creeer_physics`; `docs/g2p-plan.md` (written at its start, as plan.md asks) |
 | A7 | **Sound** | Silence | `creeer_audio`; its hooks in the client |
-| B | **Building** | Placing and fastening parts, oriented on Enjenir; the player's own arms and hands; the bridge site and its loads | `creeer_server/src/world/{hands,carry,building*,tacking}.rs`, `creeer_server/src/client/{place,hold,steered,aim}.rs`, `creeer_client/src/{holding,held,held_load,fastening}.rs`, `creeer_building`, the protocol and save versions |
+| B | **Building by hand** | Taking, carrying, placing, turning and fastening a part without fighting the game; the player's own arms and hands in first person | `creeer_server/src/world/{hands,carry,building*,tacking,grip_told}.rs`, `creeer_server/src/client/{place,hold,steered,aim}.rs`, `creeer_client/src/{holding,held,held_load,fastening}.rs`, `animate/` arms and hands, `creeer_building`, the protocol and save versions |
+| C | **The bridge site** | Nowhere to build a bridge, nothing to load it with, no way to see why it broke | A start straight at a prepared gap with parts and loads; `data/kit.ron`; the stress overlay and what shows a failure; a `bridge_demo` play scene |
 
 ## Rules for every stream
 
