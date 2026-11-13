@@ -8,25 +8,73 @@ const DIELECTRIC_F0: f32 = 0.04;
 // Fraction of each cascade (at its far end) that blends into the next one.
 const CASCADE_BLEND: f32 = 0.15;
 
+/// Where the taps of Castaño's 7×7 filter fall along one axis (texels from the base), and
+/// their weights (summing to −52), for a point a fraction `s` into its texel ("Shadow Mapping
+/// Summary", The Witness, 2013; `shadow_filter.rs` mirrors and tests it).
+fn castano7(s: f32) -> array<vec2<f32>, 4> {
+    let w0 = 5.0 * s - 6.0;
+    let w1 = 11.0 * s - 28.0;
+    let w2 = -(11.0 * s + 17.0);
+    let w3 = -(5.0 * s + 1.0);
+    return array<vec2<f32>, 4>(
+        vec2<f32>((4.0 * s - 5.0) / w0 - 3.0, w0),
+        vec2<f32>((4.0 * s - 16.0) / w1 - 1.0, w1),
+        vec2<f32>(-(7.0 * s + 5.0) / w2 + 1.0, w2),
+        vec2<f32>(-s / w3 + 3.0, w3),
+    );
+}
+
+/// How the receiving surface's shadow-map depth changes per texel along the map's u and v
+/// (its plane, from its normal): each tap of a wide filter compares at the surface's own depth
+/// there, not at its centre's, so a slope does not shadow itself ("receiver plane depth bias",
+/// Isidoro, GDC 2006; here from the normal, which needs no screen derivatives).
+fn receiver_slope(normal: vec3<f32>, cascade: u32) -> vec2<f32> {
+    let m = globals.cascades[cascade];
+    // Rows of the cascade's projection: right / radius, up / radius, −to_sun / range.
+    let right = normalize(vec3<f32>(m[0].x, m[1].x, m[2].x));
+    let up = normalize(vec3<f32>(m[0].y, m[1].y, m[2].y));
+    let range = 1.0 / length(vec3<f32>(m[0].z, m[1].z, m[2].z));
+    let towards = max(dot(normal, globals.sun_direction.xyz), 0.2);
+    let per_texel = globals.cascade_texel[cascade] / (towards * range);
+    // v runs down the map, against `up`.
+    return vec2<f32>(dot(normal, right), -dot(normal, up)) * per_texel;
+}
+
 /// Shadow lookup in one cascade: 1 = lit, 0 = shadowed.
+///
+/// Sixteen bilinear comparison taps weighted as Castaño's 7×7 filter: a smooth bell about seven
+/// texels wide, continuous as the point moves across texels, so a shadow's edge never shows
+/// the shadow map's texels as stairs (the 3×3 tent before it did, G2.11). Each tap compares at
+/// the receiving surface's depth under it (`receiver_slope`), so the normal offset can stay
+/// small and contacts stay dark.
 fn cascade_visibility(world: vec3<f32>, normal: vec3<f32>, cascade: u32) -> f32 {
-    // Normal offset: sample slightly above the surface to avoid self-shadowing ("acne").
-    let offset = normal * globals.cascade_texel[cascade];
-    let clip = globals.cascades[cascade] * vec4<f32>(world + offset, 1.0);
+    // Normal offset: a texel above the surface, against self-shadowing ("acne").
+    let texel = globals.cascade_texel[cascade];
+    let clip = globals.cascades[cascade] * vec4<f32>(world + normal * texel, 1.0);
     let uv = vec2<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
     if any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || clip.z > 1.0 {
         return 1.0;
     }
-    // Four bilinear comparison taps at ±½ texel: a smooth 3×3-texel tent filter. Smaller
-    // than 9 taps at ±1 texel (sharper), equally free of stair-stepping.
-    let half_texel = 0.5 / globals.params.y;
+    let slope = receiver_slope(normal, cascade);
+    let size = globals.params.y;
+    let at = uv * size;
+    let base = floor(at + 0.5);
+    let st = at + 0.5 - base;
+    let origin = base - 0.5;
+    var us = castano7(st.x);
+    var vs = castano7(st.y);
     var lit = 0.0;
-    for (var i = 0u; i < 4u; i++) {
-        let corner = vec2<f32>(f32(i & 1u), f32(i >> 1u)) * 2.0 - 1.0;
-        let tap = uv + corner * half_texel;
-        lit += textureSampleCompareLevel(shadow_map, shadow_sampler, tap, cascade, clip.z);
+    for (var j = 0u; j < 4u; j++) {
+        for (var i = 0u; i < 4u; i++) {
+            let offset = vec2<f32>(us[i].x, vs[j].x);
+            let tap = (origin + offset) / size;
+            // The receiving surface's own depth under the tap.
+            let depth = clip.z + dot(offset - st, slope);
+            let weight = us[i].y * vs[j].y;
+            lit += weight * textureSampleCompareLevel(shadow_map, shadow_sampler, tap, cascade, depth);
+        }
     }
-    return lit * 0.25;
+    return lit / 2704.0;
 }
 
 /// Fraction of sunlight reaching `world` (0 = fully shadowed).

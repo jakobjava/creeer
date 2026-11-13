@@ -14,6 +14,8 @@ pub mod primitives;
 pub mod renderer;
 pub mod scene;
 mod shadow;
+#[cfg(test)]
+mod shadow_filter;
 pub mod skin;
 pub mod terrain;
 pub mod vertex;
