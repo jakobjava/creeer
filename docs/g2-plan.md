@@ -148,9 +148,13 @@ The user found holding "absolutely horrible" (things floated, were not held in t
 - **Drawn:** the arms reach the grip, the fingers close on it, and the player's own load is drawn where it is steered.
 - **Performance:** the slow frames the user met (a stone struck with another, a tree felled) and the tree flashing as a branch comes off.
 
+### G2.11 Playability (after the user's review, 2026-11-13)
+
+The user found the game buggy, bad-looking, bad to play and not fun, and asked for almost everything the player interacts with to be massively improved, the bridge first, with The Enjenir as an orientation for building. Its plan, streams and rules: `docs/playability-plan.md`.
+
 ## Order
 
-G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.6 → G2.7 → G2.8 → G2.9 → **the user plays** → G2.10 → the user plays the demo → squash-merge.
+G2.0 → G2.1 → G2.2 → G2.3 → **the user plays** → G2.4 → G2.5 → G2.6 → G2.7 → G2.8 → G2.9 → **the user plays** → G2.10 → **the user's review** → G2.11 → the user plays the demo → squash-merge.
 
 ## Decided with the user (2026-10-23)
 
