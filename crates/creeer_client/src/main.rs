@@ -52,6 +52,8 @@ mod headless;
 mod held;
 mod held_load;
 mod holding;
+mod hud;
+mod hud_shot;
 mod hulls;
 mod icon_image;
 mod icons;

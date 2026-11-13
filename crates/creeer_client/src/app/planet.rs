@@ -2,7 +2,7 @@
 //! singleplayer game, or a dedicated server's), leave it, walk or fly, and draw a frame.
 
 use super::*;
-use crate::planet_ui::{self, Request};
+use crate::planet_ui::Request;
 use crate::planet_view::PlanetView;
 
 /// Walking speed (m/s), and running.
@@ -239,26 +239,14 @@ impl Running {
         });
         let mut request = Request::None;
         let mut output = ctx.run_ui(raw_input, |ui| {
-            perf_window(
-                ui.ctx(),
-                &PerfInfo {
-                    frame_times: &self.frame_times,
-                    tick_times: &tick_times,
-                    tick_rate_hz: TICK_RATE_HZ,
-                    tick,
-                    adapter: &self.adapter_label,
-                },
-            );
-            request = planet_ui::window(ui.ctx(), planet, &self.camera);
-            crate::inventory_ui::window(ui.ctx(), planet, &self.camera);
-            let target = crate::planet_aim::target(planet, &self.camera);
-            planet_ui::crosshair(ui.ctx(), target.as_ref());
-            planet_ui::hold_hint(ui.ctx(), planet.holding.hint());
-            planet_ui::work_ring(ui.ctx(), planet.session.connection.noted.as_ref());
-            crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
-            crate::inventory_ui::vitals(ui.ctx(), &planet.session.connection);
-            self.profiler
-                .window(ui.ctx(), Some(&mut planet.session.connection));
+            let perf = PerfInfo {
+                frame_times: &self.frame_times,
+                tick_times: &tick_times,
+                tick_rate_hz: TICK_RATE_HZ,
+                tick,
+                adapter: &self.adapter_label,
+            };
+            request = crate::hud::draw(ui.ctx(), planet, &self.camera, &perf, &mut self.profiler);
         });
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);
