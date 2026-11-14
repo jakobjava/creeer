@@ -135,6 +135,8 @@ impl Running {
         let Some(planet) = &mut self.planet else {
             return;
         };
+        // Whether the player's own body is not drawn: the camera at its eyes, or near them.
+        let mut hide_own = false;
         if planet.walking {
             // The keys steer the avatar; the camera follows it.
             self.fly.look(&mut self.camera);
@@ -158,7 +160,7 @@ impl Running {
             planet
                 .session
                 .update(dt, (walk, self.fly.jumping(), thrust));
-            planet.follow(&mut self.camera);
+            hide_own = planet.follow(&mut self.camera, dt);
         } else {
             // Flying speed follows the height above the ground: the wheel sets how many
             // heights per second (10 m/s base speed = one height per second at 10 m).
@@ -185,10 +187,11 @@ impl Running {
             Overlay::Off,
         );
         if let Some(people) = &mut self.people {
-            // In first person the player's own body is not drawn: the eyes are in it (G2.10).
+            // In first person the player's own body is not drawn: the eyes are in it (G2.10); nor
+            // with the third person's camera pulled in by its head (G2.11).
             let own = (planet.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
             let drawn_people: Vec<_> = (snapshot.people.iter())
-                .filter(|p| !(planet.first_person && Some(p.key) == own))
+                .filter(|p| !(hide_own && Some(p.key) == own))
                 .cloned()
                 .collect();
             let ground = crate::people_ground::PlanetGround {

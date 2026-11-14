@@ -1,4 +1,4 @@
-# ADR-0037: Moving and looking, as the player meets them
+# ADR-0042: Moving and looking, as the player meets them
 
 - **Status:** in progress (G2.11, stream A4, 2026-11-13).
 - **Context:** the user, after playing G2: "plays horrible", "many bugs" (`docs/playability-plan.md`). The character (ADR-0023) had been validated by physics tests; nobody had measured what the player's eye and hands get while moving. This ADR measures it through the real client, sets targets from human data and other games, and records the fixes.

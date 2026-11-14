@@ -1,4 +1,4 @@
-//! Moving as the player meets it, gated (G2.11, A4; ADR-0037): what the measurements in
+//! Moving as the player meets it, gated (G2.11, A4; ADR-0042): what the measurements in
 //! `walking_tests.rs` found wrong, held fixed.
 
 use super::record::Act;

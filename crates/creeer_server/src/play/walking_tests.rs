@@ -1,4 +1,4 @@
-//! Moving and looking measured as the player meets them (G2.11, A4; ADR-0037): walking,
+//! Moving and looking measured as the player meets them (G2.11, A4; ADR-0042): walking,
 //! running, stopping and turning on level ground, the eye drawn frame by frame, over a lossless
 //! and a slow link.
 

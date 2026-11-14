@@ -75,6 +75,8 @@ pub struct PlanetView {
     pub trees: Option<crate::tree_view::TreeView>,
     /// Steering what the hands hold (G2.10).
     pub holding: crate::holding::Holding,
+    /// The third-person camera's boom (G2.11).
+    pub boom: crate::planet_camera::Boom,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -142,6 +144,7 @@ impl PlanetView {
             wielding: None,
             inventory: false,
             holding: crate::holding::Holding::default(),
+            boom: crate::planet_camera::Boom::default(),
             loose: crate::loose_view::LooseView::new(&terrain),
             trees: crate::tree_view::TreeView::new(&terrain),
             streamer,
@@ -233,22 +236,37 @@ impl PlanetView {
         (avatar.position.normalize() + walk.normalize_or_zero() * 0.4).clamp_length_max(1.0)
     }
 
-    /// Puts the camera at the avatar's eyes (first person) or behind and above it, looking the way
-    /// it looks, never in the
-    /// ground.
-    pub fn follow(&self, camera: &mut Camera) {
+    /// Puts the camera at the avatar's eyes (first person; the head's when down) or on its boom
+    /// behind them, pulled in before what is between (`planet_camera::Boom`), looking the way
+    /// it looks, `dt` seconds after the last frame (G2.11, ADR-0042). Returns whether the
+    /// player's own body is not to be drawn (the camera in or by its head).
+    pub fn follow(&mut self, camera: &mut Camera, dt: f64) -> bool {
         let Some(avatar) = self.session.connection.avatar() else {
-            return;
+            return self.first_person;
         };
         let up = avatar.position.normalize();
         camera.level_to(up);
-        // First person, at the eyes (G2.10: building is done looking at the work); else behind.
-        camera.position = if self.first_person {
-            creeer_sim::reach::eye(avatar.position, up)
-        } else {
-            avatar.position + up * 1.2 - camera.forward() * 4.5
+        let c = &self.session.connection;
+        if self.first_person {
+            // (Down, the avatar is its pelvis: the eyes are in its head, wherever it lies.)
+            camera.position = (c
+                .fallen
+                .then(|| crate::planet_camera::own_head(c))
+                .flatten())
+            .unwrap_or_else(|| crate::planet_camera::eye(avatar.position, up));
+            return true;
+        }
+        let trees = self.trees.as_ref();
+        let blocked = |from: DVec3, way: DVec3, most: f64| {
+            let body = c.aim(from, way, most).map(|a| a.distance);
+            let tree = trees.and_then(|t| t.aim(c, from, way, most)).map(|a| a.2);
+            body.into_iter().chain(tree).reduce(f64::min)
         };
-        self.constrain_camera(camera);
+        let (at, hide) = self
+            .boom
+            .place((avatar.position, up, camera.forward()), dt, blocked);
+        camera.position = at;
+        hide
     }
     /// Keeps the camera level with the local horizon and above the ground.
     pub fn constrain_camera(&self, camera: &mut Camera) {

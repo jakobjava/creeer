@@ -1,4 +1,4 @@
-//! Moving and looking as the player meets them (G2.11, stream A4; ADR-0037): a player on a
+//! Moving and looking as the player meets them (G2.11, stream A4; ADR-0042): a player on a
 //! course of things to walk over (logs, a slab, slopes), played over the real server and
 //! client (`Play`), on a lossless or a slow link, drawn frame by frame as a screen draws
 //! faster than the server ticks. What the player's eye and hands get is measured from it: the
