@@ -134,15 +134,6 @@ fn name(aimed: Aimed, connection: &creeer_server::Connection) -> String {
     }
 }
 
-/// The crosshair's label: what it is on, and how far from the hands, or that it is out of reach.
-pub fn label(target: &Target) -> String {
-    if target.in_reach {
-        format!("{} · {:.1} m", target.what, target.from_hands)
-    } else {
-        format!("{} · out of reach", target.what)
-    }
-}
-
 impl PlanetView {
     /// Whether the player's character carries something in both hands (G1.4f), as the server
     /// last told.
@@ -187,33 +178,5 @@ impl PlanetView {
             at: a.point,
             seen: a.seen,
         }));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use creeer_math::glam::DVec3;
-
-    #[test]
-    fn the_label_names_it_and_its_distance_or_that_it_is_out_of_reach() {
-        let aimed = Aimed {
-            body: None,
-            point: DVec3::ZERO,
-            distance: 3.0,
-            seen: 10.0,
-        };
-        let mut t = Target {
-            aimed,
-            what: "box".into(),
-            from_hands: 1.94,
-            in_reach: true,
-            loose: None,
-            tree: None,
-            mass: None,
-        };
-        assert_eq!(label(&t), "box · 1.9 m");
-        t.in_reach = false;
-        assert_eq!(label(&t), "box · out of reach");
     }
 }

@@ -105,15 +105,12 @@ impl Sounds {
         }
     }
 
-    /// The volumes (master, effects, ambience; each 0 to 1). (For the settings menu, stream A3:
-    /// not called yet.)
-    #[allow(dead_code)]
+    /// The volumes (master, effects, ambience; each 0 to 1).
     pub fn volumes(&self) -> Volumes {
         self.volumes
     }
 
-    /// Sets the volumes (the settings menu, stream A3: not called yet).
-    #[allow(dead_code)]
+    /// Sets the volumes (the settings menu's volume is the master: `app/menu.rs`).
     pub fn set_volumes(&mut self, volumes: Volumes) {
         self.volumes = volumes;
         if let Some(out) = &mut self.out {

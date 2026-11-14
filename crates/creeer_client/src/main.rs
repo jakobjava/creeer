@@ -40,6 +40,8 @@
 
 mod animate;
 mod app;
+mod bindings;
+mod bindings_keys;
 mod circuit_bench;
 mod content;
 mod control_panel;
@@ -54,10 +56,17 @@ mod headless;
 mod held;
 mod held_load;
 mod holding;
+mod hud;
+mod hud_crosshair;
+mod hud_feedback;
+mod hud_hands;
+mod hud_seen;
+mod hud_shot;
 mod hulls;
 mod icon_image;
 mod icons;
 mod inventory_ui;
+mod kit_ui;
 mod lab;
 mod lab_ellingham;
 mod lab_plots;
@@ -65,6 +74,8 @@ mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
 mod loose_view;
+mod menu;
+mod menu_controls;
 mod models;
 mod people;
 mod people_ground;
@@ -98,7 +109,9 @@ mod powerhouse_panel;
 mod profiler_ui;
 #[cfg(test)]
 mod profiler_ui_tests;
+mod prompts;
 mod sandbox;
+mod settings;
 mod shimmer;
 mod sound_render;
 mod sounds;
@@ -140,9 +153,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{
-    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
-};
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, Window, WindowId};
