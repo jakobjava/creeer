@@ -44,7 +44,7 @@ fn deck_probe() {
             .filter(|(s, _)| !creeer_physics::profile::is_count(*s))
             .map(|(s, n)| (cost.phases[*s as usize], *n))
             .collect();
-        times.sort_by(|a, b| b.0.cmp(&a.0));
+        times.sort_by_key(|t| std::cmp::Reverse(t.0));
         let times: Vec<String> = (times.iter().take(6))
             .map(|(ns, n)| format!("{n} {:.1} ms", *ns as f64 / 1e6))
             .collect();
