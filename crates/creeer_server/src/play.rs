@@ -170,6 +170,7 @@ impl Play {
             for command in &act.commands {
                 client.command(command.clone());
             }
+            client.set_hold(act.hold);
             client.input(act.walk, act.jump, act.thrust);
             client.flush();
             client_ms = client_ms.max(started.elapsed().as_secs_f64() * 1e3);
@@ -342,6 +343,8 @@ mod break_probe;
 mod client_probe;
 #[cfg(test)]
 mod deck_probe;
+#[cfg(test)]
+mod held_tests;
 #[cfg(test)]
 mod poles_probe;
 #[cfg(test)]

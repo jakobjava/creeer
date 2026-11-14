@@ -368,3 +368,6 @@ mod build_flow;
 
 #[path = "build_play_tests.rs"]
 mod build_play;
+
+#[path = "build_deck_tests.rs"]
+mod build_deck;

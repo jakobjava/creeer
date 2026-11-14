@@ -8,12 +8,23 @@
 //! undoes (plan.md, principle 13): a part is fastened where it lies. A part touching a standing
 //! tree's trunk is fastened to the tree alike (G2.9, `tree_joints.rs`).
 
-use super::tree_joints::Touched;
 use super::*;
 use creeer_building::fasteners::{Fastener, Kind};
 use creeer_materials::MaterialTable;
 use creeer_sim::items::Item;
+use crossing::Against;
 use std::collections::BTreeMap;
+
+#[path = "building_crossing.rs"]
+pub(super) mod crossing;
+#[cfg(test)]
+#[path = "building_crossing_tests.rs"]
+mod crossing_tests;
+#[path = "building_held.rs"]
+mod held;
+#[path = "building_nails.rs"]
+mod nails;
+pub(super) use nails::plain_refusal;
 
 /// Ticks a second.
 const TICKS: f64 = 60.0;
@@ -41,9 +52,9 @@ pub(super) struct Building {
     pub(super) hammering: Option<creeer_building::hammering::Hammering>,
     pub(super) hammer: BTreeMap<EntityId, (u64, u32)>,
     pub(super) blows: Vec<(EntityId, DVec3)>,
-    /// Nails driven into a part still in its driver's hands (by player): what it touched, where,
-    /// with which fastener. Made joints when the hands let go (`nailing.rs`).
-    pub(super) driven: BTreeMap<EntityId, Vec<(EntityId, DVec3, usize)>>,
+    /// The players holding a part they nailed while holding it: their hands keep it still
+    /// where it is until they let go (`building_held.rs`).
+    pub(super) pinned: std::collections::BTreeSet<EntityId>,
 }
 
 /// A built structure's record: the items its parts and fasteners were (for salvage, G2.6),
@@ -106,12 +117,16 @@ impl ServerWorld {
         at: DVec3,
         fastener: &str,
     ) -> Result<(), String> {
+        // In the hands, it is nailed where the crosshair rests it against something (the nail
+        // where aimed, a second beside the first), or else where it touches nearest.
         let at = match self.carried(by) {
-            Some(held) if held == part => self.nearest_touch(part, at).unwrap_or(at),
+            Some(held) if held == part => (self.nearest_touch(part, at))
+                .filter(|t| (*t - at).length() > NEAR)
+                .unwrap_or(at),
             _ => at,
         };
         let k = if fastener.is_empty() {
-            self.touching_any(part, at)?;
+            self.touching_at(part, at)?;
             self.reach_for(by, part, at)?
         } else {
             (self.building.fasteners.iter())
@@ -121,8 +136,13 @@ impl ServerWorld {
         let work = self.fastening_work(part, at, k)?;
         let whole = &self.building.fasteners[k];
         let tack = whole.tacked().and_then(|t| t.seconds).unwrap_or(0.0);
-        let (driving, blows) = self.fastening_time(k, part, at);
+        let (driving, blows) = self.fastening_time(by, k, part, at);
         let whole = &self.building.fasteners[k];
+        // A nail that would not hold there is refused now, in the player's words, not after its
+        // blows (the parts' thicknesses along it: `crossing.rs`).
+        if work == Work::Fasten {
+            self.would_nail(by, part, at, k)?;
+        }
         let (seconds, doing) = match work {
             Work::Tack => (tack, "tacking".to_owned()),
             Work::Finish => (driving - tack, "finishing the lashing".to_owned()),
@@ -230,7 +250,7 @@ impl ServerWorld {
         self.index(u.part).ok_or("that part is gone")?;
         let at = u.at;
         self.within_reach(by, at)?;
-        let (other, point) = self.touching_any(u.part, at)?;
+        let (other, point) = self.touching_at(u.part, at)?;
         let from = self.fastener_at_hand(by, u.fastener)?;
         let whole = &self.building.fasteners[u.fastener];
         let fastener = match u.work {
@@ -239,22 +259,29 @@ impl ServerWorld {
         };
         // One fastener where it is aimed (G2.11, the user: "they choose where nails go and how
         // many"; G2.10's one J nailing every crossing a held part touched is gone). In the hands
-        // still, it is driven and the hands keep holding it still where it is, for another; its
-        // joints are made as they let go (`nailing.rs`: let go after one nail, a beam pivoted
-        // on it and slid off the other post's narrow top, G2.10; kept held while made one
-        // structure, the solver failed, G2.10).
-        if self.carried(by) == Some(u.part)
-            && let Touched::Part(id) = other
-        {
-            (self.building.driven.entry(by).or_default()).push((id, point, u.fastener));
-            return Ok(());
-        }
+        // still, it is a joint at its last blow and the hands hold on, still where it is, for
+        // another (`building_held.rs`: let go after one nail, a beam pivoted on it and slid off
+        // the other post's narrow top, G2.10; made joints only as the hands let go, nothing held
+        // it between nails, G2.11).
+        // What the hands hold is one of the two (aimed at it, or at what it rests on).
+        let held = self
+            .carried(by)
+            .is_some_and(|h| h == u.part || matches!(other, Against::Part(id) if id == h));
         match other {
-            Touched::Part(id) => {
-                self.fasten(u.part, id, point, &fastener)?;
+            Against::Part(_) | Against::Itself(..) if held => {
+                self.drive_held(by, (u.part, other, point), &fastener, at)?;
+            }
+            Against::Part(id) => {
+                let c = self.crossing(Some(by), u.part, other, point)?;
+                self.drive(u.part, &c, &fastener, at)?;
                 self.hands_off(&[u.part, id]);
             }
-            Touched::Tree(tree) => {
+            Against::Itself(..) => {
+                let c = self.crossing(Some(by), u.part, other, point)?;
+                self.drive(u.part, &c, &fastener, at)?;
+                self.hands_off(&[u.part]);
+            }
+            Against::Tree(tree) => {
                 self.fasten_to_tree(u.part, tree, point, &fastener)?;
                 self.hands_off(&[u.part]);
             }

@@ -1,10 +1,11 @@
 //! What the hands hold, placed in first person (G2.10, ADR-0036; the user's design,
 //! 2026-10-30): held where the crosshair meets something within reach, resting against it (laid
 //! on what lies under it, against a trunk, let down into a hole: `Connection::place_hold`);
-//! meeting nothing, before the eyes. R stands it up or lays it down; Q with the mouse turns it
-//! (across the view and up and down); the wheel slides it along itself (to lay a beam from one
-//! post's top to the next); Ctrl makes all of it five times finer. J fastens it wherever it
-//! touches a part, P sets a post standing in its hole; the hands keep it still meanwhile.
+//! meeting nothing, before the eyes. R stands it up or lays it down; Z rolls it a quarter turn
+//! about its own length (a board flat or on edge); Q with the mouse turns it (across the view
+//! and up and down); the wheel slides it along itself (to lay a beam from one post's top to the
+//! next); Ctrl makes all of it five times finer. J fastens it wherever it touches a part, P
+//! sets a post standing in its hole; the hands keep it still meanwhile.
 
 use crate::bindings::Action;
 use creeer_net::entity::EntityId;
@@ -30,6 +31,16 @@ pub struct Holding {
     yaw: f64,
     tilt: f64,
     slide: f64,
+    /// Rolled about its length (rad, quarter turns: Z): stood up, all of it on the set frame a
+    /// standing part is held in; lying, what is yet to be given the turn asked.
+    roll: f64,
+    rolling: f64,
+    /// Just taken: lifted straight up from where it lay (its middle and turn then), until when,
+    /// before it goes where it is aimed (`Connection::lifting_hold`).
+    lifting: Option<(
+        (creeer_math::glam::DVec3, creeer_math::glam::DQuat),
+        std::time::Instant,
+    )>,
     /// The turn last asked of the hands (`Connection::place_hold`'s `from`).
     asked: Option<creeer_math::glam::DQuat>,
     /// Where the crosshair last rested it against something: J fastens it there (G2.11).
@@ -71,6 +82,13 @@ impl Holding {
                 };
             }
             Action::StandOrLay => return self.holding(),
+            // A quarter turn about its own length: a board flat onto its edge, or back (G2.11
+            // B2: KSP's roll on one key; a sawn part lies two ways).
+            Action::Roll if pressed && self.holding() => {
+                self.roll = (self.roll + FRAC_PI_2) % std::f64::consts::TAU;
+                self.rolling += FRAC_PI_2;
+            }
+            Action::Roll => return self.holding(),
             Action::Turn => self.turning = pressed,
             Action::Fine => self.fine = pressed,
             _ => return false,
@@ -128,12 +146,48 @@ impl Holding {
                 0.0
             };
             (self.load, self.yaw, self.tilt, self.slide) = (load, yaw, tilt, 0.0);
-            (self.asked, self.pinned) = (None, false);
+            (self.asked, self.pinned, self.roll, self.rolling) = (None, false, 0.0, 0.0);
+            let until = std::time::Instant::now()
+                + std::time::Duration::from_secs_f64(creeer_server::client::LIFTING);
+            self.lifting = (load).and_then(|l| {
+                let p = connection.poses().get(&l).copied()?;
+                Some(((p.position, p.orientation), until))
+            });
+        }
+        // Just taken: up clear of what lies on it first, turned as it lay (G2.11 B2).
+        if let Some((lay, until)) = self.lifting {
+            let hold = (connection.lifting_hold(lay)).filter(|_| std::time::Instant::now() < until);
+            self.lifting = hold.map(|_| (lay, until));
+            if hold.is_some() {
+                self.touch = None;
+                connection.set_hold(hold);
+                return;
+            }
+            // Lifted, it is turned on from how it lay (from how it was drawn then, a board tipped
+            // as it came up was carried rolled 18°, too thick along a nail to be nailed).
+            self.asked = self.asked.or(Some(lay.1));
         }
         self.touch = surface.filter(|_| self.load.is_some()).map(|s| s.point);
+        // Rolled (Z): lying, the turn it is laid from is rolled once, and kept as it is turned
+        // on; standing, it is held in a set frame, rolled by all the turns asked.
+        let standing = self.tilt > 0.25 * std::f64::consts::PI;
+        if self.rolling != 0.0 && !standing {
+            let from = (self.asked).or_else(|| {
+                let load = self.load?;
+                connection.poses().get(&load).map(|p| p.orientation)
+            });
+            self.asked = from.and_then(|q| connection.rolled(q, self.rolling));
+        }
+        self.rolling = 0.0;
         let turned = (self.yaw, self.tilt, self.slide);
-        let hold =
-            (self.load).and_then(|_| connection.place_hold(view, surface, turned, self.asked));
+        let hold = (self.load)
+            .and_then(|_| connection.place_hold(view, surface, turned, self.asked))
+            .map(|h| creeer_net::message::Hold {
+                turn: (connection.rolled(h.turn, self.roll))
+                    .filter(|_| standing)
+                    .unwrap_or(h.turn),
+                ..h
+            });
         self.asked = hold.map(|h| h.turn);
         // Nailed while held: held still where it is (the server holds a steady hold where it is).
         let hold = hold.map(|h| creeer_net::message::Hold {
@@ -177,6 +231,20 @@ mod tests {
         assert!(h.key(Action::StandOrLay, false), "a press toggles");
         h.key(Action::StandOrLay, true);
         assert!(h.tilt.abs() < 1e-12);
+    }
+
+    #[test]
+    fn z_rolls_it_a_quarter_turn_a_press() {
+        let mut h = held();
+        assert!(h.key(Action::Roll, true));
+        assert!(h.key(Action::Roll, false), "a press rolls once");
+        assert!((h.roll - FRAC_PI_2).abs() < 1e-12 && (h.rolling - FRAC_PI_2).abs() < 1e-12);
+        for _ in 0..3 {
+            h.key(Action::Roll, true);
+        }
+        assert!(h.roll.abs() < 1e-12, "four quarters: as it was");
+        let mut empty = Holding::default();
+        assert!(!empty.key(Action::Roll, true), "nothing held: not taken");
     }
 
     #[test]

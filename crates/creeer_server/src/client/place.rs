@@ -47,6 +47,11 @@ const RESTS_WITHIN: f64 = 0.3;
 const REST_ABOVE: f64 = 0.01;
 const SAMPLES: u32 = 8;
 const ABOVE: f64 = 1.0;
+/// Taken, a part is first lifted straight up this far (m) from where it lay, for this long (s:
+/// at the hands' 2 m/s it is up in an eighth of a second if nothing holds it down; caught, the
+/// hands pull up at their strength for the rest).
+pub const LIFT: f64 = 0.25;
+pub const LIFTING: f64 = 0.6;
 
 /// What the crosshair meets: the point, and the surface's normal there (towards the eyes).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -235,6 +240,33 @@ impl Connection {
         let yaw = det::atan2(axis.dot(ahead), axis.dot(across));
         let tilt = det::asin(axis.dot(up).clamp(-1.0, 1.0));
         Some((yaw, tilt))
+    }
+
+    /// The hold lifting what the hands have just taken straight up from where it lay (`lay`:
+    /// its middle and turn then) by [`LIFT`], turned as it lay, for as long as the caller lifts
+    /// it ([`LIFTING`]), then it goes where it is aimed (G2.11 B2: pulled straight towards where
+    /// it was aimed, a rail under two poles stayed caught by the feet, and one taken from under
+    /// another came up steeply). As a person lifts a thing clear before carrying it off. (Ended
+    /// once it was drawn up, it ended at once: the own load is drawn ahead of the server's, a
+    /// caught rail rising 4 cm.)
+    pub fn lifting_hold(&self, (lay, turn): (DVec3, DQuat)) -> Option<Hold> {
+        self.own_load()?;
+        let avatar = self.avatar()?;
+        let up = avatar.position.normalize();
+        Some(Hold {
+            offset: lay + up * LIFT - avatar.position,
+            turn,
+            steady: false,
+        })
+    }
+
+    /// Turn `turn` of what the hands hold rolled by `by` (rad) about its own length (G2.11 B2:
+    /// a board flat rolled onto its edge, a stringer stood on its edge to carry anything). From
+    /// the turn it has, whatever the world's level: nothing is squared or snapped.
+    pub fn rolled(&self, turn: DQuat, by: f64) -> Option<DQuat> {
+        let load = self.own_load()?;
+        let length = turn * long_axis(&self.corners(load)?);
+        Some((DQuat::from_axis_angle(length.normalize(), by) * turn).normalize())
     }
 
     /// The corners of `id`'s shape about its drawn frame, as this connection knows it.

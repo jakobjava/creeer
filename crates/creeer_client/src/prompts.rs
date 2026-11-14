@@ -123,6 +123,10 @@ pub fn prompts(seen: &Seen) -> Prompts {
         }
         if seen.holding && !seen.pinned {
             add(Action::StandOrLay, "Stand up or lay down");
+            // (A squared part lies two ways: flat or on edge. A round one rolls alike.)
+            if !["pole", "stick", "stone"].contains(&word.as_str()) {
+                add(Action::Roll, "Roll onto its edge, or flat");
+            }
             add(Action::Turn, "Turn (hold, move the mouse)");
             add(Action::Slide, "Slide along itself");
         }

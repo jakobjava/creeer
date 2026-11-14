@@ -29,8 +29,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
-/// The scripts this module plays.
-pub(crate) const SCRIPTS: [&str; 5] = ["bridge", "frame", "site", "site-walk", "site-load"];
+/// The scripts this module plays (`deck`: the site's deck built, `build_play_deck.rs`).
+pub(crate) const SCRIPTS: [&str; 6] = ["bridge", "frame", "site", "site-walk", "site-load", "deck"];
 /// Walking speed (m/s), as the game walks.
 const WALK: f64 = 3.0;
 /// A client frame (s).
@@ -85,7 +85,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let dir = PathBuf::from(args.get(at + 2).ok_or("--build-play needs a directory")?);
     std::fs::create_dir_all(&dir)?;
     let site = match script.as_str() {
-        "site" => Some(false),
+        "site" | "deck" => Some(false),
         "site-walk" | "site-load" => Some(true),
         _ => None,
     };
@@ -100,6 +100,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "site" => crate::build_play_site::ten_minutes(&mut player),
         "site-walk" => crate::build_play_site::on_the_built_bridge(&mut player, true),
         "site-load" => crate::build_play_site::on_the_built_bridge(&mut player, false),
+        "deck" => match player.site.clone() {
+            Some(site) => crate::build_play_deck::deck(&mut player, &site),
+            None => Err("no bridge site".to_owned()),
+        },
         other => return Err(format!("no script {other}: {SCRIPTS:?}").into()),
     };
     match played {
@@ -206,7 +210,7 @@ impl Player {
     /// The camera at the eyes looking at `self.look`, as first person puts it: played at the
     /// site, where the drawn head's eyes are as the body stoops, and in the head when down (as
     /// the game puts them, `planet_camera`; set each frame by `hear`).
-    fn camera(&self) -> Camera {
+    pub(crate) fn camera(&self) -> Camera {
         let c = &self.view.session.connection;
         let down = (c.fallen && self.hud)
             .then(|| crate::planet_camera::own_head(c))
@@ -350,23 +354,6 @@ impl Player {
                 return;
             }
         }
-    }
-
-    /// Q held, the mouse moved `(dx, dy)` pixels, Q let go.
-    pub(crate) fn turn(&mut self, dx: f64, dy: f64) {
-        let h = &mut self.view.holding;
-        h.key(Action::Turn, true);
-        h.mouse((dx, dy));
-        h.key(Action::Turn, false);
-    }
-
-    /// Q with the mouse until what is held lies `yaw` from across the view (rad: a quarter turn
-    /// lays it along the view), as a player turns it watching it.
-    pub(crate) fn turn_to(&mut self, yaw: f64) {
-        let view = self.camera().rotation();
-        let now = (self.view.session.connection.held_turn(view)).map_or(0.0, |t| t.0);
-        // (The mouse turns it 0.006 rad a pixel: `holding.rs`.)
-        self.turn((yaw - now) / 0.006, 0.0);
     }
 
     /// Digs `brush` as the sandbox's tools do, and waits for it.

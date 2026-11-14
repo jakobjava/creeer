@@ -26,6 +26,12 @@ fn a_recording_reads_back_as_written() {
                     walk: DVec3::new(0.1, -2.0, 1.0 / 3.0),
                     jump: true,
                     thrust: DVec3::new(0.0, 0.7, 0.2),
+                    // (A hold, steered: G2.11 B2.)
+                    hold: Some(creeer_net::message::Hold {
+                        offset: DVec3::new(0.3, 1.2, -0.7),
+                        turn: creeer_math::glam::DQuat::from_rotation_y(0.4),
+                        steady: true,
+                    }),
                     commands: vec![Command::Crate(DVec3::X), Command::Edit(edits.to_bytes())],
                 },
                 Act::default(),

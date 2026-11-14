@@ -18,6 +18,14 @@ pub(super) fn looking(forward: DVec3, up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(right, right.cross(forward), -forward)).normalize()
 }
 
+/// Hold `h` as the client sends it: steady once a nail is in what is held (`holding.rs`).
+pub(super) fn held_still(h: creeer_net::message::Hold, pinned: bool) -> creeer_net::message::Hold {
+    creeer_net::message::Hold {
+        steady: pinned,
+        ..h
+    }
+}
+
 /// A green spruce pole `length` m long and `radius` m round.
 pub(super) fn pole(length: f64, radius: f64) -> Item {
     Item::Piece(
@@ -42,8 +50,10 @@ pub(super) struct Builder {
     pub(super) up: DVec3,
     pub(super) east: DVec3,
     pub(super) north: DVec3,
-    /// The turn the last hold asked for (as the client's `holding.rs` keeps it).
+    /// The turn the last hold asked for (as the client's `holding.rs` keeps it), and whether a
+    /// nail is in what is held (its holds then sent steady, as the client sends them).
     pub(super) asked: Option<DQuat>,
+    pub(super) pinned: bool,
 }
 
 impl Builder {
@@ -53,7 +63,17 @@ impl Builder {
 
     /// Ada over `link` (none: lossless).
     pub(super) fn over(link: Option<Conditions>) -> Self {
+        Self::in_world(crate::world::tests::world(), link)
+    }
+
+    /// Ada at the bridge site (ADR-0039), over `link`, and where its things are.
+    pub(super) fn at_site(link: Option<Conditions>) -> (Self, crate::world::site::BridgeSite) {
         let mut w = crate::world::tests::world();
+        let site = w.prepare_bridge_site();
+        (Self::in_world(w, link), site)
+    }
+
+    fn in_world(mut w: crate::ServerWorld, link: Option<Conditions>) -> Self {
         w.creative = true;
         let mut game = Game::new(w);
         game.join("ada", link);
@@ -68,6 +88,7 @@ impl Builder {
             east,
             north,
             asked: None,
+            pinned: false,
         }
     }
 
@@ -142,7 +163,7 @@ impl Builder {
             Some(id),
             "taken: {told:?}"
         );
-        self.asked = None;
+        (self.asked, self.pinned) = (None, false);
     }
 
     /// `ticks` with the crosshair on `point`, the held part placed there as the client places
@@ -154,7 +175,7 @@ impl Builder {
             let surface = client.surface_aimed(view, |_, _, _| None);
             let hold = client.place_hold(view, surface, turned, self.asked);
             self.asked = hold.map(|h| h.turn);
-            client.set_hold(hold);
+            client.set_hold(hold.map(|h| held_still(h, self.pinned)));
             self.game.tick(super::still);
         }
     }
@@ -189,13 +210,26 @@ impl Builder {
         let eye = self.eye();
         let toward = (eye - top).reject_from(self.up).normalize();
         let client = &mut self.game.clients[0].0;
-        let aimed = (0..30)
+        let hits: Vec<_> = (0..30)
             .filter_map(|k| {
                 let p = top + toward * (0.01 * f64::from(k));
                 client.aim(eye, (p - eye).normalize(), 4.0)
             })
+            .collect();
+        let Some(aimed) = (hits.iter())
             .find(|a| a.body.is_some_and(|id| parts.contains(&id)))
-            .expect("the held part");
+            .copied()
+        else {
+            let drawn: Vec<_> = (parts.iter())
+                .map(|id| (id, client.poses().get(id).map(|p| p.position - top)))
+                .collect();
+            let met: Vec<_> = hits.iter().map(|a| (a.body, a.point - top)).collect();
+            panic!("the held part not met: drawn {drawn:?}; met {met:?}");
+        };
+        // J on what is held keeps it still from now on (`fastening.rs`, `holding.rs`).
+        let held = self.game.server.world.carried(self.ada);
+        self.pinned |= held.is_some() && held == aimed.body;
+        let client = &mut self.game.clients[0].0;
         // (No fastener named: the one the hand reaches for, as the client asks.)
         client.command(Command::Fasten {
             target: Target {

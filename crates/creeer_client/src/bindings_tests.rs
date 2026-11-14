@@ -10,7 +10,7 @@ fn all() -> Vec<Action> {
             A::Use | A::Take | A::Pocket | A::PutIn | A::Throw | A::Inventory | A::Kit => {}
             A::StressOverlay => {}
             A::Strip | A::Bind | A::Tool1 | A::Tool2 | A::Tool3 | A::Tool4 | A::ToolAway => {}
-            A::Fasten | A::NextFastener | A::Unfasten | A::SetPost | A::StandOrLay => {}
+            A::Fasten | A::NextFastener | A::Unfasten | A::SetPost | A::StandOrLay | A::Roll => {}
             A::Turn | A::Fine | A::Slide | A::Map | A::WarpUp | A::WarpDown | A::Engine => {}
         }
     }
@@ -49,6 +49,7 @@ fn all() -> Vec<Action> {
         A::Unfasten,
         A::SetPost,
         A::StandOrLay,
+        A::Roll,
         A::Turn,
         A::Fine,
         A::Slide,

@@ -68,10 +68,11 @@ pub struct Lashing {
     pub failure_slip: f64,
 }
 
-/// The least pointside penetration that holds at all, in diameters: a nail's (EN 1995-1-1
-/// §8.3.1.2(4): 8·d for full lateral capacity, below 6·d none), and a peg's, which runs
+/// The least pointside penetration that holds at all, in diameters: a smooth nail's (EN
+/// 1995-1-1 §8.3.1.2(4) and §8.3.2(7): 8·d; below it a smooth nail resists no pull, and a joint
+/// of one let go at the first pull: G2.11, 6·d accepted before), and a peg's, which runs
 /// through the parts and needs only to reach past the shear plane by its own thickness.
-const LEAST_PENETRATION: f64 = 6.0;
+const LEAST_PENETRATION: f64 = 8.0;
 const LEAST_PEG_PENETRATION: f64 = 1.0;
 
 /// Johansen's yield modes for one fastener in single shear, timber to timber (EN 1995-1-1

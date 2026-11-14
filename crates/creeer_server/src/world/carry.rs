@@ -195,8 +195,8 @@ impl ServerWorld {
             }
             self.changed.extend([by, c.load]);
             self.items.changed.insert(by);
-            // The nails driven while it was held hold it now (G2.11, `nailing.rs`).
-            self.make_driven(by, c.load);
+            // Nailed while held, it was kept still until now (`building_held.rs`).
+            self.building.pinned.remove(&by);
         }
     }
 
@@ -269,10 +269,13 @@ impl ServerWorld {
         }
     }
 
-    /// Body `index`'s mass (kg): its nodes'.
+    /// Body `index`'s mass (kg): its nodes', but those held fast (a post's ground, a tree's
+    /// axis: held on to once nailed to a set post, an infinite mass made the grip's stiffness
+    /// NaN, G2.11 B2).
     pub(super) fn mass_of(&self, index: usize) -> f64 {
         let s = &self.world.bodies[index].structure;
         (0..s.node_count())
+            .filter(|&n| !s.held_fast(n))
             .map(|n| self.world.effective_mass(index, n, s.position[n], DVec3::X))
             .sum()
     }

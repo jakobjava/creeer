@@ -18,15 +18,14 @@ use creeer_physics::world::grip::Grip;
 use creeer_physics::world::joint::ARM;
 use creeer_sim::{carry, reach};
 
+#[path = "hands_plan.rs"]
+mod plan;
+
 /// The grip's frequency (Hz): it follows the hands' plan (`carry::PLAN_HZ`, at most
 /// `carry::FASTEST` and `carry::TURNING_AT_MOST`) within a tenth of a second.
 const HZ: f64 = 8.0;
-/// How far the hands' planned turn leads the load's at most (rad).
-const LEAD_TURN: f64 = 0.5;
 /// A thing reaching this far from its middle (m) is long: aimed, it is turned with both hands.
 const LONG: f64 = 0.3;
-/// How far the hands' plan leads what they hold at most (m).
-const LEAD: f64 = 0.25;
 /// How far beyond the arms' reach of the shoulders the point held may be (m: the body moved
 /// away from it, or it was pulled away) for how many ticks (half a second) before it drops.
 const OUT_OF_REACH: f64 = 0.35;
@@ -46,12 +45,15 @@ pub(super) fn grip() -> f64 {
 }
 
 /// The axis (of the node's three) a slender load lies along, if its section is round or square
-/// (its two other moments within 5 % of each other): turned about it, it looks and lies alike.
+/// (its two other moments differ by under 5 % of its least, which is its section's: a box's
+/// I_z − I_y = m(h² − w²)/12 against I_x = m(h² + w²)/12): turned about it, it looks and lies
+/// alike. (Judged against the large moments, a 150 × 75 mm stringer passed as square, and was
+/// never rolled onto its edge: G2.11 B2.)
 fn round_slender(moments: &[f64; 3]) -> Option<usize> {
     let largest = moments.iter().copied().fold(0.0, f64::max);
     let k = (0..3).fold(0, |m, k| if moments[k] < moments[m] { k } else { m });
     let (a, b) = (moments[(k + 1) % 3], moments[(k + 2) % 3]);
-    (moments[k] > 0.0 && moments[k] < carry::SLENDER * largest && (a - b).abs() < 0.05 * a.max(b))
+    (moments[k] > 0.0 && moments[k] < carry::SLENDER * largest && (a - b).abs() < 0.05 * moments[k])
         .then_some(k)
 }
 
@@ -90,7 +92,7 @@ impl ServerWorld {
         // The other hand at work (fastening what this one holds steady): held in one. Nailed
         // while held, it is held still where it is until let go (G2.11).
         let busy = self.building.under_way.contains_key(&by);
-        let pinned = self.building.driven.contains_key(&by);
+        let pinned = self.building.pinned.contains(&by);
         let c = self.carrying.get_mut(&by).expect("a carrier");
         // Aimed, a thing is held at its balance point (its node's centre: the hands find it, as a
         // beam is carried by its middle), so it sits steady where it is aimed, never drooping
@@ -140,7 +142,10 @@ impl ServerWorld {
         // plan that lagged behind it. By themselves the hands plan their way.
         let steered = c.input.is_some();
         let plan = if steered {
-            Self::directly(c, target - centre, turn)
+            // (Lying: stood up, it is let into its hole as before, `hands_plan.rs`.)
+            let k = (0..3).fold(0, |m, k| if moments[k] < moments[m] { k } else { m });
+            let lying = (turn * DVec3::AXES[k]).dot(up).abs() < 0.7;
+            Self::directly(c, (target - centre, turn), (held_turn, lying), turning)
         } else {
             Self::planned(
                 c,
@@ -277,69 +282,6 @@ impl ServerWorld {
             return (target, turn);
         }
         (reach::within_arms(centre, up, target), turn)
-    }
-
-    /// Carrier `c`'s plan put at `(at, turn)` at once (from the body's centre): the load aimed by
-    /// the player goes where it is aimed, its plan's speed the change. Returns no acceleration
-    /// to hold up beyond its weight (a step's change is no acceleration the hands plan).
-    fn directly(c: &mut Carry, at: DVec3, turn: DQuat) -> DVec3 {
-        // As fast as hands move and turn a thing aimed, no faster: stood up (R) at once, a pole
-        // was swung round at 94 rad/s and knocked its holder down.
-        let (at, turn, velocity, spin) =
-            carry::aimed_step((c.plan.at, c.plan.turn), (at, turn), DT);
-        c.plan = super::carry::Plan {
-            at,
-            velocity,
-            turn,
-            spin,
-            there: true,
-        };
-        DVec3::ZERO
-    }
-
-    /// Carrier `c`'s plan one step on towards `(target, turn)`: critically damped, its
-    /// acceleration within what its spare strength gives a load of `mass`, its speed and turn
-    /// within the hands', and never more than [`LEAD`] ahead of the point `held` (where the
-    /// load is held now). Returns the plan's acceleration.
-    fn planned(
-        c: &mut Carry,
-        (target, turn, held, held_turn): (DVec3, DQuat, DVec3, DQuat),
-        mass: f64,
-        (gravity, (torque, inertia)): (DVec3, (f64, f64)),
-    ) -> DVec3 {
-        let w = 2.0 * std::f64::consts::PI * carry::PLAN_HZ;
-        let p = &mut c.plan;
-        let spare = carry::plan_spare(mass, gravity.length(), c.one_hand);
-        let mut a = (target - p.at) * (w * w) - p.velocity * (2.0 * w);
-        a = a.clamp_length_max(spare);
-        p.velocity = (p.velocity + a * DT).clamp_length_max(carry::FASTEST);
-        p.at += p.velocity * DT;
-        // The hands stay with what they hold: a load that cannot follow (too heavy, caught,
-        // its end on the ground) keeps the plan within reach of it (planned on regardless, a
-        // pole lifted by its end fell behind the plan and was dropped for "out of reach").
-        let ahead = p.at - held;
-        if ahead.length() > LEAD {
-            let way = ahead / ahead.length();
-            p.at = held + way * LEAD;
-            p.velocity -= way * p.velocity.dot(way).max(0.0);
-        }
-        // Its turn alike: critically damped, its angular acceleration within half of what the
-        // hands' torque gives its moment, and never more than [`LEAD_TURN`] ahead of the turn it
-        // has. (Turned at a set rate whatever it weighs, a branch held in one hand fell far
-        // behind as the body turned to walk off, and the grip swung it round at 14 rad/s.)
-        let alpha_most = (0.5 * torque / inertia.max(1e-6)).max(0.5);
-        let off = creeer_physics::so3::log(turn * p.turn.conjugate());
-        let alpha = (off * (w * w) - p.spin * (2.0 * w)).clamp_length_max(alpha_most);
-        p.spin = (p.spin + alpha * DT).clamp_length_max(carry::TURNING_AT_MOST);
-        p.turn = (creeer_physics::so3::exp(p.spin * DT) * p.turn).normalize();
-        let lead = creeer_physics::so3::log(p.turn * held_turn.conjugate());
-        if lead.length() > LEAD_TURN {
-            let way = lead / lead.length();
-            p.turn = (creeer_physics::so3::exp(way * LEAD_TURN) * held_turn).normalize();
-            p.spin -= way * p.spin.dot(way).max(0.0);
-        }
-        p.there = (target - p.at).length() < 0.03 && (p.at - held).length() < 0.05;
-        a
     }
 
     /// After the step: each carrier's hands' pull (the body bears it next step), and a load
