@@ -26,10 +26,10 @@ pub use capture::Image;
 pub use debug_lines::{Color, DebugLines, LineVertex};
 pub use heatmap::{Heatmap, Palette};
 pub use mesh::{MeshArena, MeshData, MeshId, MeshVertex};
-pub use vertex::Grain;
 pub use renderer::{Frame, GpuTime, OverlayFrame, RenderError, RenderStats, Renderer};
 pub use scene::{Character, Instance, Lighting, Material, Scene, srgb_to_linear};
 pub use shadow::ShadowQuality;
 pub use terrain::{TerrainFrame, TerrainMeshData, TerrainVertex};
+pub use vertex::Grain;
 /// Re-exported so the client does not need its own (possibly mismatched) wgpu dependency.
 pub use wgpu;

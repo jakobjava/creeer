@@ -49,6 +49,10 @@ pub enum Grain {
     Bark = 3,
     /// No grain (a stone, foliage): the token's pattern over its place.
     Solid = 4,
+    /// A model's mass of foliage (`crate::foliage`): its token's colour with its baked occlusion
+    /// and tone and the mottling, none of the weathering, grime and wear that leaves have not
+    /// (and a forest's many pixels cannot pay for).
+    Leaves = 5,
 }
 
 /// `x` (0–1) in `bits` bits, rounded.
@@ -123,7 +127,8 @@ impl MeshVertex {
 
     /// True for a bevelled procedural vertex or part's (their wear marks them).
     pub fn is_bevelled(&self) -> bool {
-        (self.material & 0xffff == u32::from(NO_TOKEN) || self.is_part()) && self.material >> 24 != 0
+        (self.material & 0xffff == u32::from(NO_TOKEN) || self.is_part())
+            && self.material >> 24 != 0
     }
 
     /// A model's vertex, its token an index into the palette the renderer holds.

@@ -256,14 +256,15 @@ fn the_shaders_round_as_the_primitives_do() {
     }
     // As `shaped` here; a part's taper (only the shaders have it) is 1 untapered.
     assert!(wgsl.contains("let inner = position * scale * vec3<f32>(width, 1.0, width);"));
-    assert!(wgsl.contains(
-        "return inner + (normal - 2.0 * position) * select(0.0, radius, bevelled);"
-    ));
+    assert!(
+        wgsl.contains("return inner + (normal - 2.0 * position) * select(0.0, radius, bevelled);")
+    );
     let grains = include_str!("shaders/parts.wgsl");
     for (name, grain) in [
         ("ROUND", crate::Grain::Round),
         ("SAWN", crate::Grain::Sawn),
         ("BARK", crate::Grain::Bark),
+        ("LEAVES", crate::Grain::Leaves),
     ] {
         let constant = format!("const GRAIN_{name}: u32 = {}u;", grain as u8);
         assert!(grains.contains(&constant), "parts.wgsl lacks `{constant}`");

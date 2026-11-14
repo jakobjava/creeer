@@ -109,13 +109,22 @@ mod tests {
             }
         }
         let boards = board(2);
-        assert!(!boards[0].0.vertices[0].is_bevelled(), "the sharp level stays sharp");
+        assert!(
+            !boards[0].0.vertices[0].is_bevelled(),
+            "the sharp level stays sharp"
+        );
         assert!(boards[1].0.vertices.iter().all(MeshVertex::is_bevelled));
         assert!(
             (boards.iter().flat_map(|(m, _)| &m.vertices))
                 .all(|v| v.material & 0x7fff == 2 && (v.detail >> 8) & 0xff == Grain::Sawn as u32)
         );
         let stone = patterned_sphere(4);
-        assert!(stone[0].0.vertices.iter().all(|v| !v.is_part() && (v.detail >> 8) & 0xff == 4));
+        assert!(
+            stone[0]
+                .0
+                .vertices
+                .iter()
+                .all(|v| !v.is_part() && (v.detail >> 8) & 0xff == 4)
+        );
     }
 }

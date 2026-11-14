@@ -8,12 +8,12 @@
 
 use crate::mesh::MeshData;
 use crate::primitives::sphere_error;
-use crate::vertex::{MeshVertex, pack_detail, pack_material};
+use crate::vertex::{Grain, MeshVertex, pack_detail, pack_material};
 use creeer_math::glam::Vec3;
 use std::f32::consts::{PI, TAU};
 
 /// The segments around of each level, coarsest first.
-pub const LEVELS: [u32; 6] = [8, 12, 16, 24, 32, 48];
+pub const LEVELS: [u32; 7] = [6, 8, 12, 16, 24, 32, 48];
 /// The lumps on a clump: as many directions, spread evenly (a Fibonacci sphere).
 const LUMPS: usize = 14;
 /// A tier's branch tips around.
@@ -52,7 +52,9 @@ fn clump_at(d: Vec3, lumps: &[Vec3; LUMPS]) -> (f32, usize, f32) {
             (best, which) = (bump, k);
         }
         // Three tufts about each lump's crown, turned by the lump.
-        let side = c.cross(if c.y.abs() < 0.9 { Vec3::Y } else { Vec3::X }).normalize();
+        let side = c
+            .cross(if c.y.abs() < 0.9 { Vec3::Y } else { Vec3::X })
+            .normalize();
         for t in 0..3 {
             #[allow(clippy::cast_precision_loss)] // three
             let a = t as f32 * TAU / 3.0 + k as f32;
@@ -64,9 +66,14 @@ fn clump_at(d: Vec3, lumps: &[Vec3; LUMPS]) -> (f32, usize, f32) {
 }
 
 /// A level of a surface `at(θ, φ) -> (position, occlusion, tone)` over a sphere's angles,
-/// `segments` around and half as many rings, with normals across it and the leaves `token`.
-fn swept(segments: u32, token: u16, at: impl Fn(f32, f32) -> (Vec3, f32, f32)) -> MeshData {
-    let (n, rings) = (segments.max(3), (segments / 2).max(2));
+/// `segments` around and `rings` from pole to pole, with normals across it and the leaves
+/// `token`, drawn as foliage (`Grain::Leaves`).
+fn swept(
+    (segments, rings): (u32, u32),
+    token: u16,
+    at: impl Fn(f32, f32) -> (Vec3, f32, f32),
+) -> MeshData {
+    let (n, rings) = (segments.max(3), rings.max(2));
     let mut mesh = MeshData::default();
     #[allow(clippy::cast_precision_loss)] // a few dozen
     let (fr, fs) = (rings as f32, n as f32);
@@ -91,7 +98,7 @@ fn swept(segments: u32, token: u16, at: impl Fn(f32, f32) -> (Vec3, f32, f32)) -
                 normal: normal.to_array(),
                 material: pack_material(token, occlusion, 0.0),
                 // High in the air: no splash from the ground (`surface.wgsl`).
-                detail: pack_detail(tone, 1.0),
+                detail: pack_detail(tone, 1.0) | u32::from(Grain::Leaves as u8) << 8,
                 grain: [0.0; 2],
             });
         }
@@ -114,14 +121,18 @@ fn swept(segments: u32, token: u16, at: impl Fn(f32, f32) -> (Vec3, f32, f32)) -
 
 /// The direction of angles `(θ, φ)`: θ from +Y, φ about it.
 fn direction(theta: f32, phi: f32) -> Vec3 {
-    Vec3::new(theta.sin() * phi.cos(), theta.cos(), -theta.sin() * phi.sin())
+    Vec3::new(
+        theta.sin() * phi.cos(),
+        theta.cos(),
+        -theta.sin() * phi.sin(),
+    )
 }
 
 /// A clump at `segments` around, of the leaves `token`: lumps on a ball, darker in their creases
 /// and underneath, each lump its own tone.
 pub fn clump(segments: u32, token: u16) -> MeshData {
     let lumps = lump_directions();
-    swept(segments, token, |theta, phi| {
+    swept((segments, segments / 2), token, |theta, phi| {
         let d = direction(theta, phi);
         let (radius, which, out) = clump_at(d, &lumps);
         let under = 0.5 + 0.5 * d.y;
@@ -149,8 +160,10 @@ fn tips(phi: f32) -> f32 {
 /// stem (its top, at y 0.5) drooping to their tips (a ring at radius 0.5 near y −0.5), its
 /// underside a shallower cone back to the stem, dark.
 pub fn tier(segments: u32, token: u16) -> MeshData {
-    // Along the profile: 0 at the top, ½ at the tips, 1 under the stem.
-    swept(segments, token, |theta, phi| {
+    // Along the profile: 0 at the top, ½ at the tips, 1 under the stem. A skirt's profile is
+    // plain: a quarter as many rings as segments (even, so one runs along the tips).
+    let rings = (segments / 4).max(4) / 2 * 2;
+    swept((segments, rings), token, |theta, phi| {
         let u = theta / PI;
         let tip = tips(phi);
         let reach = 0.5 * (0.72 + 0.28 * tip);
@@ -174,13 +187,20 @@ pub fn tier(segments: u32, token: u16) -> MeshData {
     })
 }
 
-/// A spire at `segments` around: [`SPIRE_TIERS`] tiers stacked to a point, each narrower than
-/// the one below, as a far spruce's crown (radius 0.5 at its base, from y −0.5 to 0.5).
+/// A spire at `segments` around: tiers stacked to a point, each narrower than the one below, as
+/// a far spruce's crown (radius 0.5 at its base, from y −0.5 to 0.5): [`SPIRE_TIERS`] at the
+/// finer levels, half as many at the next, one stretched over the crown at the coarsest (seen
+/// from afar, and in the far shadows, where a forest's thousands of crowns are drawn).
 pub fn spire(segments: u32, token: u16) -> MeshData {
     let mut mesh = MeshData::default();
+    let tiers = match segments {
+        ..=6 => 1,
+        7..=8 => SPIRE_TIERS / 2,
+        _ => SPIRE_TIERS,
+    };
     #[allow(clippy::cast_precision_loss)] // six
-    let n = SPIRE_TIERS as f32;
-    for k in 0..SPIRE_TIERS {
+    let n = tiers as f32;
+    for k in 0..tiers {
         #[allow(clippy::cast_precision_loss)]
         let (lo, hi) = (k as f32 / n, ((k as f32 + 1.6) / n).min(1.0));
         let width = 1.0 - lo * 0.9;
@@ -190,7 +210,8 @@ pub fn spire(segments: u32, token: u16) -> MeshData {
             let p = Vec3::from(v.position);
             let y = -0.5 + (p.y + 0.5) * (hi - lo) + lo;
             v.position = [p.x * width, y, p.z * width];
-            let normal = Vec3::from(v.normal) * Vec3::new(1.0 / width, 1.0 / (hi - lo), 1.0 / width);
+            let normal =
+                Vec3::from(v.normal) * Vec3::new(1.0 / width, 1.0 / (hi - lo), 1.0 / width);
             v.normal = normal.normalize().to_array();
             mesh.vertices.push(v);
         }
@@ -201,14 +222,16 @@ pub fn spire(segments: u32, token: u16) -> MeshData {
 
 /// A foliage mesh's levels of detail (coarsest first), each with its silhouette error as a
 /// share of its radius: a sphere's at its segments, and the lumps or tips a coarse level cannot
-/// show (an estimate, conservative: `LEVELS` start at 8 around).
+/// show (an estimate, conservative: `LEVELS` start at 6 around).
 pub fn levels(make: impl Fn(u32) -> MeshData, features: f32) -> Vec<(MeshData, f32)> {
     LEVELS
         .iter()
         .map(|&n| {
+            // A tip or lump needs two segments to show; with fewer, its height above the hollows
+            // (at most 0.14 of the radius) is lost in proportion.
             #[allow(clippy::cast_precision_loss)] // dozens
-            let lost = 0.2 * (1.0 - n as f32 / (4.0 * features)).clamp(0.0, 1.0);
-            (make(n), 2.0 * sphere_error(n) + lost)
+            let lost = 0.15 * (1.0 - n as f32 / (2.0 * features)).clamp(0.0, 1.0);
+            (make(n), sphere_error(n) + lost)
         })
         .collect()
 }
@@ -247,14 +270,16 @@ mod tests {
                     assert!(p.abs().max_element() <= 0.5 + 1e-4, "{p}");
                     assert!((n.length() - 1.0).abs() < 1e-3, "{n}");
                     assert_eq!(v.material & 0xffff, 7);
+                    assert_eq!((v.detail >> 8) & 0xff, Grain::Leaves as u32);
                 }
             }
         }
         // A clump's creases are darker than its lumps' crowns, its underside than its top.
         let mesh = clump(32, 7);
         let occ = |v: &MeshVertex| (v.material >> 16) & 0xff;
-        let top = mesh.vertices.iter().max_by_key(|v| (v.position[1] * 1e4) as i32);
-        let bottom = mesh.vertices.iter().min_by_key(|v| (v.position[1] * 1e4) as i32);
+        let by_height = |a: &&MeshVertex, b: &&MeshVertex| a.position[1].total_cmp(&b.position[1]);
+        let top = mesh.vertices.iter().max_by(by_height);
+        let bottom = mesh.vertices.iter().min_by(by_height);
         assert!(occ(top.expect("a top")) > occ(bottom.expect("a bottom")));
     }
 }

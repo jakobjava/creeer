@@ -29,7 +29,7 @@ const FAR_STEMS: f64 = 0.15;
 /// ADR-0037).
 const SEGMENTS: usize = 3;
 /// Between `BRANCHES` and `LAYERS`, a crown is this many tiers or clumps.
-const MASSES: usize = 7;
+const MASSES: usize = 5;
 
 /// The trees near the camera.
 #[derive(Debug)]
@@ -139,7 +139,11 @@ impl TreeView {
             // Far, a thin stem is under a pixel: its crown alone.
             if d < LAYERS || t.dbh > FAR_STEMS || felled.is_some() {
                 // A stump is one piece; a stem in pieces whose ends meet within the crown.
-                let n = if felled.is_some() || d >= LAYERS { 1 } else { SEGMENTS };
+                let n = if felled.is_some() || d >= LAYERS {
+                    1
+                } else {
+                    SEGMENTS
+                };
                 stem_logs(out, tree, (0.0, to), &at, n);
             }
             if felled.is_some() {
@@ -192,7 +196,11 @@ impl TreeView {
                 key: u64::from(id.0) << 20,
             };
             // A felled part: one log, or two whose ends meet where its crown begins.
-            let n = if p.from < tree.crown_base && p.to > tree.crown_base + 1.0 { 2 } else { 1 };
+            let n = if p.from < tree.crown_base && p.to > tree.crown_base + 1.0 {
+                2
+            } else {
+                1
+            };
             stem_logs(out, tree, (p.from, p.to), &at, n);
             branches(out, tree, &part, &at, species);
         }

@@ -270,7 +270,14 @@ fn plain_thing(scene: &mut Scene, meshes: &DemoMeshes, origin: DVec3, t: &crate:
             );
         }
         Form::Block(half) | Form::Lump(half) | Form::Piece(half) => {
-            add_box(scene, meshes, origin, (t.centre, t.turn, half), material, None);
+            add_box(
+                scene,
+                meshes,
+                origin,
+                (t.centre, t.turn, half),
+                material,
+                None,
+            );
         }
     }
 }

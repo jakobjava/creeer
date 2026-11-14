@@ -14,7 +14,11 @@ use creeer_render::{Instance, Material, MeshId, Scene};
 /// piece told only by its box (a made thing's, a thing laid: by its material, see [`piece`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Form {
-    Rod { radius: f64, length: f64, taper: f64 },
+    Rod {
+        radius: f64,
+        length: f64,
+        taper: f64,
+    },
     Block(DVec3),
     Lump(DVec3),
     Piece(DVec3),
@@ -29,6 +33,9 @@ pub enum Made {
     Log(u16),
     /// Dead wood lying about.
     Deadwood,
+    /// A built structure's member: the frame tells no member's wood, and every part G2 builds
+    /// with is wood (`creeer_server`'s `building_parts.rs`), so `timber` (ADR-0039, Limits).
+    Built,
 }
 
 /// A thing to draw: where, turned how, its form, what it is made of, a key that makes it its
@@ -46,13 +53,15 @@ pub struct Thing {
 /// How a rod's hull is told (a prism along x: both its ends' rings of one radius), if it is one:
 /// its radius and length.
 pub fn rod_of(corners: &[DVec3]) -> Option<(f64, f64)> {
+    use creeer_math::det::hypot;
     let half = corners.iter().map(|c| c.x.abs()).fold(0.0, f64::max);
     let radius = (corners.iter())
-        .map(|c| c.y.hypot(c.z))
+        .map(|c| hypot(c.y, c.z))
         .fold(0.0, f64::max);
     let all = corners.len() >= 12
         && corners.iter().all(|c| {
-            (c.x.abs() - half).abs() <= 1e-3 * half && (c.y.hypot(c.z) - radius).abs() <= 1e-3 * radius
+            (c.x.abs() - half).abs() <= 1e-3 * half
+                && (hypot(c.y, c.z) - radius).abs() <= 1e-3 * radius
         });
     (all && half > 0.0 && radius > 0.0).then_some((radius, 2.0 * half))
 }
@@ -82,7 +91,8 @@ pub fn item(
         }
         return;
     }
-    let (lo, hi) = (corners.iter()).fold((DVec3::MAX, DVec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
+    let (lo, hi) =
+        (corners.iter()).fold((DVec3::MAX, DVec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
     let form = match rod_of(corners) {
         Some((radius, length)) => Form::Rod {
             radius,
@@ -103,7 +113,13 @@ pub fn item(
 
 /// An item body that is a block of `half` extents of the material coloured `colour` (a sill, a
 /// crate, a strip), about `p` turned by `q`, `age` weathered.
-pub fn block(key: u32, (p, q): (DVec3, DQuat), half: DVec3, colour: [u8; 3], age: (f32, f32)) -> Thing {
+pub fn block(
+    key: u32,
+    (p, q): (DVec3, DQuat),
+    half: DVec3,
+    colour: [u8; 3],
+    age: (f32, f32),
+) -> Thing {
     Thing {
         centre: p,
         turn: q,
@@ -112,6 +128,24 @@ pub fn block(key: u32, (p, q): (DVec3, DQuat), half: DVec3, colour: [u8; 3], age
         key: u64::from(key),
         age,
     }
+}
+
+/// Member `k` of built structure `key` from `a` to `b` (world), of `radius`, as a round part.
+pub fn member(key: u32, k: usize, (a, b): (DVec3, DVec3), radius: f64) -> Option<Thing> {
+    let along = b - a;
+    let length = along.length();
+    (length > 1e-6).then(|| Thing {
+        centre: 0.5 * (a + b),
+        turn: DQuat::from_rotation_arc(DVec3::X, along / length),
+        form: Form::Rod {
+            radius,
+            length,
+            taper: 1.0,
+        },
+        made: Made::Built,
+        key: u64::from(key) << 16 | (k as u64 & 0xffff),
+        age: (0.0, 0.0),
+    })
 }
 
 /// A piece of a made thing (or a thing laid) by its box and whether it is `wooden`: wood with a
@@ -153,11 +187,19 @@ pub fn placed(thing: &Thing, meshes: &PartMeshes) -> Option<(MeshId, Frame64, Ve
     };
     #[allow(clippy::cast_possible_truncation)] // render-space sizes
     match (form, thing.made) {
-        (Form::Rod { radius, length, taper }, made) => {
+        (
+            Form::Rod {
+                radius,
+                length,
+                taper,
+            },
+            made,
+        ) => {
             let mesh = match made {
                 Made::Colour(c) => meshes.round_of(c)?,
                 Made::Log(k) => meshes.log(usize::from(k))?,
                 Made::Deadwood => meshes.deadwood?,
+                Made::Built => meshes.built?,
             };
             let d = (2.0 * radius) as f32;
             Some((
@@ -222,19 +264,21 @@ mod tests {
     /// A rod's prism is told from a stone's ellipsoid; tones differ from part to part.
     #[test]
     fn a_rod_s_hull_is_told_by_its_rings() {
+        use creeer_math::det::sin_cos;
         let prism: Vec<DVec3> = (0..32)
             .map(|k| {
-                let a = f64::from(k % 16) * std::f64::consts::TAU / 16.0;
+                let (s, c) = sin_cos(f64::from(k % 16) * std::f64::consts::TAU / 16.0);
                 let x = if k < 16 { -0.8 } else { 0.8 };
-                DVec3::new(x, 0.05 * a.cos(), 0.05 * a.sin())
+                DVec3::new(x, 0.05 * c, 0.05 * s)
             })
             .collect();
         let (radius, length) = rod_of(&prism).expect("a rod");
         assert!((radius - 0.05).abs() < 1e-9 && (length - 1.6).abs() < 1e-9);
         let lump: Vec<DVec3> = (0..62)
             .map(|k| {
-                let a = f64::from(k) * 0.7;
-                DVec3::new(0.1 * a.cos(), 0.05 * a.sin(), 0.08 * (a * 0.3).sin())
+                let (s, c) = sin_cos(f64::from(k) * 0.7);
+                let (s3, _) = sin_cos(f64::from(k) * 0.21);
+                DVec3::new(0.1 * c, 0.05 * s, 0.08 * s3)
             })
             .collect();
         assert!(rod_of(&lump).is_none());

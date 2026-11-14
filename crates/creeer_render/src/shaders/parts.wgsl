@@ -9,6 +9,7 @@
 const GRAIN_ROUND: u32 = 1u;
 const GRAIN_SAWN: u32 = 2u;
 const GRAIN_BARK: u32 = 3u;
+const GRAIN_LEAVES: u32 = 5u;
 
 // Bark's furrows: across the stem (per metre) and along it, and its plates' breaks.
 const FURROWS: f32 = 28.0;
@@ -65,11 +66,15 @@ fn bark(p: vec3<f32>, footprint: f32, seed: f32) -> f32 {
     return mix(0.86, 0.62 + 0.38 * crevice, seen) * (0.92 + 0.16 * fine);
 }
 
-/// How much of a birch's dark marks cover its bark at `p` (0–1): short dashes across the stem.
+/// How much of a birch's dark marks cover its bark at `p` (0–1): short dashes across the stem,
+/// and larger dark patches; finer than a pixel, their share (a birch reads grey-white with
+/// dark bands from afar, never as a white line).
 fn marks_at(p: vec3<f32>, footprint: f32, seed: f32) -> f32 {
-    let n = fbm(vec3<f32>(p.xy * 7.0, p.z * 45.0) + seed * 41.0, 3u, footprint * 45.0);
+    let dashes = fbm(vec3<f32>(p.xy * 7.0, p.z * 45.0) + seed * 41.0, 3u, footprint * 45.0);
+    let patches = fbm(vec3<f32>(p.xy * 3.0, p.z * 4.0) + seed * 13.0, 2u, footprint * 4.0);
     let seen = 1.0 - smoothstep(0.25, 0.5, footprint * 45.0);
-    return mix(0.12, smoothstep(0.6, 0.66, n), seen);
+    let marked = max(smoothstep(0.56, 0.62, dashes), smoothstep(0.62, 0.7, patches));
+    return mix(max(0.28, smoothstep(0.62, 0.7, patches)), marked, seen);
 }
 
 /// A part's pattern and marks at `local`: `part` is its grain, axis, seed and marks token (as
@@ -94,6 +99,17 @@ fn part_pattern(token: Token, part: vec4<f32>, scale: vec3<f32>, at: Place) -> v
             return vec2<f32>(solid_wood(p, vec2<f32>(0.0), at.footprint, part.z), 0.0);
         }
     }
+}
+
+/// Foliage's surface (`creeer_render::foliage`): its token's colour in its lump's or tip's
+/// `tone` (±18 %), mottled at 30 cm and dappled at a few centimetres, as leaves and needles
+/// catch the light; its creases and underside darkened by its baked occlusion (`lit`). Leaves do
+/// not weather, gather grime or wear at their edges: none of those layers is paid for.
+fn leaves_surface(token: Token, tone: f32, at: Place) -> Surface {
+    var colour = token.colour * (0.82 + 0.36 * tone);
+    colour *= 0.85 + 0.3 * local_fbm(at, 3.5, 2u);
+    colour *= 0.88 + 0.24 * local_fbm(at, 40.0, 1u);
+    return Surface(colour, token.roughness, token.metalness, 0.0);
 }
 
 /// A part's edge wear from its unit normal `n` (0 on its faces, 1 on its rounded edges): a box's

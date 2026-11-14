@@ -122,14 +122,21 @@ fn nailed(view: &mut PlanetView) -> Result<Camera, String> {
     // Walk up to within a metre of where they cross.
     let step = Duration::from_millis(10);
     for _ in 0..600 {
-        let at = view.session.connection.avatar().ok_or("no avatar")?.position;
+        let at = view
+            .session
+            .connection
+            .avatar()
+            .ok_or("no avatar")?
+            .position;
         let up = at.normalize();
         let off = (crossing - at).reject_from(up);
         if off.length() < 1.1 {
             break;
         }
-        view.session
-            .update(step.as_secs_f64(), (off.normalize() * 1.2, false, DVec3::ZERO));
+        view.session.update(
+            step.as_secs_f64(),
+            (off.normalize() * 1.2, false, DVec3::ZERO),
+        );
         std::thread::sleep(step);
     }
     crate::planet_shot_build::play(view, 1.0)?;
@@ -145,16 +152,9 @@ fn nailed(view: &mut PlanetView) -> Result<Camera, String> {
         fastener: "nail_100".into(),
     });
     crate::planet_shot_build::play(view, 4.0)?;
-    let c = &view.session.connection;
-    eprintln!(
-        "poles {a} {b}; aimed {:?}; refused {:?}; noted {:?}; kinds {:?}",
-        aimed.body,
-        c.refused.as_ref().map(|r| &r.0),
-        c.noted.as_ref().map(|r| &r.0),
-        (c.kinds.iter())
-            .map(|(id, k)| (id.0, std::mem::discriminant(k)))
-            .collect::<Vec<_>>()
-    );
+    if let Some((why, _)) = &view.session.connection.refused {
+        return Err(format!("the nail was refused: {why}"));
+    }
     let me = (view.session.connection.avatar())
         .ok_or("no avatar")?
         .position;

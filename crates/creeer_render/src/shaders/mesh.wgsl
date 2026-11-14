@@ -122,6 +122,10 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> ModelOut {
     out.ageing = vec2<f32>(unpack2x16float(i.surface).y, f32((i.surface >> 8u) & 0xffu) / 255.0);
     out.part = vec4<f32>(0.0);
     out.scale = i.scale;
+    // A model's foliage (`creeer_render::foliage`): its cheaper surface (`leaves_surface`).
+    if !part && ((v.detail >> 8u) & 0xffu) == GRAIN_LEAVES {
+        out.part.x = f32(GRAIN_LEAVES);
+    }
     if part {
         // Open (the screen's occlusion grounds it), worn on its rounded edges, its tone its
         // instance's, its height above its lowest point.
@@ -179,6 +183,11 @@ fn shade_model(in: ModelOut) -> vec4<f32> {
         return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
     let at = Place(in.local, normalize(in.local_normal), in.grain, footprint, grain_footprint);
+    if u32(in.part.x + 0.5) == GRAIN_LEAVES {
+        let leaves = leaves_surface(palette[in.token], in.masks.z, at);
+        let occlusion = ambient_occlusion(in.clip.xy, leaves.colour, in.masks.x);
+        return vec4<f32>(lit(in.world, in.normal, spread, leaves, in.heat, occlusion), 1.0);
+    }
     // A part's pattern from where it lies in its wood (`parts.wgsl`); a model's from its bake.
     var pattern = vec2<f32>(0.0);
     var marks = vec2<f32>(-1.0, 0.0);

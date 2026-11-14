@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 const CUT: &str = "wood_cut";
 /// The token deadwood lying about is drawn in: old, greyed wood.
 const DEADWOOD: &str = "timber_weathered";
+/// The token built members are drawn in, until the frame tells their wood (ADR-0039, Limits).
+const BUILT: &str = "timber";
 /// The stone pattern's number in the shader (`surface.wgsl`'s `PATTERN_STONE`).
 const STONE: u8 = 4;
 
@@ -27,6 +29,8 @@ pub struct PartMeshes {
     foliage: Vec<[MeshId; 3]>,
     /// A dead branch lying about.
     pub deadwood: Option<MeshId>,
+    /// A built structure's member (`part_view::Made::Built`): `timber` worked round.
+    pub built: Option<MeshId>,
     /// A stone, in its instance's colour (its rock's), speckled.
     pub stone: Option<MeshId>,
     /// The materials' tokens by their colour (an item's colour is its material's token's: what
@@ -46,8 +50,10 @@ impl PartMeshes {
         for (k, t) in palette.tokens.iter().enumerate() {
             let Ok(k) = u16::try_from(k) else { continue };
             if t.pattern == Pattern::Wood {
-                out.round
-                    .insert(k, arena.add_levels(&parts::cylinder(Faces::round(k)), round()));
+                out.round.insert(
+                    k,
+                    arena.add_levels(&parts::cylinder(Faces::round(k)), round()),
+                );
                 out.board.insert(
                     k,
                     arena.add_levels(&parts::board(k), creeer_render::mesh::Round::Box),
@@ -85,6 +91,7 @@ impl PartMeshes {
             };
             arena.add_levels(&parts::cylinder(faces), round())
         });
+        out.built = index(BUILT).and_then(|t| out.round.get(&t).copied());
         out.stone = Some(arena.add_levels(
             &parts::patterned_sphere(STONE),
             creeer_render::mesh::Round::Sphere,
@@ -157,8 +164,12 @@ mod tests {
         assert!(meshes.round_of(timber).is_some() && meshes.board_of(timber).is_some());
         assert_eq!(meshes.logs.len(), species.len());
         assert!(meshes.deadwood.is_some() && meshes.stone.is_some());
+        assert_eq!(meshes.built, meshes.round_of(timber));
         let granite = [0xc4, 0xa1, 0x94];
-        assert!(meshes.round_of(granite).is_none(), "a rock is no material token");
+        assert!(
+            meshes.round_of(granite).is_none(),
+            "a rock is no material token"
+        );
         let colours: std::collections::BTreeSet<[u8; 3]> =
             meshes.materials.iter().map(|m| m.0).collect();
         assert_eq!(colours.len(), meshes.materials.len());

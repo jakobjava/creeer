@@ -92,7 +92,13 @@ pub(crate) fn stem<F: Fn(DVec3) -> DVec3>(
         let (a, b) = (from + step * k as f64, from + step * (k + 1) as f64);
         let z = |h: f64| DVec3::new(0.0, 0.0, h);
         let radii = (tree.radius(a).max(0.004), tree.radius(b));
-        log(&mut out.things, at, (z(a), z(b)), radii, at.key * 64 + k as u64);
+        log(
+            &mut out.things,
+            at,
+            (z(a), z(b)),
+            radii,
+            at.key * 64 + k as u64,
+        );
     }
 }
 
@@ -118,7 +124,13 @@ pub(crate) fn branches<F: Fn(DVec3) -> DVec3>(
         let d = branch.direction();
         let base = DVec3::new(0.0, 0.0, node.z);
         let key = at.key * 4096 + 64 + j as u64;
-        log(&mut out.things, at, (base, base + d * branch.length), (branch.radius, 0.2 * branch.radius), key);
+        log(
+            &mut out.things,
+            at,
+            (base, base + d * branch.length),
+            (branch.radius, 0.2 * branch.radius),
+            key,
+        );
         if tiers {
             continue;
         }
@@ -180,9 +192,22 @@ pub(crate) fn crown<F: Fn(DVec3) -> DVec3>(
     };
     if masses <= 1 {
         let mid = stem.crown_base + 0.5 * length;
-        let reach = if tiered(species) { widest } else { 0.8 * widest };
-        let mass = if tiered(species) { Mass::Spire } else { Mass::Clump };
-        push(mid, DVec3::ZERO, DVec3::new(reach, 0.5 * length, reach), mass);
+        let reach = if tiered(species) {
+            widest
+        } else {
+            0.8 * widest
+        };
+        let mass = if tiered(species) {
+            Mass::Spire
+        } else {
+            Mass::Clump
+        };
+        push(
+            mid,
+            DVec3::ZERO,
+            DVec3::new(reach, 0.5 * length, reach),
+            mass,
+        );
         return;
     }
     // A conifer's tiers up the stem; others' clumps twice as many, round the stem (each turned
@@ -194,7 +219,12 @@ pub(crate) fn crown<F: Fn(DVec3) -> DVec3>(
     if !tiers {
         let mid = stem.crown_base + 0.5 * length;
         let size = 0.55 * widest;
-        push(mid, DVec3::ZERO, DVec3::new(size, 0.4 * length, size), Mass::Clump);
+        push(
+            mid,
+            DVec3::ZERO,
+            DVec3::new(size, 0.4 * length, size),
+            Mass::Clump,
+        );
     }
     for k in 0..count {
         #[allow(clippy::cast_precision_loss)]
@@ -208,7 +238,8 @@ pub(crate) fn crown<F: Fn(DVec3) -> DVec3>(
         } else {
             #[allow(clippy::cast_precision_loss)]
             let a = k as f64 * 2.4 + (at.key % 7) as f64;
-            let off = DVec3::new(a.cos(), a.sin(), 0.0) * (0.5 * reach);
+            let (s, c) = creeer_math::det::sin_cos(a);
+            let off = DVec3::new(c, s, 0.0) * (0.5 * reach);
             let size = (0.55 * reach).max(0.25);
             let half = DVec3::new(size, 0.8 * size.min(0.5 * length), size);
             push(z, off, half, Mass::Clump);

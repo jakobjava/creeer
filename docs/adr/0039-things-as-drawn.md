@@ -27,6 +27,7 @@
 3. **Things are drawn as what they are** (`part_view.rs`). An item's rod hull (its sixteen-sided prism) is drawn as the round rod it stands for, in its wood; a block as a sawn board; a stone or a cobble as a speckled ellipsoid in its rock's colour (the server's own ellipsoid); a made tool as its haft and head; a dead branch lying about as a stick with greyed bark. What an item is made of is told by its colour, which the server derives from its material's token (`Densities::colour`): the client finds the token by it (no two materials share a colour; tested).
 4. **Trees are drawn where their members are, as what they are** (`tree_draw.rs`). The stem in tapering logs (three near, one far: a linear taper within a centimetre of the stem's curve), each with its species' bark and `wood_cut` ends (a stump's cut, a bucked log's ends), the branches as tapering branches. Foliage as masses: a conifer's (a cone's crown) as tiers drooping from its whorls to pointed tips, others' as lumpy clumps along their branches; at mid distance a crown of tiers or clumps over its outline; far, one spire or one clump. Each foliage mesh carries its baked occlusion (dark undersides, darker creases) and tones per lump or tip (`creeer_render::foliage`).
 5. **A body that becomes a structure is told again** (`building_parts.rs`, `make_built`): nailing two parts left clients drawing the first as its item's hull at its first node, the second gone, until it was let go.
+6. **Built members are drawn as wood.** A structure with fastened joints (members of radius 0 in its `Frame`) was built by hand, and every part G2 builds with is wood (`building_parts.rs` refuses anything else): its members are drawn round in `timber`, at their radius, each its own tone. Until the protocol tells a member's wood and profile (Limits), a log's bark and a sill's square section are not drawn once built, and a steel frame (no fastened joints) stays a tube.
 
 ## Measured and rejected
 
@@ -45,7 +46,7 @@
 
 ## Limits
 
-- Built structures' members are drawn as the frame tells them: tubes of one radius with no material (`Frame` has neither a member's wood nor its profile), so a nailed frame of spruce is drawn as steel tubes and a sill as a round member. The protocol needs a member's token and profile, and a joint's fastener, for its members, nail heads and lashings to be drawn (stream B's: the protocol).
+- Built structures' members are drawn from what the frame tells: a radius per member and nothing of its wood or profile, so every built member is round `timber` (a log's bark, a birch rail and a sill's square section are lost once built), and its joints are not drawn: the frame does not say which fastener holds them, so nail heads, a lashing's wraps and a peg's end cannot be. The protocol needs each member's token and profile, and each joint's fastener (stream B's: the protocol); `part_view.rs` then draws them as it draws items.
 - A crate item (a block with a wall) is drawn as a solid sawn block: the client is not told it is a container.
 - Trees beyond 160 m are not drawn (impostors).
 

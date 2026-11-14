@@ -270,6 +270,9 @@ impl PlanetSession {
                 Kind::Tree(_) => {}
                 Kind::Structure(frame) => {
                     let broken = c.broken.get(id);
+                    // Built by hand (it has fastened joints, radius 0): its members as wood
+                    // (`part_view::Made::Built`, G2.11); else (a steel frame) as tubes.
+                    let built = frame.radii.contains(&0.0);
                     for (k, [a, b]) in frame.members.iter().enumerate() {
                         let (Some(na), Some(nb)) =
                             (frame.nodes.get(*a as usize), frame.nodes.get(*b as usize))
@@ -280,9 +283,12 @@ impl PlanetSession {
                         let gone = broken.is_some_and(|set| set.contains(&(k as u32)));
                         // Each member at its own radius; fastened joints are not drawn (G2.3).
                         let radius = frame.radii.get(k).copied().unwrap_or(frame.radius);
-                        if radius > 0.0 {
-                            out.beams
-                                .push((p + q * *na, p + q * *nb, radius, 0.0, gone));
+                        let ends = (p + q * *na, p + q * *nb);
+                        if radius > 0.0 && built && !gone {
+                            out.things
+                                .extend(crate::part_view::member(id.0, k, ends, radius));
+                        } else if radius > 0.0 {
+                            out.beams.push((ends.0, ends.1, radius, 0.0, gone));
                         }
                     }
                 }
