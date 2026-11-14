@@ -168,8 +168,7 @@ fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
     }
 }
 
-/// Above the crosshair (G1.6): what the hands hold, and what came of the last thing done (or
-/// why it was refused) for a few seconds. Nothing a player does is silent.
+/// Above the crosshair (G1.6): what the hands hold.
 pub fn told(ctx: &egui::Context, view: &PlanetView) {
     let c = &view.session.connection;
     let painter = ctx.layer_painter(egui::LayerId::new(
@@ -190,28 +189,6 @@ pub fn told(ctx: &egui::Context, view: &PlanetView) {
     let hands = c.inventory.hands.as_ref();
     let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
     line(&held, egui::Color32::from_white_alpha(200));
-    let recent = |told: &Option<(String, std::time::Instant)>| {
-        told.as_ref()
-            .filter(|(_, when)| when.elapsed().as_secs_f64() < 5.0)
-            .cloned()
-    };
-    let (refused, noted) = (recent(&c.refused), recent(&c.noted));
-    // The later of the two.
-    let last = match (refused, noted) {
-        (Some(r), Some(n)) if n.1 > r.1 => Some((n.0, false)),
-        (Some(r), _) => Some((r.0, true)),
-        (None, Some(n)) => Some((n.0, false)),
-        (None, None) => None,
-    };
-    if let Some((text, refused)) = last {
-        let colour = if refused {
-            egui::Color32::from_rgb(232, 180, 0)
-        } else {
-            egui::Color32::from_rgb(200, 230, 170)
-        };
-        line(&text, colour);
-        ctx.request_repaint();
-    }
 }
 
 /// The vitals (G1.9), at the bottom left: health, what each of the body's parts has taken, and

@@ -7,6 +7,7 @@
 //! - `aim`: empty hands, looking at a pole lying within reach;
 //! - `aim-far`: the same pole a few metres off, out of reach;
 //! - `heavy`: looking at a 200 kg crate within reach;
+//! - `refused`: the same, G pressed: refused, and why;
 //! - `work`: a rail held on a sill, J pressed half a second before (the ring fills).
 
 use crate::planet_shot_build::play;
@@ -18,7 +19,7 @@ use creeer_render::{Camera, OverlayFrame};
 use creeer_ui::{PerfInfo, egui};
 
 /// The views this module takes.
-pub(crate) const VIEWS: [&str; 4] = ["aim", "aim-far", "heavy", "work"];
+pub(crate) const VIEWS: [&str; 5] = ["aim", "aim-far", "heavy", "refused", "work"];
 
 /// What `--hud` asks of a frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -99,6 +100,7 @@ pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) ->
     ctx.set_zoom_factor(shot.scale);
     // As the game does while the player walks: the crosshair aims from the avatar.
     view.walking = true;
+    as_played(view);
     if shot.menu.as_deref() == Some("inventory") {
         view.inventory = true;
     }
@@ -216,6 +218,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
         }
         view.fasten(&camera);
         play(view, 0.6)?;
+        let _ = READY.set(std::time::Instant::now());
         return Ok(camera);
     }
     play(view, 2.0)?;
@@ -228,7 +231,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     let ground =
         |p: DVec3| p.normalize() * (terrain.planet().datum.radius(p) + terrain.surface_height(p));
     let (off, command) = match name {
-        "heavy" => (1.8, Command::Crate(ground(me + north * 1.8) + up * 0.6)),
+        "heavy" | "refused" => (1.8, Command::Crate(ground(me + north * 1.8) + up * 0.6)),
         _ => {
             let off = if name == "aim-far" { 3.6 } else { 1.3 };
             let at = ground(me + north * off) + up * 0.15;
@@ -247,5 +250,27 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
         .map(|(_, p)| p.position)
         .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
         .ok_or("the part is not there")?;
-    looking_at(view, lies)
+    let camera = looking_at(view, lies)?;
+    if name == "refused" {
+        // G on the crate: refused, and told why at the crosshair.
+        view.grab_or_drop(&camera);
+        play(view, 0.4)?;
+    }
+    let _ = READY.set(std::time::Instant::now());
+    Ok(camera)
+}
+
+/// When this module's scene was played to its moment (the terrain is streamed after it).
+static READY: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// What the server told is drawn as of the scene's moment, not after the terrain was streamed:
+/// its times moved on by the streaming's.
+fn as_played(view: &mut PlanetView) {
+    let Some(late) = READY.get().map(std::time::Instant::elapsed) else {
+        return;
+    };
+    let c = &mut view.session.connection;
+    for told in [&mut c.refused, &mut c.noted].into_iter().flatten() {
+        told.1 += late;
+    }
 }

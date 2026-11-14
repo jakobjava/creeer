@@ -20,7 +20,7 @@ pub(crate) fn draw(
     let request = planet_ui::window(ctx, planet, camera);
     crate::inventory_ui::window(ctx, planet, camera);
     let target = crate::planet_aim::target(planet, camera);
-    planet_ui::work_ring(ctx, planet.session.connection.noted.as_ref());
+    crate::hud_feedback::draw(ctx, &planet.session.connection);
     let (seen, name) = crate::hud_seen::seen(planet, target.as_ref());
     let prompts = crate::prompts::prompts(&seen);
     crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, bindings);
