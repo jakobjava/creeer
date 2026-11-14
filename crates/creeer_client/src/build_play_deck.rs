@@ -108,7 +108,7 @@ pub(crate) fn deck(p: &mut Player, site: &BridgeSite) -> Result<(), String> {
         // over the gully onto both banks (the gully's floor is beyond the hands' reach to aim
         // at; aimed at the rim before it was slid out, its near half lay under her feet, and
         // sliding it out shoved her back and over the rim).
-        p.wheel(SLID_OUT / 0.05);
+        p.view.holding.wheel(SLID_OUT / 0.05);
         look(p, at(p, rim - 0.1, y), 3.0);
         p.shot(&format!("{name}-slid-across"))?;
         p.key(KeyCode::KeyG);

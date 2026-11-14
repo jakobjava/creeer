@@ -296,3 +296,20 @@ fn a_branch_carried_into_a_trunk_stays_steady_in_the_hands() {
     assert!(most < 10.0, "spins at {most} rad/s");
     let _ = tree;
 }
+
+/// Trees that do not load stop the world being made, as its species do. They were dropped for
+/// a world without a forest: a tool built before `flora/trees.ron` gained a field, run on the
+/// data after, did so, and the stress scene `server` gave another hash on "the same binary"
+/// (G2.11). Here the base's trees with a field this build does not know.
+#[test]
+#[should_panic(expected = "the packs' trees load")]
+fn trees_that_do_not_load_stop_the_world_being_made() {
+    let mut base = creeer_data::Data::base().packs()[0].clone();
+    let trees = base
+        .files
+        .get_mut("flora/trees.ron")
+        .expect("the base's trees");
+    *trees = trees.replace("fresh:", "unknown: 0.0, fresh:");
+    let data = creeer_data::Data::from_packs(base, Vec::new()).expect("the packs");
+    let _ = ServerWorld::new(Arc::new(data), super::tests::terrain(), "planets/home.ron");
+}

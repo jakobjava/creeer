@@ -8,7 +8,6 @@
 //! As the game plays them: the hold placed each step as `holding.rs` places it (the crosshair
 //! where the camera looks), the player's own body not drawn.
 
-use crate::people::DrawnPerson;
 use crate::planet_view::PlanetView;
 use creeer_math::glam::DVec3;
 use creeer_net::message::{Command, Target};
@@ -39,7 +38,7 @@ fn looking_at(view: &PlanetView, target: DVec3) -> Option<Camera> {
 
 /// Runs the game `seconds`, looking at `target` from the eyes and placing what the hands hold
 /// each step as the game does. Returns the camera last looked from.
-fn hold(view: &mut PlanetView, target: DVec3, seconds: f64) -> Result<Camera, String> {
+pub(crate) fn hold(view: &mut PlanetView, target: DVec3, seconds: f64) -> Result<Camera, String> {
     let step = Duration::from_millis(10);
     let mut left = seconds;
     loop {
@@ -128,17 +127,15 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     hold(view, target, SETTLE)
 }
 
-/// The people drawn in view `name`: in a build view (first person), all but the player's own.
-pub(crate) fn people(view: &PlanetView, name: &str, people: &[DrawnPerson]) -> Vec<DrawnPerson> {
+/// The player's own person in view `name`, if it is seen in first person (a build view, a
+/// things view or the HUD's): drawn from within as the game draws it (`People::first_person`;
+/// G2.11 Q: these frames had left the body out, a held part floating with no arms).
+pub(crate) fn first_person(view: &PlanetView, name: &str) -> Option<u32> {
     let own = (view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-    (people.iter())
-        .filter(|p| {
-            let first_person =
-                VIEWS.contains(&name) || crate::planet_shot_things::VIEWS.contains(&name);
-            !(first_person && Some(p.key) == own)
-        })
-        .cloned()
-        .collect()
+    let first = VIEWS.contains(&name)
+        || crate::planet_shot_things::VIEWS.contains(&name)
+        || crate::hud_shot::VIEWS.contains(&name);
+    own.filter(|_| first)
 }
 /// Runs the game for `seconds` of real time (the hosted server steps on its own; the client
 /// takes in what it is told), first until the client has joined.

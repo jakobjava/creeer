@@ -223,3 +223,22 @@ pub(crate) fn frame(p: &mut Player) -> Result<(), String> {
     look(p, at(p, 2.0, 0.0) + up * 0.6, 0.5);
     p.shot("the-frame")
 }
+
+impl Player {
+    /// Q held, the mouse moved `(dx, dy)` pixels, Q let go.
+    pub(crate) fn turn(&mut self, dx: f64, dy: f64) {
+        let h = &mut self.view.holding;
+        h.key(crate::bindings::Action::Turn, true);
+        h.mouse((dx, dy));
+        h.key(crate::bindings::Action::Turn, false);
+    }
+
+    /// Q with the mouse until what is held lies `yaw` from across the view (rad: a quarter turn
+    /// lays it along the view), as a player turns it watching it.
+    pub(crate) fn turn_to(&mut self, yaw: f64) {
+        let view = self.camera().rotation();
+        let now = (self.view.session.connection.held_turn(view)).map_or(0.0, |t| t.0);
+        // (The mouse turns it 0.006 rad a pixel: `holding.rs`.)
+        self.turn((yaw - now) / 0.006, 0.0);
+    }
+}

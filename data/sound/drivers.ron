@@ -6,13 +6,16 @@
 // - `head`: the driving tool's head's material (an engineering material's id), its `mass` (kg) and
 //   its size (m, the box about it).
 // - `speed`: how fast its head meets the fastener (m/s).
-// - `blows`: how many blows drive it home.
+// - `blows`: how many blows drive it home, where the server's note does not say (a nail's blows
+//   are told with it: its time is its blows, `data/hammering.ron`).
 //
 // Sources: a 16 oz claw hammer's head is about 0.45 kg (Estwing E3-16C: 0.45 kg of its 0.68);
 // hammer head speeds in nailing about 4–8 m/s and a 75 mm common nail in softwood about five blows
 // (estimates, to be measured); a joiner's mallet about 0.6 kg of beech or birch.
 [
     (fastener: "nail_75", head: "steel_s235", mass: 0.45, size: (0.11, 0.025, 0.025), speed: 6.0, blows: 5),
+    // (G2.11: the 90 mm nail the hand reaches for through a 60 mm rail; between the two others.)
+    (fastener: "nail_90", head: "steel_s235", mass: 0.45, size: (0.11, 0.025, 0.025), speed: 6.2, blows: 6),
     (fastener: "nail_100", head: "steel_s235", mass: 0.45, size: (0.11, 0.025, 0.025), speed: 6.5, blows: 7),
     (fastener: "peg_25", head: "birch_green", mass: 0.6, size: (0.15, 0.08, 0.08), speed: 5.0, blows: 8),
 ]

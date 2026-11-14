@@ -15,14 +15,8 @@ impl Running {
             }
             return;
         }
-        let mut actions: Vec<Action> = self.game.bindings.actions(input).collect();
-        actions.sort_by_key(|a| match entry(*a).context {
-            Context::Always => 0,
-            Context::Holding => 1,
-            Context::Planet | Context::System => 2,
-        });
         let menu = self.screen.menu.is_some();
-        for action in actions {
+        for action in self.game.bindings.in_order(input) {
             // In the menu only the keys of every context act; keys going up always do.
             if pressed && menu && entry(action).context != Context::Always {
                 continue;

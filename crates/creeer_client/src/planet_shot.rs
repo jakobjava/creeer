@@ -98,8 +98,14 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let (east, _) = creeer_terrain::geology::deposits::tangent_frame(up);
             view.day_fraction = day_for_sun(&view, up, sun_elevation);
             let mut camera = view.ground_camera(up, 2.0, east, 12f64.to_radians());
-            view.follow(&mut camera);
+            // From behind, as the game's third person (F5) follows it (G2.11: it was taken at
+            // the eyes, from inside the head).
+            view.first_person = false;
+            view.follow(&mut camera, 1.0);
             camera
+        }
+        other if crate::planet_shot_walk::VIEWS.contains(&other) => {
+            crate::planet_shot_walk::camera(&mut view, other)?
         }
         "surface" => {
             // Drop a few crates and balls in front of the camera and let them land.
@@ -213,11 +219,23 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
     // The players' characters (G1.3e).
     let mut people = crate::people::People::register(&mut renderer)?;
-    let mut drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
-    crate::hud_shot::not_own(&view, &view_name, &mut drawn);
-    let mut overlay = (hud.as_ref()).map(|h| crate::hud_shot::overlay(h, &mut view, &camera));
+    // In first person the player's own body seen from within, as the game draws it (down, not
+    // drawn: the eyes are in its head).
+    people.first_person = crate::planet_shot_build::first_person(&view, &view_name);
+    people.looking = Some(camera.forward());
+    let mut drawn = snapshot.people.clone();
+    crate::planet_shot_walk::people(&view, &view_name, &mut drawn);
     let ground = crate::people_ground::PlanetGround { terrain: &terrain };
+    // (The arms given the time they take to reach what the hands hold, as `build_play_shot`.)
+    people.draw(&drawn, 1.0, &ground, &mut Scene::default());
     people.draw(&drawn, 0.0, &ground, &mut scene);
+    // In first person the eyes where the drawn head's are, as the game puts them (A4).
+    let mut camera = camera;
+    if people.first_person.is_some() {
+        let mut eyes = crate::planet_camera::Eyes::default();
+        camera.position = eyes.follow(camera.position, people.eye(), 10.0);
+    }
+    let mut overlay = (hud.as_ref()).map(|h| crate::hud_shot::overlay(h, &mut view, &camera));
     let image = renderer.capture(Frame {
         camera: &camera,
         scene: &scene,

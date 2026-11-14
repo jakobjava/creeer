@@ -14,15 +14,34 @@ const FADES: f32 = 1.0;
 /// The work ring's radius (points).
 const RING: f32 = 20.0;
 
-/// Work under way, from the server's note ("fastening: 8 s"): what is being done, and how far
-/// along it is (0 to 1) `elapsed` seconds after the note came. None if the note is not of work,
-/// or the work is done.
+/// Work under way, from the server's note ("backfilling: 8 s", "nailing (nail_75, 2 blows):
+/// 1.0 s"): what is being done in a word (what is in brackets left out), and how far along it is
+/// (0 to 1) `elapsed` seconds after the note came. None if the note is not of work, or the work
+/// is done.
 pub(crate) fn work(note: &str, elapsed: f32) -> Option<(String, f32)> {
-    let (doing, rest) = note.split_once(": ")?;
-    let seconds: f32 = rest.strip_suffix(" s")?.parse().ok()?;
-    let words = doing.chars().all(|c| c.is_ascii_lowercase() || c == ' ');
+    let (doing, seconds) = work_note(note)?;
     let done = elapsed / seconds.max(0.1);
-    (words && done < 1.0).then(|| (capital(doing), done))
+    (done < 1.0).then(|| (capital(doing), done))
+}
+
+/// A note of work: what is being done, and how long it takes (s).
+fn work_note(note: &str) -> Option<(&str, f32)> {
+    let (doing, rest) = note.rsplit_once(": ")?;
+    let seconds: f32 = rest.strip_suffix(" s")?.parse().ok()?;
+    let doing = doing.split(" (").next().unwrap_or(doing);
+    let words = doing.chars().all(|c| c.is_ascii_lowercase() || c == ' ');
+    words.then_some((doing, seconds))
+}
+
+/// A fastener's id in words: `nail_75` is "a 75 mm nail", `peg_25` "a 25 mm peg"; another id
+/// its words ("bast lashing").
+pub(crate) fn fastener_words(id: &str) -> String {
+    match id.rsplit_once('_') {
+        Some((kind, mm)) if !mm.is_empty() && mm.chars().all(|c| c.is_ascii_digit()) => {
+            format!("a {mm} mm {}", kind.replace('_', " "))
+        }
+        _ => id.replace('_', " "),
+    }
 }
 
 /// A server's reason or note in plain words for the screen: the terse ones written out, every
@@ -52,7 +71,20 @@ pub(crate) fn plain(why: &str) -> String {
     if let Some(kg) = why.strip_suffix(": too heavy to move") {
         return format!("Too heavy to move ({kg})");
     }
-    capital(&why.replace('_', " "))
+    // Ids in words: a fastener's (`nail_75`: "a 75 mm nail"), the rest's underscores as spaces.
+    let words: Vec<String> = (why.split(' '))
+        .map(|w| {
+            let open = w.len() - w.trim_start_matches('(').len();
+            let bare = w[open..].trim_end_matches([':', ',', ')', '.']);
+            if bare.contains('_') {
+                let rest = &w[open + bare.len()..];
+                format!("{}{}{rest}", &w[..open], fastener_words(bare))
+            } else {
+                w.to_owned()
+            }
+        })
+        .collect();
+    capital(&words.join(" "))
 }
 
 fn capital(s: &str) -> String {
@@ -62,7 +94,8 @@ fn capital(s: &str) -> String {
 }
 
 /// The answer to show now: the later of the last refusal and the last note, if recent, with
-/// whether it was a refusal and how faded (1 shown, 0 gone).
+/// whether it was a refusal and how faded (1 shown, 0 gone). A note of work is shown by its ring
+/// while it lasts, and not as an answer after (its outcome is told when it is done).
 pub(crate) fn answer(
     refused: Option<&(String, Instant)>,
     noted: Option<&(String, Instant)>,
@@ -74,13 +107,17 @@ pub(crate) fn answer(
         (None, None) => return None,
     };
     let ((text, when), refusal) = last;
+    if !refusal && work_note(text).is_some() {
+        return None;
+    }
     let age = when.elapsed().as_secs_f32();
     let shown = ((SHOWN - age) / FADES).clamp(0.0, 1.0);
     (shown > 0.0).then(|| (plain(text), refusal, shown))
 }
 
-/// Draws the work ring and the answer.
-pub(crate) fn draw(ctx: &egui::Context, c: &creeer_server::Connection) {
+/// Draws the work ring and the answer; a note of what failed that is told at the top already
+/// (`failed`, a creative server's) not again (G2.11 Q: it was told three times at once).
+pub(crate) fn draw(ctx: &egui::Context, c: &creeer_server::Connection, failed: &[String]) {
     let mut painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("feedback"),
@@ -98,7 +135,8 @@ pub(crate) fn draw(ctx: &egui::Context, c: &creeer_server::Connection) {
             paint::ring(&painter, centre, RING, *done);
             Some((format!("{doing}…"), false, 1.0))
         }
-        None => answer(c.refused.as_ref(), c.noted.as_ref()),
+        None => answer(c.refused.as_ref(), c.noted.as_ref())
+            .filter(|(text, _, _)| !failed.iter().any(|f| plain(f) == *text)),
     };
     if let Some((text, refusal, opacity)) = shown {
         painter.multiply_opacity(opacity);
@@ -129,6 +167,28 @@ mod tests {
         assert!(work("dug 0.20 kg (0.21 l)", 0.0).is_none());
         assert!(work("73 % through", 0.0).is_none());
         assert!(work("not fastened: it slipped", 0.0).is_none());
+        // The server's note of a nail (G2.11 B: its time is its blows).
+        let (doing, done) = work("nailing (nail_75, 2 blows): 1.0 s", 0.5).expect("work");
+        assert_eq!(doing, "Nailing");
+        assert!((done - 0.5).abs() < 1e-6);
+        assert!(work("fastening (peg_25): 10.0 s", 1.0).is_some());
+    }
+
+    /// A note of work is the ring's: once done it is not shown in words (its outcome is), and
+    /// an older refusal does not come back after it.
+    #[test]
+    fn a_work_note_is_not_shown_as_an_answer() {
+        let now = Instant::now();
+        let before = now.checked_sub(Duration::from_secs(1)).expect("before");
+        let refused = ("hands full".to_owned(), before);
+        let nailing = ("nailing (nail_75, 2 blows): 1.0 s".to_owned(), now);
+        assert!(answer(Some(&refused), Some(&nailing)).is_none());
+        let fastened = ("fastened with nail_75".to_owned(), now);
+        let (text, refusal, _) = answer(Some(&refused), Some(&fastened)).expect("shown");
+        assert_eq!(
+            (text.as_str(), refusal),
+            ("Fastened with a 75 mm nail", false)
+        );
     }
 
     #[test]
@@ -144,6 +204,14 @@ mod tests {
         assert_eq!(
             plain("fastened with bast_lashing"),
             "Fastened with bast lashing"
+        );
+        assert_eq!(
+            plain("fastened with nail_100"),
+            "Fastened with a 100 mm nail"
+        );
+        assert_eq!(
+            plain("tacked with bast_lashing: let go"),
+            "Tacked with bast lashing: let go"
         );
         assert_eq!(plain(""), "");
     }

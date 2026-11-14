@@ -188,6 +188,7 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let golden = std::fs::read_to_string(GOLDEN).unwrap_or_default();
+    crate::stress::print_data();
     let (mut lines, mut metrics, mut failed) = (String::new(), String::new(), false);
     for s in SCENES
         .iter()

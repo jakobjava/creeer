@@ -171,8 +171,11 @@ const CLIENT_WORK: [(&str, u64); 11] = [
     ("drop", 5),
     ("builders", 1_294),
     // Its nails made at tick 361 since they take 2 s (2026-10-30, the user's OK): 382, the
-    // client predicting the joints made (G2P's, docs/future-improvements.md). A tenth above.
-    ("log_bridge", 420),
+    // client predicting the joints made (G2P's, docs/future-improvements.md). G2.11 A5
+    // (ADR-0043): the clients were never told the parts had become a structure, and predicted
+    // the stringer as the lone plank it had been; told, 393 → 184 at tick 1 (the builders
+    // walking up to the bridge's parts). A tenth above.
+    ("log_bridge", 203),
     // G2.11, the bridge site (ADR-0039): 4 at tick 38. A tenth above.
     ("bridge_demo", 5),
 ];

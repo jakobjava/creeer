@@ -35,21 +35,26 @@ pub(crate) fn fill(pocket: &creeer_net::message::StoreView) -> f32 {
 }
 
 /// The panel's width (points).
-const WIDE: f32 = 300.0;
+pub(crate) const WIDE: f32 = 300.0;
 
-/// Draws the panel at the bottom right: `held` names what the hands hold (`hud_seen::held_name`).
+/// Draws the panel at the bottom right: `held` names what the hands hold (`hud_seen::held_name`);
+/// on a creative server this process hosts (`creative`), the keys of its kit and its stress
+/// overlay too (G2.11 Q: nothing on screen said where the bridge site's test weights were).
 pub(crate) fn draw(
     ctx: &egui::Context,
     (inventory, held): (&Inventory, Option<&str>),
     tool: Option<&str>,
-    keys: &Bindings,
+    (keys, creative): (&Bindings, bool),
 ) {
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("hands"),
     ));
     let line = BODY + 6.0;
-    let rows = 2 + usize::from(tool.is_some()) + inventory.pockets.len().div_ceil(2);
+    let rows = 2
+        + usize::from(tool.is_some())
+        + usize::from(creative)
+        + inventory.pockets.len().div_ceil(2);
     #[allow(clippy::cast_precision_loss)] // a few rows
     let tall = line * rows as f32 + 16.0;
     let screen = ctx.content_rect();
@@ -100,9 +105,21 @@ pub(crate) fn draw(
         }
         y += line;
     }
-    let key = keys.name(Action::Inventory);
-    let cap = paint::keycap(&painter, pos2(left, y), &key, SMALL);
-    text(pos2(cap.right() + 8.0, y), "What you carry", SMALL, TEXT);
+    let keyed = |x: f32, y: f32, action: Action, words: &str| {
+        let cap = paint::keycap(&painter, pos2(x, y), &keys.name(action), SMALL);
+        text(pos2(cap.right() + 8.0, y), words, SMALL, TEXT)
+    };
+    keyed(left, y, Action::Inventory, "What you carry");
+    if creative {
+        y += line;
+        let kit = keyed(left, y, Action::Kit, "Creative kit");
+        keyed(
+            kit.right() + 18.0,
+            y,
+            Action::StressOverlay,
+            "Stress overlay",
+        );
+    }
 }
 
 #[cfg(test)]

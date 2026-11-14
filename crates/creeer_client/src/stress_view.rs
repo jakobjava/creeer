@@ -112,47 +112,63 @@ pub fn told(seen: &Inspection, tick: u64) -> Vec<(&Failure, usize)> {
     out
 }
 
-/// The words of what failed, beside its mark and at the top of the screen.
+/// The words of what failed at the top of the screen, below the first start's hint, and each
+/// earlier collapse's beside its mark, on the HUD's plates (`art-style.md` §10; G2.11 Q: they
+/// were red on rounded black boxes of their own).
 pub fn hud(ctx: &egui::Context, camera: &Camera, seen: &Inspection, tick: u64) {
+    use creeer_ui::paint::{self, Row};
+    use creeer_ui::theme::{BAD, BODY, SMALL, TEXT};
     let told = told(seen, tick);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("failed"),
     ));
     let screen = ctx.content_rect();
-    let red = egui::Color32::from_rgb(255, 120, 100);
     if let Some((first, n)) = told.first() {
-        let more = if *n > 1 {
-            format!(" (then {} more)", n - 1)
-        } else {
-            String::new()
+        let heading = match *n {
+            1 => "First to fail".to_owned(),
+            n => format!("First to fail (then {} more)", n - 1),
         };
-        let text = format!("First to fail: {}{more}", first.words);
-        let top = egui::pos2(screen.center().x, screen.top() + 60.0);
-        label(&painter, (top, egui::Align2::CENTER_TOP), text, 17.0);
+        let rows = [
+            Row {
+                key: None,
+                text: &heading,
+                colour: BAD,
+                size: SMALL + 1.0,
+            },
+            Row {
+                key: None,
+                text: &first.words,
+                colour: TEXT,
+                size: BODY + 1.0,
+            },
+        ];
+        let top = egui::pos2(screen.center().x, screen.top() + TOP);
+        paint::plate_at(&painter, (egui::Align2::CENTER_TOP, top), &rows);
     }
-    for (f, _) in &told {
+    // Each collapse's first failure ringed where it was; in words beside it but for the one told
+    // at the top (told twice, the words lay over the deck and the crosshair, G2.11 Q).
+    for (k, (f, _)) in told.iter().enumerate() {
         if let Some(at) = on_screen(camera, f.at, screen) {
-            painter.circle_stroke(at, 12.0, egui::Stroke::new(2.5, red));
-            let beside = (at + egui::vec2(18.0, -8.0), egui::Align2::LEFT_TOP);
-            label(&painter, beside, f.words.clone(), 13.0);
+            let dark = egui::Stroke::new(4.5, egui::Color32::from_black_alpha(150));
+            painter.circle_stroke(at, 12.0, dark);
+            painter.circle_stroke(at, 12.0, egui::Stroke::new(2.5, BAD));
+            if k == 0 {
+                continue;
+            }
+            let row = Row {
+                key: None,
+                text: &f.words,
+                colour: TEXT,
+                size: SMALL,
+            };
+            paint::plate(&painter, at + egui::vec2(18.0, -12.0), &[row]);
         }
     }
 }
 
-/// `text` in the failure's red on a dark ground, readable over sky and earth alike.
-fn label(
-    painter: &egui::Painter,
-    (at, align): (egui::Pos2, egui::Align2),
-    text: String,
-    size: f32,
-) {
-    let red = egui::Color32::from_rgb(255, 120, 100);
-    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(size), red);
-    let rect = align.anchor_size(at, galley.size());
-    painter.rect_filled(rect.expand(5.0), 4.0, egui::Color32::from_black_alpha(180));
-    painter.galley(rect.min, galley, red);
-}
+/// How far below the screen's top what failed is told (points): below the first start's hint.
+const TOP: f32 = 66.0;
 
 /// Where `p` is drawn on `screen`, if before the camera.
 fn on_screen(camera: &Camera, p: DVec3, screen: egui::Rect) -> Option<egui::Pos2> {
