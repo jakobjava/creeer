@@ -249,6 +249,18 @@ impl Bindings {
             .map(|(e, _)| e.action)
     }
 
+    /// The actions `input` does, in the order the game tries them (`app/input.rs`): those of
+    /// every context first, then holding a part's, then the rest.
+    pub fn in_order(&self, input: Input) -> Vec<Action> {
+        let mut actions: Vec<Action> = self.actions(input).collect();
+        actions.sort_by_key(|a| match entry(*a).context {
+            Context::Always => 0,
+            Context::Holding => 1,
+            Context::Planet | Context::System => 2,
+        });
+        actions
+    }
+
     /// Binds `action` to `input` alone. Other actions that would clash on it lose it; they are
     /// returned. Refused (`None`) for a fixed action, the wheel, a key that may not be bound,
     /// or one a fixed action holds (Esc).

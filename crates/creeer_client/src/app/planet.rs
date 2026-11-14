@@ -68,86 +68,10 @@ impl Running {
         Ok(())
     }
 
-    /// An action of the planet game (the controls' table, `bindings.rs`): walk or fly; take what
-    /// the crosshair is on in both hands, or put down what they hold (G1.4f); put away, put in
-    /// and show what is carried (G1.6a, `inventory_ui.rs`); throw, strip bark, bind a head on
-    /// (G1.6d); fasten, set a post, take a joint apart, choose a fastener (G2); a tool in hand
-    /// (G1.4c), the same again or put away. Returns whether it was one.
+    /// An action of the planet game (`PlanetView::act`). Returns whether it was one.
     pub(super) fn planet_act(&mut self, action: Action) -> bool {
-        let Some(planet) = &mut self.planet else {
-            return false;
-        };
         let camera = &self.camera;
-        let tool = match action {
-            Action::WalkOrFly => {
-                planet.walking = !planet.walking;
-                return true;
-            }
-            Action::Take => {
-                planet.grab_or_drop(camera);
-                return true;
-            }
-            Action::Pocket => {
-                planet.stow(camera);
-                return true;
-            }
-            Action::PutIn => {
-                planet.put_in_or_open(camera);
-                return true;
-            }
-            Action::Inventory => {
-                planet.inventory = !planet.inventory;
-                return true;
-            }
-            Action::Throw => {
-                planet.send(creeer_net::message::Command::Throw(camera.forward()));
-                return true;
-            }
-            // First person, or the camera behind to look at the build (G2.10).
-            Action::Camera => {
-                planet.first_person = !planet.first_person;
-                return true;
-            }
-            Action::Strip => {
-                planet.send(creeer_net::message::Command::Strip);
-                return true;
-            }
-            Action::Fasten => {
-                planet.fasten(camera);
-                return true;
-            }
-            Action::SetPost => {
-                planet.set_post(camera);
-                return true;
-            }
-            Action::Unfasten => {
-                planet.unfasten(camera);
-                return true;
-            }
-            Action::NextFastener => {
-                planet.fastening.next();
-                return true;
-            }
-            Action::Bind => {
-                planet.bind(camera);
-                return true;
-            }
-            Action::Tool1 => Some(0),
-            Action::Tool2 => Some(1),
-            Action::Tool3 => Some(2),
-            Action::Tool4 => Some(3),
-            Action::ToolAway => None,
-            // The stress overlay, on a creative server this process hosts (G2.11, ADR-0039).
-            Action::StressOverlay => {
-                planet.stress.on = !planet.stress.on;
-                return true;
-            }
-            _ => return false,
-        };
-        let tool = if tool == planet.wielding { None } else { tool };
-        planet.wielding = tool;
-        planet.send(creeer_net::message::Command::Wield { tool });
-        true
+        (self.planet.as_mut()).is_some_and(|planet| planet.act(action, camera))
     }
 
     /// The steering of what the hands hold, while on the planet (G2.10).
@@ -290,23 +214,14 @@ impl Running {
                 tick,
                 adapter: &self.adapter_label,
             };
-            request = crate::hud::draw(
+            (request, asked) = crate::hud::game_screen(
                 ui.ctx(),
                 planet,
                 &self.camera,
                 (&perf, &mut self.profiler),
-                (&self.game, &mut self.screen),
+                (&mut self.game, &mut self.screen),
+                (&seen, tick),
             );
-            asked = crate::menu::draw(
-                ui.ctx(),
-                &mut self.screen,
-                &mut self.game,
-                Some(&mut *planet),
-            );
-            if let Some(scale) = stress.heatmap() {
-                heatmap_legend(ui.ctx(), &scale, "Share of what breaks it", "%");
-            }
-            crate::stress_view::hud(ui.ctx(), &self.camera, &seen, tick);
         });
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);
@@ -337,5 +252,88 @@ impl Running {
             }
         }
         self.menu_asked(asked);
+    }
+}
+
+impl PlanetView {
+    /// An action of the planet game (the controls' table, `bindings.rs`), the crosshair being
+    /// `camera`'s: walk or fly; take what the crosshair is on in both hands, or put down what they
+    /// hold (G1.4f); put away, put in and show what is carried (G1.6a, `inventory_ui.rs`); throw,
+    /// strip bark, bind a head on (G1.6d); fasten, set a post, take a joint apart, choose a
+    /// fastener (G2); a tool in hand (G1.4c), the same again or put away; the stress overlay.
+    /// Returns whether it was one. The game and its played frames (`build_play.rs`) both act
+    /// through this.
+    pub(crate) fn act(&mut self, action: Action, camera: &Camera) -> bool {
+        use creeer_net::message::Command;
+        let tool = match action {
+            Action::WalkOrFly => {
+                self.walking = !self.walking;
+                return true;
+            }
+            Action::Take => {
+                self.grab_or_drop(camera);
+                return true;
+            }
+            Action::Pocket => {
+                self.stow(camera);
+                return true;
+            }
+            Action::PutIn => {
+                self.put_in_or_open(camera);
+                return true;
+            }
+            Action::Inventory => {
+                self.inventory = !self.inventory;
+                return true;
+            }
+            Action::Throw => {
+                self.send(Command::Throw(camera.forward()));
+                return true;
+            }
+            // First person, or the camera behind to look at the build (G2.10).
+            Action::Camera => {
+                self.first_person = !self.first_person;
+                return true;
+            }
+            Action::Strip => {
+                self.send(Command::Strip);
+                return true;
+            }
+            Action::Fasten => {
+                self.fasten(camera);
+                return true;
+            }
+            Action::SetPost => {
+                self.set_post(camera);
+                return true;
+            }
+            Action::Unfasten => {
+                self.unfasten(camera);
+                return true;
+            }
+            Action::NextFastener => {
+                self.fastening.next();
+                return true;
+            }
+            Action::Bind => {
+                self.bind(camera);
+                return true;
+            }
+            Action::Tool1 => Some(0),
+            Action::Tool2 => Some(1),
+            Action::Tool3 => Some(2),
+            Action::Tool4 => Some(3),
+            Action::ToolAway => None,
+            // The stress overlay, on a creative server this process hosts (G2.11, ADR-0039).
+            Action::StressOverlay => {
+                self.stress.on = !self.stress.on;
+                return true;
+            }
+            _ => return false,
+        };
+        let tool = if tool == self.wielding { None } else { tool };
+        self.wielding = tool;
+        self.send(Command::Wield { tool });
+        true
     }
 }

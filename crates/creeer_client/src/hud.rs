@@ -15,6 +15,27 @@ use creeer_ui::paint::{self, Row};
 use creeer_ui::theme::{BODY, TEXT};
 use creeer_ui::{PerfInfo, egui, perf_window};
 
+/// Everything the planet game draws over the world in a frame, in the game's order: the HUD,
+/// the menu, the stress overlay's legend and what failed (a creative server's). The game
+/// (`app/planet.rs`) and its played frames (`build_play_shot.rs`) both call this, so a frame
+/// shows what the player's screen shows. Returns what the app should do.
+pub(crate) fn game_screen(
+    ctx: &egui::Context,
+    planet: &mut PlanetView,
+    camera: &Camera,
+    shown: (&PerfInfo<'_>, &mut ProfilerWindow),
+    (game, screen): (&mut GameSettings, &mut Screen),
+    (seen, tick): (&creeer_server::world::site::Inspection, u64),
+) -> (Request, crate::menu::Asked) {
+    let request = draw(ctx, planet, camera, shown, (&*game, &mut *screen));
+    let asked = crate::menu::draw(ctx, screen, game, Some(&mut *planet));
+    if let Some(scale) = planet.stress.heatmap() {
+        creeer_ui::heatmap_legend(ctx, &scale, "Share of what breaks it", "%");
+    }
+    crate::stress_view::hud(ctx, camera, seen, tick);
+    (request, asked)
+}
+
 /// Draws the planet game's screen; returns what the app should do.
 pub(crate) fn draw(
     ctx: &egui::Context,

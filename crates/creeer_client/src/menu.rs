@@ -36,6 +36,41 @@ impl Screen {
     pub fn tell(&mut self, text: impl Into<String>) {
         self.note = Some((text.into(), Instant::now()));
     }
+
+    /// Esc: lets go of what is open on top (a key being rebound, a page of the menu, the kit,
+    /// the inventory `inventory` says is shown), else opens or closes the menu. What it did.
+    pub fn escape(&mut self, inventory: Option<&mut bool>) -> Escaped {
+        if self.rebinding.take().is_some() {
+            return Escaped::Other;
+        }
+        match self.menu {
+            Some(Page::Main) => {
+                self.menu = None;
+                self.rebinding = None;
+                return Escaped::Closed;
+            }
+            Some(_) => self.menu = Some(Page::Main),
+            None if self.kit => self.kit = false,
+            None => match inventory {
+                Some(shown) if *shown => *shown = false,
+                _ => {
+                    self.menu = Some(Page::Main);
+                    return Escaped::Opened;
+                }
+            },
+        }
+        Escaped::Other
+    }
+}
+
+/// What Esc did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Escaped {
+    /// The menu opened (every held key is let go) or closed (the settings saved if changed).
+    Opened,
+    Closed,
+    /// Something on top closed, or a page went back.
+    Other,
 }
 
 /// What the menu asks of the app.

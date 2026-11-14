@@ -131,9 +131,15 @@ pub(crate) fn window(ctx: &egui::Context, open: &mut bool, view: &mut PlanetView
                     }
                 });
         });
-    if let Some(item) = asked
-        && let Some(at) = before_the_player(view, camera)
-    {
+    if let Some(item) = asked {
+        put_down(view, camera, item);
+    }
+}
+
+/// The kit's part `item` put down before the player (its "Put down" button; the played frames
+/// press it too, `build_play.rs`).
+pub(crate) fn put_down(view: &mut PlanetView, camera: &Camera, item: u8) {
+    if let Some(at) = before_the_player(view, camera) {
         view.send(Command::Kit { item, at });
     }
 }

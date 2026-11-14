@@ -49,6 +49,7 @@ mod bridge_site;
 mod build_play;
 mod build_play_scripts;
 mod build_play_shot;
+mod build_play_site;
 mod circuit_bench;
 mod content;
 mod control_panel;

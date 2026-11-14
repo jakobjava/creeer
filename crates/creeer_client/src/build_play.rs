@@ -1,27 +1,36 @@
 //! Building played as the player plays it, a frame at every step (G2.11 B, `docs/playability-
-//! plan.md` rule 2): `creeer_client --build-play <bridge|frame> <dir>`.
+//! plan.md` rule 2): `creeer_client --build-play <bridge|frame|site> <dir>`.
 //!
 //! A singleplayer game (its server hosted here, as the game hosts it) is played in real time
 //! through the client's own path: the camera at the eyes looking where the script looks, the
 //! held part placed each frame as `holding.rs` places it, the keys pressed as a player presses
-//! them (G takes and puts down, R stands up or lays down, Q with the mouse turns, J fastens, P
-//! sets a post). Each step saves `<dir>/<nn>-<step>.png` (first person, the crosshair drawn) and
-//! a line of what the player was told and where the held part is (`<dir>/steps.txt`).
+//! them, through the controls' table and the game's own actions (`bindings.rs`,
+//! `PlanetView::act`: G takes and puts down, R stands up or lays down, Q with the mouse turns, J
+//! fastens, P sets a post). Each step saves `<dir>/<nn>-<step>.png` (first person) and a line of
+//! what the player was told and where the held part is (`<dir>/steps.txt`).
+//!
+//! `site` (G2.11 Q, the play-through) is the user's first ten minutes at the bridge site
+//! (`bridge_site.rs`, `build_play_site.rs`): its frames have the game's whole screen drawn over
+//! them (`hud::game_screen`: the HUD, the kit, the inventory, the menu, the overlay's legend and
+//! what failed), as the player sees it, and its log what was heard at each step.
 
 use crate::DemoMeshes;
-use crate::bindings::Action;
+use crate::bindings::{Action, Context, Input, entry};
+use crate::menu::Screen;
 use crate::people::People;
 use crate::planet_view::PlanetView;
+use crate::settings::GameSettings;
 use creeer_math::glam::DVec3;
-use creeer_net::message::Command;
 use creeer_render::{Camera, Renderer};
+use creeer_server::world::site::BridgeSite;
 use creeer_terrain::edits::{Brush, Edit};
+use creeer_ui::egui;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
 /// The scripts this module plays.
-pub(crate) const SCRIPTS: [&str; 2] = ["bridge", "frame"];
+pub(crate) const SCRIPTS: [&str; 3] = ["bridge", "frame", "site"];
 /// Walking speed (m/s), as the game walks.
 const WALK: f64 = 3.0;
 /// A client frame (s).
@@ -49,6 +58,21 @@ pub(crate) struct Player {
     last_frame: Instant,
     /// How many steps to play (`--until`).
     pub(crate) until: u32,
+    /// The bridge site, when played there: then the frames show the game's whole screen
+    /// (`hud`), drawn by `ui` with the player's `screen` and `game` settings, and what is heard
+    /// is gathered each frame (`view.sound`, recorded, not played).
+    pub(crate) site: Option<BridgeSite>,
+    pub(crate) hud: bool,
+    pub(crate) ui: egui::Context,
+    pub(crate) ui_time: f64,
+    pub(crate) screen: Screen,
+    pub(crate) game: GameSettings,
+    pub(crate) profiler: crate::profiler_ui::ProfilerWindow,
+    /// The sounds asked for by kind when the last step was logged (`Sounds::cost`), and the
+    /// slowest of the script's frames since (s), the one after a frame was saved left out.
+    pub(crate) heard: [u64; 6],
+    pub(crate) slowest: f64,
+    pub(crate) shot_taken: bool,
 }
 
 /// Plays `--build-play <script> <dir>`.
@@ -60,7 +84,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let script = args.get(at + 1).ok_or("--build-play needs a script")?;
     let dir = PathBuf::from(args.get(at + 2).ok_or("--build-play needs a directory")?);
     std::fs::create_dir_all(&dir)?;
-    let mut player = Player::start(dir)?;
+    let mut player = Player::start(dir, script == "site")?;
     // `--until n`: the first n steps only.
     player.until = (args.iter().position(|a| a == "--until"))
         .and_then(|i| args.get(i + 1)?.parse().ok())
@@ -68,6 +92,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let played = match script.as_str() {
         "bridge" => crate::build_play_scripts::bridge(&mut player),
         "frame" => crate::build_play_scripts::frame(&mut player),
+        "site" => crate::build_play_site::ten_minutes(&mut player),
         other => return Err(format!("no script {other}: {SCRIPTS:?}").into()),
     };
     match played {
@@ -79,23 +104,48 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl Player {
-    fn start(dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut view = PlanetView::singleplayer(true)?;
+    /// A singleplayer creative game, or (`at_site`) the bridge site as `--bridge` starts it.
+    fn start(dir: PathBuf, at_site: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        let (mut view, site) = if at_site {
+            let (view, site) = crate::bridge_site::view()?;
+            (view, Some(site))
+        } else {
+            (PlanetView::singleplayer(true)?, None)
+        };
         crate::planet_shot_build::play(&mut view, 2.0)?;
         view.walking = true;
         let me = (view.session.connection.avatar())
             .ok_or("no avatar")?
             .position;
         let up = me.normalize();
-        view.day_fraction = crate::planet_shot::day_for_sun(&view, up, 40.0);
+        if site.is_none() {
+            view.day_fraction = crate::planet_shot::day_for_sun(&view, up, 40.0);
+        } else {
+            // What is heard, gathered as the game gathers it (recorded: no device opened).
+            view.sound = crate::sounds::Sounds::recording();
+        }
         view.day_speed = 0.0;
         let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
-        let mut renderer = pollster::block_on(Renderer::new_headless((1280, 720)))?;
+        // The game's window opens at 1600 × 900; the frames of the screen are of that size.
+        let size = if at_site { (1600, 900) } else { (1280, 720) };
+        let mut renderer = pollster::block_on(Renderer::new_headless(size))?;
         let meshes = DemoMeshes::register_for(&mut renderer);
         let people = People::register(&mut renderer)?;
         let look = me + east * 5.0;
         let camera = crate::planet_view::place(me, east);
+        let ui = egui::Context::default();
+        creeer_ui::theme::apply(&ui);
         Ok(Self {
+            hud: at_site,
+            site,
+            ui,
+            ui_time: 0.0,
+            screen: Screen::default(),
+            game: GameSettings::default(),
+            profiler: crate::profiler_ui::ProfilerWindow::default(),
+            heard: [0; 6],
+            slowest: 0.0,
+            shot_taken: false,
             view,
             renderer,
             meshes,
@@ -176,6 +226,31 @@ impl Player {
             .update(&camera, &mut v.session.connection, surface.flatten());
         v.session.update(dt, (walk, false, DVec3::ZERO));
         self.camera = camera;
+        if self.hud {
+            self.hear(dt);
+        }
+    }
+
+    /// What is heard this frame, as the game gathers it (`app/planet.rs`): the people animated
+    /// (their feet step), then the sounds of what happened.
+    fn hear(&mut self, dt: f64) {
+        // (The frame after a frame was saved waited for the saving: not a frame of the game's.)
+        if !std::mem::take(&mut self.shot_taken) {
+            self.slowest = self.slowest.max(dt);
+        }
+        // (The people only: the trees and the loose things drawn too cost a frame milliseconds.)
+        let snapshot = self.view.session.snapshot();
+        let ground = crate::people_ground::PlanetGround {
+            terrain: &self.view.terrain,
+        };
+        let own = (self.view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
+        self.people.first_person = own.filter(|_| self.view.first_person);
+        let mut scratch = creeer_render::Scene::default();
+        self.people
+            .draw(&snapshot.people, dt, &ground, &mut scratch);
+        let mut sound = std::mem::take(&mut self.view.sound);
+        sound.frame(&self.view, &self.camera, Some(&self.people), dt);
+        self.view.sound = sound;
     }
 
     /// Walks towards `to` (level) until within `within` m, looking where she goes (`look_down`
@@ -196,31 +271,51 @@ impl Player {
         self.play(0.3, DVec3::ZERO);
     }
 
-    /// A key pressed and let go, as the game takes it: the held part's keys first, then the
-    /// world's (G takes or puts down, J fastens, P sets a post, K the next fastener).
+    /// A key pressed and let go, as the game takes it (`app/input.rs`): the actions the
+    /// controls' table binds to it, in the game's order, the first that applies done (the held
+    /// part's keys before the world's; with the menu open, only the menu's).
     pub(crate) fn key(&mut self, code: KeyCode) {
+        self.press(Input::Key(code));
+    }
+
+    /// A key or button pressed and let go (`key`); moving keys are the script's own walking.
+    pub(crate) fn press(&mut self, input: Input) {
         let camera = self.camera();
-        let v = &mut self.view;
-        // The held part's keys, as the controls' table names them (`bindings.rs`).
-        let held = match code {
-            KeyCode::KeyR => Some(Action::StandOrLay),
-            KeyCode::KeyQ => Some(Action::Turn),
-            KeyCode::ControlLeft | KeyCode::ControlRight => Some(Action::Fine),
-            _ => None,
-        };
-        if let Some(action) = held
-            && v.holding.key(action, true)
-        {
-            v.holding.key(action, false);
-            return;
-        }
-        match code {
-            KeyCode::KeyG => v.grab_or_drop(&camera),
-            KeyCode::KeyJ => v.fasten(&camera),
-            KeyCode::KeyP => v.set_post(&camera),
-            KeyCode::KeyK => v.fastening.next(),
-            KeyCode::KeyT => v.send(Command::Throw(camera.forward())),
-            _ => {}
+        let menu = self.screen.menu.is_some();
+        for action in self.game.bindings.in_order(input) {
+            let e = entry(action);
+            if menu && e.context != Context::Always {
+                continue;
+            }
+            let done = match action {
+                _ if e.context == Context::Holding => {
+                    let h = &mut self.view.holding;
+                    let took = h.key(action, true);
+                    h.key(action, false);
+                    took
+                }
+                Action::Menu => {
+                    self.screen.escape(Some(&mut self.view.inventory));
+                    true
+                }
+                Action::Debug => {
+                    self.screen.debug = !self.screen.debug;
+                    true
+                }
+                Action::Kit => {
+                    self.screen.kit = !self.screen.kit;
+                    true
+                }
+                Action::Use => {
+                    self.view.use_tool(&camera);
+                    true
+                }
+                _ if e.held => true,
+                _ => self.view.act(action, &camera),
+            };
+            if done {
+                return;
+            }
         }
     }
 
@@ -253,7 +348,8 @@ impl Player {
         let kit = creeer_sim::items::kit::kit(&data)?;
         let k = (kit.iter().position(|k| k.name == name)).ok_or(format!("no {name}"))?;
         let item = u8::try_from(k).map_err(|e| e.to_string())?;
-        self.view.send(Command::Kit { item, at });
+        self.view
+            .send(creeer_net::message::Command::Kit { item, at });
         Ok(())
     }
 
