@@ -371,3 +371,5 @@ mod build_play;
 
 #[path = "build_deck_tests.rs"]
 mod build_deck;
+#[path = "carry_walk_tests.rs"]
+mod carry_walk;

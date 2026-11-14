@@ -206,6 +206,7 @@ pub fn fall(world: &mut World, index: usize) -> Vec<usize> {
             }
         }
     }
+    clear_of_bodies(world, index, &mut at, q);
     let at_of = at.clone();
     // The spin whose angular momentum, with the ragdoll's inertia, is the body's.
     let mut inertia = DMat3::ZERO;
@@ -292,6 +293,43 @@ pub fn knocked(world: &World, index: usize, up: DVec3, motion: (DVec3, DVec3)) -
         return true;
     }
     super::injury::jolt(world, index, motion).length() > STRUCK
+}
+
+/// Each segment at `at` (turned `q`) that lies in another body than the falling character
+/// `index`, put out of it as out of the ground: its deepest corner [`LIFTED`] clear of that
+/// body's shape, along the way out of it there (the slope of its distance). (Laid out where the
+/// body stood, a felled player's head lay 13 cm inside the crate that hit him: A6, G2.11.)
+fn clear_of_bodies(world: &World, index: usize, at: &mut [DVec3], q: creeer_math::glam::DQuat) {
+    for (p, seg) in at.iter_mut().zip(&SEGMENTS) {
+        let corners = (0..8).map(|k| {
+            let sign = |bit: usize| if k & bit == 0 { -1.0 } else { 1.0 };
+            q * (seg.1 * DVec3::new(sign(1), sign(2), sign(4)))
+        });
+        let corners: Vec<DVec3> = corners.collect();
+        let others = (world.bodies.iter().enumerate()).filter(|(b, _)| *b != index);
+        for (_, body) in others {
+            let s = &body.structure;
+            for (node, shape) in &body.shapes {
+                let (c, r) = (s.position[*node], s.orientation[*node]);
+                if (c - *p).length() > shape.bounding_radius() + seg.1.length() {
+                    continue;
+                }
+                let off = |x: DVec3| shape.distance(c, r, x);
+                let Some(deepest) =
+                    (corners.iter().map(|k| *p + *k)).min_by(|x, y| off(*x).total_cmp(&off(*y)))
+                else {
+                    continue;
+                };
+                let depth = off(deepest);
+                if depth < LIFTED {
+                    let h = 1e-3;
+                    let slope = DVec3::AXES.map(|e| off(deepest + e * h) - off(deepest - e * h));
+                    let out = DVec3::from_array(slope).normalize_or_zero();
+                    *p += out * (LIFTED - depth);
+                }
+            }
+        }
+    }
 }
 
 fn outer(a: DVec3, b: DVec3) -> DMat3 {

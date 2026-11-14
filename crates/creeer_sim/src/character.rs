@@ -20,6 +20,7 @@
 //! balance's) are loads for that step alone: [`release`] takes them off after it, with the struts.
 
 use creeer_math::glam::{DQuat, DVec3};
+use creeer_physics::world::ray::Hit;
 use creeer_physics::world::shape::Shape;
 use creeer_physics::world::strut::Strut;
 use creeer_physics::world::{Body, World};
@@ -196,10 +197,23 @@ pub fn steer(
     let hip = x + up * hip();
     let hit = world.ray(hip, -up, LEG_REACH, Some(index));
     let standing = hit.filter(|h| h.normal.dot(up) > 0.0);
+    // The ground's motion at the foot (a raft, a crate, a lift), the body's rise over it, and
+    // how far the legs press what they step onto (`legs.rs`).
+    let ground_v = |hit: &Hit| {
+        hit.body.map_or(DVec3::ZERO, |(b, n)| {
+            let s = &world.bodies[b].structure;
+            s.velocity[n] + s.angular_velocity[n].cross(hit.point - s.position[n])
+        })
+    };
+    let rising = standing.map(|hit| {
+        let rise = (v - ground_v(&hit)).dot(up);
+        let rest = legs::rest(hit.distance, rise, legs::stepped_onto(world, &hit));
+        (ground_v(&hit), rest)
+    });
     // The legs' spring and damper: a strut from the body's centre to the foot on what the
     // ray found, solved in the step with it (`world/strut.rs`; a load from it on a light body
     // threw it). Set even asleep: a support that wakes wakes the character.
-    let leg = standing.map(|hit| {
+    let leg = standing.zip(rising).map(|(hit, (_, (rest, _)))| {
         let b = hit.body;
         let at_b = b.map_or(hit.point, |(b, n)| {
             let s = &world.bodies[b].structure;
@@ -211,7 +225,7 @@ pub fn steer(
             b,
             at_b,
             direction: up,
-            rest: LEG_LENGTH + CENTRE - HIP,
+            rest: rest + CENTRE - HIP,
             stiffness: LEG_STIFFNESS,
             damping: LEG_DAMPING,
             most: LEG_MOST,
@@ -234,28 +248,15 @@ pub fn steer(
     let mut footing = Footing::default();
     let mut mine = None;
     let (mut force, mut torque) = (DVec3::ZERO, DVec3::ZERO);
-    if let Some(hit) = standing {
-        // The ground's motion at the foot (a raft, a crate, a lift).
-        let ground_v = hit.body.map_or(DVec3::ZERO, |(b, n)| {
-            let s = &world.bodies[b].structure;
-            s.velocity[n] + s.angular_velocity[n].cross(hit.point - s.position[n])
-        });
-        let closing = (v - ground_v).dot(up);
-        let legs = (LEG_STIFFNESS * (LEG_LENGTH - hit.distance) - LEG_DAMPING * closing)
-            .clamp(0.0, LEG_MOST);
+    if let Some((hit, (ground_v, (_, push)))) = standing.zip(rising) {
+        let legs = push.clamp(0.0, LEG_MOST);
         // Walking: towards the velocity asked for, along the ground, relative to it.
         let n = hit.normal;
         let along = |u: DVec3| u - up * u.dot(up);
-        let (mut wanted, going) = (along(walk), along(v - ground_v));
-        if wanted.length() > MOST_SPEED {
-            wanted = wanted.normalize() * MOST_SPEED;
-        }
+        let (wanted, going) = (legs::most(along(walk), MOST_SPEED), along(v - ground_v));
         let stop = usize::from(intent.stopping && wanted == DVec3::ZERO);
         let c = MASS / [RESPONSE.0, RESPONSE.1][stop];
-        let mut stride = (wanted - going) * c;
-        if stride.length() > STRIDE_MOST {
-            stride = stride.normalize() * STRIDE_MOST;
-        }
+        let stride = legs::most((wanted - going) * c, STRIDE_MOST);
         // The foot's force within the friction cone of the ground under it.
         let mu = BOOTS.min(
             hit.body
@@ -305,35 +306,11 @@ pub fn steer(
                 mass: None,
             });
         }
-        // Once landed (held, the key jumped again at the legs' first touch, still falling: hops).
-        let spring = LEG_STIFFNESS * (LEG_LENGTH - hit.distance);
-        let landed = spring >= LANDED.0 && (v - ground_v).dot(up) > -LANDED.1;
-        if jump && v.dot(up) < 0.5 * JUMP_SPEED && legs > 0.0 && landed {
-            let impulse = up * (MASS * (JUMP_SPEED - v.dot(up).max(0.0)));
-            world.apply_impulse(index, 0, impulse, x);
-            if let Some((other, node)) = hit.body {
-                world.apply_impulse(other, node, -impulse, hit.point);
-            }
+        if jump && legs > 0.0 {
+            legs::jump(world, (index, &hit), (x, v, ground_v, up));
         }
     } else if water.is_some_and(|depth| depth > -SWIMS_ABOVE) {
-        // Swimming: towards the velocity asked for, up while asked to rise, within a
-        // swimmer's thrust; the sea's buoyancy and drag are its own (`surroundings.rs`).
-        let along = |u: DVec3| u - up * u.dot(up);
-        let mut stroke = (along(walk) - along(v)) * (MASS / RESPONSE.0);
-        if jump {
-            stroke += up * SWIM_MOST;
-        }
-        if stroke.length() > SWIM_MOST {
-            stroke = stroke.normalize() * SWIM_MOST;
-        }
-        force = stroke;
-        // A swimmer keeps upright too, more weakly.
-        let tilt = (q * DVec3::Y).cross(up);
-        let (k, c, _) = BALANCE;
-        torque = tilt * k - w * c;
-        if torque.length() > SWIM_BALANCE {
-            torque = torque.normalize() * SWIM_BALANCE;
-        }
+        (force, torque) = swim::stroke((walk, jump), (up, q, v, w));
     }
     if let Some((push, hold, mass)) = jetpack(world, index, intent.thrust, w, intent.load) {
         force += push;
@@ -384,7 +361,9 @@ pub use feet::{Reaction, release};
 /// Injury from impacts.
 pub mod injury;
 mod jetpack;
+mod legs;
 mod mass;
+mod swim;
 use jetpack::jetpack;
 pub use mass::{gas, refill, set_load};
 #[cfg(test)]

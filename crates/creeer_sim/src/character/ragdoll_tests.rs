@@ -121,3 +121,35 @@ fn a_fallen_ragdoll_comes_to_rest_with_its_joints_held() {
         .sum();
     assert!((up.structure.masses()[0] - mass).abs() < 1e-9);
 }
+
+/// A crate that struck the head and lies 13 cm into where the body stands: the ragdoll's
+/// segments are laid out clear of it, as of the ground (A6 found a felled player's head laid
+/// 13 cm inside the crate that hit him, G2.11).
+#[test]
+fn a_ragdoll_is_laid_out_clear_of_what_struck_it() {
+    let mut world = World::new(DT);
+    let c = world.add(character::body(DVec3::ZERO, DVec3::Y, DT));
+    let half = DVec3::splat(0.4);
+    let head = SEGMENTS[2];
+    let crate_at = DVec3::new(0.0, head.0.y + head.1.y + half.y - 0.13, head.0.z);
+    let k = world.add(Body::rigid(Shape::Box { half }, 200.0, crate_at, DT));
+    let parts = fall(&mut world, c);
+    let shape = Shape::Box { half };
+    for (n, &p) in parts.iter().enumerate() {
+        let s = &world.bodies[p].structure;
+        let corners = (0..8).map(|i| {
+            let sign = |bit: usize| if i & bit == 0 { -1.0 } else { 1.0 };
+            s.position[0]
+                + s.orientation[0] * (SEGMENTS[n].1 * DVec3::new(sign(1), sign(2), sign(4)))
+        });
+        let crate_ = &world.bodies[k].structure;
+        let deepest = corners
+            .map(|x| shape.distance(crate_.position[0], crate_.orientation[0], x))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            deepest > 0.0,
+            "segment {n} {:.3} m into the crate",
+            -deepest
+        );
+    }
+}
