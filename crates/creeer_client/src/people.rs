@@ -17,6 +17,13 @@ use creeer_render::{Character, Material, Renderer, Scene};
 use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT, finger_bones};
 use std::collections::HashMap;
 
+/// The trunk's and the head's segments (the ragdoll's order), and how far the head is sunk into
+/// the trunk when the person is seen from within (m, in the trunk's frame: its centre from the
+/// eyes' height to the belly's).
+const TRUNK: usize = 1;
+const HEAD: usize = 2;
+const SUNK: f64 = 0.55;
+
 /// The catalogue's axe (`tools.ron`), whose swing a made tool's is drawn with.
 const AXE: u8 = 2;
 
@@ -66,6 +73,9 @@ pub struct People {
     outfits: HashMap<Vec<String>, OutfitId>,
     /// Their animation (G1.3g).
     animator: Animator,
+    /// The person seen from within (first person, G2.11): drawn with the head sunk into the
+    /// body, so the eyes see their own arms, hands and what they hold.
+    pub first_person: Option<u32>,
 }
 
 impl std::fmt::Debug for People {
@@ -125,6 +135,7 @@ impl People {
             held,
             outfits: HashMap::new(),
             animator,
+            first_person: None,
         };
         for worn in [&STARTING_OUTFIT[..], &["base_layer"]] {
             people.add_outfit(renderer, worn);
@@ -171,7 +182,18 @@ impl People {
             let swing = (swung.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
             self.animator.swing(p.key, swing);
             self.animator.holding(p.key, p.holding);
-            let bones = self.animator.bones(p.key, &p.body, dt, ground);
+            let mut bones = self.animator.bones(p.key, &p.body, dt, ground);
+            // Seen from within (first person): the head, where the eyes are, sunk into the body,
+            // its neck into the trunk, so the eyes see their own arms and hands at work (G2.11:
+            // not drawn at all, the part held floated before the eyes in no hands).
+            // (Sunk with the trunk's own turn, so stooping it stays inside: sunk straight down,
+            // the top of the head showed between the stooped shoulders.)
+            if self.first_person == Some(p.key)
+                && matches!(p.body, Body::Standing(..))
+                && let Some(&trunk) = bones.get(TRUNK)
+            {
+                bones[HEAD] = trunk * Frame64::new(DVec3::NEG_Y * SUNK, DQuat::IDENTITY);
+            }
             let made = p
                 .made
                 .as_ref()

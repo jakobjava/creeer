@@ -184,12 +184,11 @@ impl Running {
             Overlay::Off,
         );
         if let Some(people) = &mut self.people {
-            // In first person the player's own body is not drawn: the eyes are in it (G2.10).
+            // In first person the player's own body is seen from within, its head sunk into it
+            // (G2.11: their own arms and hands at work; not drawn, the part floated).
             let own = (planet.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-            let drawn_people: Vec<_> = (snapshot.people.iter())
-                .filter(|p| !(planet.first_person && Some(p.key) == own))
-                .cloned()
-                .collect();
+            people.first_person = own.filter(|_| planet.first_person);
+            let drawn_people = snapshot.people.clone();
             let ground = crate::people_ground::PlanetGround {
                 terrain: &planet.terrain,
             };

@@ -53,6 +53,8 @@ pub struct Seen {
     /// Whether what the hands hold is steered by the mouse (the holding keys apply), and
     /// whether it is a part to build with (too big for a pocket).
     pub holding: bool,
+    /// Whether it is kept still where it is (a nail was driven into it while held: G lets go).
+    pub pinned: bool,
     pub hands_part: bool,
     /// A tool in hand (1 to 4).
     pub tool: bool,
@@ -112,8 +114,12 @@ pub fn prompts(seen: &Seen) -> Prompts {
     }
     if let Some(word) = &seen.hands {
         let mut add = |action, verb| out.hands.push(prompt(action, verb));
-        add(Action::Take, "Put down");
-        if seen.holding {
+        if seen.pinned {
+            add(Action::Take, "Let go: the nails hold it");
+        } else {
+            add(Action::Take, "Put down");
+        }
+        if seen.holding && !seen.pinned {
             add(Action::StandOrLay, "Stand up or lay down");
             add(Action::Turn, "Turn (hold, move the mouse)");
             add(Action::Slide, "Slide along itself");
@@ -136,7 +142,12 @@ pub fn prompts(seen: &Seen) -> Prompts {
 
 /// What can be done with `a`, within reach.
 fn aimed(seen: &Seen, a: Aimed, out: &mut Prompts) {
-    let fastener = seen.fastener.as_deref().unwrap_or("nothing chosen");
+    // (An empty name is the hand's own choice: the shortest nail that holds, ADR-0036.)
+    let fastener = match seen.fastener.as_deref() {
+        Some("") => "a nail at hand",
+        Some(f) => f,
+        None => "nothing chosen",
+    };
     let fasten = format!("Fasten ({fastener})");
     let armed = seen.tool || seen.hands.is_some();
     let empty = seen.hands.is_none();

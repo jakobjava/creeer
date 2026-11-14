@@ -105,6 +105,7 @@ pub(crate) fn seen(view: &PlanetView, target: Option<&Target>) -> (Seen, Option<
         walking: view.walking,
         hands: c.inventory.hands.as_ref().map(|h| h.word.clone()),
         holding: view.holding.holding(),
+        pinned: view.holding.pinned(),
         hands_part,
         tool: view.wielding.is_some(),
         fastener: view.fastening.name().map(|f| f.replace('_', " ")),

@@ -42,6 +42,9 @@ mod animate;
 mod app;
 mod bindings;
 mod bindings_keys;
+mod build_play;
+mod build_play_scripts;
+mod build_play_shot;
 mod circuit_bench;
 mod content;
 mod control_panel;
@@ -210,6 +213,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--planet-bench") {
         return planet_shot::descent_bench(&args);
+    }
+    if args.iter().any(|a| a == "--build-play") {
+        return build_play::run(&args);
     }
     if args.iter().any(|a| a == "--planet") {
         return planet_shot::run(&args);

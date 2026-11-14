@@ -274,7 +274,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The time of day (fraction) at which the sun stands `elevation` degrees above the horizon
 /// at `up`, in the morning.
-fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
+pub(crate) fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
     let target = det::sin(elevation.to_radians());
     let mut best = (f64::MAX, 0.0);
     for i in 0..4000 {

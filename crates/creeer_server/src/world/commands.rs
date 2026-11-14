@@ -87,7 +87,13 @@ impl ServerWorld {
             Command::Fasten { target, fastener } => {
                 let by = by.ok_or("only a player")?;
                 let part = if let Some(part) = target.body {
-                    self.reached(by, Some(part), target.at, target.seen)?;
+                    // In the hands, it is where the hands hold it; the point is where the
+                    // crosshair rests it against something (G2.11).
+                    if self.carried(by) == Some(part) {
+                        within(target.at)?;
+                    } else {
+                        self.reached(by, Some(part), target.at, target.seen)?;
+                    }
                     part
                 } else {
                     // A standing tree's trunk aimed at (G2.9): the part touching it there.
