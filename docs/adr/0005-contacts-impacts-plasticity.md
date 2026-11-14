@@ -558,3 +558,47 @@ The 20° rim case was traced in the physics alone, in a field dug as the terrain
   - a bump of the ground found anew already pressed in (30°, with the patch);
   - a pole's foot at a hole's round bottom (10°, with the patch; in the dug field with the old anchors too). It falls freely two steps (0.163 and 0.327 m/s), lands, ends the next step 1.1 cm higher with about 27 J in its contacts, and is stopped dead, over and over.
 - **Without the patch, over the last second:** 10° at 0.021 m/s; 30° at 0.054 m/s and 1.18 rad/s, its foot 12.5 mm on. Neither is yet at rest over a whole second.
+
+## Amended in G2.11 (2026-11-13): a body put into the world inside another
+
+*log_bridge* froze for 2.6 s at the tick its plank broke (G2P, P3; `docs/g2p-plan.md`). Taken apart tick by tick (`creeer_server/src/play/break_probe.rs`, run by hand), and through the energy guard's books in every substep (a temporary trace, not kept), it was not the plank's fracture. The first crate fell on a builder's head; knocked down, he became a ragdoll whose segments are laid out from his standing pose, the ground alone cleared (`creeer_sim::character::ragdoll::fall`). Its head (7.25 kg) was laid out 13.4 cm inside the 200 kg crate.
+
+### The cause: new bodies outside the guard's books
+- The contact crate–head held **221.8 MJ** at the next step's start. The step was an impact on a structure (0.5 ms substeps). The energy guard takes what contacts found anew hold beyond what the last step left (F6, `structure/group.rs`), but it knows the last step's books only for bodies that step moved (`left_by_group`: none for new bodies), and an impact's step drops them (`set_left(None)`). It counted the 222 MJ as energy the step had.
+- Across the tick the world's energy rose from 4,299 J to 388,487 J: the crate left at 43.9 m/s (217.8 kJ), the segments at up to 115 m/s (155.8 kJ), the plank was smashed into 6 pieces. The "19 pieces of 1–32 kg" were the 14 segments and those 6.
+- The same in the scene's set-up: a sill laid level by its middle on sloping ground held 580 J in the ground at the first tick, and was thrown by it; in *toolmaking* stones laid in the ground held up to 1.6 J.
+
+### Decision (`world/body.rs`, `structure/owed.rs`, `contact/normal.rs`)
+- **A body put into the world since its last step is born** (`Body::born`, set by `World::add`, cleared after the world's next step; not saved; a structure's pieces, `fall_apart`, go on as the body was).
+- **What a born body's contacts hold when first measured is owed** (`Coupling::owed`): each such contact owes the least of what it held then and holds now. What it gains after is the motion's.
+- **The guard counts only what is still owed at a substep's end.** Its target is the energy before, less what was owed then, plus what is still owed: with nothing owed, the old target bit for bit.
+- **The velocity the overlap gave is taken back out of what the substep gained** (`owed::remove_gained`): each velocity v₀ + α·(v − v₀), α found from the kinetic energy's parabola in α; only if even α = 0 leaves too much is every velocity scaled down. The bodies are moved apart by the step and not thrown apart: a split impulse, in an energy-minimising step.
+- **A copy of a body as it is elsewhere is not born** (`World::add_copy`: a client's prediction of the server's bodies; its contacts' energy exists there).
+- *log_bridge*'s sills are laid along the ground under their ends, a millimetre clear (`play/log_bridge.rs`).
+
+### Prior work
+| Source | What it does | For Creëer |
+|---|---|---|
+| Bullet's split impulse (Coumans) | A penetration is resolved by a pseudo-velocity that moves the bodies and is then dropped | Taken: the step moves the bodies apart, the velocity it gave is taken back |
+| PhysX `maxDepenetrationVelocity`; Box2D v3 `contactPushMaxVelocity` | The speed an overlap's push-out may give is capped | The same aim; a cap is a chosen speed, the owed energy is measured |
+| Li et al., "Incremental Potential Contact" (*SIGGRAPH* 2020) | Barriers: an overlap never arises | Creëer's penalty contacts allow it; a spawn inside a body is its spawner's fault, but must not become energy |
+| Unity's `Physics.ComputePenetration`; engines' spawn checks | A spawn place is checked and moved clear | The ragdoll's layout should be (the character's stream) |
+
+### Measured and rejected
+| Tried | Measured | Why rejected |
+|---|---|---|
+| The owed energy taken by scaling every velocity down (`remove_kinetic`, as the guard's surplus is) | In *log_bridge* the crate's 4 m/s fall would stop with the head's push-out: 222 MJ to take from 2.4 kJ of motion | Takes the motion the bodies had; the substep's gain is the overlap's |
+| Every body added born, a client's prediction too | *builders*' clients 1,176 → 1,348 Newton iterations in a tick (gate 1,294), *log_bridge*'s 382 → 587 (gate 420): every correction re-adds the nearby bodies | `World::add_copy` |
+| *log_bridge*'s sills left as laid (level by their middle) | The scene's nailing at tick 360: 145 iterations (gate 142), the sills settled otherwise | Laid along the ground |
+| *log_bridge*'s sills laid level, raised clear of the ground under their ends | They fell up to some centimetres at the first tick: 182 iterations at tick 1 (gate 142) | Laid along the ground |
+
+### Validation added (`world/born_tests.rs`)
+The bound: the bodies' energy never above what they had plus what lifting the pushed-out body by its overlap takes (m·g·depth, a tenth allowed for the limit below); no body faster than falling through the overlap would make it beyond its start.
+- A 7.25 kg box put 13.4 cm into a 200 kg crate resting on the ground: pushed out (on the crate within 1 mm after 2 s), gained 10.0 J against a lift of 9.5 J, never faster than 1.6 m/s. Without the change it gained 273 J.
+- The same as the crate lands at 4 m/s (an impact): within the bound. Without: 217 J.
+- The box put 3 cm into a steel beam's joint as a 50 kg block lands on the beam's other end (impact substeps): within the bound. Without: 26.3 kJ.
+- Every other physics test as before, bit for bit (225 tests, the solver's golden hashes among them).
+
+### Limits (`docs/future-improvements.md`)
+- **What a born body's contacts still hold after its first step is the motion's.** A 13.4 cm overlap is resolved 79 % in one 60 Hz step; the rest lifted the box 6.8 mm above where it rests (0.47 J).
+- **A ragdoll is still laid out inside what knocked it down** (the character's): now pushed out, not thrown.

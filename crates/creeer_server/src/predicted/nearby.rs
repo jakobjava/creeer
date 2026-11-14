@@ -255,7 +255,7 @@ impl Templates {
         let s = &mut b.structure;
         (s.position[0], s.orientation[0]) = (x, q);
         (s.velocity[0], s.angular_velocity[0]) = (v, w);
-        let index = world.add(b);
+        let index = world.add_copy(b);
         if state.asleep && own.is_none() {
             world.bodies[index].sleep_now();
         }

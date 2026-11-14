@@ -45,6 +45,14 @@ impl World {
     /// the turn it made, and redone from the start with the substeps that turn needs when a
     /// box turned more than twice [`MAX_TURN`] per substep.
     pub fn step(&mut self) {
+        self.step_turned();
+        // Bodies put in since the last step have had their first (`Body::born`).
+        for body in &mut self.bodies {
+            body.born = false;
+        }
+    }
+
+    fn step_turned(&mut self) {
         let _scope = creeer_core::profile::scope("physics");
         let found = self.detect_awake();
         let Plan { boxes, roots, need } = self.plan(&found);

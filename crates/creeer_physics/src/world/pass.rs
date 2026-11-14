@@ -159,6 +159,7 @@ impl World {
                 |((((g, (c, p, measures, shapes)), left), bodies), joints)| {
                     let mut contacts = Contacts::new(c, p, measures, (ground.clone(), shapes));
                     contacts.set_left(left);
+                    contacts.set_born(bodies.iter().map(|b| b.born).collect());
                     contacts.joints = joints;
                     (bodies, contacts, Vec::new(), g)
                 },
