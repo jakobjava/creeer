@@ -37,10 +37,10 @@ pub(crate) fn fill(pocket: &creeer_net::message::StoreView) -> f32 {
 /// The panel's width (points).
 const WIDE: f32 = 300.0;
 
-/// Draws the panel at the bottom right.
+/// Draws the panel at the bottom right: `held` names what the hands hold (`hud_seen::held_name`).
 pub(crate) fn draw(
     ctx: &egui::Context,
-    inventory: &Inventory,
+    (inventory, held): (&Inventory, Option<&str>),
     tool: Option<&str>,
     keys: &Bindings,
 ) {
@@ -73,8 +73,7 @@ pub(crate) fn draw(
             colour,
         )
     };
-    let held = inventory.hands.as_ref();
-    let word = held.map_or("nothing", |h| h.word.as_str());
+    let word = held.unwrap_or("nothing");
     let label = text(pos2(left, y), "In your hands", SMALL, TEXT_DIM);
     text(pos2(label.right() + 10.0, y), word, BODY, TEXT);
     y += line;

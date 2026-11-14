@@ -39,8 +39,10 @@ pub(crate) fn draw(
         let prompts = crate::prompts::prompts(&seen);
         crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, &game.bindings);
         let tool = planet.wielding.and_then(tool_name);
+        let held = crate::hud_seen::held_name(planet);
         let inventory = &planet.session.connection.inventory;
-        crate::hud_hands::draw(ctx, inventory, tool.as_deref(), &game.bindings);
+        let hands = (inventory, held.as_deref());
+        crate::hud_hands::draw(ctx, hands, tool.as_deref(), &game.bindings);
     }
     crate::inventory_ui::vitals(ctx, &planet.session.connection);
     if !game.controls_seen && screen.menu.is_none() {

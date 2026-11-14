@@ -168,6 +168,16 @@ pub(crate) fn seen(view: &PlanetView, target: Option<&Target>) -> (Seen, Option<
     (seen, Some(name))
 }
 
+/// What the hands hold, named as the crosshair names it (a pole, not a "stick" 1.6 m long).
+pub(crate) fn held_name(view: &PlanetView) -> Option<String> {
+    let c = &view.session.connection;
+    let word = &c.inventory.hands.as_ref()?.word;
+    match c.own_load().and_then(|id| c.kinds.get(&id)) {
+        Some(Kind::Body(shape, _)) => Some(named(word, look(shape), false, 0.0)),
+        _ => Some(word.clone()),
+    }
+}
+
 /// The ground at `point`, with what it is made of where it would be dug.
 fn ground_name(view: &PlanetView, point: DVec3) -> String {
     let below = point - point.normalize() * 0.5;
