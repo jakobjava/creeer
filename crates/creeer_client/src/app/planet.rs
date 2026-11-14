@@ -49,6 +49,8 @@ impl Running {
     pub(super) fn enter_bridge(&mut self) -> Result<(), String> {
         let (view, site) = crate::bridge_site::view()?;
         self.camera = crate::bridge_site::camera(&site);
+        // (Not the tech sandbox's title: the player's game, G2.11 Q.)
+        self.window.set_title("Creëer: the bridge site");
         self.planet = Some(view);
         self.lighting_key = None;
         Ok(())
@@ -137,7 +139,9 @@ impl Running {
         let mut snapshot = planet.snapshot();
         // What a creative server shows of what is built: the overlay draws the structures.
         let stress = planet.stress;
-        let seen = (planet.session.inspection(stress.on)).unwrap_or_default();
+        let seen = planet.session.inspection(stress.on);
+        self.screen.creative = seen.is_some();
+        let seen = seen.unwrap_or_default();
         stress.leave_out(&mut snapshot.beams);
         physics_view::draw(
             &mut self.scene,

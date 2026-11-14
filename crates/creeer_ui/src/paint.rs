@@ -80,20 +80,36 @@ pub struct Row<'a> {
 const PLATE: Color32 = Color32::from_rgba_premultiplied(41, 38, 36, 225);
 const PAD: f32 = 8.0;
 
-/// `rows` stacked on a raised plate whose top-left corner is at `at`: the key caps in a column,
-/// their words after them aligned. Returns the plate.
-pub fn plate(painter: &Painter, at: Pos2, rows: &[Row<'_>]) -> Rect {
-    let caps: Vec<f32> = (rows.iter())
+/// A plate's row's height.
+fn row_height(r: &Row<'_>) -> f32 {
+    r.size + if r.key.is_some() { 8.0 } else { 4.0 }
+}
+
+/// The key caps' column on a plate of `rows`, and the plate's size.
+fn plate_layout(painter: &Painter, rows: &[Row<'_>]) -> (f32, egui::Vec2) {
+    let column = (rows.iter())
         .map(|r| r.key.map_or(0.0, |k| cap_width(painter, k, r.size * 0.9)))
-        .collect();
-    let column = caps.iter().copied().fold(0.0, f32::max);
+        .fold(0.0, f32::max);
     let indent = |r: &Row<'_>| if r.key.is_some() { column + 8.0 } else { 0.0 };
-    let height = |r: &Row<'_>| r.size + if r.key.is_some() { 8.0 } else { 4.0 };
     let wide = (rows.iter())
         .map(|r| indent(r) + width(painter, r.text, r.size))
         .fold(0.0, f32::max);
-    let tall: f32 = rows.iter().map(height).sum();
-    let rect = Rect::from_min_size(at, vec2(wide + 2.0 * PAD, tall + 2.0 * PAD));
+    let tall: f32 = rows.iter().map(row_height).sum();
+    (column, vec2(wide + 2.0 * PAD, tall + 2.0 * PAD))
+}
+
+/// The size of the plate `rows` make (`plate`).
+pub fn plate_size(painter: &Painter, rows: &[Row<'_>]) -> egui::Vec2 {
+    plate_layout(painter, rows).1
+}
+
+/// `rows` stacked on a raised plate whose top-left corner is at `at`: the key caps in a column,
+/// their words after them aligned. Returns the plate.
+pub fn plate(painter: &Painter, at: Pos2, rows: &[Row<'_>]) -> Rect {
+    let (column, size) = plate_layout(painter, rows);
+    let indent = |r: &Row<'_>| if r.key.is_some() { column + 8.0 } else { 0.0 };
+    let height = row_height;
+    let rect = Rect::from_min_size(at, size);
     raised(painter, rect, PLATE);
     let mut y = rect.top() + PAD;
     for r in rows {
@@ -109,19 +125,49 @@ pub fn plate(painter: &Painter, at: Pos2, rows: &[Row<'_>]) -> Rect {
     rect
 }
 
+/// The gap between two rows of a strip (points).
+const SPACE: f32 = 18.0;
+
+/// A strip's row's width: its key cap and its words.
+fn item_width(painter: &Painter, r: &Row<'_>) -> f32 {
+    r.key
+        .map_or(0.0, |k| cap_width(painter, k, r.size * 0.9) + 6.0)
+        + width(painter, r.text, r.size)
+}
+
+/// `rows` side by side on raised plates no wider than `most` (points), as many lines as they
+/// need, the last line's bottom middle at `at` and the others stacked above it, in order.
+/// Returns the space they take (`at` alone when there are none).
+pub fn strips(painter: &Painter, at: Pos2, rows: &[Row<'_>], most: f32) -> Rect {
+    let mut lines: Vec<Vec<Row<'_>>> = vec![Vec::new()];
+    let mut wide = 0.0;
+    for r in rows {
+        let w = item_width(painter, r) + SPACE;
+        let line = lines.last_mut().expect("a line");
+        if !line.is_empty() && wide + w > most - 2.0 * PAD {
+            lines.push(Vec::new());
+            wide = 0.0;
+        }
+        lines.last_mut().expect("a line").push(*r);
+        wide += w;
+    }
+    let mut taken = Rect::from_min_max(at, at);
+    let mut bottom = at;
+    for line in lines.iter().rev().filter(|l| !l.is_empty()) {
+        let plate = strip(painter, bottom, line);
+        taken = taken.union(plate);
+        bottom = pos2(at.x, plate.top() - 4.0);
+    }
+    taken
+}
+
 /// `rows` side by side on one raised plate, its bottom's middle at `at`: each key cap, then its
 /// words. Returns the plate.
 pub fn strip(painter: &Painter, at: Pos2, rows: &[Row<'_>]) -> Rect {
-    const SPACE: f32 = 18.0;
-    let item = |r: &Row<'_>| {
-        r.key
-            .map_or(0.0, |k| cap_width(painter, k, r.size * 0.9) + 6.0)
-            + width(painter, r.text, r.size)
-    };
     let tall = rows.iter().map(|r| r.size + 8.0).fold(0.0, f32::max);
     #[allow(clippy::cast_precision_loss)] // a few rows
-    let wide: f32 =
-        rows.iter().map(item).sum::<f32>() + SPACE * rows.len().saturating_sub(1) as f32;
+    let wide: f32 = rows.iter().map(|r| item_width(painter, r)).sum::<f32>()
+        + SPACE * rows.len().saturating_sub(1) as f32;
     let size = vec2(wide + 2.0 * PAD, tall + 2.0 * PAD);
     let rect = Rect::from_min_size(at - vec2(size.x * 0.5, size.y), size);
     raised(painter, rect, PLATE);

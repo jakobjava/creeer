@@ -10,6 +10,8 @@ use creeer_sim::items::Item;
 impl ServerWorld {
     /// Avatar `id`, new: in survival, its body without the jetpack's tank.
     pub(super) fn equip(&mut self, id: EntityId) {
+        // Its player told what it carries from the start (G2.11 Q: else not until it changed).
+        self.items.changed.insert(id);
         if self.creative {
             return;
         }

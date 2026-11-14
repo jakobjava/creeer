@@ -2,6 +2,11 @@
 //! (`hud_seen.rs`), whether it is in reach, and what can be done with it now, each with its key
 //! from the controls' table; and, low in the middle by the hands, what can be done with what
 //! they hold. Only what a person on site would know (plan.md, principle 13).
+//!
+//! Where the plate of what the crosshair is on goes is the player's setting (G2.11 Q): at the
+//! bottom, above what the hands can do, so the screen's centre stays the world's (`art-style.md`
+//! §10), or beside the crosshair. The crosshair itself rings in the highlight wherever the plate
+//! is, when something can be done.
 
 use crate::bindings::Bindings;
 use crate::prompts::{Prompt, Prompts};
@@ -11,9 +16,21 @@ use creeer_ui::theme::{BODY, TEXT, WARN};
 
 /// The name's size, a little above the prompts'.
 const NAME: f32 = 17.0;
+/// The room the bottom corners' panels take (the hands' at the right, the vitals' at the left),
+/// from each side of the screen (points): the prompts at the bottom stay between them.
+pub(crate) const CORNER: f32 = crate::hud_hands::WIDE + 32.0;
+/// The gap above the screen's bottom and between the bottom's plates (points).
+const EDGE: f32 = 16.0;
+const GAP: f32 = 8.0;
 
-/// Draws the crosshair, the plate beside it and the hands' strip.
-pub(crate) fn draw(ctx: &egui::Context, name: Option<&str>, p: &Prompts, keys: &Bindings) {
+/// Draws the crosshair, the plate of what it is on (`beside` it, else at the bottom) and the
+/// hands' strips.
+pub(crate) fn draw(
+    ctx: &egui::Context,
+    name: Option<&str>,
+    p: &Prompts,
+    (keys, beside): (&Bindings, bool),
+) {
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("crosshair"),
@@ -28,6 +45,13 @@ pub(crate) fn draw(ctx: &egui::Context, name: Option<&str>, p: &Prompts, keys: &
         Cross::Plain
     };
     paint::crosshair(&painter, centre, cross);
+    // What the hands can do, at the bottom between the corners' panels.
+    let most = (screen.width() - 2.0 * CORNER).max(240.0);
+    let names: Vec<String> = p.hands.iter().map(|x| keys.name(x.action)).collect();
+    let hands: Vec<Row<'_>> = prompt_rows(&p.hands, &names).collect();
+    let bottom = pos2(centre.x, screen.bottom() - EDGE);
+    let taken = paint::strips(&painter, bottom, &hands, most);
+    // What the crosshair is on.
     let names: Vec<String> = p.aimed.iter().map(|x| keys.name(x.action)).collect();
     let mut rows: Vec<Row<'_>> = Vec::new();
     if let Some(name) = name {
@@ -45,14 +69,21 @@ pub(crate) fn draw(ctx: &egui::Context, name: Option<&str>, p: &Prompts, keys: &
         size: BODY,
     }));
     rows.extend(prompt_rows(&p.aimed, &names));
-    if !rows.is_empty() {
-        paint::plate(&painter, centre + vec2(26.0, 18.0), &rows);
+    if rows.is_empty() {
+        return;
     }
-    let names: Vec<String> = p.hands.iter().map(|x| keys.name(x.action)).collect();
-    let rows: Vec<Row<'_>> = prompt_rows(&p.hands, &names).collect();
-    if !rows.is_empty() {
-        paint::strip(&painter, pos2(centre.x, screen.bottom() - 16.0), &rows);
-    }
+    let at = if beside {
+        centre + vec2(26.0, 18.0)
+    } else {
+        let size = paint::plate_size(&painter, &rows);
+        let above = if hands.is_empty() {
+            bottom.y
+        } else {
+            taken.top() - GAP
+        };
+        pos2(centre.x - size.x * 0.5, above - size.y)
+    };
+    paint::plate(&painter, at, &rows);
 }
 
 /// Each prompt as a row: its key cap and its verb.

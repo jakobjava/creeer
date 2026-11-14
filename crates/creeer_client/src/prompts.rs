@@ -56,6 +56,8 @@ pub struct Seen {
     /// Whether it is kept still where it is (a nail was driven into it while held: G lets go).
     pub pinned: bool,
     pub hands_part: bool,
+    /// Whether what the hands hold is small enough for a pocket (a 25 kg block is not).
+    pub hands_pocketable: bool,
     /// A tool in hand (1 to 4).
     pub tool: bool,
     /// What the crosshair is on, near enough to be named.
@@ -126,7 +128,7 @@ pub fn prompts(seen: &Seen) -> Prompts {
         }
         if seen.hands_part {
             add(Action::SetPost, "Set it in the ground");
-        } else {
+        } else if seen.hands_pocketable {
             add(Action::Pocket, "Put in a pocket");
         }
         if word == "stick" && !seen.hands_part {
@@ -149,14 +151,16 @@ fn aimed(seen: &Seen, a: Aimed, out: &mut Prompts) {
         None => "nothing chosen",
     };
     let fasten = format!("Fasten ({fastener})");
-    let armed = seen.tool || seen.hands.is_some();
+    // (A part to build with is laid and fastened, not swung: G2.11 Q, a stringer carried to the
+    // gully offered to dig the ground with it.)
+    let armed = seen.tool || (seen.hands.is_some() && !seen.hands_part);
     let empty = seen.hands.is_none();
     let mut add = |action, verb: &str| out.aimed.push(prompt(action, verb));
     // A click: strike with what is in hand, or dig.
     match a.what {
         What::Thing | What::Tree if armed && !a.in_hands => add(Action::Use, "Strike"),
         What::Ground if armed => add(Action::Use, "Dig"),
-        What::Ground => add(Action::Use, "Dig with your hands"),
+        What::Ground if empty => add(Action::Use, "Dig with your hands"),
         _ => {}
     }
     if a.what == What::Thing && empty {

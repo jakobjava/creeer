@@ -113,6 +113,7 @@ fn a_stick_in_hand_strikes_strips_bark_and_binds_a_stone_aimed_at() {
     };
     let seen = Seen {
         hands: Some("stick".into()),
+        hands_pocketable: true,
         aimed: Some(stone),
         ..walking()
     };
@@ -120,6 +121,13 @@ fn a_stick_in_hand_strikes_strips_bark_and_binds_a_stone_aimed_at() {
     assert_eq!(actions(&p.aimed), [Action::Use, Action::Bind]);
     let hands = actions(&p.hands);
     assert!(hands.contains(&Action::Strip) && hands.contains(&Action::Pocket));
+    // A 25 kg granite block is not offered a pocket (G2.11 Q).
+    let block = Seen {
+        hands: Some("granite block".into()),
+        hands_pocketable: false,
+        ..walking()
+    };
+    assert!(!actions(&prompts(&block).hands).contains(&Action::Pocket));
 }
 
 #[test]
@@ -133,8 +141,19 @@ fn the_ground_is_dug_with_bare_hands_or_a_tool() {
         ..walking()
     };
     assert_eq!(prompts(&bare).aimed[0].verb, "Dig with your hands");
-    let armed = Seen { tool: true, ..bare };
+    let armed = Seen {
+        tool: true,
+        ..bare.clone()
+    };
     assert_eq!(prompts(&armed).aimed[0].verb, "Dig");
+    // A part to build with in the hands is not dug with, nor are bare hands offered (G2.11 Q).
+    let part = Seen {
+        hands: Some("stringer".into()),
+        holding: true,
+        hands_part: true,
+        ..bare
+    };
+    assert!(!actions(&prompts(&part).aimed).contains(&Action::Use));
 }
 
 #[test]

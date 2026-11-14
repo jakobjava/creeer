@@ -27,13 +27,28 @@ pub(crate) fn game_screen(
     (game, screen): (&mut GameSettings, &mut Screen),
     (seen, tick): (&creeer_server::world::site::Inspection, u64),
 ) -> (Request, crate::menu::Asked) {
+    screen.failed = (crate::stress_view::told(seen, tick).iter())
+        .map(|(f, _)| f.words.clone())
+        .collect();
     let request = draw(ctx, planet, camera, shown, (&*game, &mut *screen));
     let asked = crate::menu::draw(ctx, screen, game, Some(&mut *planet));
-    if let Some(scale) = planet.stress.heatmap() {
-        creeer_ui::heatmap_legend(ctx, &scale, "Share of what breaks it", "%");
+    // (Not over the menu, as the rest of the HUD: the legend's window was drawn over the dimmed
+    // world and beside the menu, G2.11 Q.)
+    if screen.menu.is_none() {
+        if let Some(scale) = planet.stress.heatmap() {
+            legend(ctx, &scale);
+        }
+        crate::stress_view::hud(ctx, camera, seen, tick);
     }
-    crate::stress_view::hud(ctx, camera, seen, tick);
     (request, asked)
+}
+
+/// The stress overlay's legend (O), at the bottom left above the vitals: the bottom right is the
+/// hands' panel's (G2.11 Q: drawn there, the two were drawn over each other).
+pub(crate) fn legend(ctx: &egui::Context, scale: &creeer_render::Heatmap) {
+    let title = ("Share of what breaks it", "%");
+    let at = (egui::Align2::LEFT_BOTTOM, [16.0, -60.0]);
+    creeer_ui::heatmap_legend_at(ctx, scale, title, at);
 }
 
 /// Draws the planet game's screen; returns what the app should do.
@@ -51,19 +66,22 @@ pub(crate) fn draw(
     }
     crate::inventory_ui::window(ctx, planet, camera, &game.bindings);
     if screen.kit {
-        crate::kit_ui::window(ctx, &mut screen.kit, planet, camera);
+        let take = game.bindings.name(Action::Take);
+        crate::kit_ui::window(ctx, &mut screen.kit, (planet, camera), &take);
     }
     if screen.menu.is_none() {
         let target = crate::planet_aim::target(planet, camera);
-        crate::hud_feedback::draw(ctx, &planet.session.connection);
+        crate::hud_feedback::draw(ctx, &planet.session.connection, &screen.failed);
         let (seen, name) = crate::hud_seen::seen(planet, target.as_ref());
         let prompts = crate::prompts::prompts(&seen);
-        crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, &game.bindings);
+        let keys = (&game.bindings, game.prompts_beside);
+        crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, keys);
         let tool = planet.wielding.and_then(tool_name);
         let held = crate::hud_seen::held_name(planet);
         let inventory = &planet.session.connection.inventory;
         let hands = (inventory, held.as_deref());
-        crate::hud_hands::draw(ctx, hands, tool.as_deref(), &game.bindings);
+        let keys = (&game.bindings, screen.creative);
+        crate::hud_hands::draw(ctx, hands, tool.as_deref(), keys);
     }
     crate::inventory_ui::vitals(ctx, &planet.session.connection);
     if !game.controls_seen && screen.menu.is_none() {

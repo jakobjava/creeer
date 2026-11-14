@@ -327,9 +327,9 @@ impl PlanetView {
         None
     }
 
-    /// Applies the active tool where the camera looks; walking with a tool or anything in the
-    /// hands (G1.6d: a stone, a made axe), strikes what the crosshair is on within reach (G1.4e);
-    /// with bare hands, digs the ground within reach (G1.5).
+    /// Flying, applies the sandbox tool where the camera looks. Walking (never the sandbox tool,
+    /// G2.11 Q), with a tool or anything in the hands strikes what the crosshair is on within
+    /// reach (G1.4e, G1.6d); with bare hands, digs the ground within reach (G1.5).
     pub fn use_tool(&mut self, camera: &Camera) {
         let armed = self.wielding.is_some() || self.carrying();
         let target = (self
@@ -337,8 +337,9 @@ impl PlanetView {
             .then(|| crate::planet_aim::target(self, camera)))
         .flatten()
         .filter(|t| t.in_reach && (armed || t.aimed.body.is_none() && t.loose.is_none()));
-        if self.walking && (armed || target.as_ref().is_some_and(|t| t.tree.is_none())) {
-            match target.map(|t| (t.loose, t.tree, t.aimed)) {
+        if self.walking {
+            let can = armed || target.as_ref().is_some_and(|t| t.tree.is_none());
+            match target.map(|t| (t.loose, t.tree, t.aimed)).filter(|_| can) {
                 Some((Some(loose), ..)) => self.session.connection.strike_loose(loose),
                 Some((_, Some((tree, z)), _)) => self.session.connection.strike_tree(tree, z),
                 Some((.., aimed)) => self.session.connection.strike(aimed),
