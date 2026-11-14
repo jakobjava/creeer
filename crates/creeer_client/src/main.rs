@@ -47,6 +47,7 @@ mod bindings;
 mod bindings_keys;
 mod bridge_site;
 mod build_play;
+mod build_play_deck;
 mod build_play_scripts;
 mod build_play_shot;
 mod circuit_bench;

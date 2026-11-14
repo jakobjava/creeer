@@ -20,8 +20,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
-/// The scripts this module plays.
-pub(crate) const SCRIPTS: [&str; 2] = ["bridge", "frame"];
+/// The scripts this module plays (`deck`: at the bridge site, `build_play_deck.rs`).
+pub(crate) const SCRIPTS: [&str; 3] = ["bridge", "frame", "deck"];
 /// Walking speed (m/s), as the game walks.
 const WALK: f64 = 3.0;
 /// A client frame (s).
@@ -60,15 +60,27 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let script = args.get(at + 1).ok_or("--build-play needs a script")?;
     let dir = PathBuf::from(args.get(at + 2).ok_or("--build-play needs a directory")?);
     std::fs::create_dir_all(&dir)?;
-    let mut player = Player::start(dir)?;
+    // The deck is built at the bridge site (ADR-0039); the others where a game starts.
+    let site = if script == "deck" {
+        let (view, site) = crate::bridge_site::view()?;
+        Some((view, site))
+    } else {
+        None
+    };
+    let (view, site) = match site {
+        Some((view, site)) => (view, Some(site)),
+        None => (PlanetView::singleplayer(true)?, None),
+    };
+    let mut player = Player::start(dir, view)?;
     // `--until n`: the first n steps only.
     player.until = (args.iter().position(|a| a == "--until"))
         .and_then(|i| args.get(i + 1)?.parse().ok())
         .unwrap_or(u32::MAX);
-    let played = match script.as_str() {
-        "bridge" => crate::build_play_scripts::bridge(&mut player),
-        "frame" => crate::build_play_scripts::frame(&mut player),
-        other => return Err(format!("no script {other}: {SCRIPTS:?}").into()),
+    let played = match (script.as_str(), &site) {
+        ("bridge", _) => crate::build_play_scripts::bridge(&mut player),
+        ("frame", _) => crate::build_play_scripts::frame(&mut player),
+        ("deck", Some(site)) => crate::build_play_deck::deck(&mut player, site),
+        (other, _) => return Err(format!("no script {other}: {SCRIPTS:?}").into()),
     };
     match played {
         Err(e) if e == UNTIL => {}
@@ -79,8 +91,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl Player {
-    fn start(dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut view = PlanetView::singleplayer(true)?;
+    fn start(dir: PathBuf, mut view: PlanetView) -> Result<Self, Box<dyn std::error::Error>> {
         crate::planet_shot_build::play(&mut view, 2.0)?;
         view.walking = true;
         let me = (view.session.connection.avatar())

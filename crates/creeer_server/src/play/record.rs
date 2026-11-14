@@ -3,11 +3,12 @@
 //! scene's world, a recording gives the same state, bit for bit.
 
 use creeer_math::codec::{Decode, DecodeError, Encode, Reader, Writer};
-use creeer_math::glam::DVec3;
-use creeer_net::message::{ClientMessage, Command, from_bytes, to_bytes};
+use creeer_math::glam::{DQuat, DVec3};
+use creeer_net::message::{ClientMessage, Command, Hold, from_bytes, to_bytes};
 
-/// What one player does in one tick: walk (m/s along the ground), jump, and the commands
-/// asked for since its last input.
+/// What one player does in one tick: walk (m/s along the ground), jump, where the hands hold
+/// what they hold (G2.11 B2: a scene's players carry and place parts by hand, as a client steers
+/// them), and the commands asked for since its last input.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Act {
     /// Where to walk.
@@ -16,6 +17,9 @@ pub struct Act {
     pub jump: bool,
     /// The jetpack's thrust (a fraction of its most).
     pub thrust: DVec3,
+    /// Where the hands hold what they hold, as steered (`Connection::set_hold`; none: as they
+    /// hold it by themselves).
+    pub hold: Option<Hold>,
     /// Commands, in the order asked.
     pub commands: Vec<Command>,
 }
@@ -44,10 +48,11 @@ pub struct Recording {
 
 /// The first bytes of a recording file.
 const MAGIC: &[u8; 8] = b"CREEPLAY";
-/// Its format's version.
-const VERSION: u32 = 2;
-/// The fewest bytes an act takes (its walk, its jump, its count of commands).
-const ACT_BYTES: usize = 50;
+/// Its format's version (3: the hold, G2.11 B2).
+const VERSION: u32 = 3;
+/// The fewest bytes an act takes (its walk, its jump, its thrust, whether it holds, its count
+/// of commands).
+const ACT_BYTES: usize = 51;
 
 impl Encode for Act {
     fn encode(&self, w: &mut Writer) {
@@ -58,6 +63,16 @@ impl Encode for Act {
         w.u8(u8::from(self.jump));
         for x in self.thrust.to_array() {
             w.f64(x);
+        }
+        // The hold exactly, alike: its offset, its turn, steady.
+        match &self.hold {
+            None => w.u8(0),
+            Some(h) => {
+                w.u8(1 + u8::from(h.steady));
+                for x in h.offset.to_array().into_iter().chain(h.turn.to_array()) {
+                    w.f64(x);
+                }
+            }
         }
         w.varint(self.commands.len() as u64);
         for c in &self.commands {
@@ -81,6 +96,21 @@ impl Decode for Act {
         for x in &mut thrust {
             *x = r.f64()?;
         }
+        let hold = match r.u8()? {
+            0 => None,
+            k @ (1 | 2) => {
+                let mut v = [0.0; 7];
+                for x in &mut v {
+                    *x = r.f64()?;
+                }
+                Some(Hold {
+                    offset: DVec3::new(v[0], v[1], v[2]),
+                    turn: DQuat::from_xyzw(v[3], v[4], v[5], v[6]),
+                    steady: k == 2,
+                })
+            }
+            _ => return Err(r.error("not a hold")),
+        };
         let commands = (0..r.count(1)?)
             .map(
                 |_| match from_bytes::<ClientMessage>(r.bytes_with_length()?) {
@@ -93,6 +123,7 @@ impl Decode for Act {
             walk: DVec3::from_array(walk),
             jump,
             thrust: DVec3::from_array(thrust),
+            hold,
             commands,
         })
     }

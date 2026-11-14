@@ -155,6 +155,7 @@ impl Play {
             for command in &act.commands {
                 client.command(command.clone());
             }
+            client.set_hold(act.hold);
             client.input(act.walk, act.jump, act.thrust);
             client.flush();
             client_ms = client_ms.max(started.elapsed().as_secs_f64() * 1e3);

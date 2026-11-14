@@ -301,15 +301,16 @@ impl Connection {
     /// goes to the server (with the last few).
     pub fn input(&mut self, walk: DVec3, jump: bool, thrust: DVec3) {
         let Some(p) = &mut self.predicted else { return };
+        let input = p.input(walk, jump, thrust);
         if let Some((acts, commands)) = &mut self.recording {
             acts.push(Act {
                 walk,
                 jump,
                 thrust,
+                hold: input.hold,
                 commands: std::mem::take(commands),
             });
         }
-        let input = p.input(walk, jump, thrust);
         let inputs = (input.seq % INPUT_EVERY == 0).then(|| p.to_send());
         self.steered_input(&input);
         let Some(inputs) = inputs else { return };
