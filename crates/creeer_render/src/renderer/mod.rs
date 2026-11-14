@@ -28,6 +28,7 @@ use terrain_pass::TerrainPass;
 use tonemap_pass::TonemapPass;
 
 mod ao_pass;
+mod cover_pass;
 mod encode;
 mod encode_occlusion;
 mod exposure_pass;
@@ -46,6 +47,7 @@ mod skin_pass;
 pub use skin_layout::SkinnedVertex;
 mod sky_pass;
 mod targets;
+mod terrain_api;
 mod terrain_pass;
 mod timing;
 mod tonemap_pass;

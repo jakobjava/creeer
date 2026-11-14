@@ -169,8 +169,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     loop {
         view.update_terrain(&mut renderer, camera.position);
-        if view.streaming().1 == 0 && start.elapsed() > Duration::from_millis(500) {
+        let filling = view.update_cover(&mut renderer, &camera);
+        if view.streaming().1 + filling == 0 && start.elapsed() > Duration::from_millis(500) {
             view.update_terrain(&mut renderer, camera.position);
+            view.update_cover(&mut renderer, &camera);
             break;
         }
         if start.elapsed() > Duration::from_secs(120) {
@@ -197,9 +199,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The players' characters (G1.3e).
     let mut people = crate::people::People::register(&mut renderer)?;
     let drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
-    let ground = crate::people_ground::PlanetGround {
-        terrain: &view.terrain,
-    };
+    let ground = crate::people_ground::PlanetGround { terrain: &terrain };
     people.draw(&drawn, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,
@@ -233,6 +233,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut passes = crate::gpu_passes::GpuPasses::default();
         for _ in 0..n {
             let started = Instant::now();
+            view.update_cover(&mut renderer, &camera);
             let snapshot = view.snapshot();
             let mut scene = Scene::default();
             let pair = (&snapshot, &snapshot, 1.0);

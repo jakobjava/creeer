@@ -48,6 +48,7 @@ mod fastening;
 mod fly_camera;
 mod golden;
 mod gpu_passes;
+mod ground_cover;
 mod ground_look;
 mod headless;
 mod held;

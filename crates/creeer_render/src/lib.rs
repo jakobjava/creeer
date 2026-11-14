@@ -6,6 +6,7 @@
 pub mod atmosphere;
 pub mod camera;
 pub mod capture;
+pub mod cover;
 pub mod debug_lines;
 pub mod ground_pattern;
 mod half;

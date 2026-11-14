@@ -73,6 +73,8 @@ pub(super) struct TerrainPass {
     pub(super) triangles: usize,
     /// The ground's layers, as the globals carry them to the shader.
     pub(super) layers: GroundUniform,
+    /// The decoratives on the ground, drawn with it.
+    pub(super) cover: super::cover_pass::CoverPass,
 }
 
 impl TerrainPass {
@@ -181,6 +183,10 @@ impl TerrainPass {
             shadow_draws: Default::default(),
             triangles: 0,
             layers: GroundUniform::of(&[]),
+            cover: super::cover_pass::CoverPass::new(
+                device,
+                [globals_layout, shadow_sample_layout, luts_layout, ao_layout],
+            ),
         }
     }
 
@@ -332,14 +338,14 @@ impl TerrainPass {
         ao: &wgpu::BindGroup,
         prepassed: bool,
     ) {
-        if self.draws.is_empty() {
-            return;
+        if !self.draws.is_empty() {
+            pass.set_pipeline(&self.pipeline[usize::from(prepassed)]);
+            pass.set_bind_group(1, shadow_sampling, &[]);
+            pass.set_bind_group(2, luts, &[]);
+            pass.set_bind_group(3, ao, &[]);
+            self.issue(pass, &self.draws);
         }
-        pass.set_pipeline(&self.pipeline[usize::from(prepassed)]);
-        pass.set_bind_group(1, shadow_sampling, &[]);
-        pass.set_bind_group(2, luts, &[]);
-        pass.set_bind_group(3, ao, &[]);
-        self.issue(pass, &self.draws);
+        (self.cover).draw(pass, [shadow_sampling, luts, ao], prepassed);
     }
 
     /// Draws the camera's chunks into the depth prepass (globals bound by the caller).
@@ -348,6 +354,7 @@ impl TerrainPass {
             pass.set_pipeline(&self.prepass);
             self.issue(pass, &self.draws);
         }
+        self.cover.draw_prepass(pass);
     }
 
     /// Draws the shadow casters of one cascade (globals and cascade bound by the caller).
@@ -367,39 +374,4 @@ fn instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
-}
-
-impl Renderer {
-    /// Uploads (or replaces) terrain chunk `id`, whose vertices are relative to `origin`.
-    pub fn insert_terrain(&mut self, id: u64, origin: DVec3, mesh: &TerrainMeshData) {
-        self.terrain.insert(&self.device, id, 0, origin, mesh);
-    }
-
-    /// Uploads terrain chunk `id` of the body drawn in `Frame::terrain_frames[frame]`; its
-    /// origin and vertices are in that body's fixed frame.
-    pub fn insert_terrain_in(
-        &mut self,
-        id: u64,
-        frame: u16,
-        origin: DVec3,
-        mesh: &TerrainMeshData,
-    ) {
-        self.terrain.insert(&self.device, id, frame, origin, mesh);
-    }
-
-    /// Removes terrain chunk `id` (no-op if absent).
-    pub fn remove_terrain(&mut self, id: u64) {
-        self.terrain.remove(id);
-    }
-
-    /// The ground's layers, in the order the vertices' `cover` names them (at most four; the
-    /// rest are dropped).
-    pub fn set_ground_layers(&mut self, layers: &[crate::GroundLayer]) {
-        self.terrain.layers = GroundUniform::of(layers);
-    }
-
-    /// Number of terrain chunks on the GPU.
-    pub fn terrain_chunk_count(&self) -> usize {
-        self.terrain.len()
-    }
 }

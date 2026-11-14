@@ -171,6 +171,7 @@ impl Running {
         }
         planet.advance_day(dt);
         planet.update_terrain(&mut self.renderer, self.camera.position);
+        planet.update_cover(&mut self.renderer, &self.camera);
 
         let build_start = Instant::now();
         self.scene.clear();

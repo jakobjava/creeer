@@ -30,7 +30,7 @@
         shape: Tuft,
         token: Some("grass"),
         layer: Some("moss"),
-        per_m2: 2.0,
+        per_m2: 5.0,
         height: (0.08, 0.22),
         width: (0.05, 0.1),
     ),
