@@ -74,7 +74,6 @@ pub enum Action {
 }
 
 /// An action's row in the table.
-#[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
 #[derive(Clone, Copy, Debug)]
 pub struct Entry {
     pub action: Action,
@@ -188,7 +187,6 @@ pub const TABLE: &[Entry] = &[
 
 /// Keys two actions share on purpose by default: Ctrl is the jetpack, or finer while holding;
 /// the wheel sets the flying speed, or slides what is held.
-#[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
 pub const SHARED: &[(Action, Action)] = &[(A::Jetpack, A::Fine), (A::FlySpeed, A::Slide)];
 
 /// `action`'s row.
@@ -203,7 +201,6 @@ pub fn entry(action: Action) -> &'static Entry {
 }
 
 /// Whether two contexts are ever active at once, so a key cannot serve both.
-#[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
 pub fn clash(a: Context, b: Context) -> bool {
     match (a, b) {
         (Always, _) | (_, Always) => true,
@@ -253,7 +250,6 @@ impl Bindings {
     /// Binds `action` to `input` alone. Other actions that would clash on it lose it; they are
     /// returned. Refused (`None`) for a fixed action, the wheel, a key that may not be bound,
     /// or one a fixed action holds (Esc).
-    #[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
     pub fn bind(&mut self, action: Action, input: Input) -> Option<Vec<Action>> {
         let e = entry(action);
         let taken_by_fixed = (TABLE.iter().zip(&self.inputs))
@@ -275,7 +271,6 @@ impl Bindings {
 
     /// The actions that clash with `action` on one of its keys (none, unless the player made
     /// them; the defaults' [`SHARED`] keys excepted).
-    #[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
     pub fn clashes(&self, action: Action) -> Vec<Action> {
         let e = entry(action);
         let shared = |a, b| SHARED.contains(&(a, b)) || SHARED.contains(&(b, a));

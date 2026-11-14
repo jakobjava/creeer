@@ -4,6 +4,7 @@ use super::*;
 
 mod content_reload;
 mod input;
+mod menu;
 mod planet;
 mod sandbox_ui;
 pub(crate) mod system;
@@ -69,10 +70,13 @@ struct Running {
     started: Instant,
     last_frame: Instant,
     settings: Settings,
-    /// The player's settings and controls (G2.11 A3: `settings.rs`), and where they are kept.
+    /// The player's settings (G2.11 A3: `settings.rs`) and their file; the menu, debug view and
+    /// kit shown (`menu.rs`); the mouse captured to look (walking); the menu asked to quit.
     game: crate::settings::GameSettings,
-    #[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
     game_file: Option<std::path::PathBuf>,
+    screen: crate::menu::Screen,
+    captured: bool,
+    quit: bool,
     adapter_label: String,
     /// The data packs' watcher, and what its last reload did.
     watcher: creeer_data::Watcher,
@@ -109,24 +113,24 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => app.renderer.resize(size.width, size.height),
-            WindowEvent::Focused(false) => {
-                app.fly.release_all();
-                app.set_looking(false);
-            }
-            // Keys and buttons, through the controls' table (`input.rs`). A key going up always
-            // counts, so none stays held; one going down into a text field, or a click on a
-            // window, is the window's.
+            WindowEvent::Focused(false) => app.focus_lost(),
+            // Keys and buttons, through the controls' table (`input.rs`). One going up always
+            // counts (none stays held); one going down on a window is the window's, unless a key
+            // is being rebound or the cursor is captured.
             WindowEvent::KeyboardInput { event, .. } if !event.repeat => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
-                    if !(pressed && response.consumed) {
+                    let waiting = app.screen.rebinding.is_some();
+                    if !(pressed && response.consumed && !waiting) {
                         app.input(crate::bindings::Input::Key(code), pressed);
                     }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let pressed = state == ElementState::Pressed;
-                let on_ui = response.consumed || app.egui_ctx.egui_wants_pointer_input();
+                let on_ui = !app.captured
+                    && app.screen.rebinding.is_none()
+                    && (response.consumed || app.egui_ctx.egui_wants_pointer_input());
                 if !(pressed && on_ui) {
                     app.input(crate::bindings::Input::Mouse(button), pressed);
                 }
@@ -148,8 +152,11 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(app) = &self.running {
+            if app.quit {
+                event_loop.exit();
+            }
             app.window.request_redraw();
         }
     }
@@ -240,6 +247,9 @@ impl Running {
             settings,
             game: game.unwrap_or_default(),
             game_file,
+            screen: crate::menu::Screen::default(),
+            captured: false,
+            quit: false,
             adapter_label,
             watcher: crate::content::watcher(),
             content: content_reload::ContentStatus::default(),
@@ -284,6 +294,7 @@ impl Running {
 
     fn frame(&mut self) {
         self.watch_content();
+        self.apply_settings();
         let now = Instant::now();
         let dt = now - self.last_frame;
         self.last_frame = now;
@@ -335,7 +346,9 @@ impl Running {
         let raw_input = self.egui_state.take_egui_input(&self.window);
         let ctx = self.egui_ctx.clone();
         let tick_times = self.sim.tick_times();
+        let mut asked = crate::menu::Asked::default();
         let mut output = ctx.run_ui(raw_input, |ui| {
+            asked = crate::menu::draw(ui.ctx(), &mut self.screen, &mut self.game, None);
             perf_window(
                 ui.ctx(),
                 &PerfInfo {
@@ -361,6 +374,7 @@ impl Running {
                 heatmap_legend(ui.ctx(), &heatmap, title, unit);
             }
         });
+        self.menu_asked(asked);
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);
         let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);

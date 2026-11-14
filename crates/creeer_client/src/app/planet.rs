@@ -122,7 +122,7 @@ impl Running {
     }
 
     /// Back to the tech demo.
-    fn leave_planet(&mut self) {
+    pub(super) fn leave_planet(&mut self) {
         self.planet = None;
         self.camera = demo::camera_preset("overview", self.scene_origin()).expect("preset exists");
         self.lighting_key = None;
@@ -237,6 +237,7 @@ impl Running {
             )
         });
         let mut request = Request::None;
+        let mut asked = crate::menu::Asked::default();
         let mut output = ctx.run_ui(raw_input, |ui| {
             let perf = PerfInfo {
                 frame_times: &self.frame_times,
@@ -250,7 +251,13 @@ impl Running {
                 planet,
                 &self.camera,
                 (&perf, &mut self.profiler),
-                &self.game.bindings,
+                (&self.game, &self.screen),
+            );
+            asked = crate::menu::draw(
+                ui.ctx(),
+                &mut self.screen,
+                &mut self.game,
+                Some(&mut *planet),
             );
         });
         self.egui_state
@@ -281,5 +288,6 @@ impl Running {
                 }
             }
         }
+        self.menu_asked(asked);
     }
 }

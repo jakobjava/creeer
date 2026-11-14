@@ -1,5 +1,7 @@
-//! The planet sandbox's window: tools, walking or flying, time of day, a geology probe at the
-//! crosshair, saving and loading the world (when this process hosts it), and live numbers.
+//! The planet game's debug window (F3, off by default; G2.11 A3): the sandbox's tools for
+//! flying, walking or flying, time of day, a geology probe at the crosshair, saving and loading
+//! the world (when this process hosts it), and live numbers. The player's look is chosen in
+//! the menu's settings (`menu.rs`), the keys are listed in its controls.
 
 use crate::planet_view::{PlanetView, TOOL_REACH, Tool};
 use creeer_net::message::Command;
@@ -28,7 +30,7 @@ pub enum Request {
 pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Request {
     let mut request = Request::None;
     let snapshot = view.snapshot();
-    egui::Window::new("Planet")
+    egui::Window::new("Planet (F3)")
         .default_pos([12.0, 330.0])
         .resizable(false)
         .show(ctx, |ui| {
@@ -93,7 +95,6 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 }
             });
             machines(ui, view, camera);
-            look(ui, view);
             let edits = view.session.connection.edits.len();
             if view.session.hosted() && Path::new(WORLD_FILE).exists() {
                 ui.small(format!("{edits} edits · saved world: {WORLD_FILE}"));
@@ -151,12 +152,20 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 "terrain: {} chunks drawn · {cached} cached · {outstanding} to build",
                 view.draw.len()
             ));
-            ui.label("Right mouse: look · WASD/Space/Ctrl: fly (speed follows altitude)");
-            ui.label("V: walk the avatar (WASD, Space jumps, Shift runs, Ctrl: jetpack)");
-            ui.label("Mouse wheel: speed · Left click: use tool at the crosshair");
-            ui.label("Walking: 1–4 take a tool in hand (0 puts it away); left click strikes");
         });
     request
+}
+
+/// Saves the world this process hosts; says where, or why not.
+///
+/// # Errors
+/// If it is not hosted here, or the file cannot be written.
+pub(crate) fn save_world(view: &PlanetView) -> Result<String, String> {
+    if !view.session.hosted() {
+        return Err("the world is the server's: only it saves".into());
+    }
+    view.session.save(Path::new(WORLD_FILE))?;
+    Ok(format!("Saved to {WORLD_FILE}"))
 }
 
 /// What lies under the crosshair: rock, its density, province and any ore deposit.
@@ -218,7 +227,7 @@ fn machines(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
 
 /// The player's skin tone and hair colour (G1.3e): chosen here, kept by the server
 /// (`Command::Look`), which gives their colour and outfit.
-fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
+pub(crate) fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
     static CHOICES: std::sync::OnceLock<(Vec<String>, Vec<String>)> = std::sync::OnceLock::new();
     let (skins, hairs) = CHOICES.get_or_init(|| {
         crate::models::palette().map_or_else(Default::default, |p| {

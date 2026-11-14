@@ -61,7 +61,6 @@ const BUTTONS: &[(MouseButton, &str, &str)] = &[
 ];
 
 /// Whether `input` may be bound at all (a key or button in the lists above).
-#[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
 pub fn bindable(input: Input) -> bool {
     match input {
         Input::Key(k) => KEYS.iter().any(|(x, ..)| *x == k),

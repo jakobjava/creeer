@@ -70,6 +70,8 @@ mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
 mod loose_view;
+mod menu;
+mod menu_controls;
 mod models;
 mod people;
 mod people_ground;

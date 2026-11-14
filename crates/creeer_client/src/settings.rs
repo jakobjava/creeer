@@ -76,7 +76,6 @@ impl GameSettings {
     }
 
     /// As the file keeps them.
-    #[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
     pub fn text(&self) -> String {
         let mut kept = self.clone();
         kept.controls = self.bindings.changes();
@@ -108,7 +107,6 @@ impl GameSettings {
     ///
     /// # Errors
     /// If it cannot be written.
-    #[allow(dead_code)] // Until the menu (G2.11 A3, item 6).
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;

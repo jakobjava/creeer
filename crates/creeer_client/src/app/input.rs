@@ -8,13 +8,25 @@ impl Running {
     /// A key or button went down (`pressed`) or up: done by the first action bound to it that
     /// applies now (those of every context first, then holding a part's, then the rest).
     pub(super) fn input(&mut self, input: Input, pressed: bool) {
+        // A key being rebound in the menu takes the next key or button pressed.
+        if let Some(action) = self.screen.rebinding {
+            if pressed {
+                self.rebind(action, input);
+            }
+            return;
+        }
         let mut actions: Vec<Action> = self.game.bindings.actions(input).collect();
         actions.sort_by_key(|a| match entry(*a).context {
             Context::Always => 0,
             Context::Holding => 1,
             Context::Planet | Context::System => 2,
         });
+        let menu = self.screen.menu.is_some();
         for action in actions {
+            // In the menu only the keys of every context act; keys going up always do.
+            if pressed && menu && entry(action).context != Context::Always {
+                continue;
+            }
             if self.act(action, pressed) {
                 return;
             }
@@ -28,7 +40,10 @@ impl Running {
             return self.holding().is_some_and(|h| h.key(action, pressed));
         }
         if action == Action::Look {
-            self.set_looking(pressed);
+            // Captured, the mouse looks already (`menu.rs`).
+            if !self.captured {
+                self.set_looking(pressed);
+            }
             return true;
         }
         if e.held {
@@ -39,6 +54,14 @@ impl Running {
             return false;
         }
         match action {
+            Action::Menu => {
+                self.escape();
+                true
+            }
+            Action::Debug => {
+                self.screen.debug = !self.screen.debug;
+                true
+            }
             Action::Profiler => {
                 self.profiler.toggle();
                 true

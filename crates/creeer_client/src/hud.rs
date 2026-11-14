@@ -1,11 +1,18 @@
 //! The planet game's screen, drawn over the world each frame: one function the game and the
-//! headless frames (`hud_shot.rs`) both call, so a frame shows what the player sees.
+//! headless frames (`hud_shot.rs`) both call, so a frame shows what the player sees (G2.11 A3,
+//! ADR-0037). By default only what play needs: the crosshair and what it tells, what came of
+//! what was done, the hands, the vitals. The debug view (F3) adds the performance and the
+//! planet's numbers; the menu (Esc) dims it all.
 
-use crate::bindings::Bindings;
+use crate::bindings::Action;
+use crate::menu::Screen;
 use crate::planet_ui::{self, Request};
 use crate::planet_view::PlanetView;
 use crate::profiler_ui::ProfilerWindow;
+use crate::settings::GameSettings;
 use creeer_render::Camera;
+use creeer_ui::paint::{self, Row};
+use creeer_ui::theme::{BODY, TEXT};
 use creeer_ui::{PerfInfo, egui, perf_window};
 
 /// Draws the planet game's screen; returns what the app should do.
@@ -14,18 +21,43 @@ pub(crate) fn draw(
     planet: &mut PlanetView,
     camera: &Camera,
     (perf, profiler): (&PerfInfo<'_>, &mut ProfilerWindow),
-    bindings: &Bindings,
+    (game, screen): (&GameSettings, &Screen),
 ) -> Request {
-    perf_window(ctx, perf);
-    let request = planet_ui::window(ctx, planet, camera);
+    let mut request = Request::None;
+    if screen.debug {
+        perf_window(ctx, perf);
+        request = planet_ui::window(ctx, planet, camera);
+    }
     crate::inventory_ui::window(ctx, planet, camera);
-    let target = crate::planet_aim::target(planet, camera);
-    crate::hud_feedback::draw(ctx, &planet.session.connection);
-    let (seen, name) = crate::hud_seen::seen(planet, target.as_ref());
-    let prompts = crate::prompts::prompts(&seen);
-    crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, bindings);
-    crate::inventory_ui::told(ctx, planet);
+    if screen.menu.is_none() {
+        let target = crate::planet_aim::target(planet, camera);
+        crate::hud_feedback::draw(ctx, &planet.session.connection);
+        let (seen, name) = crate::hud_seen::seen(planet, target.as_ref());
+        let prompts = crate::prompts::prompts(&seen);
+        crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, &game.bindings);
+        crate::inventory_ui::told(ctx, planet);
+    }
     crate::inventory_ui::vitals(ctx, &planet.session.connection);
+    if !game.controls_seen && screen.menu.is_none() {
+        first_hint(ctx, game);
+    }
     profiler.window(ctx, Some(&mut planet.session.connection));
     request
+}
+
+/// Until the player has opened the controls once: how to, at the top of the screen.
+fn first_hint(ctx: &egui::Context, game: &GameSettings) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("first hint"),
+    ));
+    let key = game.bindings.name(Action::Menu);
+    let row = Row {
+        key: Some(&key),
+        text: "Menu: the controls and settings",
+        colour: TEXT,
+        size: BODY,
+    };
+    let top = ctx.content_rect().center_top() + egui::vec2(0.0, 56.0);
+    paint::strip(&painter, top, &[row]);
 }

@@ -128,7 +128,9 @@ impl Running {
         let ctx = self.egui_ctx.clone();
         let tick_times = view.sim.tick_times();
         let mut request = Request::None;
+        let mut asked = crate::menu::Asked::default();
         let mut output = ctx.run_ui(raw_input, |ui| {
+            asked = crate::menu::draw(ui.ctx(), &mut self.screen, &mut self.game, None);
             perf_window(
                 ui.ctx(),
                 &PerfInfo {
@@ -173,6 +175,7 @@ impl Running {
         if request == Request::Leave {
             self.leave_system();
         }
+        self.menu_asked(asked);
     }
 
     /// Mouse motion on the map turns its camera.

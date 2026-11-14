@@ -1,7 +1,8 @@
 //! Frames of the planet game with its screen drawn over the world, as the player sees it (G2.11
 //! A3): `creeer_client --planet <view> <file.png> --hud [--size 1920x1080] [--ui-scale 1.5]
-//! [--menu <name>]`. The screen is drawn by the game's own function (`hud.rs`), so the frame
-//! shows what the game shows.
+//! [--menu main|controls|settings|inventory|kit] [--debug] [--first-start] [--hud-frames n]`.
+//! The screen and the menu are drawn by the game's own functions (`hud.rs`, `menu.rs`), so the
+//! frame shows what the game shows.
 //!
 //! Views of its own, each in first person as the game is played:
 //! - `aim`: empty hands, looking at a pole lying within reach;
@@ -10,8 +11,10 @@
 //! - `refused`: the same, G pressed: refused, and why;
 //! - `work`: a rail held on a sill, J pressed half a second before (the ring fills).
 
+use crate::menu::{Page, Screen};
 use crate::planet_shot_build::play;
 use crate::planet_view::PlanetView;
+use crate::settings::GameSettings;
 use creeer_core::TimingStats;
 use creeer_math::glam::DVec3;
 use creeer_net::message::Command;
@@ -32,6 +35,9 @@ pub(crate) struct HudShot {
     pub menu: Option<String>,
     /// Frames to time the screen over (`--hud-frames`), none: not timed.
     pub frames: usize,
+    /// The debug view shown (`--debug`, F3 in the game); the first start's hint (`--first-start`).
+    pub debug: bool,
+    pub first: bool,
 }
 
 impl HudShot {
@@ -71,6 +77,8 @@ impl HudShot {
             scale,
             menu: value("--menu").map(str::to_owned),
             frames,
+            debug: args.iter().any(|a| a == "--debug"),
+            first: args.iter().any(|a| a == "--first-start"),
         }))
     }
 }
@@ -101,9 +109,24 @@ pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) ->
     // As the game does while the player walks: the crosshair aims from the avatar.
     view.walking = true;
     as_played(view);
-    if shot.menu.as_deref() == Some("inventory") {
-        view.inventory = true;
+    let mut screen = Screen {
+        debug: shot.debug,
+        ..Screen::default()
+    };
+    match shot.menu.as_deref() {
+        Some("inventory") => view.inventory = true,
+        Some("kit") => screen.kit = true,
+        Some("main") => screen.menu = Some(Page::Main),
+        Some("controls") => screen.menu = Some(Page::Controls),
+        Some("settings") => screen.menu = Some(Page::Settings),
+        _ => {}
     }
+    // The defaults, as at a first start (`--first-start`: the hint saying how to find the
+    // controls), else as once they were seen.
+    let mut game = GameSettings {
+        controls_seen: !shot.first,
+        ..GameSettings::default()
+    };
     let (frames, ticks) = (TimingStats::new(1), TimingStats::new(1));
     let mut profiler = crate::profiler_ui::ProfilerWindow::default();
     // One frame of the screen at `time` (s).
@@ -118,15 +141,16 @@ pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) ->
                 tick: 0,
                 adapter: "headless",
             };
-            let bindings = crate::bindings::Bindings::default();
-            crate::hud::draw(ui.ctx(), view, camera, (&perf, &mut profiler), &bindings);
+            let shown = (&game, &screen);
+            crate::hud::draw(ui.ctx(), view, camera, (&perf, &mut profiler), shown);
+            crate::menu::draw(ui.ctx(), &mut screen, &mut game, Some(&mut *view));
         })
     };
     let mut textures = egui::TexturesDelta::default();
     let (mut shapes, mut pixels_per_point) = (Vec::new(), shot.scale);
     // Windows are measured in their first frame and drawn from the second, and fade in over a
-    // few tenths of a second: three frames a second apart.
-    for k in 0..3 {
+    // few tenths of a second: six frames a second apart (a scroll area settles in a few).
+    for k in 0..6 {
         let output = run(f64::from(k));
         textures.append(output.textures_delta);
         shapes = output.shapes;
@@ -139,7 +163,7 @@ pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) ->
         for k in 0..shot.frames {
             let started = std::time::Instant::now();
             #[allow(clippy::cast_precision_loss)] // frame counts
-            let output = run(3.0 + k as f64 / 60.0);
+            let output = run(6.0 + k as f64 / 60.0);
             let triangles = ctx.tessellate(output.shapes, output.pixels_per_point);
             times.push(started.elapsed());
             std::hint::black_box(triangles);
