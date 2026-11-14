@@ -185,9 +185,8 @@ pub fn vitals(ctx: &egui::Context, c: &creeer_server::Connection) {
         },
         size: creeer_ui::theme::SMALL + 1.0,
     };
-    let size = creeer_ui::paint::plate_size(&painter, &[row]);
-    let corner = ctx.content_rect().left_bottom() + egui::vec2(16.0, -16.0 - size.y);
-    creeer_ui::paint::plate(&painter, corner, &[row]);
+    let corner = ctx.content_rect().left_bottom() + egui::vec2(16.0, -16.0);
+    creeer_ui::paint::plate_at(&painter, (egui::Align2::LEFT_BOTTOM, corner), &[row]);
 }
 
 /// The vitals as a line: health, each hurt part's loss (a part unhurt is left out), down, gas.

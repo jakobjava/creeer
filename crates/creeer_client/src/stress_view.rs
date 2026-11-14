@@ -143,9 +143,8 @@ pub fn hud(ctx: &egui::Context, camera: &Camera, seen: &Inspection, tick: u64) {
                 size: BODY + 1.0,
             },
         ];
-        let size = paint::plate_size(&painter, &rows);
-        let top = egui::pos2(screen.center().x - size.x * 0.5, screen.top() + TOP);
-        paint::plate(&painter, top, &rows);
+        let top = egui::pos2(screen.center().x, screen.top() + TOP);
+        paint::plate_at(&painter, (egui::Align2::CENTER_TOP, top), &rows);
     }
     // Each collapse's first failure ringed where it was; in words beside it but for the one told
     // at the top (told twice, the words lay over the deck and the crosshair, G2.11 Q).

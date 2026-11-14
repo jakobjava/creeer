@@ -136,6 +136,8 @@ Every stream had looked at its own frames; nobody had played the bridge site as 
 7. **A click while walking** with bare hands on a part, or on anything out of reach, went to the flying camera's sandbox tool: a 2 m ball dug out of the ground where the ray met it (a creative server's). Walking, a click now only strikes or digs within reach (`PlanetView::use_tool`); with a part to build with in the hands, no digging is offered.
 8. **What is carried** was not told until it first changed: the pockets appeared in the hands' panel only after something was taken (`ServerWorld::equip` marks a new avatar's inventory to be told).
 
+**Cost** (`--hud-frames 600` at 1080p, before against after, three runs each, best p50; other agents compiling, to be measured again on a quiet machine): aim 0.071 ms against 0.085 ms, carry 0.134 ms against 0.091 ms; each run's p50 ranged 0.07–0.15 ms either way. A plate is laid out once (`paint::plate_at`), a strip's rows measured once (`paint::strips`).
+
 ## Measured and rejected
 
 | Tried | Measured | Why not |

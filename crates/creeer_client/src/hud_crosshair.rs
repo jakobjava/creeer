@@ -10,7 +10,7 @@
 
 use crate::bindings::Bindings;
 use crate::prompts::{Prompt, Prompts};
-use creeer_ui::egui::{self, Color32, pos2, vec2};
+use creeer_ui::egui::{self, Align2, Color32, pos2, vec2};
 use creeer_ui::paint::{self, Cross, Row};
 use creeer_ui::theme::{BODY, TEXT, WARN};
 
@@ -73,17 +73,16 @@ pub(crate) fn draw(
         return;
     }
     let at = if beside {
-        centre + vec2(26.0, 18.0)
+        (Align2::LEFT_TOP, centre + vec2(26.0, 18.0))
     } else {
-        let size = paint::plate_size(&painter, &rows);
         let above = if hands.is_empty() {
             bottom.y
         } else {
             taken.top() - GAP
         };
-        pos2(centre.x - size.x * 0.5, above - size.y)
+        (Align2::CENTER_BOTTOM, pos2(centre.x, above))
     };
-    paint::plate(&painter, at, &rows);
+    paint::plate_at(&painter, at, &rows);
 }
 
 /// Each prompt as a row: its key cap and its verb.
