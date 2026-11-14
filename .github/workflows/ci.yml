@@ -24,6 +24,9 @@ jobs:
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - name: ALSA's headers (Linux), which the sound device's crate links to (ADR-0037)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Format, clippy, tests
         run: cargo xtask ci
 
