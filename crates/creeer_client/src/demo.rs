@@ -44,9 +44,8 @@ pub struct DemoMeshes {
     pub sphere: MeshId,
     /// The physics sandbox's hulls (`hulls.rs`), at their own size.
     pub hulls: [MeshId; crate::hulls::HULLS],
-    /// The authored models (G1.3b), where the packs have them.
+    /// The packs' authored models (G1.3b), and things as what they are made of (G2.11).
     pub models: crate::models::Models,
-    /// Things as what they are made of (G2.11): wooden parts, logs, stones.
     pub parts: crate::part_meshes::PartMeshes,
 }
 

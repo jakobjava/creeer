@@ -6,7 +6,7 @@
 
 **Builds on:** ADR-0003 (the renderer), ADR-0026 (the look: tokens, the surface's layers, primitives in levels of detail by screen error), ADR-0028 (items), ADR-0029 (what lies about), ADR-0031 (trees).
 
-**Evidence:** `creeer_render::{parts, foliage}`, `shaders/parts.wgsl`, the part path in `shaders/mesh.wgsl` and `globals.wgsl` (`placed`); `creeer_client::{part_meshes, part_view, part_fit, tree_draw, tree_view, loose_view}`; the views `parts`, `nailed`, `forest`, `tree`, `felled` and `bridge` (`planet_shot_things.rs`, `--frames n` timing a view); frames before and after in the stream's report.
+**Evidence:** `creeer_render::{parts, foliage}`, `shaders/parts.wgsl`, the part path in `shaders/mesh.wgsl` and `globals.wgsl` (`placed`); `creeer_client::{part_meshes, part_view, part_fit, tree_draw, tree_view, loose_view}`; the views `parts`, `nailed`, `forest`, `tree`, `felled` and `logbridge` (`planet_shot_things.rs`, `--frames n` timing a view); frames before and after in the stream's report.
 
 ## Prior work
 
@@ -45,7 +45,7 @@ All on the development machine at 1600 × 900, `creeer_client --planet surface <
 ## Validation
 
 - `parts::tests`, `foliage::tests`, `part_meshes::tests`, `part_view::tests`, `part_fit::tests`, `vertex::tests`, `scene::tests`, `primitives::tests` (the shaders' constants against the Rust ones).
-- Frames (`creeer_client --planet <parts|nailed|forest|tree|felled|bridge|surface|rail|post|low> <file.png>`), before and after.
+- Frames (`creeer_client --planet <parts|nailed|forest|tree|felled|logbridge|surface|rail|post|low> <file.png>`), before and after.
 - The style board is unchanged (its 22 images at mean ΔE₀₀ 0.00 from their goldens): the models and the engineer are drawn as before, and the board has no parts or trees yet (`docs/future-improvements.md`).
 
 ## Cost

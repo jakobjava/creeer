@@ -9,7 +9,7 @@
 //! - `forest`: from eye height 40 m into the forest beyond the spawn's clearing;
 //! - `tree`: the nearest tree there at least 25 cm thick, from 8 m off at eye height;
 //! - `felled`: *lumberjack*'s first tree felled and limbed by `--play-bench fell`'s feller;
-//! - `bridge`: *log bridge*'s plank nailed to its sills by the player and loaded with crates
+//! - `logbridge`: *log bridge*'s plank nailed to its sills by the player and loaded with crates
 //!   until it breaks (`BRIDGE_CRATES` at most, or `CREEER_BRIDGE_CRATES`: 0 for the bridge
 //!   as built), seen from beside it.
 
@@ -21,7 +21,7 @@ use creeer_render::Camera;
 use std::time::Duration;
 
 /// The views this module takes.
-pub(crate) const VIEWS: [&str; 6] = ["parts", "nailed", "forest", "tree", "felled", "bridge"];
+pub(crate) const VIEWS: [&str; 6] = ["parts", "nailed", "forest", "tree", "felled", "logbridge"];
 
 /// The world a view is played in: the builders' poles for `nailed`, else the creative
 /// singleplayer game.
@@ -29,7 +29,7 @@ pub(crate) fn view(name: &str) -> Result<PlanetView, String> {
     let scene = match name {
         "nailed" => "builders",
         "felled" => "lumberjack",
-        "bridge" => "log_bridge",
+        "logbridge" => "log_bridge",
         _ => return PlanetView::singleplayer(true),
     };
     let data = crate::content::data();
@@ -93,7 +93,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
         "parts" => parts(view, me, ground),
         "nailed" => nailed(view),
         "felled" => felled(view),
-        "bridge" => bridge(view),
+        "logbridge" => bridge(view),
         "tree" => {
             // The nearest tree at least 25 cm thick 40 m east, from 8 m off at eye height.
             let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
@@ -209,7 +209,7 @@ fn nailed(view: &mut PlanetView) -> Result<Camera, String> {
     Ok(crate::planet_view::place(eye, (crossing - eye).normalize()))
 }
 
-/// The most crates the `bridge` view drops on its plank.
+/// The most crates the `logbridge` view drops on its plank.
 const BRIDGE_CRATES: usize = 8;
 
 /// *log bridge*'s plank (entity 3) nailed at both ends to its sills (1, 2), then loaded with
