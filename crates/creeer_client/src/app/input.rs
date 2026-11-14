@@ -62,6 +62,11 @@ impl Running {
                 self.screen.debug = !self.screen.debug;
                 true
             }
+            Action::Kit if self.planet.is_some() => {
+                self.screen.kit = !self.screen.kit;
+                self.release_keys();
+                true
+            }
             Action::Profiler => {
                 self.profiler.toggle();
                 true

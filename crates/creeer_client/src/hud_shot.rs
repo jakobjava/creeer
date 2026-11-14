@@ -141,7 +141,7 @@ pub(crate) fn overlay(shot: &HudShot, view: &mut PlanetView, camera: &Camera) ->
                 tick: 0,
                 adapter: "headless",
             };
-            let shown = (&game, &screen);
+            let shown = (&game, &mut screen);
             crate::hud::draw(ui.ctx(), view, camera, (&perf, &mut profiler), shown);
             crate::menu::draw(ui.ctx(), &mut screen, &mut game, Some(&mut *view));
         })

@@ -251,7 +251,7 @@ impl Running {
                 planet,
                 &self.camera,
                 (&perf, &mut self.profiler),
-                (&self.game, &self.screen),
+                (&self.game, &mut self.screen),
             );
             asked = crate::menu::draw(
                 ui.ctx(),

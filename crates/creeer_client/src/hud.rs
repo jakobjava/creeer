@@ -21,7 +21,7 @@ pub(crate) fn draw(
     planet: &mut PlanetView,
     camera: &Camera,
     (perf, profiler): (&PerfInfo<'_>, &mut ProfilerWindow),
-    (game, screen): (&GameSettings, &Screen),
+    (game, screen): (&GameSettings, &mut Screen),
 ) -> Request {
     let mut request = Request::None;
     if screen.debug {
@@ -29,6 +29,9 @@ pub(crate) fn draw(
         request = planet_ui::window(ctx, planet, camera);
     }
     crate::inventory_ui::window(ctx, planet, camera);
+    if screen.kit {
+        crate::kit_ui::window(ctx, &mut screen.kit, planet, camera);
+    }
     if screen.menu.is_none() {
         let target = crate::planet_aim::target(planet, camera);
         crate::hud_feedback::draw(ctx, &planet.session.connection);

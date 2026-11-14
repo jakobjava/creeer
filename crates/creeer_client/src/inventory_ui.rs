@@ -8,20 +8,6 @@ use crate::planet_view::PlanetView;
 use creeer_net::message::{Command, Target};
 use creeer_render::Camera;
 use creeer_ui::egui;
-use std::sync::OnceLock;
-
-/// The creative kit's items' names, in order (`data/kit.ron`).
-fn kit() -> &'static [String] {
-    static KIT: OnceLock<Vec<String>> = OnceLock::new();
-    KIT.get_or_init(|| {
-        let data = creeer_data::Data::base();
-        (creeer_sim::items::kit::kit(&data)
-            .unwrap_or_default()
-            .into_iter())
-        .map(|k| k.name)
-        .collect()
-    })
-}
 
 impl PlanetView {
     /// What the crosshair is on as a target, if it is a body within reach.
@@ -137,23 +123,6 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
                     });
                 }
             }
-            ui.separator();
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Creative servers:");
-                for (k, name) in kit().iter().enumerate() {
-                    let at = target(view, camera).map(|t| t.aimed.point);
-                    if ui
-                        .add_enabled(at.is_some(), egui::Button::new(name).small())
-                        .clicked()
-                        && let Some(at) = at
-                    {
-                        asked = Some(Command::Kit {
-                            item: u8::try_from(k).unwrap_or(u8::MAX),
-                            at: at + at.normalize() * 0.3,
-                        });
-                    }
-                }
-            });
         });
     view.inventory = shown;
     if let Some(command) = asked {
