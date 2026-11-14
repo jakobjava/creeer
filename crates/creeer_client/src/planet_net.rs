@@ -197,9 +197,6 @@ impl PlanetSession {
             let (p, q) = (pose.position, pose.orientation);
             match kind {
                 Kind::Body(Shape::Box(half), matter) => {
-                    out.boxes.push((p, q, *half));
-                    out.box_look
-                        .push(matter.colour.map_or(Look::Crate, Look::Colour));
                     // Its age as of the moment drawn (G1.3c).
                     let age = c.ages.get(id).map_or((0.0, 0.0), |a| {
                         let exposure = a.exposure_at(c.drawn_at(), TICK_RATE);
@@ -207,9 +204,24 @@ impl PlanetSession {
                         let drawn = (exposure as f32, a.wear as f32);
                         drawn
                     });
+                    // An item (G2.11): a block of its material, as what it is (`part_view.rs`).
+                    if let Some(colour) = matter.colour {
+                        out.things
+                            .push(crate::part_view::block(id.0, (p, q), *half, colour, age));
+                        continue;
+                    }
+                    out.boxes.push((p, q, *half));
+                    out.box_look.push(Look::Crate);
                     out.box_age.push(age);
                 }
-                Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
+                // An item (a cobble, G2.11) as a stone in its rock's colour; else the sandbox's ball.
+                Kind::Body(Shape::Sphere(radius), matter) => match matter.colour {
+                    Some(colour) => out.things.push(crate::part_view::Thing {
+                        form: crate::part_view::Form::Lump(DVec3::splat(*radius)),
+                        ..crate::part_view::block(id.0, (p, q), DVec3::ZERO, colour, (0.0, 0.0))
+                    }),
+                    None => out.spheres.push((p, *radius)),
+                },
                 // A character (G1.3e): standing, its body's frame; fallen, its segments'.
                 Kind::Character {
                     look,
@@ -243,36 +255,29 @@ impl PlanetSession {
                 }
                 // Drawn with its person.
                 Kind::Segment { .. } => {}
-                // An item's hull (a stone, a stick: G1.6c) as the box about it in its colour; the
-                // sandbox's other hulls as the ball around them.
+                // An item's hull (a stone, a rod, a made thing's pieces: G1.6c, G2.11) as what it
+                // is (`part_view.rs`); a colourless one, a broken structure's lone piece, fitted
+                // as its member's piece (`part_fit.rs`).
                 Kind::Body(Shape::Hull(corners), matter) => {
                     if in_hand.contains(id) {
                         continue;
                     }
-                    let parts = c.items.get(id).map(|l| &l.parts).filter(|p| !p.is_empty());
-                    if let Some(parts) = parts {
-                        // A made thing as its pieces (G1.6).
-                        for part in parts {
-                            out.boxes.push((p + q * part.at, q * part.turn, part.half));
-                            out.box_look.push(Look::Colour(part.colour));
-                            out.box_age.push((0.0, 0.0));
-                        }
-                    } else if let Some(colour) = matter.colour {
-                        let (lo, hi) = (corners.iter())
-                            .fold((DVec3::MAX, DVec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
-                        out.boxes
-                            .push((p + q * ((lo + hi) * 0.5), q, (hi - lo) * 0.5));
-                        out.box_look.push(Look::Colour(colour));
-                        out.box_age.push((0.0, 0.0));
+                    let parts = c.items.get(id).map_or(&[][..], |l| l.parts.as_slice());
+                    let at = (p, q);
+                    if !parts.is_empty() || matter.colour.is_some() {
+                        let colour = matter.colour.unwrap_or([128, 120, 110]);
+                        crate::part_view::item(&mut out.things, at, corners, colour, parts, id.0);
                     } else {
-                        let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
-                        out.spheres.push((p, radius));
+                        out.things.extend(crate::part_fit::piece(id.0, at, corners));
                     }
                 }
                 // Drawn as their trees (`tree_view.rs`).
                 Kind::Tree(_) => {}
                 Kind::Structure(frame) => {
                     let broken = c.broken.get(id);
+                    // Built by hand (it has fastened joints, radius 0): its members as wood
+                    // (`part_view::Made::Built`, G2.11); else (a steel frame) as tubes.
+                    let built = frame.radii.contains(&0.0);
                     for (k, [a, b]) in frame.members.iter().enumerate() {
                         let (Some(na), Some(nb)) =
                             (frame.nodes.get(*a as usize), frame.nodes.get(*b as usize))
@@ -283,9 +288,12 @@ impl PlanetSession {
                         let gone = broken.is_some_and(|set| set.contains(&(k as u32)));
                         // Each member at its own radius; fastened joints are not drawn (G2.3).
                         let radius = frame.radii.get(k).copied().unwrap_or(frame.radius);
-                        if radius > 0.0 {
-                            out.beams
-                                .push((p + q * *na, p + q * *nb, radius, 0.0, gone));
+                        let ends = (p + q * *na, p + q * *nb);
+                        if radius > 0.0 && built && !gone {
+                            out.things
+                                .extend(crate::part_view::member(id.0, k, ends, radius));
+                        } else if radius > 0.0 {
+                            out.beams.push((ends.0, ends.1, radius, 0.0, gone));
                         }
                     }
                 }

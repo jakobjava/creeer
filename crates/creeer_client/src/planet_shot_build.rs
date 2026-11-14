@@ -132,7 +132,11 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
 pub(crate) fn people(view: &PlanetView, name: &str, people: &[DrawnPerson]) -> Vec<DrawnPerson> {
     let own = (view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
     (people.iter())
-        .filter(|p| !(VIEWS.contains(&name) && Some(p.key) == own))
+        .filter(|p| {
+            let first_person =
+                VIEWS.contains(&name) || crate::planet_shot_things::VIEWS.contains(&name);
+            !(first_person && Some(p.key) == own)
+        })
         .cloned()
         .collect()
 }

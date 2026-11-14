@@ -247,10 +247,26 @@ fn the_shaders_round_as_the_primitives_do() {
         format!("const BEVEL_SHARE: f32 = {BEVEL_SHARE};"),
         format!("const BEVEL_MAX: f32 = {BEVEL_MAX};"),
         format!("const NO_TOKEN: u32 = 0x{:x}u;", crate::mesh::NO_TOKEN),
+        format!("const PART: u32 = 0x{:x}u;", crate::vertex::PART),
+        format!("const PART_BEVEL_SHARE: f32 = {PART_BEVEL_SHARE};"),
+        format!("const PART_BEVEL_MIN: f32 = {PART_BEVEL_MIN};"),
+        format!("const PART_BEVEL_THIN: f32 = {PART_BEVEL_THIN};"),
     ] {
         assert!(wgsl.contains(&constant), "globals.wgsl lacks `{constant}`");
     }
-    assert!(wgsl.contains(
-        "return position * scale + (normal - 2.0 * position) * select(0.0, radius, bevelled);"
-    ));
+    // As `shaped` here; a part's taper (only the shaders have it) is 1 untapered.
+    assert!(wgsl.contains("let inner = position * scale * vec3<f32>(width, 1.0, width);"));
+    assert!(
+        wgsl.contains("return inner + (normal - 2.0 * position) * select(0.0, radius, bevelled);")
+    );
+    let grains = include_str!("shaders/parts.wgsl");
+    for (name, grain) in [
+        ("ROUND", crate::Grain::Round),
+        ("SAWN", crate::Grain::Sawn),
+        ("BARK", crate::Grain::Bark),
+        ("LEAVES", crate::Grain::Leaves),
+    ] {
+        let constant = format!("const GRAIN_{name}: u32 = {}u;", grain as u8);
+        assert!(grains.contains(&constant), "parts.wgsl lacks `{constant}`");
+    }
 }

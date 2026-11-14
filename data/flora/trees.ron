@@ -27,7 +27,8 @@
 // - branch_mass, foliage_mass: dry biomass (kg) of the living branches and of the foliage, in
 //   Repola's form: ln y = b0 + b1·x/(x + k1) + b2·h/(h + k2), x = 2 + 1.25·d (`stump`) or d (cm),
 //   h (m). fresh: fresh mass over dry.
-// - bark, leaves: palette tokens it is drawn in.
+// - bark, leaves: palette tokens it is drawn in; marks (optional, `Some("token")`): a token
+//   drawn over the bark in short dashes across the stem (a birch's dark lenticels and marks).
 //
 // Sources: biomass, Repola 2009 (Silva Fennica 43(4): Scots pine and Norway spruce, eqs. for
 // needles and living branches) and Repola 2008 (Silva Fennica 42(4): birch, living branches
@@ -76,6 +77,6 @@
         branch_mass: (b0: -4.152, b1: 15.874, k1: 16.0, b2: -4.407, k2: 10.0, stump: false),
         foliage_mass: (b0: -29.566, b1: 33.372, k1: 2.0, stump: true),
         fresh: 1.9,
-        bark: "bark_birch", leaves: "leaves_birch",
+        bark: "bark_birch", leaves: "leaves_birch", marks: Some("bark_birch_marks"),
     ),
 ]

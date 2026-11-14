@@ -80,8 +80,6 @@ pub enum Look {
     Canvas,
     /// Sea water.
     Water,
-    /// A material by its colour (sRGB): an item, or a stone (G1.6c).
-    Colour([u8; 3]),
 }
 
 /// What the renderer needs from one tick.
@@ -117,10 +115,10 @@ pub struct PhysicsSnapshot {
     pub heat: Option<String>,
     pub drive: Option<String>,
     pub fluids: Option<String>,
-    /// Coloured rods (G1.7: stems and branches): ends, radius, colour.
-    pub rods: Vec<(DVec3, DVec3, f64, [u8; 3])>,
-    /// Coloured ellipsoids (G1.7: crowns): centre, orientation, half axes, colour.
-    pub blobs: Vec<(DVec3, DQuat, DVec3, [u8; 3])>,
+    /// Things drawn as what they are (G2.11: parts, stones, logs, trees' stems and branches;
+    /// `part_view.rs`), and trees' foliage (`tree_draw.rs`).
+    pub things: Vec<crate::part_view::Thing>,
+    pub foliage: Vec<crate::tree_draw::Foliage>,
     /// Cost of the last physics step (ms).
     pub step_ms: f64,
 }
