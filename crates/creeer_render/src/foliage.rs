@@ -41,7 +41,7 @@ fn lump_directions() -> [Vec3; LUMPS] {
 
 /// A clump's surface out along unit `d`: its radius (of 0.5), the lump it is on (for its tone),
 /// and how much it stands out (1 on a lump's crown, 0 in the creases between). Its lumps carry
-/// smaller ones (twigs' tufts), so its outline is ragged, never a ball's.
+/// smaller ones (twigs' tufts), so its silhouette is ragged, never a ball's.
 fn clump_at(d: Vec3, lumps: &[Vec3; LUMPS]) -> (f32, usize, f32) {
     let (mut best, mut which) = (0.0f32, 0);
     let mut tufts = 0.0f32;
