@@ -214,3 +214,44 @@ fn the_creative_kit_is_made_from_the_packs_materials() {
     assert!(densities.of("basalt").is_some_and(|d| d > 2500.0));
     assert!(densities.of("unobtainium").is_none());
 }
+
+/// The bridge site's parts and loads (G2.11, ADR-0039) are each one person's to carry (ADR-0027:
+/// 25 kg comfortably, 45 at most), the boulder within the hands' grab (twice their 575 N), and a
+/// load crate holds sixteen granite blocks.
+#[test]
+fn the_bridge_sites_parts_and_loads_are_carried_by_hand() {
+    let (data, densities) = (data(), Densities::from_data(&data()).unwrap());
+    let items: Vec<(String, Item)> = (kit(&data).unwrap().iter())
+        .map(|k| (k.name.clone(), densities.make(k).unwrap()))
+        .collect();
+    let item = |n: &str| &items.iter().find(|(k, _)| k == n).unwrap().1;
+    let parts = [
+        "stringer",
+        "deck board",
+        "sleeper",
+        "handrail post",
+        "handrail",
+        "brace",
+    ];
+    let loads = ["granite block", "gravel sack", "load crate"];
+    for name in parts.iter().chain(&loads) {
+        let m = item(name).mass();
+        assert!((1.0..=25.6).contains(&m), "{name}: {m:.1} kg");
+    }
+    let near = |n: &str, kg: f64| (item(n).mass() - kg).abs() < 0.1 * kg;
+    assert!(near("stringer", 14.2) && near("deck board", 3.5) && near("granite block", 25.5));
+    let boulder = item("boulder").mass();
+    assert!((100.0..117.0).contains(&boulder), "{boulder:.0} kg");
+    // The proof load: a tonne, set from the kit (no hands move it).
+    let weight = item("test weight").mass();
+    assert!((950.0..1050.0).contains(&weight), "{weight:.0} kg");
+    // Sixteen blocks go into a load crate, the seventeenth does not.
+    let mut store = item("load crate").store().expect("a container");
+    for k in 0..16 {
+        assert!(
+            store.put(item("granite block").clone()).is_ok(),
+            "block {k}"
+        );
+    }
+    assert!(store.put(item("granite block").clone()).is_err());
+}

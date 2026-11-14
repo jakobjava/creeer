@@ -15,6 +15,7 @@ mod buckling;
 #[cfg(test)]
 mod buckling_tests;
 mod builder;
+mod carried;
 mod coupled;
 mod coupling;
 mod dashpot;
@@ -48,6 +49,7 @@ mod ltb_tests;
 mod mass;
 mod minimise;
 mod objective;
+mod owed;
 mod plastic;
 #[cfg(test)]
 mod plastic_tests;
@@ -72,6 +74,7 @@ mod validation_tests;
 
 pub use added::AddedMass;
 pub use builder::StructureBuilder;
+pub use carried::Carried;
 pub use dashpot::Dashpot;
 use element::Element;
 pub use fastened::JointLaw;
@@ -260,7 +263,7 @@ impl Structure {
 
     /// Elastic energy of all members (per-element work in parallel, summed in element order:
     /// deterministic).
-    pub(crate) fn elastic_energy(&self) -> f64 {
+    pub fn elastic_energy(&self) -> f64 {
         let rotations: Vec<DMat3> = self
             .orientation
             .par_iter()

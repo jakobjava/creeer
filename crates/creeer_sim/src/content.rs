@@ -84,6 +84,14 @@ pub fn validate(data: &Data) -> Report {
         }
         Err(e) => report.errors.push(e),
     }
+    // Driving nails by hand (G2.11): blows of reason.
+    match creeer_building::hammering::Hammering::all(data) {
+        Ok(h) => {
+            report.counts.push(("hammering", h.len()));
+            (report.errors).extend(creeer_building::hammering::problems(&h));
+        }
+        Err(e) => report.errors.push(e),
+    }
     let species = match SpeciesTable::from_data(data) {
         Ok(t) => {
             report.counts.push(("species", t.all().len()));

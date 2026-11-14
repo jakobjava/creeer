@@ -91,6 +91,10 @@ pub struct PlanetView {
     pub day_speed: f64,
     /// The fastener chosen to fasten parts with (G2.3).
     pub fastening: crate::fastening::Fastening,
+    /// What is heard (G2.11, ADR-0037), and its volumes (`Sounds::set_volumes`).
+    pub sound: crate::sounds::Sounds,
+    /// The stress overlay, a creative server's (G2.11, ADR-0039: O).
+    pub stress: crate::stress_view::StressView,
 }
 
 impl std::fmt::Debug for PlanetView {
@@ -154,6 +158,8 @@ impl PlanetView {
             day_fraction: 0.05,
             day_speed: 1.0,
             fastening: crate::fastening::Fastening::from_data(),
+            sound: crate::sounds::Sounds::default(),
+            stress: crate::stress_view::StressView::default(),
             terrain,
         }
     }

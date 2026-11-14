@@ -105,6 +105,13 @@ pub trait Coupling: Sync {
         None
     }
 
+    /// The part of the coupling's elastic energy at `states` that never existed (J): what it held
+    /// when first measured between bodies new to the world, put there pressed in, as far as it
+    /// still holds it. None of it may become motion (`group.rs`).
+    fn owed(&mut self, _states: &[MemberState<'_>]) -> f64 {
+        0.0
+    }
+
     /// Makes the members' velocities at the end of a substep consistent with the coupling's
     /// constraints (a joint's points moving apart: `world/joint/project.rs`).
     fn project(&mut self, _members: &mut [super::group::Member<'_>]) {}

@@ -8,6 +8,7 @@
 //! (`creeer_tools play --gate`, the development machine), its most work in a tick and its
 //! bandwidth in CI (`play/tests.rs`).
 
+pub mod bridge_demo;
 mod builders;
 mod log_bridge;
 mod lumberjack;
@@ -320,6 +321,8 @@ fn finish(mut play: Play, ticks: Vec<Tick>, start: &[(u64, u64)]) -> Report {
     }
 }
 
+#[cfg(test)]
+mod break_probe;
 #[cfg(test)]
 mod client_probe;
 #[cfg(test)]

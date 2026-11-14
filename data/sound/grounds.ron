@@ -1,0 +1,22 @@
+// How the ground sounds underfoot and when struck (ADR-0037): by the rock at the surface (its name
+// in geology/rocks.ron). A rock not listed sounds as `default`.
+//
+// HOW TO ADD ONE (data work; `cargo test -p creeer_audio` checks every entry):
+// - `rock`: a rock's name in geology/rocks.ron, or "default".
+// - `modulus`: the ground's Young's modulus at its surface (Pa): how long a heel or a dropped thing
+//   touches it (Hertz): soft ground thuds, rock clicks. Loose soil 5–50 MPa, dense gravel
+//   100–200 MPa (Bowles, Foundation Analysis and Design, table 2-8), rock tens of GPa.
+// - `grain`: the size of what crunches underfoot (m): small grains click high and faint, gravel
+//   crunches.
+// - `grains`: how many grains crunch in one step of a walking adult (Cook's PhISEM: the count
+//   sets the texture; estimates).
+// - `shift`: how fast the grains move, as a share of the heel's speed (an estimate).
+// - `grain_modulus`: the grains' own Young's modulus (Pa): their clicks' contact time.
+[
+    (rock: "soil", modulus: 20e6, grain: 0.002, grains: 25.0, shift: 0.05, grain_modulus: 50e6),
+    (rock: "mud", modulus: 5e6, grain: 0.001, grains: 10.0, shift: 0.05, grain_modulus: 10e6),
+    (rock: "gravel", modulus: 150e6, grain: 0.012, grains: 70.0, shift: 0.1, grain_modulus: 50e9),
+    (rock: "gold placer gravel", modulus: 150e6, grain: 0.012, grains: 70.0, shift: 0.1, grain_modulus: 50e9),
+    (rock: "regolith", modulus: 30e6, grain: 0.001, grains: 30.0, shift: 0.05, grain_modulus: 50e9),
+    (rock: "default", modulus: 30e9, grain: 0.002, grains: 8.0, shift: 0.05, grain_modulus: 50e9),
+]

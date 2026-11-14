@@ -1,0 +1,39 @@
+diff --git a/crates/creeer_server/src/client/place.rs b/crates/creeer_server/src/client/place.rs
+index 4b0462b..ec989c2 100644
+--- a/crates/creeer_server/src/client/place.rs
++++ b/crates/creeer_server/src/client/place.rs
+@@ -37,6 +37,11 @@ const LOOKS_BEYOND: f64 = 1.0;
+ const TURNING: f64 = 0.17;
+ const TURNED: f64 = 0.5;
+ const CLEAR: f64 = 0.1;
++/// Farther than `NEAR_ENOUGH` (level, m) from where it is aimed, it is lifted clear of what
++/// lies about, by its own depth below its middle and `OVER` (m), wholly from `FAR_ENOUGH` on.
++const NEAR_ENOUGH: f64 = 0.15;
++const FAR_ENOUGH: f64 = 0.5;
++const OVER: f64 = 0.25;
+ /// Lying, with something to rest on within this much below where it is aimed (m), it is let
+ /// down onto what lies under it, found by this many rays along its length from this far above.
+ const RESTS_WITHIN: f64 = 0.3;
+@@ -196,7 +201,21 @@ impl Connection {
+         let off = drawn.map_or(0.0, |q| det::acos((q * long).dot(axis).abs().min(1.0)));
+         let share = ((off - TURNING) / (TURNED - TURNING)).clamp(0.0, 1.0);
+         let share = if surface.is_some() { share } else { 0.0 };
+-        let lifted = up * ((support(&corners, DQuat::IDENTITY, long) + CLEAR) * share);
++        let turning = (support(&corners, DQuat::IDENTITY, long) + CLEAR) * share;
++        // Still far from where it goes (level), it is lifted clear of what lies about, as a
++        // person lifts a rail over the poles between (brought straight there, a rail taken from
++        // the ground was held against the poles' ends lying in its way, G2.11); come near, it is
++        // let down onto what it rests on. (The level distance only: lifted, it is no nearer.)
++        let far = self.poses().get(&load).map_or(0.0, |p| {
++            let level = (centre - p.position).reject_from(up).length();
++            ((level - NEAR_ENOUGH) / (FAR_ENOUGH - NEAR_ENOUGH)).clamp(0.0, 1.0)
++        });
++        let travelling = if surface.is_some() {
++            far * (support(&corners, turn, -up) + OVER)
++        } else {
++            0.0
++        };
++        let lifted = up * turning.max(travelling);
+         // Gripped within the placing reach of the eyes, as the server's hands hold it
+         // (`hands.rs`): the client draws it by their law (`steered.rs`).
+         let eye = reach::eye(avatar.position, up);

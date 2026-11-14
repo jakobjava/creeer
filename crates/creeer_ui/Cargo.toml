@@ -13,6 +13,9 @@ egui.workspace = true
 egui_plot.workspace = true
 
 [dev-dependencies]
+# The theme checked against the palette (`art-style.md` §11.2).
+creeer_art.workspace = true
+creeer_data.workspace = true
 
 [lints]
 workspace = true

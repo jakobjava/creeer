@@ -182,6 +182,12 @@ impl ServerWorld {
         Ok(())
     }
 
+    /// The creative kit's item named `name`, made (the bridge site lays them, `site.rs`).
+    pub(super) fn kit_named(&self, name: &str) -> Option<Item> {
+        let kit = self.items.kit.iter().find(|k| k.name == name)?;
+        self.items.densities.as_ref()?.make(kit).ok()
+    }
+
     /// The item body `target` names, if avatar `by` reaches it and nobody holds it.
     fn reached_item(&self, by: EntityId, target: &Target) -> Result<EntityId, String> {
         let id = target.body.ok_or("nothing there")?;

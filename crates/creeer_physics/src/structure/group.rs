@@ -10,6 +10,7 @@ use super::Structure;
 use super::booked::{Start, acting, give, unbooked_work};
 pub use super::coupling::{Coupling, MemberState, NoCoupling, NodeCoupling, StepInfo};
 use super::minimise::minimise;
+use super::owed;
 use super::solver::{ImplicitSolver, Scheme, Timings};
 use creeer_math::glam::{DQuat, DVec3};
 use std::time::Instant;
@@ -125,6 +126,16 @@ pub fn step_group_with(
             let surplus = left.map_or(0.0, |left| {
                 (coupling.found_energy(&states(members)) - left).max(0.0)
             });
+            // What the contacts of bodies new to the world held when first found pressed in
+            // never existed either (`Coupling::owed`; 222 MJ in a man's head laid out inside the
+            // crate that felled him, G2.11): the step may count only what they still hold at its
+            // end, and the velocity the overlap gives is taken back (`owed.rs`).
+            let owed = coupling.owed(&states(members));
+            let starts = if owed > 0.0 {
+                owed::velocities(members)
+            } else {
+                Vec::new()
+            };
             for (s, v) in members.iter_mut() {
                 v.save(s);
             }
@@ -174,10 +185,28 @@ pub fn step_group_with(
             // change alone, before the loads BDF2 carries were booked, `booked.rs`, a thousand
             // more of the builders' walking steps were redone: their most work 1,312 → 2,801.)
             // The joints' drives count whole.
-            let moving = active.max(active_after) + (held_after - held).abs();
-            let limit = before + ENERGY_SLACK * moving + 1e-9;
+            // (With nothing owed, `target` is `before` bit for bit.)
+            let owed_now = |members: &[Member<'_>], coupling: &mut dyn Coupling| {
+                if owed > 0.0 {
+                    coupling.owed(&states(members))
+                } else {
+                    0.0
+                }
+            };
+            let owed_after = owed_now(members, coupling);
+            let moving =
+                active.max(active_after) + ((held_after - owed_after) - (held - owed)).abs();
+            let limit = |target: f64| target + ENERGY_SLACK * moving + 1e-9;
+            let mut target = before - owed + owed_after;
+            let remove = |members: &mut [Member<'_>], excess: f64| {
+                if owed > 0.0 {
+                    owed::remove_gained(members, &starts, excess);
+                } else {
+                    remove_kinetic(members, excess);
+                }
+            };
             let (mut after, mut removed) = (after, false);
-            if after > limit {
+            if after > limit(target) {
                 // Fall back to ever more dissipative schemes; in non-convex contact situations
                 // even BDF2 can gain a little. As a last resort the excess is taken from the
                 // kinetic energy.
@@ -193,19 +222,20 @@ pub fn step_group_with(
                     }
                     substep(members, coupling, fallback);
                     used = fallback;
+                    target = before - owed + owed_now(members, coupling);
                     let energy = group_energy(members, coupling, true).0;
                     after = net(members, energy, fallback, coupling.driven_work());
-                    if after <= limit {
+                    if after <= limit(target) {
                         break;
                     }
                 }
-                if after > limit {
-                    remove_kinetic(members, after - before);
-                    (after, removed) = (before, true);
+                if after > limit(target) {
+                    remove(members, after - target);
+                    (after, removed) = (target, true);
                 }
             }
-            if after > limit - surplus {
-                remove_kinetic(members, after - (before - surplus));
+            if after > limit(target) - surplus {
+                remove(members, after - (target - surplus));
                 removed = true;
             }
             // Velocities scaled down leave a joint whose points are moved out of step with
@@ -320,7 +350,7 @@ fn substep(members: &mut [Member<'_>], coupling: &mut dyn Coupling, scheme: Sche
 }
 
 /// Scales all velocities of the group so that its kinetic energy drops by `excess`.
-fn remove_kinetic(members: &mut [Member<'_>], excess: f64) {
+pub(super) fn remove_kinetic(members: &mut [Member<'_>], excess: f64) {
     let kinetic: f64 = members.iter().map(|(s, _)| s.node_energy().0).sum();
     if kinetic <= 0.0 {
         return;

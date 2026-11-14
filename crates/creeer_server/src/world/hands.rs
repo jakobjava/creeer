@@ -45,6 +45,16 @@ pub(super) fn grip() -> f64 {
     0.5 * carry::STRENGTH * 0.5 * carry::HANDS_APART
 }
 
+/// The axis (of the node's three) a slender load lies along, if its section is round or square
+/// (its two other moments within 5 % of each other): turned about it, it looks and lies alike.
+fn round_slender(moments: &[f64; 3]) -> Option<usize> {
+    let largest = moments.iter().copied().fold(0.0, f64::max);
+    let k = (0..3).fold(0, |m, k| if moments[k] < moments[m] { k } else { m });
+    let (a, b) = (moments[(k + 1) % 3], moments[(k + 2) % 3]);
+    (moments[k] > 0.0 && moments[k] < carry::SLENDER * largest && (a - b).abs() < 0.05 * a.max(b))
+        .then_some(k)
+}
+
 impl ServerWorld {
     /// Before the step: each carrier's hands grip their load where they mean it; one fallen,
     /// or whose load is gone, lets go.
@@ -77,8 +87,10 @@ impl ServerWorld {
         let moments = [inertia.x_axis.x, inertia.y_axis.y, inertia.z_axis.z];
         let largest = moments.iter().copied().fold(0.0, f64::max);
         let least = moments.iter().copied().fold(f64::MAX, f64::min);
-        // The other hand at work (fastening what this one holds steady): held in one.
+        // The other hand at work (fastening what this one holds steady): held in one. Nailed
+        // while held, it is held still where it is until let go (G2.11).
         let busy = self.building.under_way.contains_key(&by);
+        let pinned = self.building.driven.contains_key(&by);
         let c = self.carrying.get_mut(&by).expect("a carrier");
         // Aimed, a thing is held at its balance point (its node's centre: the hands find it, as a
         // beam is carried by its middle), so it sits steady where it is aimed, never drooping
@@ -108,7 +120,21 @@ impl ServerWorld {
         let held = l.position[c.node] + l.orientation[c.node] * c.grip;
         let turning = (if c.one_hand || busy { WRIST } else { grip() }, largest);
         let held_turn = l.orientation[c.node];
-        let (target, turn) = Self::meant(c, (centre, up), busy, (held, held_turn));
+        let (target, turn) = Self::meant(c, (centre, up), busy || pinned, (held, held_turn));
+        // A pole or a squared beam aimed is turned only as far as lays its length where it is
+        // aimed, not rolled about its own length: the fist holds that axis by its friction
+        // (`twist.rs`), and driven to a roll the turn springs pulled at their cap against it,
+        // so a 3 m pole taken lying swung 5–28° off level for four seconds (G2.11).
+        // (Lying only: stood up so, posts swung about 20–70° off upright for a second and one
+        // never stood, G2.11.)
+        let turn = match round_slender(&moments) {
+            Some(k) if c.input.is_some() && (turn * DVec3::AXES[k]).dot(up).abs() < 0.7 => {
+                let (now, want) = (held_turn * DVec3::AXES[k], turn * DVec3::AXES[k]);
+                let now = if now.dot(want) < 0.0 { -now } else { now };
+                (DQuat::from_rotation_arc(now, want) * held_turn).normalize()
+            }
+            _ => turn,
+        };
         // Aimed by the player, it goes where it is aimed, steady (the user, 2026-10-30: "anything
         // lifted sits steady exactly where aimed"): the grip follows the aim directly, not a
         // plan that lagged behind it. By themselves the hands plan their way.
