@@ -225,7 +225,7 @@ fn setting(play: &Play, site: &BridgeSite, tick: u32) -> Act {
                 let at = deck(w, site, x, y);
                 act.commands.push(Command::Kit {
                     item,
-                    at: at + at.normalize() * 0.3,
+                    at: at + at.normalize() * 0.09,
                 });
             }
         }
@@ -235,7 +235,7 @@ fn setting(play: &Play, site: &BridgeSite, tick: u32) -> Act {
         let at = deck(w, site, OUT, 0.0);
         act.commands.push(Command::Kit {
             item,
-            at: at + at.normalize() * 0.35,
+            at: at + at.normalize() * 0.31,
         });
     }
     act

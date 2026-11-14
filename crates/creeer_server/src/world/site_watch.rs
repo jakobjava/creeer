@@ -17,6 +17,9 @@ const TOLD: f64 = 40.0;
 /// Failures within this of the first of a collapse belong to it (ticks: 2 s): only the first is
 /// told.
 pub const COLLAPSE: u64 = 120;
+/// Under this share of what breaks it the step before, what broke was struck (a blow, a load
+/// dropped on it): what it carried before is then told as that, not as what broke it.
+const STRUCK: f64 = 0.5;
 
 /// What the watch keeps.
 #[derive(Debug, Default)]
@@ -183,7 +186,12 @@ impl ServerWorld {
             } else {
                 String::new()
             };
-            format!("{between} {how}: {along}{} across", kn(c.across))
+            let carried = format!("{along}{} across", kn(c.across));
+            if c.share < STRUCK {
+                format!("{between} {how} when struck ({carried} the moment before)")
+            } else {
+                format!("{between} {how}: {carried}")
+            }
         } else {
             let part = called(k).unwrap_or_else(|| "a member".into());
             let axial = if c.along.abs() > 1000.0 {
@@ -196,10 +204,12 @@ impl ServerWorld {
             } else {
                 String::new()
             };
-            format!(
-                "{part} broke: {:.1} kN·m bending{axial}",
-                c.across.abs() * 1e-3
-            )
+            let carried = format!("{:.1} kN·m bending{axial}", c.across.abs() * 1e-3);
+            if c.share < STRUCK {
+                format!("{part} broke when struck ({carried} the moment before)")
+            } else {
+                format!("{part} broke: {carried}")
+            }
         }
     }
 

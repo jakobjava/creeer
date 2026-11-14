@@ -53,6 +53,13 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     view.day_speed = 0.0;
     play(&mut view, 1.0)?;
+    // The gully's edits told before the terrain is streamed (else it is streamed undug).
+    for _ in 0..100 {
+        if view.terrain.edits().len() >= 2 {
+            break;
+        }
+        play(&mut view, 0.1)?;
+    }
     let look = value("--look").unwrap_or_else(|| "near".into());
     let camera = camera(&site, &look)?;
     let mut renderer = pollster::block_on(Renderer::new_headless(SIZE))?;
@@ -148,7 +155,7 @@ fn load(view: &mut PlanetView, site: &BridgeSite, blocks: u32, weights: u32) -> 
         let item = kit("granite block")?;
         view.send(creeer_net::message::Command::Kit {
             item,
-            at: deck(x, y) + up * 0.3,
+            at: deck(x, y) + up * 0.09,
         });
         play(view, 0.5)?;
     }
@@ -156,9 +163,12 @@ fn load(view: &mut PlanetView, site: &BridgeSite, blocks: u32, weights: u32) -> 
         let item = kit("test weight")?;
         view.send(creeer_net::message::Command::Kit {
             item,
-            at: deck(0.0, 0.0) + up * 0.35,
+            at: deck(0.0, 0.0) + up * 0.31,
         });
         play(view, 3.0)?;
+    }
+    if let Some((why, _)) = &view.session.connection.refused {
+        println!("the last load refused: {why}");
     }
     Ok(())
 }

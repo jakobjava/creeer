@@ -2,7 +2,7 @@
 //! views are a creative or test server's information, never a survival tool).
 //!
 //! - **The stress overlay** (O): every built member coloured by its share of what breaks it,
-//!   from dark (unloaded) through green to yellow (breaking), and every joint as a ball in the
+//!   from blue (unloaded) through grey (half) to red (breaking), and every joint as a ball in the
 //!   same colours: nails, pegs and lashings are where timber structures fail.
 //! - **What failed:** where a member or joint broke, a red mark, and in words what it was and
 //!   what it carried ("the joint between a stringer and a deck board pulled apart: 1.9 kN of
@@ -21,11 +21,13 @@ use creeer_server::Connection;
 use creeer_server::world::site::{COLLAPSE, Failure, Inspection};
 use creeer_ui::egui;
 
-/// The overlay's scale: a share of what breaks it (%).
+/// The overlay's scale: a share of what breaks it (%), blue to red through grey, as Poly Bridge's
+/// stress view reads red as near failing (viridis' dark purple for a lightly loaded member did
+/// not read on brown ground).
 pub const SCALE: Heatmap = Heatmap {
     min: 0.0,
     max: 100.0,
-    palette: Palette::Sequential,
+    palette: Palette::Diverging,
 };
 /// A joint's ball (m across), and a failure's mark.
 const JOINT: f64 = 0.1;
