@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
 /// The scripts this module plays.
-pub(crate) const SCRIPTS: [&str; 3] = ["bridge", "frame", "site"];
+pub(crate) const SCRIPTS: [&str; 5] = ["bridge", "frame", "site", "site-walk", "site-load"];
 /// Walking speed (m/s), as the game walks.
 const WALK: f64 = 3.0;
 /// A client frame (s).
@@ -84,7 +84,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let script = args.get(at + 1).ok_or("--build-play needs a script")?;
     let dir = PathBuf::from(args.get(at + 2).ok_or("--build-play needs a directory")?);
     std::fs::create_dir_all(&dir)?;
-    let mut player = Player::start(dir, script == "site")?;
+    let site = match script.as_str() {
+        "site" => Some(false),
+        "site-walk" | "site-load" => Some(true),
+        _ => None,
+    };
+    let mut player = Player::start(dir, site)?;
     // `--until n`: the first n steps only.
     player.until = (args.iter().position(|a| a == "--until"))
         .and_then(|i| args.get(i + 1)?.parse().ok())
@@ -93,6 +98,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "bridge" => crate::build_play_scripts::bridge(&mut player),
         "frame" => crate::build_play_scripts::frame(&mut player),
         "site" => crate::build_play_site::ten_minutes(&mut player),
+        "site-walk" => crate::build_play_site::on_the_built_bridge(&mut player, true),
+        "site-load" => crate::build_play_site::on_the_built_bridge(&mut player, false),
         other => return Err(format!("no script {other}: {SCRIPTS:?}").into()),
     };
     match played {
@@ -104,13 +111,20 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl Player {
-    /// A singleplayer creative game, or (`at_site`) the bridge site as `--bridge` starts it.
-    fn start(dir: PathBuf, at_site: bool) -> Result<Self, Box<dyn std::error::Error>> {
-        let (mut view, site) = if at_site {
-            let (view, site) = crate::bridge_site::view()?;
-            (view, Some(site))
-        } else {
-            (PlanetView::singleplayer(true)?, None)
+    /// A singleplayer creative game, or the bridge site as `--bridge` starts it (`site`: with
+    /// *bridge_demo*'s footbridge built across, if true).
+    fn start(dir: PathBuf, site: Option<bool>) -> Result<Self, Box<dyn std::error::Error>> {
+        let at_site = site.is_some();
+        let (mut view, site) = match site {
+            Some(built) => {
+                let (view, site) = if built {
+                    crate::bridge_site::view_built()?
+                } else {
+                    crate::bridge_site::view()?
+                };
+                (view, Some(site))
+            }
+            None => (PlanetView::singleplayer(true)?, None),
         };
         crate::planet_shot_build::play(&mut view, 2.0)?;
         view.walking = true;
@@ -256,14 +270,18 @@ impl Player {
     /// Walks towards `to` (level) until within `within` m, looking where she goes (`look_down`
     /// m below the eyes' level, 3 m ahead).
     pub(crate) fn walk_to(&mut self, to: DVec3, within: f64, look_down: f64) {
-        for _ in 0..2000 {
+        // (Not getting there in 20 s, she gives up: stuck in the gully, against its wall.)
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(20) {
             let up = self.up();
             let way = (to - self.me()).reject_from(up);
             if way.length() < within {
                 break;
             }
-            // Slowing the last metre and a half, as anyone walking up to an edge does.
-            let speed = (way.length() * 2.0).clamp(0.5, WALK);
+            // Slowing the last metre and a half before where she stops, as anyone walking up to
+            // an edge does (G2.11 Q: slowed towards `to` itself, she stopped 1.3 m short of it at
+            // 2.6 m/s, slid on 1.2 m and stood on the stringer she meant to take).
+            let speed = ((way.length() - within) * 2.0).clamp(0.5, WALK);
             let way = way.normalize();
             self.look = self.eye() + way * 3.0 - up * look_down;
             self.play(STEP, way * speed);

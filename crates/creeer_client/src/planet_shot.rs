@@ -213,10 +213,13 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
     // The players' characters (G1.3e).
     let mut people = crate::people::People::register(&mut renderer)?;
-    let mut drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
-    crate::hud_shot::not_own(&view, &view_name, &mut drawn);
+    // In first person the player's own body seen from within, as the game draws it.
+    people.first_person = crate::planet_shot_build::first_person(&view, &view_name);
+    let drawn = snapshot.people.clone();
     let mut overlay = (hud.as_ref()).map(|h| crate::hud_shot::overlay(h, &mut view, &camera));
     let ground = crate::people_ground::PlanetGround { terrain: &terrain };
+    // (The arms given the time they take to reach what the hands hold, as `build_play_shot`.)
+    people.draw(&drawn, 1.0, &ground, &mut Scene::default());
     people.draw(&drawn, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,

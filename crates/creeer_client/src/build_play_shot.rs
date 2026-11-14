@@ -75,7 +75,9 @@ impl Player {
         let mut snapshot = self.view.snapshot();
         // What a creative server shows of what is built, as the game draws it (`app/planet.rs`).
         let stress = self.view.stress;
-        let seen = (self.view.session.inspection(stress.on)).unwrap_or_default();
+        let seen = self.view.session.inspection(stress.on);
+        self.screen.creative = seen.is_some();
+        let seen = seen.unwrap_or_default();
         stress.leave_out(&mut snapshot.beams);
         let pair = (&snapshot, &snapshot, 1.0);
         physics_view::draw(
@@ -203,6 +205,12 @@ impl Player {
 type Drawn = (Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32);
 
 impl Player {
+    /// A line of what the script found, in the log.
+    pub(crate) fn note(&mut self, text: &str) {
+        println!("  {text}");
+        let _ = writeln!(self.log, "  {text}");
+    }
+
     /// The game's whole screen over the world seen from `camera` (`hud::game_screen`), laid out a
     /// few times so that windows opened are measured and shown, as a few frames of the game do.
     fn screen_drawn(&mut self, camera: &Camera, seen: &Inspection, tick: u64) -> Drawn {
@@ -213,8 +221,9 @@ impl Player {
             egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size.0 as f32, size.1 as f32));
         let mut textures = egui::TexturesDelta::default();
         let (mut shapes, mut ppp) = (Vec::new(), 1.0);
-        for _ in 0..4 {
-            self.ui_time += 0.5;
+        // (Six passes a second apart, as `hud_shot.rs` found a scroll area needs to settle.)
+        for _ in 0..6 {
+            self.ui_time += 1.0;
             let mut input = egui::RawInput {
                 screen_rect: Some(rect),
                 time: Some(self.ui_time),
