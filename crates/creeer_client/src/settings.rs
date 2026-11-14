@@ -26,6 +26,9 @@ pub struct GameSettings {
     pub ui_scale: f32,
     /// The sound's volume, 0 to 1 (G2.11 A7 plays at it).
     pub volume: f32,
+    /// What the crosshair is on, and what can be done with it, told beside the crosshair (else
+    /// at the bottom of the screen, above what the hands can do: G2.11 Q).
+    pub prompts_beside: bool,
     /// Whether the player has opened the controls once: until then the screen says how.
     pub controls_seen: bool,
     /// The controls the player moved, by action id (`bindings.rs`); the rest are the defaults.
@@ -43,6 +46,7 @@ impl Default for GameSettings {
             field_of_view: 70.0,
             ui_scale: 1.0,
             volume: 0.8,
+            prompts_beside: false,
             controls_seen: false,
             controls: BTreeMap::new(),
             bindings: Bindings::default(),

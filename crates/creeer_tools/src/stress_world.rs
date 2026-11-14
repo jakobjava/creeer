@@ -13,10 +13,16 @@ use std::sync::{Arc, Mutex};
 /// A busy server: 8 scripted players walking, dropping crates and digging among 400 bodies,
 /// with 100,000 resting crates parked across the planet and 10 abstract powerhouses.
 pub fn server() -> Scene {
+    // `STRESS_TICK_HASH`: the physics world's hash after every tick, on stderr (two runs that
+    // end apart are compared tick by tick to find where they part).
+    let every_tick = std::env::var_os("STRESS_TICK_HASH").is_some();
     let (mut w, players) = world();
     for tick in 0..300 {
         walk(&mut w, &players, tick);
         w.step();
+        if every_tick {
+            eprintln!("setup {tick} {:016x}", hash(w.world.to_bytes()));
+        }
     }
     let mut save = w.to_save();
     let first = save.next_id;
@@ -68,6 +74,9 @@ pub fn server() -> Scene {
             }
             w.regions(&c);
             w.step();
+            if every_tick {
+                eprintln!("tick {tick} {:016x}", hash(w.world.to_bytes()));
+            }
         }),
         hash: Box::new(move || {
             let mut w = state.lock().expect("world");

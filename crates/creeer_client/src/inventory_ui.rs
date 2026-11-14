@@ -165,21 +165,28 @@ fn item_row(ui: &mut egui::Ui, item: &creeer_net::message::ItemView, take: Take<
     });
 }
 
-/// The vitals (G1.9), at the bottom left: health, what each of the body's parts has taken, and
-/// the jetpack's gas while there is one (survival players have none).
+/// The vitals (G1.9), at the bottom left on a plate as the hands' panel at the right (G2.11 Q:
+/// plain text there was lost over bright timber): health, what each of the body's parts has
+/// taken, and the jetpack's gas while there is one (survival players have none).
 pub fn vitals(ctx: &egui::Context, c: &creeer_server::Connection) {
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("vitals"),
     ));
+    let text = vitals_text(c.health, c.hurt, c.fallen, c.gas);
+    let hurt = c.fallen || c.health < 0.995;
+    let row = creeer_ui::paint::Row {
+        key: None,
+        text: &text,
+        colour: if hurt {
+            creeer_ui::theme::WARN
+        } else {
+            creeer_ui::theme::TEXT_DIM
+        },
+        size: creeer_ui::theme::SMALL + 1.0,
+    };
     let corner = ctx.content_rect().left_bottom() + egui::vec2(16.0, -16.0);
-    painter.text(
-        corner,
-        egui::Align2::LEFT_BOTTOM,
-        vitals_text(c.health, c.hurt, c.fallen, c.gas),
-        egui::FontId::proportional(14.0),
-        egui::Color32::from_white_alpha(210),
-    );
+    creeer_ui::paint::plate_at(&painter, (egui::Align2::LEFT_BOTTOM, corner), &[row]);
 }
 
 /// The vitals as a line: health, each hurt part's loss (a part unhurt is left out), down, gas.
