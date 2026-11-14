@@ -143,6 +143,11 @@ impl People {
         }
     }
 
+    /// Person `key`'s feet as last drawn (their footsteps' sound: `sounds.rs`).
+    pub fn feet(&self, key: u32) -> Option<[(DVec3, bool); 2]> {
+        self.animator.feet(key)
+    }
+
     /// The people into `scene` as the renderer draws them this frame, `dt` seconds after the
     /// last, animated on `ground`, with the tools they hold (those no longer drawn are
     /// forgotten). Returns the pieces of the made tools in their hands (G1.10), as boxes (centre,

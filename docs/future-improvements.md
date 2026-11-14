@@ -296,6 +296,18 @@ Limits that later work already lifted are not listed. Examples: members that cou
 | **A machine's insides beyond its fast states** (its platform's motion, a circuit's and pipes' internal states) are rebuilt at rest when a save is loaded | They settle in seconds; saving every domain's state portably is larger | R | Medium | ADR-0020 |
 | **Terrain edits far from players under parked islands**: edits need a player within 500 m, inside the active range; a future long-range edit (an explosion, a landslide) must wake what stands there first | No such edit exists yet | R, G | Small | ADR-0019 |
 
+## Sound
+
+| What | Why deferred | Improves | Size | Recorded in |
+|---|---|---|---|---|
+| **Creaking in play**: a loaded member creaks as it nears its strength; the synthesis and its data exist, but the client is not told a member's stress. Needs a protocol addition (each loaded structure's most loaded members and their utilisation, a byte each, with the snapshot rounds) | Only stream B changes the protocol (G2.11) | G, R | Small | ADR-0037, Limits |
+| **What the client is not told, heard**: a structure member's material (all sound as green spruce), which element broke when a structure comes apart (the largest member gone cracks; a broken nail joint is silent), other players' blows' targets and their fastenings. Each a small protocol addition, listed in ADR-0037 | As above | G, R | Small | ADR-0037, Limits |
+| **Contacts heard as they happen**: impacts read from the snapshots' velocities (33 ms apart: a blow and its rebound one sound) rather than from contact impulses; the client's own predicted contacts could time them to the frame | The smallest real version first; the prediction is stream A5's | R | Small | ADR-0037, Limits |
+| **Shapes beyond bars and balls**: plates, shells, hollow crates, any part's FEM modes (O'Brien 2002, James 2006's acoustic transfer), a compact body's spheroidal modes | Parts are bars, boxes and logs now | R | Medium | ADR-0037, Limits |
+| **Hearing the place**: radiation's directivity and near field, the ground's reflection, reverberation of rooms and valleys, occlusion by terrain, HRTF (front from back), Doppler | Outdoors and stereo first | R, G | Medium | ADR-0037, Limits |
+| **More sounds**: water, fire, digging, chopping into a standing tree beyond a tool's blow, felling, lashing, creatures, members whistling in the wind (Dobashi 2003) | Fundamentals first: the bridge's sounds first | G | Medium | ADR-0037, Limits |
+| **Measured sound data**: the estimates in `data/sound/` (cracks' vibration share, creaks, grains underfoot, the heel, the wind's level, the drivers' blows) from recordings and acoustic-emission counts; `creeer_tools validate` checking `data/sound/` | No recordings yet; the tests check the data now | R | Small | ADR-0037, Limits |
+
 ## Elsewhere
 
 | What | Why deferred | Improves | Size | Recorded in |

@@ -1,12 +1,21 @@
 [package]
 name = "creeer_audio"
-description = "Audio playback."
+description = "Sound from the simulation: modal synthesis, a mixer and the device (ADR-0037)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [dependencies]
+creeer_math.workspace = true
+creeer_data.workspace = true
+creeer_materials.workspace = true
+serde.workspace = true
+ron.workspace = true
+# The sound device (ADR-0037): kira's cpal backend only, without its file decoders (we play no
+# files); a lock-free queue to the audio thread (kira uses the same one).
+kira = { version = "0.12.6", default-features = false, features = ["cpal"] }
+rtrb = "0.4.0"
 
 [lints]
 workspace = true
