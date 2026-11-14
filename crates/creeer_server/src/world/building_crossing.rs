@@ -247,7 +247,25 @@ impl ServerWorld {
                 .ok_or_else(|| "no member there".to_owned())
         };
         let (a, b) = match against {
-            Against::Part(other) => (nearest(self.bars(part)?)?, nearest(self.bars(other)?)?),
+            // Of the two bodies' members, the two that touch nearest where they touch (a deck
+            // board laid beside a nailed one: nearest the touch on the stringer under it, the
+            // nailed board's member was taken, and they were to be pegged side by side).
+            Against::Part(other) => {
+                let (mine, theirs) = (self.bars(part)?, self.bars(other)?);
+                let touching = (mine.iter())
+                    .flat_map(|a| theirs.iter().map(move |b| (a, b)))
+                    .filter_map(|(a, b)| {
+                        let (gap, pa, _, way) = between(a, b, touch)?;
+                        let at = pa + way * a.frame.reach(way);
+                        (gap < super::TOUCHING + 0.02).then(|| (a, b, (at - touch).length()))
+                    })
+                    .min_by(|x, y| x.2.total_cmp(&y.2))
+                    .map(|(a, b, _)| (a.clone(), b.clone()));
+                match touching {
+                    Some(pair) => pair,
+                    None => (nearest(mine)?, nearest(theirs)?),
+                }
+            }
             Against::Itself(ea, eb) => {
                 let bars = self.bars(part)?;
                 let of = |e: usize| {

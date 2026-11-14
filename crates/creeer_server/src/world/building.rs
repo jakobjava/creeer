@@ -20,6 +20,8 @@ pub(super) mod crossing;
 #[cfg(test)]
 #[path = "building_crossing_tests.rs"]
 mod crossing_tests;
+#[path = "building_held.rs"]
+mod held;
 #[path = "building_nails.rs"]
 mod nails;
 pub(super) use nails::plain_refusal;
@@ -50,9 +52,9 @@ pub(super) struct Building {
     pub(super) hammering: Option<creeer_building::hammering::Hammering>,
     pub(super) hammer: BTreeMap<EntityId, (u64, u32)>,
     pub(super) blows: Vec<(EntityId, DVec3)>,
-    /// Nails driven into a part still in its driver's hands (by player): what it touched, where,
-    /// with which fastener. Made joints when the hands let go (`nailing.rs`).
-    pub(super) driven: BTreeMap<EntityId, Vec<(EntityId, DVec3, usize)>>,
+    /// The players holding a part they nailed while holding it: their hands keep it still
+    /// where it is until they let go (`building_held.rs`).
+    pub(super) pinned: std::collections::BTreeSet<EntityId>,
 }
 
 /// A built structure's record: the items its parts and fasteners were (for salvage, G2.6),
@@ -257,17 +259,18 @@ impl ServerWorld {
         };
         // One fastener where it is aimed (G2.11, the user: "they choose where nails go and how
         // many"; G2.10's one J nailing every crossing a held part touched is gone). In the hands
-        // still, it is driven and the hands keep holding it still where it is, for another; its
-        // joints are made as they let go (`nailing.rs`: let go after one nail, a beam pivoted
-        // on it and slid off the other post's narrow top, G2.10; kept held while made one
-        // structure, the solver failed, G2.10).
-        if self.carried(by) == Some(u.part)
-            && let Against::Part(id) = other
-        {
-            (self.building.driven.entry(by).or_default()).push((id, at, u.fastener));
-            return Ok(());
-        }
+        // still, it is a joint at its last blow and the hands hold on, still where it is, for
+        // another (`building_held.rs`: let go after one nail, a beam pivoted on it and slid off
+        // the other post's narrow top, G2.10; made joints only as the hands let go, nothing held
+        // it between nails, G2.11).
+        // What the hands hold is one of the two (aimed at it, or at what it rests on).
+        let held = self
+            .carried(by)
+            .is_some_and(|h| h == u.part || matches!(other, Against::Part(id) if id == h));
         match other {
+            Against::Part(_) | Against::Itself(..) if held => {
+                self.drive_held(by, (u.part, other, point), &fastener, at)?;
+            }
             Against::Part(id) => {
                 let c = self.crossing(Some(by), u.part, other, point)?;
                 self.drive(u.part, &c, &fastener, at)?;

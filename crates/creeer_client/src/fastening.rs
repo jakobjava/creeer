@@ -50,11 +50,15 @@ impl PlanetView {
             return;
         };
         let c = &self.session.connection;
-        let held = (c.own_load().zip(self.holding.touch())).map(|(load, at)| Target {
-            body: Some(load),
-            at,
-            seen: c.drawn_at(),
-        });
+        // Held still for nailing (a nail driven into it already: it is one with what it was
+        // nailed to, G2.11 B2), J aims as at anything: at the crossing the crosshair is on.
+        let held = (c.own_load().zip(self.holding.touch()))
+            .filter(|_| !self.holding.pinned())
+            .map(|(load, at)| Target {
+                body: Some(load),
+                at,
+                seen: c.drawn_at(),
+            });
         let pins = held.is_some();
         if let Some(target) = held.or_else(|| self.reached_or_trunk(camera)) {
             self.send(Command::Fasten { target, fastener });

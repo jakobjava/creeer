@@ -226,6 +226,62 @@ fn a_pole_taken_from_the_ground_is_carried_level_before_the_chest() {
     assert!(walked > 3.7, "walked {walked} m with it");
 }
 
+/// A rail taken from under two 3 m poles that lie across it (the first pass's frames: it stayed
+/// caught by the feet while the crosshair aimed it away), and aimed 1.5 m off on the ground:
+/// lifted straight up first (`Connection::lifting_hold`, as `holding.rs` lifts what it takes,
+/// `lift`), or brought there straight. Returns how far it rose in its first second in the hands
+/// (m), and how far (level, m) it lies from where it was aimed two seconds later.
+fn taken_from_under(lift: bool) -> (f64, f64) {
+    let mut b = Builder::new();
+    let (east, north, up) = (b.east, b.north, b.up);
+    let rail = b.lay(pole(2.0, 0.03), b.ground(0.0, -1.0), east);
+    b.game.run(30, super::still);
+    // (Fallen across it, an end of each on it: balanced on it by their middles, the two weigh
+    // 54 kg on it, as much as the hands lift.)
+    for along in [-0.6, 0.6] {
+        let at = b.centre(rail) + east * along + north * 1.0 + up * 0.1;
+        b.lay(pole(3.0, 0.06), at, north);
+    }
+    b.game.run(120, super::still);
+    let lay = {
+        let w = &b.game.server.world;
+        let s = &w.world.bodies[w.index(rail).expect("there")].structure;
+        (s.position[0], s.orientation[0])
+    };
+    b.take(rail);
+    let aim = b.ground(1.5, 0.0);
+    let mut rose = f64::MIN;
+    // (`holding.rs` lifts it for `LIFTING` seconds.)
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let lifting = (crate::client::LIFTING * 60.0).round() as u32;
+    for tick in 0..60 {
+        let client = &mut b.game.clients[0].0;
+        match client.lifting_hold(lay).filter(|_| lift && tick < lifting) {
+            Some(hold) => {
+                client.set_hold(Some(hold));
+                b.game.tick(super::still);
+            }
+            None => b.hold_at(aim, (0.0, 0.0, 0.0), 1),
+        }
+        rose = rose.max((b.centre(rail) - lay.0).dot(up));
+    }
+    b.hold_at(aim, (0.0, 0.0, 0.0), 120);
+    (rose, (b.centre(rail) - aim).reject_from(up).length())
+}
+
+/// Taken from under others, a part is lifted clear first (with two 27 kg poles lying across a
+/// rail, brought straight towards where it is aimed it rises with them; lifted, out from under),
+/// and then goes where it is aimed.
+#[test]
+fn a_part_taken_from_under_others_is_lifted_clear_first() {
+    let (straight, lifted) = (taken_from_under(false), taken_from_under(true));
+    eprintln!(
+        "rose in a second, and lies from where aimed: brought straight {straight:.2?} m, lifted first {lifted:.2?} m"
+    );
+    assert!(lifted.0 > 0.2, "lifted first, it rose: {lifted:?}");
+    assert!(lifted.1 < 0.5, "then it goes where aimed: {lifted:?}");
+}
+
 fn w_held(b: &Builder) -> bool {
     b.game.server.world.carried(b.ada).is_some()
 }

@@ -226,25 +226,6 @@ impl ServerWorld {
         }
     }
 
-    /// The nails `by` drove into `part` while holding it, made joints as the hands let go: held
-    /// still by the hands meanwhile, it lay where they were driven (G2.11). What each touches is
-    /// found again where it was driven (the first made the parts one: the next crossings are
-    /// within it). One refused (what it touched gone) is told.
-    pub(super) fn make_driven(&mut self, by: EntityId, part: EntityId) {
-        let Some(driven) = self.building.driven.remove(&by) else {
-            return;
-        };
-        for (_, point, k) in driven {
-            let fastener = self.building.fasteners[k].clone();
-            let made = (self.touching_at(part, point))
-                .and_then(|(against, touch)| self.crossing(Some(by), part, against, touch))
-                .and_then(|c| self.drive(part, &c, &fastener, point));
-            if let Err(why) = made {
-                self.note(by, format!("not fastened there: {why}"));
-            }
-        }
-    }
-
     /// The hammer blows that landed since last asked (G2.11: for sound and drawing): who struck
     /// and where.
     pub fn take_hammer_blows(&mut self) -> Vec<(EntityId, DVec3)> {

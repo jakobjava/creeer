@@ -215,6 +215,7 @@ impl Player {
         // The held part's keys, as the controls' table names them (`bindings.rs`).
         let held = match code {
             KeyCode::KeyR => Some(Action::StandOrLay),
+            KeyCode::KeyZ => Some(Action::Roll),
             KeyCode::KeyQ => Some(Action::Turn),
             KeyCode::ControlLeft | KeyCode::ControlRight => Some(Action::Fine),
             _ => None,
@@ -233,6 +234,11 @@ impl Player {
             KeyCode::KeyT => v.send(Command::Throw(camera.forward())),
             _ => {}
         }
+    }
+
+    /// The wheel turned `notches` (forward: what is held slides away along itself).
+    pub(crate) fn wheel(&mut self, notches: f64) {
+        self.view.holding.wheel(notches);
     }
 
     /// Q held, the mouse moved `(dx, dy)` pixels, Q let go.

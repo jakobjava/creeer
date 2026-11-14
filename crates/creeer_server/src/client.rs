@@ -388,7 +388,7 @@ impl Connection {
 
 mod aim;
 pub use aim::Aimed;
-pub use place::Surface;
+pub use place::{LIFTING, Surface};
 mod apply;
 mod draw;
 mod held;

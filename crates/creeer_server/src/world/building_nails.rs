@@ -180,9 +180,14 @@ impl ServerWorld {
             Kind::Nail { diameter, .. } | Kind::Peg { diameter, .. } => diameter,
             Kind::Lashing { .. } => return Err("it is lashed there already".into()),
         };
+        // (Within 15 %: the parts settle by a millimetre or so between nails, and a nail that
+        // just reaches 12 diameters into the part behind loses a share of its grip by it; the
+        // catalogue's other sizes hold a third and more less.)
         let n = withdrawal / one.withdrawal;
-        if (n - n.round()).abs() > 0.02 || n < 0.5 {
-            return Err("it is fastened there with something else already".into());
+        if (n - n.round()).abs() > 0.15 || n < 0.5 {
+            return Err(format!(
+                "it is fastened there with something else already (as {n:.2} of these)"
+            ));
         }
         // (A handful of nails.)
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
