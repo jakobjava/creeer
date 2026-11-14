@@ -326,6 +326,8 @@ mod break_probe;
 #[cfg(test)]
 mod client_probe;
 #[cfg(test)]
+mod deck_probe;
+#[cfg(test)]
 mod poles_probe;
 #[cfg(test)]
 mod rest_probe;
