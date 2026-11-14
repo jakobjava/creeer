@@ -1,12 +1,12 @@
 # ADR-0041: Things as drawn: parts, logs, stones and trees (G2.11, stream A2)
 
-**Status:** in progress (2026-11-14, G2.11 A2).
+**Status:** accepted (2026-11-14, G2.11 A2; the looks for the user to judge at the check-in).
 
 **Context:** the user's verdict on G2, "looks horrible" (`docs/playability-plan.md`). What a player handles and stands among was drawn plainly: a rod (`post`, `rail`, `pole`) as a square bar, timber and logs as coloured boxes with no grain, end grain or bark, stones and sticks lying about as boxes, a cobble as a dark steel ball, and trees as rods under stacked ellipsoids, a birch's trunk as a white line. `art-style.md` asks for the drawn shape to be the simulated one (§2), curved things round at every distance (pillar 9), and every surface grainy, weathered and used from the palette's patterns (§6), trees with "masses of foliage in clumps, not individual leaves; dark undersides from AO; bark with vertical detail" (§8).
 
 **Builds on:** ADR-0003 (the renderer), ADR-0026 (the look: tokens, the surface's layers, primitives in levels of detail by screen error), ADR-0028 (items), ADR-0029 (what lies about), ADR-0031 (trees).
 
-**Evidence:** `creeer_render::{parts, foliage}`, `shaders/parts.wgsl`, the part path in `shaders/mesh.wgsl` and `globals.wgsl` (`placed`); `creeer_client::{part_meshes, part_view, tree_draw, tree_view, loose_view}`; the views `parts`, `nailed`, `forest` and `tree` (`planet_shot_things.rs`); frames before and after in the stream's report.
+**Evidence:** `creeer_render::{parts, foliage}`, `shaders/parts.wgsl`, the part path in `shaders/mesh.wgsl` and `globals.wgsl` (`placed`); `creeer_client::{part_meshes, part_view, part_fit, tree_draw, tree_view, loose_view}`; the views `parts`, `nailed`, `forest`, `tree`, `felled` and `bridge` (`planet_shot_things.rs`, `--frames n` timing a view); frames before and after in the stream's report.
 
 ## Prior work
 
@@ -32,23 +32,38 @@
 
 ## Measured and rejected
 
+All on the development machine at 1600 × 900, `creeer_client --planet surface <png> --frames 120` (the forest about the spawn), GPU times per pass, the best of several runs (other agents compiled meanwhile).
+
 | What | Measured | Why not |
 |---|---|---|
-| Foliage drawn with the models' full surface | (filled in below) | |
+| Foliage with the models' full surface (weathering, grime, rain streaks, edge chips: about fourteen noise fetches a pixel), levels' error twice a sphere's plus a tip or lump's full height until four segments a tip | Shadows 5.78 ms, prepass 1.29, scene 2.46 (before G2.11: 2.32, 0.52, 1.19) | Leaves weather and chip like nothing the surface's layers model, and the error estimate forced the finest levels into the shadow cascades: foliage got its own surface (three fetches) and a truer error (`Grain::Leaves`, `foliage::levels`): shadows 2.68–2.71, prepass 0.59–0.60, scene 1.39 |
+| A far spire of three, then one tier at its coarsest level | No change in the far cascades (shadow 2 1.32 → 1.35 ms) | Kept (fewer triangles, nothing lost far off); the far cascades' cost was the levels' error (above) |
+| Fewer masses at mid distance: five instead of seven, and a broadleaf's clumps seven instead of eleven | 18,721 and 17,556 instances in shadows against 20,995; GPU within the runs' noise (shadow 2 1.32 → 1.32, 1.03 → 1.02 ms) | Five kept (as seven to the eye); the clumps kept at twice the masses, as the fewer saved nothing measurable |
+| A board's piece fitted as round when its corners are as far from an axis (`part_fit.rs`, 4 % tolerance) | A broken plank's halves drawn as a stub and a disc | A box's eight corners are as far from each of its axes, and a short prism's nearly as far from one across it: round needs twelve corners and 1 %, about the most even axis |
+| The sandbox primitives' bevel (8 % of the smallest side) on parts | A stem drawn in three logs showed a groove 2.4 cm deep where they met | Parts take `art-style.md` §7's bevel (2 %, at least 5 mm) |
 
 ## Validation
 
-- `parts::tests`, `foliage::tests`, `part_meshes::tests`, `part_view::tests`, `vertex::tests`, `scene::tests`, `primitives::tests` (the shaders' constants against the Rust ones).
-- Frames (`creeer_client --planet <parts|nailed|forest|tree|surface|rail|post|low> <file.png>`), before and after.
+- `parts::tests`, `foliage::tests`, `part_meshes::tests`, `part_view::tests`, `part_fit::tests`, `vertex::tests`, `scene::tests`, `primitives::tests` (the shaders' constants against the Rust ones).
+- Frames (`creeer_client --planet <parts|nailed|forest|tree|felled|bridge|surface|rail|post|low> <file.png>`), before and after.
+- The style board is unchanged (its 22 images at mean ΔE₀₀ 0.00 from their goldens): the models and the engineer are drawn as before, and the board has no parts or trees yet (`docs/future-improvements.md`).
 
 ## Cost
 
-(filled in below)
+| Scene (development machine, best runs) | Before G2.11 | After | |
+|---|---|---|---|
+| The forest about the spawn (`--planet surface --frames 120`), GPU ms: shadows (4 cascades), prepass, scene | 2.32, 0.52, 1.19 (4.3 in all; the land bare: 1.13, 0.40, 1.15) | 2.68, 0.59, 1.39 (4.9 in all) | Trees cost 1.3 ms of GPU before and 1.9 now. CPU: the snapshot 0.39–0.44 ms, the scene made of it 0.13–0.15 ms |
+| Instances on screen and in shadows | 2,063 and 13,893 (824 rods, 4,777 masses) | 2,530 and 18,721 (2,686 logs and things, 6,139 masses) | |
+| The factory of 10,000 parts (`--bench 300`), GPU all | 1.279–1.281 ms | 1.312 ms | +2.5 %: `placed`'s part branch in the shadow and plain vertex shaders |
+
+The forest's frame stays far within the budget on the development machine (60 FPS: 16.7 ms), and the trees cost 0.6 ms more of GPU than the plain rods and balls did: to be measured again on a quiet machine. Impostors beyond 50 m (`docs/future-improvements.md`) are the step that would cut it.
 
 ## Limits
 
 - Built structures' members are drawn from what the frame tells: a radius per member and nothing of its wood or profile, so every built member is round `timber` (a log's bark, a birch rail and a sill's square section are lost once built), and its joints are not drawn: the frame does not say which fastener holds them, so nail heads, a lashing's wraps and a peg's end cannot be. The protocol needs each member's token and profile, and each joint's fastener (stream B's: the protocol); `part_view.rs` then draws them as it draws items.
 - A crate item (a block with a wall) is drawn as a solid sawn block: the client is not told it is a container.
 - Trees beyond 160 m are not drawn (impostors).
+- A near spruce at its finest levels exceeds `art-style.md` §7's 8,000 triangles for a tree's LOD 0 (a tier a whorl, up to 1,152 each); the levels by screen error draw it coarser beyond a few metres, but the tree as a whole has no budgeted LOD 0.
+- Limbed branches lying about are drawn as worked round timber (their item does not say it is a branch); no knots, checks or saw marks yet.
 
 Each is in `docs/future-improvements.md`.
