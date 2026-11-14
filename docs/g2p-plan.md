@@ -63,7 +63,7 @@ Measured with `play/break_probe.rs` (each body's mass, speed, spin and energy ti
   | the bridge | 59 J (elastic), one body | 2,600 J in 6 pieces |
   | the contact crate–head at the step's start | 221.8 MJ | |
 
-  The "19 pieces of 1–32 kg" were the ragdoll's 14 segments and the bridge's 5 pieces: the plank was smashed by the crate and the segments flying through it.
+  The "19 pieces of 1–32 kg" were the ragdoll's 14 segments and the bridge's 6 pieces: the plank was smashed by the crate and the segments flying through it.
 - **Why the energy guard let it through.** The guard takes energy that contacts hold beyond what the last step left from the motion (ADR-0005, F6). It knows the last step's books only for bodies it stepped: new bodies have none (`left_by_group`), and an impact's step drops them (`set_left(None)`). The tick was an impact on a structure (0.5 ms substeps), its contacts found 222 MJ, and the guard counted them as energy the step had.
 
 So the model was wrong, but not in its fracture: in its energy books for a body put into the world inside another.
