@@ -44,8 +44,23 @@ pub fn log_bridge_world(terrain: Arc<Terrain>) -> ServerWorld {
     let (log_radius, half_plank) = (0.075, 0.025);
     let mut top: f64 = f64::MIN;
     for side in [-0.5, 0.5] {
-        let at = w.ground_under(middle + east * (side * SPAN)) + up * (log_radius + 0.001);
+        // Along the ground under its two ends, a millimetre clear of it there and at its middle:
+        // laid level by its middle alone, an end lay in the slope, holding 580 J (G2.11).
+        let base = w.ground_under(middle + east * (side * SPAN));
+        let (a, b) = (
+            w.ground_under(base - north * 0.6),
+            w.ground_under(base + north * 0.6),
+        );
+        let x = (b - a).normalize();
+        let normal = up.reject_from(x).normalize();
+        let bulge = (base - (a + b) * 0.5).dot(normal).max(0.0);
+        let at = (a + b) * 0.5 + normal * (log_radius + 0.001 + bulge);
         top = top.max((at - middle).dot(up) + log_radius);
+        let turn = DQuat::from_mat3(&creeer_math::glam::DMat3::from_cols(
+            x,
+            normal,
+            x.cross(normal),
+        ));
         let sill = Item::Piece(
             Piece::solid(
                 "spruce_green",
@@ -56,7 +71,7 @@ pub fn log_bridge_world(terrain: Arc<Terrain>) -> ServerWorld {
             ),
             Vec::new(),
         );
-        lay(&mut w, sill, at, lying(north));
+        lay(&mut w, sill, at, turn);
     }
     // On the higher abutment's top (the ground slopes), a millimetre clear.
     let at = middle + up * (top + half_plank + 0.001);

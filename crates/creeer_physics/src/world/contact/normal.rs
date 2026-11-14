@@ -175,6 +175,33 @@ impl Contacts {
     pub fn set_left(&mut self, energy: Option<f64>) {
         self.left = energy;
     }
+
+    /// Sets which members are new to the world this step (`Body::born`, by member).
+    pub fn set_born(&mut self, born: Vec<bool>) {
+        self.born = born;
+        self.owed = None;
+    }
+
+    /// What the contacts of members new to the world held when first measured in this step (at
+    /// the laws it resolves), as far as they still hold it at `states` (J): energy that never
+    /// existed (the body was put there pressed in), which may never become motion. Each
+    /// contact owes the least of what it held then and holds now: what it gains since is the
+    /// motion's. None without such members.
+    pub fn owed_energy(&mut self, states: &[MemberState<'_>]) -> f64 {
+        if !self.born.contains(&true) {
+            return 0.0;
+        }
+        let now = self.energies(states);
+        let born = &self.born;
+        let new = |side: Option<(usize, usize)>| side.is_some_and(|(m, _)| born[m]);
+        let held = self.owed.get_or_insert_with(|| {
+            (now.iter().enumerate())
+                .filter(|(_, ((a, b), e))| (new(*a) || new(*b)) && *e > 0.0)
+                .map(|(k, (_, e))| (k, *e))
+                .collect()
+        });
+        held.iter().map(|&(k, e)| e.min(now[k].1)).sum()
+    }
 }
 
 /// The (member, node) of a contact's two sides, none for fixed geometry.

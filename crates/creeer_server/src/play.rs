@@ -321,6 +321,8 @@ fn finish(mut play: Play, ticks: Vec<Tick>, start: &[(u64, u64)]) -> Report {
 }
 
 #[cfg(test)]
+mod break_probe;
+#[cfg(test)]
 mod client_probe;
 #[cfg(test)]
 mod poles_probe;
