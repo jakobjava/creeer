@@ -30,6 +30,9 @@ struct Ao {
     // 1: the 4×4 spatial filter on; 0: off.
     denoise_on: f32,
     _pad: vec2<f32>,
+    _pad2: vec2<f32>,
+    // Towards the sun in view space; w: 1 when it casts contact shadows.
+    sun: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> ao: Ao;

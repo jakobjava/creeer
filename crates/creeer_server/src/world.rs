@@ -239,29 +239,6 @@ impl ServerWorld {
         id
     }
 
-    /// Lifts body `index` along the vertical until no part of it is in the ground or in
-    /// another body (one put on a slope, or where a crate stands, would be in it, and be
-    /// thrown out of it), with a centimetre to spare.
-    fn lift_clear(&mut self, index: usize) {
-        let up = self.world.bodies[index].structure.position[0].normalize();
-        for _ in 0..20 {
-            let lift = self
-                .world
-                .touching(index, 0.0)
-                .iter()
-                .map(|t| (0.01 - t.gap) / t.normal.dot(up).max(0.2))
-                .fold(0.0, f64::max);
-            if lift <= 0.0 {
-                break;
-            }
-            let body = &mut self.world.bodies[index];
-            for p in &mut body.structure.position {
-                *p += up * lift;
-            }
-            body.solver.reset_history(&body.structure);
-        }
-    }
-
     /// `player`'s avatar: the one they left, or a new one at the spawn point.
     pub fn avatar_of(&mut self, player: &str) -> EntityId {
         // Its look, chosen once (G1.3e).

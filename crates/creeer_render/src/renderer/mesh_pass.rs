@@ -113,6 +113,8 @@ impl MeshPass {
             "\n",
             include_str!("../shaders/surface.wgsl"),
             "\n",
+            include_str!("../shaders/parts.wgsl"),
+            "\n",
             include_str!("../shaders/mesh.wgsl")
         );
         let module = shader(device, "mesh", source);

@@ -119,8 +119,31 @@ impl super::Predicted {
         self.nearby.len()
     }
 
+    /// Which they are, with their speeds as predicted (m/s, rad/s) and whether asleep.
+    pub(crate) fn nearby_motions(&self) -> Vec<(creeer_net::entity::EntityId, f64, f64, bool)> {
+        (self.nearby.iter().zip(self.world.bodies.iter().skip(1)))
+            .map(|(id, b)| {
+                let s = &b.structure;
+                let (v, w) = (s.velocity[0].length(), s.angular_velocity[0].length());
+                (*id, v, w, b.sleep.asleep)
+            })
+            .collect()
+    }
+
     /// The inputs not yet applied by the server (for probes).
     pub(crate) fn pending(&self) -> usize {
         self.log.pending().count()
+    }
+
+    /// The bodies awake in the prediction world, the avatar's included (for probes).
+    pub(crate) fn awake(&self) -> usize {
+        self.world.bodies.iter().filter(|b| !b.sleep.asleep).count()
+    }
+
+    /// The bodies in the avatar's group in the last step, its own included (0: it slept).
+    pub(crate) fn avatar_group(&self) -> usize {
+        (self.world.groups())
+            .find(|g| g.contains(&0))
+            .map_or(0, <[usize]>::len)
     }
 }

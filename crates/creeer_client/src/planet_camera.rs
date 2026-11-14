@@ -230,7 +230,8 @@ mod tests {
             last = at;
         }
         assert!((last - drawn).length() < 0.01, "{last}");
-        for _ in 0..144 {
+        // (Two seconds: at the eyes' 0.08 s the stoop's 0.75 m is under a micrometre by then.)
+        for _ in 0..288 {
             last = eyes.follow(standing, Some(standing + DVec3::Y * 3e8), 1.0 / 144.0);
         }
         assert!((last - standing).length() < 1e-6, "{last}");

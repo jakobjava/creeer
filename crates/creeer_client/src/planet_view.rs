@@ -71,8 +71,9 @@ pub struct PlanetView {
     /// Whether the inventory window is shown (G1.6a), and what lies loose about (G1.6c).
     pub inventory: bool,
     pub loose: Option<crate::loose_view::LooseView>,
-    /// The trees about (G1.7).
+    /// The trees about (G1.7), and the decoratives on the ground (G2.11).
     pub trees: Option<crate::tree_view::TreeView>,
+    pub cover: Option<crate::ground_cover::GroundCover>,
     /// Steering what the hands hold (G2.10).
     pub holding: crate::holding::Holding,
     /// The third-person camera's boom, and the first person's eyes as they stoop (G2.11).
@@ -153,6 +154,7 @@ impl PlanetView {
             eyes: crate::planet_camera::Eyes::default(),
             loose: crate::loose_view::LooseView::new(&terrain),
             trees: crate::tree_view::TreeView::new(&terrain),
+            cover: Some(crate::ground_cover::GroundCover::new(&terrain)),
             streamer,
             seen_edits: (0, 0),
             draw: Vec::new(),
@@ -204,6 +206,10 @@ impl PlanetView {
         // (a dig spot's brush grows with every blow, G2.9).
         for edit in std::mem::take(&mut self.session.connection.edits_dirty) {
             self.streamer.invalidate_edit(&edit);
+            if let Some(cover) = &mut self.cover {
+                let (lo, hi) = edit.brush().bounds();
+                cover.invalidate(lo, hi);
+            }
         }
         self.seen_edits = (generation, self.terrain.edits().len());
         let update = self.streamer.update(camera);
@@ -216,6 +222,9 @@ impl PlanetView {
         self.draw.clear();
         self.draw
             .extend(update.draw.iter().map(|(key, caps)| (key.id(), *caps)));
+        let look = crate::ground_look::GroundLook::current();
+        renderer.set_ground_layers(&look.drawn());
+        renderer.set_canopy(look.canopy, crate::ground_look::TREES_DRAWN);
     }
 
     /// Height of `p` above the ground below it (m; negative underground).

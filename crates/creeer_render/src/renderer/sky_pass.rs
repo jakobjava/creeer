@@ -14,7 +14,11 @@ pub(super) struct SkyPass {
 }
 
 impl SkyPass {
-    pub(super) fn new(device: &wgpu::Device, globals_layout: &wgpu::BindGroupLayout) -> Self {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        globals_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
         let source = concat!(
             include_str!("../shaders/atmosphere.wgsl"),
             "\n",
@@ -71,8 +75,27 @@ impl SkyPass {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // The noise volume the ground's detail is fetched from (`ground.wgsl`, G2.11):
+                // one fetch an octave instead of eight hashes.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
+        let (noise, noise_sampler) = super::noise::upload(device, queue);
         let luts_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("atmosphere tables"),
             layout: &luts_layout,
@@ -92,6 +115,14 @@ impl SkyPass {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&noise),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&noise_sampler),
                 },
             ],
         });

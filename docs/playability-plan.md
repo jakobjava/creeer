@@ -92,8 +92,17 @@ Kept by the coordinator as streams are merged.
 | A7 Sound | Merged 2026-11-14 (ADR-0037). 16 reference sounds rendered for the user's ear |
 | A6 Tick time | First pass merged 2026-11-14: the "breaking tick" was a felled player's ragdoll laid inside a crate (ADR-0005 amended). Going on: two defects in how wood breaks, the pile that does not converge, loose poles (`docs/g2p-plan.md`) |
 | A3 HUD | Merged 2026-11-14 (ADR-0038). Its volume setting drives the sound |
-| A1, A2, B, C | At work |
-| A4, A5 | Cut off by the usage limit on 2026-11-13 with work in their worktrees; resumed as slots free |
+| B Building by hand | First pass merged 2026-11-14 (ADR-0036 amended): a part taken stays as it lay and is carried low; a pole laid across a gap; one nail a key press, timed by its blows; the own body drawn in first person. Open: parts caught on others, one nail only between parts already joined, the nail driven through the part aimed at, no hammer drawn, no plank on edge |
+| C The bridge site | Merged 2026-11-14 (ADR-0039): `--bridge`, the kit's footbridge timber and loads, the stress overlay (O), what failed first, the `bridge_demo` scene |
+| A1 Ground, sky, light | Merged 2026-11-14 (ADR-0040): the facets (a detail texture breaking at chunk borders), smooth shadow edges, contact shadows, the forest floor's layers, ground cover, the forest from afar |
+| A2 Things | Merged 2026-11-14 (ADR-0041): round rods, wood with grain and cut ends, trees as trees, built members and broken pieces as timber |
+| A6, second pass | Merged 2026-11-14 (docs and probes): the two defects in how wood breaks fixed and validated as a patch, held back until the energy guard's hole is closed and a made member starts in its sag; the bridge's freeze traced to its nails pulled by the first person stepping on |
+| A4, A5 | At work (stopped twice by the usage limit, resumed) |
+| A6 third pass, B2, Q | At work: the guard's hole, the wood patch and the pile (A6); nails within a structure, the nail's direction, rolling a part, the protocol's additions (B2); the whole ten minutes played through the client with the HUD on (Q) |
+
+**The blocker for the ten minutes** (found by C): people standing on the nailed bridge cost up to 228,742 Newton iterations a tick (ticks of 1–10 s). A6's next item after the wood defects; A4 measures the character's part.
+
+**What the frames still show wrong** (the coordinator's own look, 2026-11-14): in first person the player sees their own head and shoulders from above when the body stoops (A4); a built deck is drawn as grey round bars and a broken structure's pieces as large dark balls (A2).
 
 **Wanted from the protocol** (only stream B changes it; to be scheduled with B's report):
 - For sound (ADR-0037, Limits): each loaded structure's most-loaded members and their share of strength (creaking); a member's material; which element broke; the target of a `Swing` and a `Fastening` note to nearby clients (other players' blows).

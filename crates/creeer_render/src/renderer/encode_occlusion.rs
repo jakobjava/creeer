@@ -5,12 +5,14 @@ use super::*;
 impl Renderer {
     /// Pass 1a: the meshes', characters' and terrain's depth, for ambient occlusion and so the
     /// scene pass shades each pixel once (without occlusion it would not pay for itself); pass 1b:
-    /// the occlusion from it. Returns whether the prepass was drawn.
+    /// the occlusion from it, and the contact shadows towards the sun (`sun`, a unit vector
+    /// towards it). Returns whether the prepass was drawn.
     pub(super) fn encode_occlusion(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         camera: &Camera,
         aspect: f32,
+        sun: creeer_math::glam::DVec3,
     ) -> bool {
         let prepassed = self.ao.on();
         if prepassed {
@@ -35,7 +37,7 @@ impl Renderer {
             self.terrain.draw_prepass(&mut pass);
         }
         // Pass 1b: ambient occlusion from that depth.
-        self.ao.prepare(&self.queue, camera, aspect);
+        self.ao.prepare(&self.queue, camera, aspect, sun);
         self.ao.encode(encoder, self.timer.as_ref());
         prepassed
     }

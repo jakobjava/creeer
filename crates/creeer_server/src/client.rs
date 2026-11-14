@@ -363,38 +363,18 @@ impl Connection {
             }
         }
     }
-
-    /// How far the prediction of the player's avatar was corrected.
-    pub fn corrections(&self) -> crate::predicted::Corrections {
-        self.predicted
-            .as_ref()
-            .map(|p| p.corrections)
-            .unwrap_or_default()
-    }
-
-    /// How the connection fares: round trip, loss, bytes a second each way.
-    pub fn network(&self) -> creeer_net::renet::NetworkInfo {
-        self.renet.network_info()
-    }
-
-    /// The terrain it was given.
-    pub fn terrain(&self) -> Option<&Arc<Terrain>> {
-        self.terrain.as_ref()
-    }
-
-    /// The snapshots received (for tests and diagnostics).
-    pub fn receiver(&self) -> &Receiver {
-        &self.receiver
-    }
 }
 
 mod aim;
 pub use aim::Aimed;
 pub use place::Surface;
 mod apply;
+pub mod bridge_bench;
 mod draw;
 mod held;
 mod hold;
 mod place;
 mod receive;
 mod steered;
+#[cfg(test)]
+mod told_tests;
