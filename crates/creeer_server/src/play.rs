@@ -353,6 +353,8 @@ mod stood_on_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod stepping_gates;
+#[cfg(test)]
 mod walking_gates;
 #[cfg(test)]
 mod walking_loads;

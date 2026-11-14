@@ -98,6 +98,82 @@ fn measure_the_legs_push_on_a_deck() {
         ticks.iter().any(|t| t.fallen)
     );
 }
+/// The play scene `SCENE` (environment) at CI's length: its most work in a tick and a client's
+/// most, with their ticks (what `play/tests.rs` gates), and the ticks over a client's `OVER`.
+#[test]
+#[ignore = "measures one play scene's work: by hand"]
+fn measure_a_scenes_work() {
+    let name = std::env::var("SCENE").unwrap_or_else(|_| "builders".into());
+    let s = super::scenes::scene(&name).expect("a scene");
+    let over: u64 = (std::env::var("OVER").ok())
+        .and_then(|o| o.parse().ok())
+        .unwrap_or(u64::MAX);
+    let report = super::scenes::run_with(s, s.ticks.1, |t, cost| {
+        if cost.client_work > over || (t < 12 && std::env::var("FIRST").is_ok()) {
+            eprintln!(
+                "tick {t}: a client's {}, the server's {}",
+                cost.client_work, cost.work
+            );
+        }
+    });
+    let sum = |f: fn(&super::Tick) -> u64| report.ticks.iter().map(f).sum::<u64>();
+    eprintln!(
+        "{name}: most {:?}, a client's most {:?}; in all {} and a client's {}",
+        report.most_work(),
+        report.most_client_work(),
+        sum(|t| t.work),
+        sum(|t| t.client_work)
+    );
+}
+
+/// What a person costs a nailed deck (for A6, G2.11): standing by it 2 s, walking onto it, standing
+/// on its middle 4 s, walking off: each part's Newton iterations of the deck a tick (most, mean)
+/// and the ticks it slept.
+#[test]
+#[ignore = "measures what a person costs a deck: by hand"]
+fn measure_what_a_person_costs_a_deck() {
+    let mut c = course(&[DECK], &["ada"], Conditions::default());
+    let spawn = c.play.server.world.spawn();
+    let deck = c.things[0].expect("the deck");
+    let seen = std::cell::RefCell::new(Vec::new());
+    let (_, ticks) = walk(&mut c, 720, |t, c| {
+        let w = &c.play.server.world;
+        let b = &w.world.bodies[w.index(deck).expect("whole")];
+        seen.borrow_mut()
+            .push((t, b.solver.iterations_total, b.sleep.asleep));
+        let along = (c.play.avatar(0) - spawn).dot(c.east);
+        let go = (120..600).contains(&t) && !((along > 3.2) && t < 480);
+        vec![Act::walk(if go { c.east * 1.4 } else { DVec3::ZERO })]
+    });
+    let seen = seen.into_inner();
+    let along = |t: u32| (ticks[t as usize].at - spawn).dot(c.east);
+    let parts = [
+        ("standing by", 0..120),
+        (
+            "walking onto it",
+            120..(120..480).find(|&t| along(t) > 3.2).unwrap_or(480),
+        ),
+        ("standing on it", 300..480),
+        ("walking off", 480..600),
+        ("gone", 600..719),
+    ];
+    for (name, range) in parts {
+        let work: Vec<u64> = (seen.windows(2))
+            .filter(|w| range.contains(&w[1].0))
+            .map(|w| w[1].1 - w[0].1)
+            .collect();
+        let asleep = (seen.iter())
+            .filter(|s| range.contains(&s.0) && s.2)
+            .count();
+        #[allow(clippy::cast_precision_loss)]
+        let mean = work.iter().sum::<u64>() as f64 / work.len().max(1) as f64;
+        eprintln!(
+            "{name} (ticks {range:?}): the deck's iterations a tick, most {} mean {mean:.1}; asleep {asleep} ticks",
+            work.iter().max().unwrap_or(&0)
+        );
+    }
+}
+
 /// Walking along a plank bridge (*log bridge*'s, 150 mm) and over a 0.6 m deck, standing on the
 /// deck's middle for 3 s, then on; with or without a 15 kg box in the hands.
 fn measure_bridge(carrying: bool) {

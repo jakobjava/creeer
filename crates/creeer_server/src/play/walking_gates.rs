@@ -72,11 +72,10 @@ fn a_player_walks_over_nailed_bridges_and_keeps_their_feet() {
     keeps_their_feet(false);
 }
 
-/// The same with a 15 kg box in her hands: knocked down stepping onto the deck. Kicked up 2 m/s
-/// and on 0.7 m/s in one tick (tick 234) with nothing touching her body, the box not kicked; not
-/// without the box (G2.11, A4: found, not mended: the hands and their grip are stream B's).
+/// The same with a 15 kg box in her hands. (Before the legs straightened at a person's pace
+/// stepping up, `legs.rs`, she was kicked up 2 m/s and on 0.7 m/s in one tick stepping onto the
+/// deck, nothing touching her body, and knocked down.)
 #[test]
-#[ignore = "fails: a carrier stepping onto a nailed deck is kicked over (stream B's hands)"]
 fn a_player_carries_a_box_over_nailed_bridges_and_keeps_their_feet() {
     keeps_their_feet(true);
 }
