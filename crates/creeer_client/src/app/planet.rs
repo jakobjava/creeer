@@ -5,6 +5,16 @@ use super::*;
 use crate::planet_ui::{self, Request};
 use crate::planet_view::PlanetView;
 
+/// How the game starts (`main.rs`): the tech demo, a dedicated server joined at once, or the
+/// bridge site.
+#[derive(Debug, Default)]
+pub(crate) enum Start {
+    #[default]
+    Demo,
+    Connect(std::net::SocketAddr, String),
+    Bridge,
+}
+
 /// Walking speed (m/s), and running.
 const WALK: f64 = 3.0;
 const RUN: f64 = 6.5;
@@ -22,6 +32,25 @@ impl Running {
             }
             Err(e) => eprintln!("could not load the planet: {e}"),
         }
+    }
+
+    /// Starts as asked (`main.rs`).
+    pub(super) fn start(&mut self, start: Start) -> Result<(), String> {
+        match start {
+            Start::Demo => Ok(()),
+            Start::Connect(server, name) => self.enter_connected(server, &name),
+            Start::Bridge => self.enter_bridge(),
+        }
+    }
+
+    /// Opens the bridge site (G2.11, ADR-0037; `bridge_site.rs`): a creative game at a gully, the
+    /// player on its near bank looking across.
+    pub(super) fn enter_bridge(&mut self) -> Result<(), String> {
+        let (view, site) = crate::bridge_site::view()?;
+        self.camera = crate::bridge_site::camera(&site);
+        self.planet = Some(view);
+        self.lighting_key = None;
+        Ok(())
     }
 
     /// Joins the dedicated server at `server` as `name`, walking from the start.
@@ -104,6 +133,11 @@ impl Running {
                 planet.bind(&self.camera);
                 return true;
             }
+            // The stress overlay, on a creative server this process hosts (G2.11, ADR-0037).
+            KeyCode::KeyO => {
+                planet.stress.on = !planet.stress.on;
+                return true;
+            }
             KeyCode::Digit1 => Some(0),
             KeyCode::Digit2 => Some(1),
             KeyCode::Digit3 => Some(2),
@@ -176,7 +210,11 @@ impl Running {
         self.scene.clear();
         self.lines.clear();
         // Drawn where the connection has everything now (it interpolates).
-        let snapshot = planet.snapshot();
+        let mut snapshot = planet.snapshot();
+        // What a creative server shows of what is built: the overlay draws the structures.
+        let stress = planet.stress;
+        let seen = (planet.session.inspection(stress.on)).unwrap_or_default();
+        stress.leave_out(&mut snapshot.beams);
         physics_view::draw(
             &mut self.scene,
             &self.meshes,
@@ -184,6 +222,8 @@ impl Running {
             (&snapshot, &snapshot, 1.0),
             Overlay::Off,
         );
+        let c = &planet.session.connection;
+        stress.draw(&mut self.scene, &self.meshes, c, &seen);
         if let Some(people) = &mut self.people {
             // In first person the player's own body is not drawn: the eyes are in it (G2.10).
             let own = (planet.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
@@ -257,6 +297,10 @@ impl Running {
             planet_ui::work_ring(ui.ctx(), planet.session.connection.noted.as_ref());
             crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
             crate::inventory_ui::vitals(ui.ctx(), &planet.session.connection);
+            if let Some(scale) = stress.heatmap() {
+                heatmap_legend(ui.ctx(), &scale, "Share of what breaks it", "%");
+            }
+            crate::stress_view::hud(ui.ctx(), &self.camera, &seen, tick);
             self.profiler
                 .window(ui.ctx(), Some(&mut planet.session.connection));
         });
@@ -270,7 +314,7 @@ impl Running {
             terrain_frames: &[],
             lighting: &self.lighting,
             sky: Some(&sky),
-            heatmap: None,
+            heatmap: stress.heatmap().as_ref(),
             lines: &self.lines,
             overlay: Some(OverlayFrame {
                 primitives: &primitives,

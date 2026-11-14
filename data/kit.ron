@@ -53,4 +53,9 @@
     // A granite boulder, 500 × 350 × 450 mm: 109 kg, too heavy to lift but within the hands'
     // grab (twice their strength): rolled and dragged across. Lumpy, so it lies where it is put.
     (name: "boulder", material: "granite", form: Lump(size: (0.5, 0.35, 0.45))),
+    // A proof load, as bridges are tested: a 1 t block of granite, 1.0 × 0.6 × 0.63 m. No hands
+    // move it: it is set from the kit where aimed, as a crane would set it. A footbridge built
+    // as the BTCV lays it out carries a crowd (about 3 t at its middle before a beam breaks):
+    // carried loads sag it, these break it.
+    (name: "test weight", material: "granite", form: Block(size: (1.0, 0.6, 0.63))),
 ]

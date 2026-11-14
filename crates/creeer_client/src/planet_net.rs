@@ -174,6 +174,11 @@ impl PlanetSession {
         self.host.as_ref().map(|h| (h.tick_times(), h.tick()))
     }
 
+    /// What a creative server this process hosts shows of its built structures (ADR-0037).
+    pub fn inspection(&self, shares: bool) -> Option<creeer_server::world::site::Inspection> {
+        self.host.as_ref().and_then(|h| h.inspection(shares))
+    }
+
     /// What there is to draw: every entity in view where it is drawn now.
     pub fn snapshot(&self) -> PhysicsSnapshot {
         let c = &self.connection;

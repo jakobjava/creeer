@@ -40,6 +40,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if view_name == "night" {
         sun_elevation = -30.0;
     }
+    // The bridge site's frames (G2.11): a game of their own (`planet_shot_bridge.rs`).
+    if view_name == "bridge" {
+        return crate::planet_shot_bridge::run(args);
+    }
 
     let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
@@ -266,7 +270,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The time of day (fraction) at which the sun stands `elevation` degrees above the horizon
 /// at `up`, in the morning.
-fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
+pub(crate) fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
     let target = det::sin(elevation.to_radians());
     let mut best = (f64::MAX, 0.0);
     for i in 0..4000 {

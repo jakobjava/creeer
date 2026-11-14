@@ -4,11 +4,12 @@
 
 use crate::server::{Event, Server};
 use crate::world::ServerWorld;
+use crate::world::site::Inspection;
 use creeer_core::TimingStats;
 use creeer_net::channel::TICK_RATE;
 use creeer_sim::save::Save;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
@@ -83,11 +84,15 @@ pub struct Host {
     timing: Arc<Timing>,
 }
 
-/// How the server's ticks go: their durations, and how many.
+/// How the server's ticks go: their durations, and how many; and on a creative server what the
+/// player asked to see of its built structures (ADR-0037: 0 nothing, 1 what failed, 2 with the
+/// stress overlay's shares), as of the last tick.
 #[derive(Debug)]
 struct Timing {
     ticks: Mutex<TimingStats>,
     tick: AtomicU64,
+    inspect: AtomicU8,
+    inspection: Mutex<Option<Inspection>>,
 }
 
 impl std::fmt::Debug for Host {
@@ -104,6 +109,8 @@ impl Host {
         let timing = Arc::new(Timing {
             ticks: Mutex::new(TimingStats::new(240)),
             tick: AtomicU64::new(0),
+            inspect: AtomicU8::new(0),
+            inspection: Mutex::new(None),
         });
         let shared = Arc::clone(&timing);
         let thread = std::thread::Builder::new()
@@ -172,6 +179,18 @@ impl Host {
     pub fn tick(&self) -> u64 {
         self.timing.tick.load(Ordering::Relaxed)
     }
+
+    /// What a creative server shows of its built structures (ADR-0037), as of its last tick:
+    /// what failed, and with `shares` each element's share of what breaks it. Asking starts it;
+    /// the first answer comes after the next tick. None on other servers.
+    pub fn inspection(&self, shares: bool) -> Option<Inspection> {
+        self.timing
+            .inspect
+            .store(if shares { 2 } else { 1 }, Ordering::Relaxed);
+        (self.timing.inspection.lock())
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl Drop for Host {
@@ -220,6 +239,14 @@ fn run(server: &mut Server, orders: &Receiver<Control>, (tell, timing): (&Sender
             .unwrap_or_else(PoisonError::into_inner)
             .push(started.elapsed());
         timing.tick.fetch_add(1, Ordering::Relaxed);
+        let inspect = timing.inspect.load(Ordering::Relaxed);
+        if inspect > 0 && server.world.creative {
+            let seen = server.world.inspection(inspect > 1);
+            *timing
+                .inspection
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(seen);
+        }
         for event in server.events() {
             let _ = tell.send(event);
         }

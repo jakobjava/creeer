@@ -11,9 +11,11 @@ pub(crate) mod system;
 pub(crate) struct App {
     running: Option<Running>,
     pub(crate) error: Option<String>,
-    /// A dedicated server to join at once (`--connect`), and the player's name.
-    pub(crate) connect: Option<(std::net::SocketAddr, String)>,
+    /// How it starts: the tech demo, a dedicated server joined at once (`--connect`), or the
+    /// bridge site (`--bridge`).
+    pub(crate) start: Start,
 }
+pub(crate) use planet::Start;
 
 /// User-adjustable sandbox settings.
 #[derive(Debug)]
@@ -81,9 +83,7 @@ impl ApplicationHandler for App {
         }
         match Running::new(event_loop) {
             Ok(mut running) => {
-                if let Some((server, name)) = self.connect.take()
-                    && let Err(e) = running.enter_connected(server, &name)
-                {
+                if let Err(e) = running.start(std::mem::take(&mut self.start)) {
                     self.error = Some(e);
                     event_loop.exit();
                 }

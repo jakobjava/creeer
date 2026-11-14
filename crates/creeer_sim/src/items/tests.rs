@@ -242,6 +242,9 @@ fn the_bridge_sites_parts_and_loads_are_carried_by_hand() {
     assert!(near("stringer", 14.2) && near("deck board", 3.5) && near("granite block", 25.5));
     let boulder = item("boulder").mass();
     assert!((100.0..117.0).contains(&boulder), "{boulder:.0} kg");
+    // The proof load: a tonne, set from the kit (no hands move it).
+    let weight = item("test weight").mass();
+    assert!((950.0..1050.0).contains(&weight), "{weight:.0} kg");
     // Sixteen blocks go into a load crate, the seventeenth does not.
     let mut store = item("load crate").store().expect("a container");
     for k in 0..16 {

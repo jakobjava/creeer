@@ -1,0 +1,53 @@
+// ADR-0037, Measured and rejected: the bridge_demo scene's first script (2026-11-14). The deck
+// boards laid loose across the three stringers by the scene's world; Ada and Ben nail one board
+// every 2.5 s, each to their side's outer stringer, walking out on what they nailed.
+//
+// Measured (`creeer_tools play --only bridge_demo --short`, PLAY_TRACE=30): from tick ~560 (the
+// fourth board) ticks of 0.3–4.9 s, up to 172,538 Newton iterations; p50 103 ms over 600 ticks.
+// A player's J could nail each later board to one stringer only (the second nail, between parts
+// already of one structure, is refused), so boards hung on one nail and the middle stringer lay
+// loose under them. Kept for stream A6 (tick time) as a reproduction: it differs from the kept
+// scene (`crates/creeer_server/src/play/bridge_demo.rs`) in its world (stringers and boards laid,
+// not nailed) and its first phase (below).
+
+const NAILING: u32 = 60;
+const PER_BOARD: u32 = 150;
+const BOARDS: u32 = 12;
+const OVER: u32 = NAILING + BOARDS * PER_BOARD;
+/// How far back from a board a nailer stands (m).
+const BACK: f64 = 0.75;
+
+/// Where player `k` (Ada north, Ben south) works on board `b`, and the board's crossing with
+/// their side's stringer.
+fn nailing(play: &Play, site: &BridgeSite, k: usize, b: u32) -> (DVec3, DVec3) {
+    let y = if k == 0 { STRINGERS[2] } else { STRINGERS[0] };
+    let x = FIRST_BOARD + BOARD_EVERY * f64::from(b);
+    let w = &play.server.world;
+    (deck(w, site, x - BACK, y), deck(w, site, x, y))
+}
+
+// In the script, before walking over:
+//     } else if tick < OVER {
+//         let b = (tick - NAILING) / PER_BOARD;
+//         let (stand, crossing) = nailing(play, &site, k, b);
+//         let mut act = Act::walk(towards(me, stand, 0.1));
+//         if (tick - NAILING) % PER_BOARD == 30 {
+//             act.commands.push(fasten(play, &site, b, crossing));
+//         }
+//         act
+//     }
+
+/// J at deck board `b`'s crossing.
+fn fasten(play: &Play, site: &BridgeSite, b: u32, at: DVec3) -> Command {
+    let board = site.item("deck board", b as usize).unwrap_or(EntityId(0));
+    #[allow(clippy::cast_precision_loss)]
+    let seen = play.server.world.tick as f64;
+    Command::Fasten {
+        target: Target {
+            body: Some(board),
+            at,
+            seen,
+        },
+        fastener: "nail_100".into(),
+    }
+}
