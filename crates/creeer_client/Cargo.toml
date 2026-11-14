@@ -27,6 +27,7 @@ creeer_materials.workspace = true
 creeer_mech.workspace = true
 creeer_chem.workspace = true
 creeer_ui.workspace = true
+creeer_audio.workspace = true
 winit.workspace = true
 egui.workspace = true
 egui-winit.workspace = true

@@ -180,6 +180,13 @@ impl Animator {
             .map_or([Hold::Relaxed; 2], |s| s.holds)
     }
 
+    /// Character `key`'s feet as last drawn: where each stands and whether it is on the ground
+    /// (for its footsteps' sound, ADR-0037), if it walks.
+    pub fn feet(&self, key: u32) -> Option<[(DVec3, bool); 2]> {
+        let feet = self.states.get(&key)?.feet.as_ref()?;
+        Some(feet.map(|f| (f.plant, f.down)))
+    }
+
     /// Forgets the characters not in `keep`.
     pub fn retain(&mut self, keep: &[u32]) {
         self.states.retain(|k, _| keep.contains(k));

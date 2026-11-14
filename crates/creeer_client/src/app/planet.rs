@@ -210,6 +210,10 @@ impl Running {
             }
         }
         self.scene_build_times.push(build_start.elapsed());
+        // What is heard of this frame (ADR-0037; the people's feet as just drawn).
+        let mut sound = std::mem::take(&mut planet.sound);
+        sound.frame(planet, &self.camera, self.people.as_ref(), dt);
+        planet.sound = sound;
 
         // Lighting: colours from the atmosphere for the sun's elevation here (costly, so only
         // when it changed), the direction every frame.

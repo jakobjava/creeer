@@ -19,6 +19,8 @@
 //! `creeer_client --style-board <file.png>` and `creeer_client --shimmer [--frames <n>]` judge
 //! the look (G1.3): the crate at its ages, and how much of the image flickers in slow motion.
 //! `creeer_client --icon <model> [--out <dir>]` renders an item's icons (G1.3h).
+//! `creeer_client --sound <dir>` and `--sound-play <dir>` render sound to WAV files without a
+//! sound device (ADR-0037, `sound_render.rs`).
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
@@ -98,6 +100,9 @@ mod profiler_ui;
 mod profiler_ui_tests;
 mod sandbox;
 mod shimmer;
+mod sound_render;
+mod sounds;
+mod sounds_bodies;
 #[cfg(test)]
 mod struck_bench_tests;
 mod style_board;
@@ -204,6 +209,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--shimmer") {
         return shimmer::run(&args);
+    }
+    if args.iter().any(|a| a == "--sound" || a == "--sound-play") {
+        return sound_render::run(&args);
     }
     if args.iter().any(|a| a == "--system-bench") {
         return system_bench::run();
