@@ -116,7 +116,7 @@ Subcycling the struck region (ADR-0035) is not what this scene needs: the plank 
 
 1. **The pile's convergence** (G2P, P1): the group at the 500-iteration limit, taken apart on its own saved states (ADR-0024's method: `play/break_probe.rs` can write them).
 2. **Impact substeps for points**, measured on the same states (`docs/adr/0005/points-by-yield-energy.diff`).
-3. **The break's realism** (above): the damping law and the bending capacity of brittle members, each validated on a timber case (ASTM D143 three-point bending against the *Wood Handbook*'s MOR; a measured damping ratio of timber members), before any of it changes the trees and buildings.
+3. **The break's realism: done as a patch, held back** (2026-11-14; ADR-0005, "how wood breaks"; `docs/adr/0005/brittle-elastic-and-wood-damping.diff`). Brittle members break in bending at MOR·W_el, and wood's damping is its own (1 % at 20 Hz, not 120 %). ASTM D143 is met within 0.2 %, a struck bar breaks at 99 % of its breaking moment (47 % before). Held back: *log_bridge*'s CI work at its nailing 133 → 181 (ceiling 142), and at full length the pile it leaves blew up through a hole in the energy guard (233 GJ). Next: the guard's hole and the pile's convergence, then the patch again. (Planned:) the damping law and the bending capacity of brittle members, each validated on a timber case (ASTM D143 three-point bending against the *Wood Handbook*'s MOR; a measured damping ratio of timber members), before any of it changes the trees and buildings.
 4. **The ragdoll laid out clear of what knocked it down** (the character's stream, A4): now pushed out, not thrown, but laid 13 cm inside a crate.
 
 ## Part 2: loose poles at rest
