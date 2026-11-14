@@ -127,26 +127,27 @@ fn two_crossed_poles_nailed_become_one_structure() {
 }
 
 /// G2.11 (the user: "aim where two parts touch, one key, one nail, about a second and a hammer
-/// blow"): no fastener named, the hand reaches for the shortest nail that holds (a 75 mm nail
-/// through a 50 mm pole reaches 25 mm into the other, 6 d needed); its time is its blows'
-/// (35 J of driving work, two blows, a second), and each blow is told as it lands.
+/// blow"): no fastener named, the hand reaches for the shortest nail that grips fully (12
+/// diameters into the part behind: a 100 mm nail through a 50 mm pole reaches 50 mm; the 75 mm
+/// one, 25 mm, 8 diameters, held nothing against pulling, G2.11 B2); its time is its blows'
+/// (81 J of driving work, five blows, 2.5 s), and each blow is told as it lands.
 #[test]
-fn the_hand_reaches_for_the_shortest_nail_that_holds_and_drives_it_in_two_blows() {
+fn the_hand_reaches_for_the_shortest_nail_that_grips_fully_and_drives_it_blow_by_blow() {
     let (mut w, ada, below, above, at) = crossed(true);
     w.take_notes();
     fasten(&mut w, ada, above, at, "").expect("begins");
     let told: Vec<String> = w.take_notes().into_iter().map(|n| n.1).collect();
     assert!(
         told.iter()
-            .any(|n| n.contains("nail_75") && n.contains("2 blows")),
+            .any(|n| n.contains("nail_100") && n.contains("5 blows")),
         "{told:?}"
     );
     let mut blows = Vec::new();
-    for tick in 0..70 {
+    for tick in 0..160 {
         wait(&mut w, ada, 1);
         blows.extend(w.take_hammer_blows().into_iter().map(|b| (tick, b)));
     }
-    assert_eq!(blows.len(), 2, "{blows:?}");
+    assert_eq!(blows.len(), 5, "{blows:?}");
     assert!(
         blows
             .iter()
@@ -154,7 +155,7 @@ fn the_hand_reaches_for_the_shortest_nail_that_holds_and_drives_it_in_two_blows(
     );
     assert!(
         w.index(below).is_none(),
-        "nailed after a second: {:?}",
+        "nailed after its blows: {:?}",
         w.take_notes()
     );
 }

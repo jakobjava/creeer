@@ -8,12 +8,21 @@
 //! undoes (plan.md, principle 13): a part is fastened where it lies. A part touching a standing
 //! tree's trunk is fastened to the tree alike (G2.9, `tree_joints.rs`).
 
-use super::tree_joints::Touched;
 use super::*;
 use creeer_building::fasteners::{Fastener, Kind};
 use creeer_materials::MaterialTable;
 use creeer_sim::items::Item;
+use crossing::Against;
 use std::collections::BTreeMap;
+
+#[path = "building_crossing.rs"]
+pub(super) mod crossing;
+#[cfg(test)]
+#[path = "building_crossing_tests.rs"]
+mod crossing_tests;
+#[path = "building_nails.rs"]
+mod nails;
+pub(super) use nails::plain_refusal;
 
 /// Ticks a second.
 const TICKS: f64 = 60.0;
@@ -106,12 +115,16 @@ impl ServerWorld {
         at: DVec3,
         fastener: &str,
     ) -> Result<(), String> {
+        // In the hands, it is nailed where the crosshair rests it against something (the nail
+        // where aimed, a second beside the first), or else where it touches nearest.
         let at = match self.carried(by) {
-            Some(held) if held == part => self.nearest_touch(part, at).unwrap_or(at),
+            Some(held) if held == part => (self.nearest_touch(part, at))
+                .filter(|t| (*t - at).length() > NEAR)
+                .unwrap_or(at),
             _ => at,
         };
         let k = if fastener.is_empty() {
-            self.touching_any(part, at)?;
+            self.touching_at(part, at)?;
             self.reach_for(by, part, at)?
         } else {
             (self.building.fasteners.iter())
@@ -121,8 +134,13 @@ impl ServerWorld {
         let work = self.fastening_work(part, at, k)?;
         let whole = &self.building.fasteners[k];
         let tack = whole.tacked().and_then(|t| t.seconds).unwrap_or(0.0);
-        let (driving, blows) = self.fastening_time(k, part, at);
+        let (driving, blows) = self.fastening_time(by, k, part, at);
         let whole = &self.building.fasteners[k];
+        // A nail that would not hold there is refused now, in the player's words, not after its
+        // blows (the parts' thicknesses along it: `crossing.rs`).
+        if work == Work::Fasten {
+            self.would_nail(by, part, at, k)?;
+        }
         let (seconds, doing) = match work {
             Work::Tack => (tack, "tacking".to_owned()),
             Work::Finish => (driving - tack, "finishing the lashing".to_owned()),
@@ -230,7 +248,7 @@ impl ServerWorld {
         self.index(u.part).ok_or("that part is gone")?;
         let at = u.at;
         self.within_reach(by, at)?;
-        let (other, point) = self.touching_any(u.part, at)?;
+        let (other, point) = self.touching_at(u.part, at)?;
         let from = self.fastener_at_hand(by, u.fastener)?;
         let whole = &self.building.fasteners[u.fastener];
         let fastener = match u.work {
@@ -244,17 +262,23 @@ impl ServerWorld {
         // on it and slid off the other post's narrow top, G2.10; kept held while made one
         // structure, the solver failed, G2.10).
         if self.carried(by) == Some(u.part)
-            && let Touched::Part(id) = other
+            && let Against::Part(id) = other
         {
-            (self.building.driven.entry(by).or_default()).push((id, point, u.fastener));
+            (self.building.driven.entry(by).or_default()).push((id, at, u.fastener));
             return Ok(());
         }
         match other {
-            Touched::Part(id) => {
-                self.fasten(u.part, id, point, &fastener)?;
+            Against::Part(id) => {
+                let c = self.crossing(Some(by), u.part, other, point)?;
+                self.drive(u.part, &c, &fastener, at)?;
                 self.hands_off(&[u.part, id]);
             }
-            Touched::Tree(tree) => {
+            Against::Itself(..) => {
+                let c = self.crossing(Some(by), u.part, other, point)?;
+                self.drive(u.part, &c, &fastener, at)?;
+                self.hands_off(&[u.part]);
+            }
+            Against::Tree(tree) => {
                 self.fasten_to_tree(u.part, tree, point, &fastener)?;
                 self.hands_off(&[u.part]);
             }

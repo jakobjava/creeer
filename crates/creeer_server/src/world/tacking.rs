@@ -29,7 +29,7 @@ impl ServerWorld {
         if lashing && self.tack_near(part, at, k).is_some() {
             return Ok(Work::Finish);
         }
-        self.touching_any(part, at)?;
+        self.touching_at(part, at)?;
         Ok(Work::Fasten)
     }
 

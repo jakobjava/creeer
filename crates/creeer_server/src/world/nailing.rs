@@ -11,19 +11,23 @@
 //! - **How long:** a nail the blows its driving work needs (`creeer_building::hammering`); any
 //!   other fastener its catalogue time.
 
-use super::tree_joints::Touched;
+use super::building::crossing::{Against, Crossing};
 use super::*;
 use creeer_building::fasteners::{Kind, side};
-use creeer_building::law::Placement;
 
 /// The most hammer blows told a tick (one a player).
 const BLOWS_KEPT: usize = 64;
+/// A nail reaching this many of its diameters into the second part holds against pulling as
+/// fully as it can (EN 1995-1-1 §8.3.2(7): a smooth nail's withdrawal, cut to nothing at 8·d).
+const FULL_GRIP: f64 = 12.0;
 
 impl ServerWorld {
-    /// The point where part `id` touches another part nearest `at` (any distance along it): a
-    /// part in the hands is nailed where it rests against what it is held to.
+    /// The point where part `id` touches another part nearest `at` (any distance along it), or
+    /// where two of its own members touch near `at`: a part in the hands is nailed where it
+    /// rests against what it is held to.
     pub(super) fn nearest_touch(&self, id: EntityId, at: DVec3) -> Option<DVec3> {
         let i = self.index(id)?;
+        let within = self.touching_within(id, at).map(|(_, _, p)| p);
         (self
             .world
             .touching(i, super::building::TOUCHING)
@@ -33,7 +37,38 @@ impl ServerWorld {
                 .is_some_and(|(j, _)| j != i && self.players[j].is_none())
         })
         .map(|t| t.point)
+        .chain(within)
         .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
+    }
+
+    /// The crossing a fastener driven by `by` into `part` at `at` goes through: what touches it
+    /// nearest there, and which way (none: a standing tree's trunk).
+    pub(super) fn crossing_at(
+        &self,
+        by: EntityId,
+        part: EntityId,
+        at: DVec3,
+    ) -> Result<Option<Crossing>, String> {
+        match self.touching_at(part, at)? {
+            (Against::Tree(_), _) => Ok(None),
+            (against, touch) => self.crossing(Some(by), part, against, touch).map(Some),
+        }
+    }
+
+    /// Whether fastener `k` driven by `by` into `part` at `at` would hold: refused in the
+    /// player's words if it would not (too short to reach far enough into the part behind).
+    pub(super) fn would_nail(
+        &self,
+        by: EntityId,
+        part: EntityId,
+        at: DVec3,
+        k: usize,
+    ) -> Result<(), String> {
+        let Some(c) = self.crossing_at(by, part, at)? else {
+            return Ok(());
+        };
+        let f = self.building.fasteners[k].clone();
+        self.crossing_law(&c, &f, (1, 0.0)).map(|_| ())
     }
 
     /// Body `id`'s wood and its thickness (m) where `point` is: its member nearest it if it is
@@ -64,50 +99,72 @@ impl ServerWorld {
         Ok((wood, thick))
     }
 
-    /// The two sides a fastener at `at` goes through: `part`'s (it goes in from there) and what
-    /// touches it there (a standing tree's stem: the part's wood, a stem's thickness).
+    /// The two sides a fastener driven by `by` at `at` goes through: the part on their side
+    /// (it goes in from there) and the one behind, each as thick as it is along the fastener
+    /// (`crossing.rs`); to a standing tree's stem, the part's and a stem's.
     fn sides_at(
         &self,
+        by: EntityId,
         part: EntityId,
         at: DVec3,
     ) -> Result<(creeer_building::law::Side, creeer_building::law::Side), String> {
-        let (wa, ta) = self.side_at(part, at)?;
-        let (wb, tb) = match self.touching_any(part, at)? {
-            (Touched::Part(other), p) => self.side_at(other, p)?,
-            (Touched::Tree(_), _) => (wa.clone(), 0.3),
+        let Some(c) = self.crossing_at(by, part, at)? else {
+            let (wa, ta) = self.side_at(part, at)?;
+            return Ok((side(self.wood(&wa)?, ta)?, side(self.wood(&wa)?, 0.3)?));
         };
-        Ok((side(self.wood(&wa)?, ta)?, side(self.wood(&wb)?, tb)?))
+        let (th, tt) = c.thicknesses();
+        Ok((
+            side(self.wood(&c.head.wood)?, th)?,
+            side(self.wood(&c.tail.wood)?, tt)?,
+        ))
     }
 
     /// The catalogue's fastener `by` reaches for to fasten `part` where it touches at `at`: of
-    /// those at hand, the shortest nail that holds there, then a peg, then a lashing.
+    /// those at hand, the shortest nail that holds there fully (reaching [`FULL_GRIP`] of its
+    /// diameters into the part behind), else the one that reaches deepest of those that hold at
+    /// all; then a peg, then a lashing. (The shortest that holds at all reached 8 diameters into
+    /// a stringer through a deck board, and held nothing against pulling: G2.11.)
     pub(super) fn reach_for(
         &self,
         by: EntityId,
         part: EntityId,
         at: DVec3,
     ) -> Result<usize, String> {
-        let (a, b) = self.sides_at(part, at)?;
+        let (a, b) = self.sides_at(by, part, at)?;
         let materials = self.building.materials.as_ref().ok_or("no materials")?;
         let fs = &self.building.fasteners;
-        let order = |k: &usize| match fs[*k].kind {
-            Kind::Nail { length, .. } => (0, length),
-            Kind::Peg { length, .. } => (1, length),
-            Kind::Lashing { .. } => (2, 0.0),
+        // Nails by how far they reach into the part behind (in their diameters): full grip
+        // shortest first, then the deepest; then pegs, then lashings.
+        let order = |k: usize| match fs[k].kind {
+            Kind::Nail {
+                diameter, length, ..
+            } => {
+                let deep = (length - a.thickness).min(b.thickness) / diameter;
+                if deep >= FULL_GRIP {
+                    (0, length)
+                } else {
+                    (1, -deep)
+                }
+            }
+            Kind::Peg { length, .. } => (2, length),
+            Kind::Lashing { .. } => (3, 0.0),
         };
         let mut ks: Vec<usize> = (0..fs.len()).collect();
         ks.sort_by(|x, y| {
-            order(x)
-                .partial_cmp(&order(y))
+            order(*x)
+                .partial_cmp(&order(*y))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+        // Told why the one that reaches deepest does not hold (the first refused), else why
+        // nothing was at hand.
         let mut why = "nothing at hand to fasten with".to_owned();
+        let mut refused = None;
         for k in ks {
             if let Err(e) = self.fastener_at_hand(by, k) {
                 why = e;
                 continue;
             }
-            let at = Placement {
+            let at = creeer_building::law::Placement {
                 count: 1,
                 spread: 0.0,
                 contact: a.thickness.min(b.thickness) * a.thickness.min(b.thickness),
@@ -115,15 +172,25 @@ impl ServerWorld {
             let between = 0.5 * (a.thickness + b.thickness);
             match fs[k].law(materials, (&a, &b), &at, between) {
                 Ok(_) => return Ok(k),
-                Err(e) => why = e,
+                Err(e) => {
+                    refused.get_or_insert_with(|| {
+                        super::building::plain_refusal(&e, &fs[k], a.thickness)
+                    });
+                }
             }
         }
-        Err(why)
+        Err(refused.unwrap_or(why))
     }
 
     /// How long fastener `k` takes `part` where it touches at `at` (s), and the hammer blows
     /// (none for what is not nailed).
-    pub(super) fn fastening_time(&self, k: usize, part: EntityId, at: DVec3) -> (f64, u32) {
+    pub(super) fn fastening_time(
+        &self,
+        by: EntityId,
+        k: usize,
+        part: EntityId,
+        at: DVec3,
+    ) -> (f64, u32) {
         let f = &self.building.fasteners[k];
         match (f.kind, &self.building.hammering) {
             (
@@ -132,7 +199,7 @@ impl ServerWorld {
                 },
                 Some(h),
             ) => {
-                let blows = (self.sides_at(part, at))
+                let blows = (self.sides_at(by, part, at))
                     .map_or(1, |(a, b)| h.blows((diameter, length), (&a, &b)));
                 (h.seconds(blows), blows)
             }
@@ -160,15 +227,19 @@ impl ServerWorld {
     }
 
     /// The nails `by` drove into `part` while holding it, made joints as the hands let go: held
-    /// still by the hands meanwhile, it lay where they were driven (G2.11). One refused (a
-    /// second at a crossing already fastened, what it touched gone) is told.
+    /// still by the hands meanwhile, it lay where they were driven (G2.11). What each touches is
+    /// found again where it was driven (the first made the parts one: the next crossings are
+    /// within it). One refused (what it touched gone) is told.
     pub(super) fn make_driven(&mut self, by: EntityId, part: EntityId) {
         let Some(driven) = self.building.driven.remove(&by) else {
             return;
         };
-        for (other, point, k) in driven {
+        for (_, point, k) in driven {
             let fastener = self.building.fasteners[k].clone();
-            if let Err(why) = self.fasten(part, other, point, &fastener) {
+            let made = (self.touching_at(part, point))
+                .and_then(|(against, touch)| self.crossing(Some(by), part, against, touch))
+                .and_then(|c| self.drive(part, &c, &fastener, point));
+            if let Err(why) = made {
                 self.note(by, format!("not fastened there: {why}"));
             }
         }

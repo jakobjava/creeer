@@ -48,6 +48,9 @@ mod lbfgs;
 mod ltb_tests;
 mod mass;
 mod minimise;
+pub mod nails;
+#[cfg(test)]
+mod nails_tests;
 mod objective;
 mod owed;
 mod plastic;
