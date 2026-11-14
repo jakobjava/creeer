@@ -100,6 +100,13 @@ Kept by the coordinator as streams are merged.
 | A4, A5 | At work (stopped twice by the usage limit, resumed) |
 | A6 third pass, B2, Q | At work: the guard's hole, the wood patch and the pile (A6); nails within a structure, the nail's direction, rolling a part, the protocol's additions (B2); the whole ten minutes played through the client with the HUD on (Q) |
 
+**What the play-through found (Q, 2026-11-14), handed on:**
+- *Building (B2):* laying a 3 m stringer across the site's 2.3 m gully mostly fails (6 of 13 attempts over four runs, 0 of 4 in the last) and can pull the player in: aimed over the gap the ray meets the floor beyond reach, slid out from the bank the stringer tips down the wall. A part taken by its end stands up in the hands. A board's second nail is refused. Prompts offered that will be refused (J, U, K on a lone part; P and T on a held stringer).
+- *Character (A4):* sliding on 1.2 m after letting go of W, into the gully; tripping on a stringer's end; no way out of the gully by walking at its wall; looking down at a part held low, the view is from above the stooped body.
+- *Physics (A6):* the built bridge breaks under the first step; a 25 kg block carried over the deck breaks a board "when struck"; under test weights the deck is drawn whole while the weights are drawn under it.
+- *Sound:* a collapse makes no sound (a structure that splits into new pieces is never cracked).
+- *Looks:* a saw-tooth edge on the rim's shadow on the gully's floor and a checker pattern on its steep wall; loads are plain boxes; built members round bars and broken pieces blobs until the protocol tells their profile.
+
 **The blocker for the ten minutes** (found by C): people standing on the nailed bridge cost up to 228,742 Newton iterations a tick (ticks of 1–10 s). A6's next item after the wood defects; A4 measures the character's part.
 
 **What the frames still show wrong** (the coordinator's own look, 2026-11-14): in first person the player sees their own head and shoulders from above when the body stoops (A4); a built deck is drawn as grey round bars and a broken structure's pieces as large dark balls (A2).
