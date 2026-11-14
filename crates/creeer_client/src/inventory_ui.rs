@@ -1,13 +1,16 @@
 //! What the player carries (G1.6a, ADR-0028): E puts away what the hands hold or the item the
 //! crosshair is on, F puts what the hands hold into the container the crosshair is on (or looks
 //! into it), I shows the pockets and the container looked into, each item with what can be seen
-//! of it, to take out into the hands. A plain list: the game's own look for it is G11's.
+//! of it, to take out into the hands. At a glance, the same at the bottom right
+//! (`hud_hands.rs`).
 
+use crate::bindings::{Action, Bindings};
 use crate::planet_aim::target;
 use crate::planet_view::PlanetView;
 use creeer_net::message::{Command, Target};
 use creeer_render::Camera;
-use creeer_ui::egui;
+use creeer_ui::egui::{self, RichText};
+use creeer_ui::theme::{HIGHLIGHT, TEXT_DIM};
 
 impl PlanetView {
     /// What the crosshair is on as a target, if it is a body within reach.
@@ -62,65 +65,59 @@ impl PlanetView {
     }
 }
 
-/// The inventory window, while `view.inventory` is shown.
-pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
-    let mut shown = view.inventory;
+/// The inventory window, while `view.inventory` is shown: what the hands hold, each pocket
+/// with how full it is and what is in it (each to take out into the hands), and the container
+/// looked into (G2.11 A3: laid out for reading).
+pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera, keys: &Bindings) {
+    if !view.inventory {
+        return;
+    }
+    let mut shown = true;
     let inventory = view.session.connection.inventory.clone();
     let reached = view.reached(camera);
     let mut asked = None;
-    egui::Window::new("Inventory (I)")
+    egui::Window::new("What you carry")
         .open(&mut shown)
-        .default_width(330.0)
+        .resizable(false)
+        .collapsible(false)
+        .default_pos([24.0, 120.0])
         .show(ctx, |ui| {
-            let load: f64 = (inventory.pockets.iter())
-                .flat_map(|p| &p.items)
-                .map(|i| i.mass)
-                .sum();
-            ui.label(format!(
-                "In the pockets: {load:.2} kg. E puts away, F puts in or looks into."
-            ));
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            let hint = format!(
+                "{}: into a pocket   ·   {}: into a container, or look in",
+                keys.name(Action::Pocket),
+                keys.name(Action::PutIn)
+            );
+            ui.label(RichText::new(hint).color(TEXT_DIM));
+            ui.add_space(4.0);
+            ui.label(RichText::new("In your hands").strong().color(HIGHLIGHT));
+            match &inventory.hands {
+                Some(item) => item_row(ui, item, None),
+                None => {
+                    ui.label(RichText::new("nothing").color(TEXT_DIM));
+                }
+            }
             for (p, pocket) in inventory.pockets.iter().enumerate() {
-                let used: f64 = pocket.items.iter().map(|i| i.room).sum();
-                ui.separator();
-                ui.label(format!(
-                    "{}: {:.2} of {:.2} l",
-                    pocket.name,
-                    used * 1000.0,
-                    pocket.volume * 1000.0
-                ));
+                ui.add_space(6.0);
+                store_header(ui, &crate::hud_hands::pocket_name(&pocket.name), pocket);
                 for (k, item) in pocket.items.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        if ui.small_button("take").clicked() {
-                            asked = Some(Command::TakeOut {
-                                pocket: u8::try_from(p).unwrap_or(u8::MAX),
-                                item: u16::try_from(k).unwrap_or(u16::MAX),
-                            });
-                        }
-                        swatch(ui, item.colour);
-                        ui.label(&item.text);
-                    });
+                    let take = Command::TakeOut {
+                        pocket: u8::try_from(p).unwrap_or(u8::MAX),
+                        item: u16::try_from(k).unwrap_or(u16::MAX),
+                    };
+                    item_row(ui, item, Some((&mut asked, Some(take))));
                 }
             }
             if let Some((id, store)) = &inventory.open {
-                ui.separator();
+                ui.add_space(6.0);
+                store_header(ui, "The container looked into", store);
                 let here = reached.filter(|t| t.body == Some(*id));
-                ui.label(format!(
-                    "In the container ({:.0} l):",
-                    store.volume * 1000.0
-                ));
                 for (k, item) in store.items.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        let button =
-                            ui.add_enabled(here.is_some(), egui::Button::new("take").small());
-                        if let Some(t) = here.filter(|_| button.clicked()) {
-                            asked = Some(Command::TakeFrom {
-                                container: t,
-                                item: u16::try_from(k).unwrap_or(u16::MAX),
-                            });
-                        }
-                        swatch(ui, item.colour);
-                        ui.label(&item.text);
+                    let take = here.map(|t| Command::TakeFrom {
+                        container: t,
+                        item: u16::try_from(k).unwrap_or(u16::MAX),
                     });
+                    item_row(ui, item, Some((&mut asked, take)));
                 }
             }
         });
@@ -130,34 +127,42 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) {
     }
 }
 
-/// A square of an item's colour: what it looks like (a stone is known by its colour).
-fn swatch(ui: &mut egui::Ui, colour: Option<[u8; 3]>) {
-    if let Some([r, g, b]) = colour {
-        ui.colored_label(egui::Color32::from_rgb(r, g, b), "■");
+/// A store's heading: its name, how full it is as a bar, and its litres.
+fn store_header(ui: &mut egui::Ui, name: &str, store: &creeer_net::message::StoreView) {
+    let share = crate::hud_hands::fill(store);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(name).strong().color(HIGHLIGHT));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(60.0, 10.0), egui::Sense::hover());
+        creeer_ui::paint::bar(ui.painter(), rect, share, TEXT_DIM);
+        // (An empty sum is -0: plus 0 it is 0, not "-0.00".)
+        let used = store.items.iter().map(|i| i.room).sum::<f64>() + 0.0;
+        let litres = format!("{:.2} of {:.2} l", used * 1e3, store.volume * 1e3);
+        ui.label(RichText::new(litres).color(TEXT_DIM));
+    });
+    if store.items.is_empty() {
+        ui.label(RichText::new("empty").color(TEXT_DIM));
     }
 }
 
-/// Above the crosshair (G1.6): what the hands hold.
-pub fn told(ctx: &egui::Context, view: &PlanetView) {
-    let c = &view.session.connection;
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("told"),
-    ));
-    let mut at = ctx.content_rect().center() - egui::vec2(0.0, 90.0);
-    let mut line = |text: &str, colour: egui::Color32| {
-        painter.text(
-            at,
-            egui::Align2::CENTER_TOP,
-            text,
-            egui::FontId::proportional(14.0),
-            colour,
-        );
-        at.y += 18.0;
-    };
-    let hands = c.inventory.hands.as_ref();
-    let held = hands.map_or_else(|| "Hands: empty".into(), |h| format!("Hands: {}", h.text));
-    line(&held, egui::Color32::from_white_alpha(200));
+/// A take button's: where the command asked goes, and the command (none: not within reach).
+type Take<'a> = Option<(&'a mut Option<Command>, Option<Command>)>;
+
+/// An item: a square of its colour (a stone is known by its colour), its word, what can be seen
+/// of it, and a button to take it into the hands (greyed out: not within reach).
+fn item_row(ui: &mut egui::Ui, item: &creeer_net::message::ItemView, take: Take<'_>) {
+    ui.horizontal(|ui| {
+        if let Some([r, g, b]) = item.colour {
+            ui.label(RichText::new("■").color(egui::Color32::from_rgb(r, g, b)));
+        }
+        ui.label(RichText::new(&item.word).strong());
+        ui.label(RichText::new(item.text.replace('_', " ")).color(TEXT_DIM));
+        if let Some((asked, command)) = take {
+            let button = ui.add_enabled(command.is_some(), egui::Button::new("Take"));
+            if button.clicked() {
+                *asked = command;
+            }
+        }
+    });
 }
 
 /// The vitals (G1.9), at the bottom left: health, what each of the body's parts has taken, and

@@ -57,6 +57,7 @@ mod holding;
 mod hud;
 mod hud_crosshair;
 mod hud_feedback;
+mod hud_hands;
 mod hud_seen;
 mod hud_shot;
 mod hulls;

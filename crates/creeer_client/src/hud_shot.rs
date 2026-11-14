@@ -9,7 +9,8 @@
 //! - `aim-far`: the same pole a few metres off, out of reach;
 //! - `heavy`: looking at a 200 kg crate within reach;
 //! - `refused`: the same, G pressed: refused, and why;
-//! - `work`: a rail held on a sill, J pressed half a second before (the ring fills).
+//! - `work`: a rail held on a sill, J pressed half a second before (the ring fills);
+//! - `carry`: two pebbles put in the pockets and a stick taken in hand.
 
 use crate::menu::{Page, Screen};
 use crate::planet_shot_build::play;
@@ -22,7 +23,7 @@ use creeer_render::{Camera, OverlayFrame};
 use creeer_ui::{PerfInfo, egui};
 
 /// The views this module takes.
-pub(crate) const VIEWS: [&str; 5] = ["aim", "aim-far", "heavy", "refused", "work"];
+pub(crate) const VIEWS: [&str; 6] = ["aim", "aim-far", "heavy", "refused", "work", "carry"];
 
 /// What `--hud` asks of a frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -254,6 +255,34 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     let terrain = std::sync::Arc::clone(&view.terrain);
     let ground =
         |p: DVec3| p.normalize() * (terrain.planet().datum.radius(p) + terrain.surface_height(p));
+    if name == "carry" {
+        // Two pebbles put in the pockets, a stick taken in hand.
+        for (part, pocket) in [("pebble", true), ("pebble", true), ("stick", false)] {
+            let at = ground(me + north * 1.0);
+            let item = kit_item(part)?;
+            view.send(Command::Kit {
+                item,
+                at: at + up * 0.1,
+            });
+            play(view, 1.0)?;
+            let lies = nearest(view, at)?;
+            let c = &view.session.connection;
+            let hit = (c.aim(lies + up * 1.0, -up, 2.0)).ok_or("the part is not there")?;
+            let target = creeer_net::message::Target {
+                body: hit.body,
+                at: hit.point,
+                seen: hit.seen,
+            };
+            view.send(if pocket {
+                Command::Stow(Some(target))
+            } else {
+                Command::Grab(target)
+            });
+            play(view, 0.5)?;
+        }
+        let _ = READY.set(std::time::Instant::now());
+        return looking_at(view, ground(me + north * 3.0));
+    }
     let (off, command) = match name {
         "heavy" | "refused" => (1.8, Command::Crate(ground(me + north * 1.8) + up * 0.6)),
         _ => {
@@ -265,15 +294,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     };
     view.send(command);
     play(view, 2.0)?;
-    let at = ground(me + north * off);
-    // Where it lies as drawn: the body nearest where it was put down.
-    let c = &view.session.connection;
-    let own = c.welcome.as_ref().map(|w| w.avatar);
-    let lies = (c.poses().into_iter())
-        .filter(|(id, _)| Some(*id) != own)
-        .map(|(_, p)| p.position)
-        .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
-        .ok_or("the part is not there")?;
+    let lies = nearest(view, ground(me + north * off))?;
     let camera = looking_at(view, lies)?;
     if name == "refused" {
         // G on the crate: refused, and told why at the crosshair.
@@ -282,6 +303,17 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     }
     let _ = READY.set(std::time::Instant::now());
     Ok(camera)
+}
+
+/// Where a thing put down at `at` lies as drawn: the body nearest it (it falls and rolls).
+fn nearest(view: &PlanetView, at: DVec3) -> Result<DVec3, String> {
+    let c = &view.session.connection;
+    let own = c.welcome.as_ref().map(|w| w.avatar);
+    (c.poses().into_iter())
+        .filter(|(id, _)| Some(*id) != own)
+        .map(|(_, p)| p.position)
+        .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
+        .ok_or_else(|| "the part is not there".to_owned())
 }
 
 /// When this module's scene was played to its moment (the terrain is streamed after it).

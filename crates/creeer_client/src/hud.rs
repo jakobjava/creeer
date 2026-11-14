@@ -28,7 +28,7 @@ pub(crate) fn draw(
         perf_window(ctx, perf);
         request = planet_ui::window(ctx, planet, camera);
     }
-    crate::inventory_ui::window(ctx, planet, camera);
+    crate::inventory_ui::window(ctx, planet, camera, &game.bindings);
     if screen.kit {
         crate::kit_ui::window(ctx, &mut screen.kit, planet, camera);
     }
@@ -38,7 +38,9 @@ pub(crate) fn draw(
         let (seen, name) = crate::hud_seen::seen(planet, target.as_ref());
         let prompts = crate::prompts::prompts(&seen);
         crate::hud_crosshair::draw(ctx, name.as_deref(), &prompts, &game.bindings);
-        crate::inventory_ui::told(ctx, planet);
+        let tool = planet.wielding.and_then(tool_name);
+        let inventory = &planet.session.connection.inventory;
+        crate::hud_hands::draw(ctx, inventory, tool.as_deref(), &game.bindings);
     }
     crate::inventory_ui::vitals(ctx, &planet.session.connection);
     if !game.controls_seen && screen.menu.is_none() {
@@ -46,6 +48,18 @@ pub(crate) fn draw(
     }
     profiler.window(ctx, Some(&mut planet.session.connection));
     request
+}
+
+/// The name of tool `index` of the tools' table (G1.4c), as a person says it.
+fn tool_name(index: u8) -> Option<String> {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        (creeer_sim::tools::Tool::all(&crate::content::data()).unwrap_or_default())
+            .into_iter()
+            .map(|t| t.name.replace('_', " "))
+            .collect()
+    });
+    names.get(usize::from(index)).cloned()
 }
 
 /// Until the player has opened the controls once: how to, at the top of the screen.
