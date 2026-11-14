@@ -71,10 +71,13 @@ The legs are one ray down from the hips: whatever passes under the hips is stood
 | Onto a 20 cm deck: the body's rise; the eye over its mark | 1.57 m/s; 6 cm | 0.42 m/s; 2.6 cm |
 | The legs' push stepping onto a nailed deck / walking along / standing | 2.79 / 1.20 / 1.00 body weights | 1.51 / 1.04 / 1.00 |
 | Its change stepping on | 84 body weights a second | 28 |
-| *bridge_demo* (C's `what_the_bridge_costs`): people walking over the bridge and back | broken by the first person; 947,754 Newton iterations at most in a tick | whole; at most 420 a tick, the bridge's own about 30; asleep again after |
+| *bridge_demo*'s footbridge, the first person stepping onto it (`walking_loads.rs`, `measure_the_footbridges_nails`) | two nails pulled out (1,240 and 1,337 N against their 706 N: A6), broken within four ticks | the most pulled nail 603 N (0.91 of what pulls it out), whole |
+| The same, walking over it | (broken) | nails pulled 100–520 N; broken 4 s on by a person falling through its deck (below) |
 | Over the plank bridge and the deck with a 15 kg box | knocked down stepping onto the deck | keeps her feet, the box held |
 
-(Measured with the law of the first pass, the cap on everything over 20 kg; the deck and the bridges are over 50 kg, and their gates pass as measured.)
+(The first pass, the cap on everything over 20 kg, had the footbridge whole with people walking over and back, at most 420 Newton iterations a tick: C's `what_the_bridge_costs`. Measured again on G2.11's merged state with the law as built, 2026-11-15: as in the table.)
+
+**Found, not mended: falling through a deck's gaps.** *bridge_demo*'s deck boards are 150 mm wide every 250 mm: a tenth of a metre between them, two-fifths of the deck. The one ray under the hips passes through a gap: over a stringer it finds the stringer's top 5 cm down, so a person walking along a stringer bobs at every board (±0.3–0.7 m/s) and climbs each; between stringers (75 mm wide, 0.4 m apart) it finds nothing. Walking, the next board comes within a few ticks; stopping with the hips over a gap between stringers, the body falls freely, 0.37 m in 0.3 s, until its own shape strikes the deck at 2.6–2.9 m/s, and the struck stringers break (tick 580, 4.7 s after the walk began; the pieces then cost 0.2–1.7 million Newton iterations a tick). With A6's held-back wood patch (ADR-0005) the first step pulls a nail with 496 N (0.94), two members break in the first steps, and the whole deck breaks struck at tick 567, both people falling into the gully. A foot is 0.26 m long and spans such a gap. The way: the feet's own footprint, not one point (`docs/future-improvements.md`, *One leg*).
 
 **Found, not mended: logs and sills are climbed.** With one ray under the hips a 10, 20 or 30 cm log lifts the eye 5, 18 or 32 cm as it passes under them, and a 15 cm sill 14 cm, the body hopping at up to 1.8 m/s. Five rays along the way (under the hips, a quarter and half a stride ahead and behind) and their middle by height stepped over every one (the eye 0.3–0.7 cm up, never slowed), as people step over obstacles (Chou et al.); it moved the prediction's gate against crates over a slow link (Measured and rejected), and is left with its test ignored (`stepping_gates.rs`).
 
@@ -118,13 +121,14 @@ A ragdoll's segments were laid out where the body stood, cleared of the ground o
 - `feet_tests.rs`: on a node of two members the one stood on carries the balance whole.
 - `play/walking_gates.rs`: over a plank bridge and a deck, on, along and off, with and without a 15 kg box: never down, the box held.
 - `play/stepping_gates.rs`: a 20 cm step at under 0.6 m/s, the eye under 4 cm over; a nailed deck pressed with at most 1.7 body weights stepping on, 1.3 walking, its weight standing; logs and a sill stepped over (ignored: the open limit).
+- `play/walking_loads.rs` (by hand): the legs' push on a deck, what a person costs it, and `measure_the_footbridges_nails` (*bridge_demo*'s nails under people walking over, in release; `TRACE=<tick>` follows each person).
 - `ragdoll_tests.rs`: a ragdoll laid out clear of a crate 13 cm into where its head stood. `server/carry_walk_tests.rs`: holding a post through its backfilling (ignored: the open limit).
 - `planet_camera.rs`: the boom out in the open, pulled in before a wall at once and let out without a jump, the own body hidden at the eyes; the eyes following a stooping head and not one 300,000 km off.
 - Frames (`<frames>/walk`): `avatar`, `third-crates`, `first-down` before and after; B's `--build-play bridge` after.
 
 ## Limits
 
-- Logs, sills and post holes under the hips are climbed or fallen into, not stepped over (decision 2).
+- Logs, sills and post holes under the hips are climbed or fallen into, not stepped over; a gap narrower than a foot (between deck boards) is fallen through (decision 2).
 - Standing, any steady push moves the body (decision 3).
 - Stepping down off a deck the body still drops its height freely (2.13 body weights landing on the ground); a descent braked on the trailing foot is not modelled.
 - Walking, the legs press steadily with the body's weight: a gait's two footfalls a stride (1.1–1.5 body weights each) are not in the physics.

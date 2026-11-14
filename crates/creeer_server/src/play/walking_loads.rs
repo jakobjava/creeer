@@ -269,3 +269,88 @@ fn measure_bridges() {
     measure_bridge(false);
     measure_bridge(true);
 }
+
+/// What people walking over *bridge_demo*'s footbridge do to its nails (for A6 and C, G2.11):
+/// the scene as `what_the_bridge_costs` plays it (standing by 5 s, then walking over and back),
+/// each second's most pull out of a nail (N) and most share of what breaks a joint (1 breaks it),
+/// the most work in a tick, and what broke. (Before G2.11's legs, A6 measured the first step onto
+/// the deck pulling two nails with 1,240 and 1,337 N against their 706 N, and the bridge broke.)
+/// With `TRACE=<from>` each tick from then: the most pull, and each person's place (m over the
+/// gully from the near bank's stand, and along it), vertical speed and whether down; `TO` ends it.
+#[test]
+#[ignore = "measures the footbridge's nails under people: by hand, in release"]
+fn measure_the_footbridges_nails() {
+    use super::bridge_demo::{OVER, bridge};
+    use crate::world::site::BridgeSite;
+    let env = |name: &str| std::env::var(name).ok().and_then(|v| v.parse::<u32>().ok());
+    let (trace, to) = (env("TRACE").unwrap_or(u32::MAX), env("TO").unwrap_or(900));
+    let s = super::scenes::scene("bridge_demo").expect("the scene");
+    let terrain = super::scenes::terrain();
+    let mut play = super::Play::new((s.build)(terrain.clone()), s.name, s.players, &terrain);
+    let site = BridgeSite::of(&play.server.world, 1);
+    let first = bridge(&site).expect("the bridge");
+    let (mut pull, mut share, mut work) = ((0.0, 0), (0.0, 0), 0);
+    for tick in 0..to {
+        if tick >= trace {
+            let w = &play.server.world;
+            let people: Vec<String> = (0..play.players())
+                .map(|k| {
+                    let id = play.client(k).welcome.as_ref().expect("joined").avatar;
+                    let b = &w.world.bodies[w.index(id).expect("in the world")].structure;
+                    let p = b.position[0] - site.stand;
+                    let down = w
+                        .person(id)
+                        .is_some_and(crate::world::people::Person::fallen);
+                    format!(
+                        "{:.2} over, {:+.2} along the gully, {:+.2} m/s up{}",
+                        p.dot(site.across),
+                        p.dot(site.along),
+                        b.velocity[0].dot(site.middle.normalize()),
+                        if down { ", down" } else { "" }
+                    )
+                })
+                .collect();
+            let most = w.index(first).map_or(0.0, |i| {
+                (w.world.bodies[i].structure.carried().iter())
+                    .filter(|c| c.joint && !c.broken)
+                    .map(|c| c.along)
+                    .fold(0.0, f64::max)
+            });
+            eprintln!("tick {tick}: pull {most:.0} N; {}", people.join(" | "));
+        }
+        let acts = if tick < 300 {
+            vec![Act::default(); play.players()]
+        } else {
+            (s.script)(tick - 300 + OVER, &play)
+        };
+        work = play.tick(&acts).work.max(work);
+        let w = &play.server.world;
+        let Some(i) = w.index(first) else { continue };
+        let st = &w.world.bodies[i].structure;
+        for c in st.carried().iter().filter(|c| c.joint && !c.broken) {
+            if c.along > pull.0 {
+                pull = (c.along, tick);
+            }
+            if c.share > share.0 {
+                share = (c.share, tick);
+            }
+        }
+        if tick % 60 == 59 {
+            eprintln!(
+                "second {}: most pull {:.0} N (tick {}), most share {:.2} (tick {}), most work \
+                 {work}; broken {}, pieces {}",
+                tick / 60,
+                pull.0,
+                pull.1,
+                share.0,
+                share.1,
+                st.elements_broken(),
+                st.pieces().len()
+            );
+            (pull, share, work) = ((0.0, 0), (0.0, 0), 0);
+        }
+    }
+    for f in &play.server.world.inspection(false).failures {
+        eprintln!("tick {}: {}", f.tick, f.words);
+    }
+}
