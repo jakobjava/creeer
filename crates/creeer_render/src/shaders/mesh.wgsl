@@ -43,6 +43,8 @@ struct PlainOut {
     @location(4) @interpolate(flat) material: vec2<f32>,
     // Engineering overlay value (or a huge negative number for "none").
     @location(5) @interpolate(flat) heat: f32,
+    // The token pattern its vertices name over its colour (a stone's), 0 for none.
+    @location(6) @interpolate(flat) pattern: u32,
 };
 
 struct ModelOut {
@@ -61,6 +63,10 @@ struct ModelOut {
     @location(9) grain: vec2<f32>,
     // x: years weathered, y: wear from use.
     @location(10) @interpolate(flat) ageing: vec2<f32>,
+    // A part's (G2.11, `parts.wgsl`): its grain, the axis it runs along, its seed, and the
+    // token of its marks (−1 for none); its instance's size. Zero for a model.
+    @location(11) @interpolate(flat) part: vec4<f32>,
+    @location(12) @interpolate(flat) scale: vec3<f32>,
 };
 
 /// An instance's metalness and roughness.
@@ -81,17 +87,25 @@ fn vs_plain(v: VertexIn, i: InstanceIn) -> PlainOut {
     out.color = i.color.rgb;
     out.material = instance_material(i);
     out.heat = i.color.a;
+    out.pattern = (v.detail >> 8u) & 0xffu;
     return out;
 }
 
 @vertex
 fn vs_main(v: VertexIn, i: InstanceIn) -> ModelOut {
-    let local = v.position * i.scale;
+    // A part (G2.11) is a unit primitive: bevelled, tapered by its instance (`placed`).
+    let part = is_part(v.material);
+    var local = v.position * i.scale;
+    var normal = v.normal / i.scale;
+    if part {
+        local = placed(v.position, v.normal, v.material, i.scale, i.color.b);
+        normal = tapered(normal, i.scale, i.color.b);
+    }
     let world = rotate(i.rotation, local) + i.position_metal.xyz;
     var out: ModelOut;
     out.clip = globals.view_proj * vec4<f32>(world, 1.0);
     out.world = world;
-    out.normal = rotate(i.rotation, v.normal / i.scale);
+    out.normal = rotate(i.rotation, normal);
     out.local = local;
     out.color = i.color.rgb;
     out.material = instance_material(i);
@@ -106,6 +120,22 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> ModelOut {
     out.local_normal = normalize(v.normal / i.scale);
     out.grain = v.grain;
     out.ageing = vec2<f32>(unpack2x16float(i.surface).y, f32((i.surface >> 8u) & 0xffu) / 255.0);
+    out.part = vec4<f32>(0.0);
+    out.scale = i.scale;
+    // A model's foliage (`creeer_render::foliage`): its cheaper surface (`leaves_surface`).
+    if !part && ((v.detail >> 8u) & 0xffu) == GRAIN_LEAVES {
+        out.part.x = f32(GRAIN_LEAVES);
+    }
+    if part {
+        // Open (the screen's occlusion grounds it), worn on its rounded edges, its tone its
+        // instance's, its height above its lowest point.
+        let grain = (v.detail >> 8u) & 0xffu;
+        out.token = v.material & 0x7fffu;
+        out.masks = vec4<f32>(
+            1.0, part_wear(v.normal, grain), i.color.r, part_height(local, i.rotation, i.scale),
+        );
+        out.part = vec4<f32>(f32(grain), f32(part_axis(grain, i.scale)), i.color.g, v.grain.x);
+    }
     return out;
 }
 
@@ -134,7 +164,7 @@ fn fs_plain(in: PlainOut) -> @location(0) vec4<f32> {
         return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
     let at = Place(in.local, vec3<f32>(0.0, 1.0, 0.0), vec2<f32>(0.0), footprint, vec2<f32>(0.0));
-    let surface = plain_surface(in.color, in.material.y, in.material.x, at);
+    let surface = plain_surface(in.color, in.material.y, in.material.x, at, in.pattern);
     let occlusion = ambient_occlusion(in.clip.xy, surface.colour, 1.0);
     return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, occlusion), 1.0);
 }
@@ -153,9 +183,23 @@ fn shade_model(in: ModelOut) -> vec4<f32> {
         return vec4<f32>(in.color * (in.material.x - 2.0), 1.0);
     }
     let at = Place(in.local, normalize(in.local_normal), in.grain, footprint, grain_footprint);
+    if u32(in.part.x + 0.5) == GRAIN_LEAVES {
+        let leaves = leaves_surface(palette[in.token], in.masks.z, at);
+        let occlusion = ambient_occlusion(in.clip.xy, leaves.colour, in.masks.x);
+        return vec4<f32>(lit(in.world, in.normal, spread, leaves, in.heat, occlusion), 1.0);
+    }
+    // A part's pattern from where it lies in its wood (`parts.wgsl`); a model's from its bake.
+    var pattern = vec2<f32>(0.0);
+    var marks = vec2<f32>(-1.0, 0.0);
+    if in.part.x > 0.5 {
+        pattern = part_pattern(palette[in.token], in.part, in.scale, at);
+        marks = vec2<f32>(in.part.w, pattern.y);
+    } else {
+        pattern.x = pattern_of(palette[in.token].pattern, at);
+    }
     let surface = model_surface(
         in.token, in.color, in.masks.x, in.masks.y, in.masks.z, in.masks.w,
-        in.ageing.x, in.ageing.y, at,
+        in.ageing.x, in.ageing.y, at, pattern.x, marks,
     );
     let occlusion = ambient_occlusion(in.clip.xy, surface.colour, in.masks.x);
     return vec4<f32>(lit(in.world, in.normal, spread, surface, in.heat, occlusion), 1.0);

@@ -94,7 +94,11 @@ Kept by the coordinator as streams are merged.
 | A3 HUD | Merged 2026-11-14 (ADR-0038). Its volume setting drives the sound |
 | B Building by hand | First pass merged 2026-11-14 (ADR-0036 amended): a part taken stays as it lay and is carried low; a pole laid across a gap; one nail a key press, timed by its blows; the own body drawn in first person. Open: parts caught on others, one nail only between parts already joined, the nail driven through the part aimed at, no hammer drawn, no plank on edge |
 | C The bridge site | Merged 2026-11-14 (ADR-0039): `--bridge`, the kit's footbridge timber and loads, the stress overlay (O), what failed first, the `bridge_demo` scene |
-| A1, A2, A4, A5 | At work (stopped twice by the usage limit, resumed) |
+| A1 Ground, sky, light | Merged 2026-11-14 (ADR-0040): the facets (a detail texture breaking at chunk borders), smooth shadow edges, contact shadows, the forest floor's layers, ground cover, the forest from afar |
+| A2 Things | Merged 2026-11-14 (ADR-0041): round rods, wood with grain and cut ends, trees as trees, built members and broken pieces as timber |
+| A6, second pass | Merged 2026-11-14 (docs and probes): the two defects in how wood breaks fixed and validated as a patch, held back until the energy guard's hole is closed and a made member starts in its sag; the bridge's freeze traced to its nails pulled by the first person stepping on |
+| A4, A5 | At work (stopped twice by the usage limit, resumed) |
+| A6 third pass, B2, Q | At work: the guard's hole, the wood patch and the pile (A6); nails within a structure, the nail's direction, rolling a part, the protocol's additions (B2); the whole ten minutes played through the client with the HUD on (Q) |
 
 **The blocker for the ten minutes** (found by C): people standing on the nailed bridge cost up to 228,742 Newton iterations a tick (ticks of 1–10 s). A6's next item after the wood defects; A4 measures the character's part.
 

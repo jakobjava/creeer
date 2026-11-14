@@ -44,14 +44,32 @@ pub fn bevel_radius(scale: Vec3) -> f32 {
     (BEVEL_SHARE * scale.min_element()).min(BEVEL_MAX)
 }
 
+/// A part's bevel (G2.11, `crate::parts`; `art-style.md` §7: 1–2 % of its smallest side, at
+/// least 5 mm): a share of its smallest side…
+pub const PART_BEVEL_SHARE: f32 = 0.02;
+/// …at least (m)…
+pub const PART_BEVEL_MIN: f32 = 0.005;
+/// …and at most this share of its smallest side (a thin strip's bevel within it).
+pub const PART_BEVEL_THIN: f32 = 0.2;
+
+/// The bevel radius of a part's primitive scaled by `scale` (m), untapered: smaller than the
+/// sandbox's primitives' ([`bevel_radius`]), so the joints of a stem drawn in pieces show no
+/// groove.
+pub fn part_bevel_radius(scale: Vec3) -> f32 {
+    let smallest = scale.min_element();
+    (PART_BEVEL_SHARE * smallest)
+        .clamp(PART_BEVEL_MIN, BEVEL_MAX)
+        .min(PART_BEVEL_THIN * smallest)
+}
+
 /// Where `v` is drawn in its instance's space, for the instance's `scale` (the shaders'
-/// `shaped`, `globals.wgsl`).
+/// `placed`, `globals.wgsl`, untapered).
 pub fn shaped(v: &MeshVertex, scale: Vec3) -> Vec3 {
     let p = Vec3::from(v.position);
-    let r = if v.is_bevelled() {
-        bevel_radius(scale)
-    } else {
-        0.0
+    let r = match (v.is_bevelled(), v.is_part()) {
+        (false, _) => 0.0,
+        (true, false) => bevel_radius(scale),
+        (true, true) => part_bevel_radius(scale),
     };
     p * scale + (Vec3::from(v.normal) - 2.0 * p) * r
 }

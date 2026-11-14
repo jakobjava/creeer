@@ -65,6 +65,18 @@ impl Material {
         }
     }
 
+    /// A part's (G2.11, ADR-0041; a mesh of [`crate::parts`], whose tokens give its colour,
+    /// roughness and pattern): its tone (0–1: its token's colour ±18 %, `art-style.md` §6), a
+    /// seed (0–1) for where its grain lies, and its taper (its top's radius over its bottom's;
+    /// 1 for none). They reach the shader as the instance's linear colour, which a part's
+    /// tokens do not use.
+    pub fn part(tone: f32, seed: f32, taper: f32) -> Self {
+        Self::dielectric(
+            [tone, seed, taper].map(|x| linear_to_srgb(x.clamp(0.0, 1.0))),
+            1.0,
+        )
+    }
+
     /// This material on an object that has weathered `exposure` years and has `wear` from use.
     pub const fn aged(self, exposure: f32, wear: f32) -> Self {
         Self {
@@ -206,6 +218,15 @@ pub fn srgb_to_linear(c: f32) -> f32 {
     }
 }
 
+/// Encodes a linear channel (0–1) as sRGB: the inverse of [`srgb_to_linear`].
+pub fn linear_to_srgb(c: f32) -> f32 {
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
 impl InstanceRaw {
     pub(crate) fn new(instance: &Instance, camera: DVec3) -> Self {
         let m = instance.material;
@@ -311,6 +332,22 @@ mod tests {
         assert!((srgb_to_linear(1.0) - 1.0).abs() < 1e-6);
         // sRGB 0.5 is about 21.4 % linear light.
         assert!((srgb_to_linear(0.5) - 0.214_04).abs() < 1e-4);
+        // A part's tone, seed and taper reach the shader as they were given.
+        for x in [0.0, 0.001, 0.2, 0.5, 0.77, 1.0] {
+            assert!((srgb_to_linear(linear_to_srgb(x)) - x).abs() < 1e-5, "{x}");
+        }
+        let raw = InstanceRaw::new(
+            &Instance {
+                frame: Frame64::IDENTITY,
+                scale: Vec3::ONE,
+                material: Material::part(0.3, 0.9, 0.6),
+                heat: None,
+            },
+            DVec3::ZERO,
+        );
+        for (got, want) in raw.color.iter().zip([0.3, 0.9, 0.6]) {
+            assert!((got - want).abs() < 1e-5);
+        }
     }
 
     #[test]
