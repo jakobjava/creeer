@@ -9,7 +9,8 @@
 //! - `aim-far`: the same pole a few metres off, out of reach;
 //! - `heavy`: looking at a 200 kg crate within reach;
 //! - `refused`: the same, G pressed: refused, and why;
-//! - `work`: a rail held on a sill, J pressed half a second before (the ring fills);
+//! - `work`: a rail held on a sill, J pressed half a second before (the ring fills); `nail`: the
+//!   same with the nail the hand reaches for (its ring "Nailing");
 //! - `carry`: two pebbles put in the pockets and a stick taken in hand.
 
 use crate::menu::{Page, Screen};
@@ -23,7 +24,9 @@ use creeer_render::{Camera, OverlayFrame};
 use creeer_ui::{PerfInfo, egui};
 
 /// The views this module takes.
-pub(crate) const VIEWS: [&str; 6] = ["aim", "aim-far", "heavy", "refused", "work", "carry"];
+pub(crate) const VIEWS: [&str; 7] = [
+    "aim", "aim-far", "heavy", "refused", "work", "nail", "carry",
+];
 
 /// What `--hud` asks of a frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -201,14 +204,6 @@ fn raw_input(shot: &HudShot) -> egui::RawInput {
     input
 }
 
-/// In this module's views (first person) the player's own body is not drawn: the eyes are in it.
-pub(crate) fn not_own(view: &PlanetView, name: &str, people: &mut Vec<crate::people::DrawnPerson>) {
-    let own = (view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-    if VIEWS.contains(&name) {
-        people.retain(|p| Some(p.key) != own);
-    }
-}
-
 /// The kit's item named `name` (its index, as `Command::Kit` takes it).
 fn kit_item(name: &str) -> Result<u8, String> {
     let kit = creeer_sim::items::kit::kit(&creeer_data::Data::base())?;
@@ -234,15 +229,18 @@ fn looking_at(view: &PlanetView, target: DVec3) -> Result<Camera, String> {
 /// If the player has not come, or a part was not put down.
 pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String> {
     view.walking = true;
-    if name == "work" {
+    if name == "work" || name == "nail" {
         let camera = crate::planet_shot_build::camera(view, "rail")?;
-        // A lashing: eight seconds, the ring a while filling.
+        // A lashing: eight seconds, the ring a while filling; or the nail the hand reaches for
+        // (its time its blows: 1.5 s), a third of the way.
         let names = &view.fastening.names;
-        if let Some(k) = names.iter().position(|n| n.contains("lashing")) {
+        if let Some(k) = names.iter().position(|n| n.contains("lashing"))
+            && name == "work"
+        {
             view.fastening.chosen = k;
         }
         view.fasten(&camera);
-        play(view, 0.6)?;
+        play(view, if name == "work" { 0.6 } else { 0.5 })?;
         let _ = READY.set(std::time::Instant::now());
         return Ok(camera);
     }
@@ -280,8 +278,11 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
             });
             play(view, 0.5)?;
         }
+        // Held as the game holds it, placed each frame where the crosshair meets something
+        // (G2.11 Q: not placed, the stick hung where the hands had taken it, 2 m before the eyes).
+        let camera = crate::planet_shot_build::hold(view, ground(me + north * 3.0), 2.0)?;
         let _ = READY.set(std::time::Instant::now());
-        return looking_at(view, ground(me + north * 3.0));
+        return Ok(camera);
     }
     let (off, command) = match name {
         "heavy" | "refused" => (1.8, Command::Crate(ground(me + north * 1.8) + up * 0.6)),

@@ -2,6 +2,7 @@
 //! for what the crosshair is on as a person would call it: a pole lying, a post standing and
 //! its top, a log, the ground and what it is (G2.11 A3).
 
+use crate::hud_feedback::fastener_words;
 use crate::planet_aim::Target;
 use crate::planet_view::PlanetView;
 use crate::prompts::{Aimed, Seen, What};
@@ -60,9 +61,23 @@ fn look(shape: &Shape) -> Look {
     }
 }
 
-/// The name for a thing of `look`, by its word, standing or lying, and where on it the crosshair
-/// is (`along`: from its middle along its length, upwards for one standing).
-fn named(word: &str, l: Look, standing: bool, along: f64) -> String {
+/// The edges of the box about `shape` (m), longest first.
+fn extents(shape: &Shape) -> [f64; 3] {
+    let l = look(shape);
+    let mut e = [l.length, l.thickness, 0.0];
+    e[2] = if l.length * l.thickness > 0.0 {
+        l.volume / (l.length * l.thickness)
+    } else {
+        0.0
+    };
+    e.sort_by(|a, b| b.total_cmp(a));
+    e
+}
+
+/// The name for a thing of `look`, by its word (`kit`: the kit's own name for it, kept as it
+/// is), standing or lying, and where on it the crosshair is (`along`: from its middle along its
+/// length, upwards for one standing).
+fn named(word: &str, l: Look, (standing, kit): (bool, bool), along: f64) -> String {
     let rod = l.length >= SLENDER * l.thickness;
     if !(rod && l.length >= PART) {
         // The sandbox's metre-wide boxes are drawn as crates.
@@ -73,6 +88,7 @@ fn named(word: &str, l: Look, standing: bool, along: f64) -> String {
         };
     }
     let name = match (standing, word) {
+        _ if kit => word,
         (true, _) => "post",
         (false, "block") => "beam",
         (false, "log") => "log",
@@ -107,8 +123,10 @@ pub(crate) fn seen(view: &PlanetView, target: Option<&Target>) -> (Seen, Option<
         holding: view.holding.holding(),
         pinned: view.holding.pinned(),
         hands_part,
+        hands_pocketable: held.and_then(kind_look).is_none_or(|l| l.volume <= POCKET),
         tool: view.wielding.is_some(),
-        fastener: view.fastening.name().map(|f| f.replace('_', " ")),
+        // In words ("a 75 mm nail", not "nail 75"); empty, the hand's own choice.
+        fastener: view.fastening.name().map(fastener_words),
         fly_tool: (!view.walking).then(|| tool_name(view)),
         lifts: (lifts, 2.0 * lifts),
         aimed: None,
@@ -143,7 +161,13 @@ pub(crate) fn seen(view: &PlanetView, target: Option<&Target>) -> (Seen, Option<
             let l = look(shape);
             aimed.mass = aimed.mass.or(Some(matter.mass));
             aimed.pocketable = l.volume <= POCKET;
-            aimed.container = t.what == "block" && l.length < SLENDER * l.thickness;
+            // A part of the creative kit is known by its name (and a container by the kit's
+            // word for it); another squat block may be one (the client is not told).
+            let kit = crate::kit_ui::by_shape(extents(shape), matter.mass);
+            aimed.container = kit
+                .map_or(t.what == "block" && l.length < SLENDER * l.thickness, |k| {
+                    k.container
+                });
             if let Some(pose) = c.poses().get(&id) {
                 let axis = pose.orientation * l.axis;
                 let up = pose.position.normalize();
@@ -151,7 +175,8 @@ pub(crate) fn seen(view: &PlanetView, target: Option<&Target>) -> (Seen, Option<
                 // Upwards along it, for one standing.
                 let axis = if axis.dot(up) < 0.0 { -axis } else { axis };
                 let along = (t.aimed.point - pose.position).dot(axis);
-                name = named(&t.what, l, standing, along);
+                let word = kit.map_or(t.what.as_str(), |k| k.name.as_str());
+                name = named(word, l, (standing, kit.is_some()), along);
                 aimed.part = l.length >= PART && l.length >= SLENDER * l.thickness;
                 aimed.standing = standing;
             }
@@ -174,7 +199,11 @@ pub(crate) fn held_name(view: &PlanetView) -> Option<String> {
     let c = &view.session.connection;
     let word = &c.inventory.hands.as_ref()?.word;
     match c.own_load().and_then(|id| c.kinds.get(&id)) {
-        Some(Kind::Body(shape, _)) => Some(named(word, look(shape), false, 0.0)),
+        Some(Kind::Body(shape, matter)) => {
+            let kit = crate::kit_ui::by_shape(extents(shape), matter.mass);
+            let word = kit.map_or(word.as_str(), |k| k.name.as_str());
+            Some(named(word, look(shape), (false, kit.is_some()), 0.0))
+        }
         _ => Some(word.clone()),
     }
 }
@@ -206,23 +235,49 @@ mod tests {
         let rod = look(&Shape::Box(DVec3::new(0.05, 0.8, 0.05)));
         assert!((rod.length - 1.6).abs() < 1e-12 && (rod.thickness - 0.1).abs() < 1e-12);
         assert_eq!(rod.axis, DVec3::Y);
-        assert_eq!(named("stick", rod, false, 0.0), "pole");
-        assert_eq!(named("stick", rod, false, -0.75), "end of the pole");
-        assert_eq!(named("stick", rod, true, 0.2), "post");
-        assert_eq!(named("stick", rod, true, 0.75), "top of the post");
-        assert_eq!(named("stick", rod, true, -0.75), "foot of the post");
-        assert_eq!(named("block", rod, false, 0.0), "beam");
+        let (lying, standing) = ((false, false), (true, false));
+        assert_eq!(named("stick", rod, lying, 0.0), "pole");
+        assert_eq!(named("stick", rod, lying, -0.75), "end of the pole");
+        assert_eq!(named("stick", rod, standing, 0.2), "post");
+        assert_eq!(named("stick", rod, standing, 0.75), "top of the post");
+        assert_eq!(named("stick", rod, standing, -0.75), "foot of the post");
+        assert_eq!(named("block", rod, lying, 0.0), "beam");
+    }
+
+    /// The bridge site's parts are named as the kit names them (G2.11 Q: a deck board, a
+    /// stringer and a sleeper were all "beam"), a granite block is not a container, a crate is.
+    #[test]
+    fn the_kits_parts_are_named_as_the_kit_names_them() {
+        let named_as = |half: DVec3, mass: f64, along: f64| {
+            let shape = Shape::Box(half);
+            let kit = crate::kit_ui::by_shape(extents(&shape), mass).expect("a kit part");
+            let name = named(&kit.name, look(&shape), (false, true), along);
+            (name, kit.container)
+        };
+        let board = |kg| named_as(DVec3::new(0.5625, 0.025, 0.075), kg, 0.0);
+        let stringer = named_as(DVec3::new(1.5, 0.075, 0.0375), 14.2, 1.45);
+        assert_eq!(board(3.5), ("deck board".to_owned(), false));
+        assert_eq!(stringer, ("end of the stringer".to_owned(), false));
+        let block = named_as(DVec3::new(0.16, 0.075, 0.1), 25.4, 0.0);
+        assert_eq!(block, ("granite block".to_owned(), false));
+        let load_crate = named_as(DVec3::new(0.4, 0.25, 0.25), 18.0, 0.0);
+        assert_eq!(load_crate, ("load crate".to_owned(), true));
+        assert!(
+            crate::kit_ui::by_shape([1.125, 0.15, 0.05], 9.0).is_none(),
+            "not its weight"
+        );
     }
 
     #[test]
     fn short_or_squat_things_keep_their_word() {
+        let lying = (false, false);
         let stick = look(&Shape::Box(DVec3::new(0.012, 0.012, 0.225)));
         assert_eq!(stick.axis, DVec3::Z);
-        assert_eq!(named("stick", stick, false, 0.0), "stick");
+        assert_eq!(named("stick", stick, lying, 0.0), "stick");
         let crate_ = look(&Shape::Box(DVec3::new(0.25, 0.2, 0.2)));
-        assert_eq!(named("block", crate_, false, 0.24), "block");
+        assert_eq!(named("block", crate_, lying, 0.24), "block");
         let sandbox_crate = look(&Shape::Box(DVec3::splat(0.5)));
-        assert_eq!(named("box", sandbox_crate, false, 0.0), "crate");
+        assert_eq!(named("box", sandbox_crate, lying, 0.0), "crate");
         let ball = look(&Shape::Sphere(0.04));
         assert!((ball.volume - 0.08 * 0.08 * 0.08).abs() < 1e-12);
     }

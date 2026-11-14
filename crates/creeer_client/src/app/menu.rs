@@ -5,25 +5,17 @@
 
 use super::*;
 use crate::bindings::{Action, Input, entry, input_name};
-use crate::menu::{Asked, Page};
+use crate::menu::{Asked, Escaped, Page};
 
 impl Running {
     /// Esc: lets go of what is open on top (a key being rebound, a page of the menu, the kit,
     /// the inventory), else opens or closes the menu.
     pub(super) fn escape(&mut self) {
-        if self.screen.rebinding.take().is_some() {
-            return;
-        }
-        match self.screen.menu {
-            Some(Page::Main) => self.close_menu(),
-            Some(_) => self.screen.menu = Some(Page::Main),
-            None if self.screen.kit => self.screen.kit = false,
-            None if self.planet.as_ref().is_some_and(|p| p.inventory) => {
-                if let Some(p) = &mut self.planet {
-                    p.inventory = false;
-                }
-            }
-            None => self.open_menu(),
+        let inventory = self.planet.as_mut().map(|p| &mut p.inventory);
+        match self.screen.escape(inventory) {
+            Escaped::Opened => self.release_keys(),
+            Escaped::Closed => self.close_menu(),
+            Escaped::Other => {}
         }
     }
 

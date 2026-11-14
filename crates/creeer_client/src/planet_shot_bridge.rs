@@ -99,16 +99,13 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     view.stress
         .draw(&mut scene, &meshes, &view.session.connection, &seen);
     let mut people = crate::people::People::register(&mut renderer)?;
-    // From the eyes, the player's own body is not drawn (as the game's first person).
+    // From the eyes, the player's own body seen from within, as the game's first person draws it.
     let own = (view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-    let drawn: Vec<_> = (snapshot.people.iter())
-        .filter(|p| !(look == "near" && Some(p.key) == own))
-        .cloned()
-        .collect();
+    people.first_person = own.filter(|_| look == "near");
     let ground = crate::people_ground::PlanetGround {
         terrain: &view.terrain,
     };
-    people.draw(&drawn, 0.0, &ground, &mut scene);
+    people.draw(&snapshot.people, 0.0, &ground, &mut scene);
     let tick = view.session.tick_times().map_or(0, |t| t.1);
     let ui = egui::Context::default();
     let mut output = ui.run_ui(raw_input(), |ui| hud(ui.ctx(), &view, &camera, &seen, tick));
@@ -220,7 +217,7 @@ fn raw_input() -> egui::RawInput {
 /// What the game draws over the frame here: the overlay's legend, and what failed.
 fn hud(ctx: &egui::Context, view: &PlanetView, camera: &Camera, seen: &Inspection, tick: u64) {
     if let Some(scale) = view.stress.heatmap() {
-        creeer_ui::heatmap_legend(ctx, &scale, "Share of what breaks it", "%");
+        crate::hud::legend(ctx, &scale);
     }
     crate::stress_view::hud(ctx, camera, seen, tick);
 }

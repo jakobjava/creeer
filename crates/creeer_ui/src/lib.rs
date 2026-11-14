@@ -8,5 +8,5 @@ pub mod theme;
 
 pub use egui;
 pub use egui_plot;
-pub use legend::heatmap_legend;
+pub use legend::{heatmap_legend, heatmap_legend_at};
 pub use perf::{PerfInfo, perf_window};

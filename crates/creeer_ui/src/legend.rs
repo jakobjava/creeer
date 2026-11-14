@@ -8,10 +8,27 @@ const BAR_HEIGHT: f32 = 14.0;
 const LABEL_HEIGHT: f32 = 16.0;
 const STEPS: u16 = 64;
 
-/// Draws the colour bar of `heatmap` with its value range, e.g. "Temperature (°C)".
+/// Draws the colour bar of `heatmap` with its value range, e.g. "Temperature (°C)", at the
+/// bottom right.
 pub fn heatmap_legend(ctx: &egui::Context, heatmap: &Heatmap, title: &str, unit: &str) {
+    heatmap_legend_at(
+        ctx,
+        heatmap,
+        (title, unit),
+        (Align2::RIGHT_BOTTOM, [-12.0, -12.0]),
+    );
+}
+
+/// The same, anchored at a corner of the screen with an offset (points): where a HUD leaves room
+/// for it.
+pub fn heatmap_legend_at(
+    ctx: &egui::Context,
+    heatmap: &Heatmap,
+    (title, unit): (&str, &str),
+    (anchor, offset): (Align2, [f32; 2]),
+) {
     egui::Window::new("overlay legend")
-        .anchor(Align2::RIGHT_BOTTOM, [-12.0, -12.0])
+        .anchor(anchor, offset)
         .title_bar(false)
         .resizable(false)
         .show(ctx, |ui| {

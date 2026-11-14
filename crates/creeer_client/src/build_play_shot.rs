@@ -4,8 +4,11 @@
 
 use crate::build_play::{Player, STEP, UNTIL};
 use crate::physics_view;
+use creeer_core::TimingStats;
 use creeer_math::glam::DVec3;
-use creeer_render::{Camera, DebugLines, Frame, Lighting, Scene};
+use creeer_render::{Camera, DebugLines, Frame, Lighting, OverlayFrame, Scene};
+use creeer_server::world::site::Inspection;
+use creeer_ui::{PerfInfo, egui};
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
@@ -34,6 +37,10 @@ impl Player {
             return Err(UNTIL.into());
         }
         self.shot_from(step, self.camera, false)?;
+        if self.hud {
+            // (The play-through: what the player's screen shows, nothing else.)
+            return Ok(());
+        }
         // And from behind (F5), the own body drawn: where the part and the body are.
         let way = self.camera.forward();
         let up = self.up();
@@ -65,7 +72,13 @@ impl Player {
         let mut lighting = sky.lighting(camera.position, sun, &Lighting::default());
         lighting.shadow_distance = 100.0;
         let mut scene = Scene::default();
-        let snapshot = self.view.snapshot();
+        let mut snapshot = self.view.snapshot();
+        // What a creative server shows of what is built, as the game draws it (`app/planet.rs`).
+        let stress = self.view.stress;
+        let seen = self.view.session.inspection(stress.on);
+        self.screen.creative = seen.is_some();
+        let seen = seen.unwrap_or_default();
+        stress.leave_out(&mut snapshot.beams);
         let pair = (&snapshot, &snapshot, 1.0);
         physics_view::draw(
             &mut scene,
@@ -74,6 +87,8 @@ impl Player {
             pair,
             crate::demo::Overlay::Off,
         );
+        let c = &self.view.session.connection;
+        stress.draw(&mut scene, &self.meshes, c, &seen);
         // Everyone, the player too: in first person seen from within (`People::first_person`).
         let drawn = snapshot.people.clone();
         let own_key = (self.view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
@@ -87,7 +102,9 @@ impl Player {
         // The body's animation is given the time since the last frame drawn, at least the time
         // the arms take to reach what the hands hold (frames are seconds apart).
         let mut scratch = Scene::default();
-        self.people.draw(&drawn, dt.max(1.0), &ground, &mut scratch);
+        // (Played at the site, the people are animated every frame: `Player::hear`.)
+        let settle = if self.hud { 0.0 } else { dt.max(1.0) };
+        self.people.draw(&drawn, settle, &ground, &mut scratch);
         self.people.draw(&drawn, 0.0, &ground, &mut scene);
         // In first person the eyes where the drawn head's are, as the game puts them (G2.11 A4,
         // `planet_camera::Eyes`; a frame is long after the last: followed all the way).
@@ -96,6 +113,9 @@ impl Player {
             let mut eyes = crate::planet_camera::Eyes::default();
             camera.position = eyes.follow(camera.position, self.people.eye(), 10.0);
         }
+        // The game's screen over it, as the player sees it (the site), first person only.
+        let tick = self.view.session.tick_times().map_or(0, |t| t.1);
+        let mut screen = (self.hud && !own).then(|| self.screen_drawn(&camera, &seen, tick));
         let mut image = self.renderer.capture(Frame {
             camera: &camera,
             scene: &scene,
@@ -104,11 +124,15 @@ impl Player {
             lighting: &lighting,
             lines: &DebugLines::default(),
             sky: Some(&sky),
-            heatmap: None,
-            overlay: None,
+            heatmap: stress.heatmap().as_ref(),
+            overlay: screen.as_mut().map(|s| OverlayFrame {
+                primitives: &s.0,
+                textures_delta: &mut s.1,
+                pixels_per_point: s.2,
+            }),
             clear_color: crate::BACKGROUND,
         });
-        if !own {
+        if !own && !self.hud {
             crosshair(&mut image);
         }
         let n = if own {
@@ -121,6 +145,7 @@ impl Player {
             self.shots += 1;
         }
         (image.save_png(&self.dir.join(&name))).map_err(|e| e.to_string())?;
+        self.shot_taken = true;
         if own {
             return Ok(());
         }
@@ -165,7 +190,7 @@ impl Player {
                 Some(creeer_net::entity::Kind::Character { fallen: true, .. })
             )
         });
-        let line = format!(
+        let mut line = format!(
             "{name}: {held}; {target}; at {:.2} E {:.2} N, {:.2} m up{}; noted: {}; refused: {}",
             off.dot(self.east),
             off.dot(self.north),
@@ -174,10 +199,96 @@ impl Player {
             told(&c.noted),
             told(&c.refused)
         );
+        if self.hud {
+            line.push_str(&self.screen_said(&camera));
+        }
         println!("{line}");
         let _ = writeln!(self.log, "{line}");
         let _ = std::fs::write(self.dir.join("steps.txt"), &self.log);
         Ok(())
+    }
+}
+
+/// The game's screen, laid out as the game lays it out: primitives, textures, pixels per point.
+type Drawn = (Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32);
+
+impl Player {
+    /// A line of what the script found, in the log.
+    pub(crate) fn note(&mut self, text: &str) {
+        println!("  {text}");
+        let _ = writeln!(self.log, "  {text}");
+    }
+
+    /// The game's whole screen over the world seen from `camera` (`hud::game_screen`), laid out a
+    /// few times so that windows opened are measured and shown, as a few frames of the game do.
+    fn screen_drawn(&mut self, camera: &Camera, seen: &Inspection, tick: u64) -> Drawn {
+        let (frames, ticks) = (TimingStats::new(1), TimingStats::new(1));
+        let size = self.renderer.size();
+        #[allow(clippy::cast_precision_loss)] // pixels
+        let rect =
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size.0 as f32, size.1 as f32));
+        let mut textures = egui::TexturesDelta::default();
+        let (mut shapes, mut ppp) = (Vec::new(), 1.0);
+        // (Six passes a second apart, as `hud_shot.rs` found a scroll area needs to settle.)
+        for _ in 0..6 {
+            self.ui_time += 1.0;
+            let mut input = egui::RawInput {
+                screen_rect: Some(rect),
+                time: Some(self.ui_time),
+                ..egui::RawInput::default()
+            };
+            let viewport = input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            viewport.native_pixels_per_point = Some(1.0);
+            let output = self.ui.run_ui(input, |ui| {
+                let perf = PerfInfo {
+                    frame_times: &frames,
+                    tick_times: &ticks,
+                    tick_rate_hz: crate::TICK_RATE_HZ,
+                    tick,
+                    adapter: "headless",
+                };
+                let _ = crate::hud::game_screen(
+                    ui.ctx(),
+                    &mut self.view,
+                    camera,
+                    (&perf, &mut self.profiler),
+                    (&mut self.game, &mut self.screen),
+                    (seen, tick),
+                );
+            });
+            textures.append(output.textures_delta);
+            (shapes, ppp) = (output.shapes, output.pixels_per_point);
+        }
+        (self.ui.tessellate(shapes, ppp), textures, ppp)
+    }
+
+    /// What the screen says now, in words for the log: the crosshair's name and prompts, the
+    /// hands' prompts, the feedback; and what was heard since the last step.
+    fn screen_said(&mut self, camera: &Camera) -> String {
+        let target = crate::planet_aim::target(&self.view, camera);
+        let (seen, name) = crate::hud_seen::seen(&self.view, target.as_ref());
+        let p = crate::prompts::prompts(&seen);
+        let keys = &self.game.bindings;
+        let said = |list: &[crate::prompts::Prompt]| {
+            (list.iter())
+                .map(|x| format!("[{}] {}", keys.name(x.action), x.verb))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let kinds = self.view.sound.cost.kinds;
+        let heard: Vec<u64> = (kinds.iter().zip(self.heard)).map(|(a, b)| a - b).collect();
+        self.heard = kinds;
+        let slowest = std::mem::take(&mut self.slowest) * 1e3;
+        let tick = (self.view.session.tick_times()).and_then(|t| t.0.max_ms());
+        format!(
+            "\n    screen: {} {:?} | {} | hands: {} | heard (wind, bodies, breaks, fastenings, \
+             blows, steps): {heard:?} | slowest frame {slowest:.0} ms, slowest tick {:.0} ms",
+            name.unwrap_or_default(),
+            p.state,
+            said(&p.aimed),
+            said(&p.hands),
+            tick.unwrap_or(f64::NAN),
+        )
     }
 }
 

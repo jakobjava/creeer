@@ -42,7 +42,10 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
     let up = centre.normalize();
     let hands = reach::hands(centre, up);
     let length = (camera.position - hands).length() + reach::REACH + NAMED;
-    let meant = connection.aim(camera.position, camera.forward(), length)?;
+    // Past what the hands hold, as placing it looks past it (G2.11 Q: a stringer carried along
+    // the view had the crosshair on itself, "in your hands", offering to fasten it to nothing).
+    let load = connection.own_load();
+    let meant = connection.aim_skipping(camera.position, camera.forward(), length, load)?;
     // A stone or branch on the ground, if the ray meets one first (G1.6c).
     let rocks = &view.terrain.planet().geology.rocks;
     let things = (view.loose.as_ref())
@@ -96,7 +99,7 @@ pub fn target(view: &PlanetView, camera: &Camera) -> Option<Target> {
     // From his eye: what is in the way, if anything.
     let eye = reach::eye(centre, up);
     let to = meant.point - eye;
-    let aimed = match connection.aim(eye, to.normalize(), to.length() + SAME) {
+    let aimed = match connection.aim_skipping(eye, to.normalize(), to.length() + SAME, load) {
         Some(first) if first.distance < to.length() - SAME => first,
         _ => meant,
     };
