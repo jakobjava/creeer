@@ -6,7 +6,8 @@
 //! - `nailed`: two green spruce poles laid across each other (the *builders* scene's), nailed
 //!   where they cross by the player, seen from their eyes;
 //! - `forest`: from eye height 40 m into the forest beyond the spawn's clearing;
-//! - `tree`: the nearest tree there at least 25 cm thick, from 8 m off at eye height.
+//! - `tree`: the nearest tree there at least 25 cm thick, from 8 m off at eye height;
+//! - `felled`: *lumberjack*'s first tree felled and limbed by `--play-bench fell`'s feller.
 
 use crate::planet_view::PlanetView;
 use creeer_math::glam::{DQuat, DVec3};
@@ -16,18 +17,57 @@ use creeer_render::Camera;
 use std::time::Duration;
 
 /// The views this module takes.
-pub(crate) const VIEWS: [&str; 4] = ["parts", "nailed", "forest", "tree"];
+pub(crate) const VIEWS: [&str; 5] = ["parts", "nailed", "forest", "tree", "felled"];
 
 /// The world a view is played in: the builders' poles for `nailed`, else the creative
 /// singleplayer game.
 pub(crate) fn view(name: &str) -> Result<PlanetView, String> {
-    if name != "nailed" {
-        return PlanetView::singleplayer(true);
-    }
+    let scene = match name {
+        "nailed" => "builders",
+        "felled" => "lumberjack",
+        _ => return PlanetView::singleplayer(true),
+    };
     let data = crate::content::data();
     let terrain = creeer_server::world::load_terrain(&data, crate::planet_net::PLANET)?;
-    let scene = creeer_server::play::scenes::scene("builders").ok_or("no builders scene")?;
-    PlanetView::hosting((scene.build)(terrain))
+    let scene = creeer_server::play::scenes::scene(scene).ok_or("no such scene")?;
+    let mut world = (scene.build)(terrain);
+    // The feller takes the creative steel axe, as `--play-bench fell`'s does.
+    world.creative = true;
+    PlanetView::hosting(world)
+}
+
+/// A tree felled and limbed by `--play-bench fell`'s feller (40 s of play), seen over its
+/// shoulder from where it stands: the trunk, its cut ends, the branches beside it, the stump.
+fn felled(view: &mut PlanetView) -> Result<Camera, String> {
+    let mut player = crate::play_scripts::Player::default();
+    let step = Duration::from_millis(16);
+    let start = std::time::Instant::now();
+    let mut look = DVec3::ZERO;
+    while start.elapsed().as_secs_f64() < 40.0 {
+        let me = view
+            .session
+            .connection
+            .avatar()
+            .ok_or("no avatar")?
+            .position;
+        player.t = start.elapsed().as_secs_f64();
+        let (walk, at) = crate::play_scripts::fell(view, &mut player, me);
+        look = at;
+        view.session
+            .update(step.as_secs_f64(), (walk, false, DVec3::ZERO));
+        view.update_trees(me);
+        std::thread::sleep(step);
+    }
+    let me = view
+        .session
+        .connection
+        .avatar()
+        .ok_or("no avatar")?
+        .position;
+    let up = me.normalize();
+    let eye = creeer_sim::reach::eye(me, up);
+    let to = (look - eye).normalize_or(up.any_orthonormal_vector());
+    Ok(crate::planet_view::place(eye - to * 2.5 + up * 0.6, to))
 }
 
 /// The camera of view `name` (one of [`VIEWS`]), its scene built and played to it.
@@ -47,6 +87,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
     match name {
         "parts" => parts(view, me, ground),
         "nailed" => nailed(view),
+        "felled" => felled(view),
         "tree" => {
             // The nearest tree at least 25 cm thick 40 m east, from 8 m off at eye height.
             let (east, north) = creeer_terrain::geology::deposits::tangent_frame(up);
