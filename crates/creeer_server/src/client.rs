@@ -392,9 +392,12 @@ mod aim;
 pub use aim::Aimed;
 pub use place::Surface;
 mod apply;
+pub mod bridge_bench;
 mod draw;
 mod held;
 mod hold;
 mod place;
 mod receive;
 mod steered;
+#[cfg(test)]
+mod told_tests;
