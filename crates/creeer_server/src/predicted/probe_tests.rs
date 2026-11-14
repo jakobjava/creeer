@@ -25,7 +25,6 @@ fn percentile(mut v: Vec<f64>, q: f64) -> f64 {
 #[ignore = "prints how often a lone avatar is mispredicted"]
 fn a_lone_avatar() {
     use crate::server::tests::{Game, still};
-    use creeer_math::glam::DVec3;
     let mut game = Game::new(crate::world::tests::world());
     game.join("ada", None);
     game.run(120, still);
@@ -34,9 +33,8 @@ fn a_lone_avatar() {
     let report = |game: &Game, what: &str| {
         let c = game.clients[0].0.corrections();
         println!(
-            "{what}: set back {}, moved in place {}, rewound {} (avatar {}, bodies {}), off in {:?}, off by {:?}; over 1 cm {}, largest {:.4} m",
+            "{what}: set back {}, rewound {} (avatar {}, bodies {}), off in {:?}, off by {:?}; over 1 cm {}, largest {:.4} m",
             c.count,
-            c.nudged,
             c.rewinds,
             c.for_avatar,
             c.for_bodies,
@@ -58,7 +56,7 @@ fn a_lone_avatar() {
     let tick = std::cell::Cell::new(0u32);
     game.run(600, |_| {
         tick.set(tick.get() + 1);
-        (east * 1.4, tick.get() % 180 == 0)
+        (east * 1.4, tick.get().is_multiple_of(180))
     });
     report(&game, "walked 10 s, jumping every 3 s");
     let crate_at = game.server.world.ground_under(game.avatar(0) + north * 2.0);
@@ -69,8 +67,11 @@ fn a_lone_avatar() {
     report(&game, "a crate dropped 2 m off, 5 s");
     game.run(300, |_| (north * 1.4, false));
     report(&game, "walked into it, 5 s");
-    let _ = DVec3::ZERO;
 }
+
+/// Per client and tick: the tick, the client, its work, of it replayed, rewinds, agreed, bodies
+/// predicted, bodies awake.
+type Row = (u32, usize, u64, u64, u32, u32, usize, usize);
 
 #[test]
 #[ignore = "prints where a client's prediction spends its frames"]
@@ -84,8 +85,7 @@ fn client_frames() {
     let mut play = Play::new((s.build)(terrain()), s.name, s.players, &terrain());
     let n = play.players();
     let mut before: Vec<_> = (0..n).map(|k| play.client(k).corrections()).collect();
-    // Per client and tick: work, of it replayed, rewinds, agreed, bodies, awake.
-    let mut rows: Vec<(u32, usize, u64, u64, u32, u32, usize, usize)> = Vec::new();
+    let mut rows: Vec<Row> = Vec::new();
     let mut ms = Vec::new();
     let mut grouped = [0u32; 6];
     // `TRACE=a-b`: client 0's (`CLIENT`'s) bodies, tick by tick, from a to b.
@@ -202,19 +202,13 @@ fn client_frames() {
         "rewound for the avatar {}, for a body near it {}, for the bodies chosen {}; the avatar's group (0: asleep, 1: alone, 2.., 5+) {grouped:?}",
         why.0, why.1, why.2
     );
-    let (nudged, over, largest) = (0..n).fold((0, 0, 0.0f64), |a, k| {
+    let (over, largest) = (0..n).fold((0, 0.0f64), |a, k| {
         let c = play.client(k).corrections();
-        (
-            a.0 + c.nudged,
-            a.1 + c.over_a_centimetre,
-            a.2.max(c.largest),
-        )
+        (a.0 + c.over_a_centimetre, a.1.max(c.largest))
     });
-    println!(
-        "moved in place {nudged}; avatar corrections over 1 cm {over}, the largest {largest:.4} m"
-    );
+    println!("avatar corrections over 1 cm {over}, the largest {largest:.4} m");
     let mut worst = rows.clone();
-    worst.sort_by(|a, b| b.2.cmp(&a.2));
+    worst.sort_by_key(|r| std::cmp::Reverse(r.2));
     for r in worst.iter().take(12) {
         println!(
             "tick {} client {}: {} iterations ({} replaying, {} rewound), {} bodies, {} awake",

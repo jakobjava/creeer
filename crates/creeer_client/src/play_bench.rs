@@ -244,8 +244,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
     let p = c.corrections();
     println!(
-        "the prediction: set back {}, moved in place {}, rewound {} ({} inputs replayed); {} Newton iterations",
-        p.count, p.nudged, p.rewinds, p.replayed, p.work
+        "the prediction: set back {}, rewound {} ({} inputs replayed); {} Newton iterations",
+        p.count, p.rewinds, p.replayed, p.work
     );
     let pct = |q: f64| percentile(ticks.clone(), q);
     println!(

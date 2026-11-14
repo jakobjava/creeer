@@ -1,6 +1,6 @@
 //! Setting the prediction back to a snapshot (ADR-0025, ADR-0043): nothing where it agrees;
-//! moved in place where it is off by little (`nudge.rs`); else rebuilt from the snapshot and the
-//! inputs since replayed.
+//! else rebuilt from the snapshot and the inputs since replayed, each rewind counted with why
+//! and by how much (`Corrections`).
 
 use super::Predicted;
 use super::nearby;
@@ -57,14 +57,6 @@ impl Predicted {
             .zip(self.world.bodies.iter().skip(1))
             .map(|(id, b)| (*id, b.structure.position[0]))
             .collect();
-        // Off by little: moved in place, nothing replayed (`nudge.rs`).
-        if chosen == self.nearby && self.nudge(snapshot, avatar) {
-            self.history.forget_before(last_input);
-            self.log.applied(last_input);
-            self.smooth(before, &was, drawn);
-            self.corrections.replaying += started.elapsed();
-            return;
-        }
         self.count_rewind(snapshot, avatar, (avatar_agrees, bodies_off));
         let mut world = self.afresh(state);
         // The bodies near it, as the server had them at this input (ADR-0025).

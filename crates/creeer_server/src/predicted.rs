@@ -9,7 +9,6 @@
 //! through.
 
 mod nearby;
-mod nudge;
 #[cfg(test)]
 mod probe_tests;
 mod rewind;
@@ -84,8 +83,6 @@ pub struct Corrections {
     pub rewinds: u32,
     pub replayed: u32,
     pub replay_work: u64,
-    /// Of the times set back, those moved in place, their mispredictions small (`nudge.rs`).
-    pub nudged: u32,
     /// Why they were rewound: the avatar mispredicted; it did not, but a body near it did; or
     /// neither, but the bodies to predict changed.
     pub for_avatar: u32,

@@ -20,6 +20,10 @@ use creeer_sim::reach;
 use creeer_terrain::Terrain;
 use std::sync::Arc;
 
+#[cfg(test)]
+#[path = "bridge_bench_tests.rs"]
+mod tests;
+
 /// The site, its bridge built and nailed (a creative server's), and where its things are.
 pub fn site(terrain: Arc<Terrain>) -> (ServerWorld, BridgeSite) {
     let w = crate::play::bridge_demo::bridge_demo_world(terrain);

@@ -3,7 +3,7 @@
 //! iterations (gated in CI) and in time (printed: `cargo test --release -p creeer_server --lib
 //! measure_the_bridge_site -- --ignored --nocapture`).
 
-use super::bridge_bench::{Builder, Doing, site};
+use super::{Builder, Doing, site};
 use crate::server::tests::Game;
 use creeer_math::glam::DVec3;
 use creeer_net::link::Conditions;

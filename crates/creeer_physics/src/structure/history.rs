@@ -83,32 +83,6 @@ impl NodeState {
         self.orientation
     }
 
-    /// The state set to the motion `(x, q, v, w)`, its history moved with it as though the node
-    /// had always moved so by the difference (a uniform motion added over a step `h`), so the
-    /// scheme goes on with the accelerations it had. A history reset instead restarts the motion
-    /// as uniform, the next step's forces acting two thirds (G2.0). For a client moving its
-    /// prediction onto the server's by a small misprediction without replaying it (G2.11 A5,
-    /// ADR-0043, `creeer_server`'s `predicted/nudge.rs`).
-    #[must_use]
-    pub fn moved_to(&self, (x, q, v, w): (DVec3, DQuat, DVec3, DVec3), h: f64) -> Self {
-        let (dx, dv, dw) = (
-            x - self.position,
-            v - self.velocity,
-            w - self.angular_velocity,
-        );
-        let turn = (q * self.orientation.conjugate()).normalize();
-        let (px, pv, pq, pw) = self.previous;
-        let pq = (crate::so3::exp(-dw * h) * turn * pq).normalize();
-        Self {
-            position: x,
-            orientation: q,
-            velocity: v,
-            angular_velocity: w,
-            previous: (px + dx - dv * h, pv + dv, pq, pw + dw),
-            ..*self
-        }
-    }
-
     /// Puts the state back.
     pub fn restore(&self, s: &mut Structure, solver: &mut ImplicitSolver) {
         s.position[0] = self.position;

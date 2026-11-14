@@ -49,6 +49,11 @@ pub(super) fn off_in((x, q, v, w): Motion, state: &BodyState) -> [bool; 4] {
     ]
 }
 
+/// How far a prediction was off a snapshot: the avatar's position and velocity (m, m/s), the
+/// most of any body's, and which of position, velocity, spin and orientation were off
+/// (`off_in`), the avatar's and any body's.
+pub(super) type Off = ((f64, f64), (f64, f64), [[bool; 4]; 2]);
+
 /// After an input (its number): the avatar's motion and each body's.
 type Entry = (u32, Motion, Vec<(EntityId, Motion)>);
 
@@ -79,16 +84,9 @@ impl History {
         }
     }
 
-    /// How far the prediction after `snapshot`'s input was off it: the avatar's (`avatar`) and
-    /// the most of any of the bodies `ids` (position m, velocity m/s), none where nothing was
-    /// kept.
-    /// And which of position, velocity, spin and orientation were off (`off_in`): the avatar's,
-    /// and any body's.
-    pub(super) fn off(
-        &self,
-        snapshot: &Snapshot,
-        avatar: EntityId,
-    ) -> Option<((f64, f64), (f64, f64), [[bool; 4]; 2])> {
+    /// How far the prediction after `snapshot`'s input was off it (`Off`), none where nothing
+    /// was kept.
+    pub(super) fn off(&self, snapshot: &Snapshot, avatar: EntityId) -> Option<Off> {
         let (_, mine, motions) = (self.entries.iter()).find(|e| e.0 == snapshot.last_input)?;
         let by = |(x, _, v, _): Motion, s: &BodyState| {
             ((x - s.position()).length(), (v - s.velocity()).length())
