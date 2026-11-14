@@ -16,6 +16,10 @@ use creeer_terrain::Terrain;
 use creeer_terrain::tiles::HeightSampler;
 use std::sync::{Arc, OnceLock};
 
+/// How far from the camera trees are drawn (m: `tree_view.rs`'s `DRAWN`): beyond, the ground
+/// shows the forest's crowns (`terrain.wgsl`). Kept equal to it by hand.
+pub const TREES_DRAWN: f32 = 160.0;
+
 /// Over how many degrees of latitude and slope, and metres of height, a range's edge fades.
 const EDGE_DEGREES: f64 = 4.0;
 const EDGE_METRES: f64 = 40.0;
@@ -62,6 +66,8 @@ pub struct GroundLook {
     forest: Vec<Range>,
     /// Each layer's name, in order.
     pub names: Vec<String>,
+    /// The trees' crowns seen from afar (linear): the mean of the species' foliage colours.
+    pub canopy: [f32; 3],
 }
 
 impl GroundLook {
@@ -120,10 +126,20 @@ impl GroundLook {
                 grounds: s.grounds.clone(),
             })
             .collect();
+        let mut canopy = [0.0f32; 3];
+        for s in &species {
+            let linear = creeer_art::Srgb(s.leaves).linear();
+            for (c, l) in canopy.iter_mut().zip(linear) {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+                let share = (l / species.len() as f64) as f32;
+                *c += share;
+            }
+        }
         Ok(Self {
             names: ground.layers.iter().map(|l| l.name.clone()).collect(),
             layers,
             forest,
+            canopy,
         })
     }
 
@@ -132,15 +148,31 @@ impl GroundLook {
         self.layers.iter().map(|l| l.drawn).collect()
     }
 
+    /// How fully a forest grows (0–1) at |latitude| and slope (rad), elevation (m), on `rock`:
+    /// the best any species' ranges allow.
+    fn forest(&self, latitude: f64, elevation: f64, slope: f64, rock: u16) -> f64 {
+        (self.forest.iter())
+            .map(|f| f.at(latitude, elevation, slope, rock))
+            .fold(0.0, f64::max)
+    }
+
+    /// How fully a forest grows at surface point `p` (planet-centred, m) of `normal`, `rock` and
+    /// `elevation` (m): what the ground shows of the trees' crowns from beyond where trees are
+    /// drawn (`terrain.wgsl`).
+    pub fn forest_at(&self, p: DVec3, normal: DVec3, rock: u16, elevation: f64) -> f64 {
+        let up = p.normalize_or(DVec3::Y);
+        let latitude = det::asin(up.y.clamp(-1.0, 1.0)).abs();
+        let slope = det::acos(normal.normalize_or(up).dot(up).clamp(-1.0, 1.0));
+        self.forest(latitude, elevation, slope, rock)
+    }
+
     /// The share of the ground each layer covers at `p` (planet-centred, m) on `rock`, where
     /// the ground's normal is `normal` and its height above the datum `elevation` (m).
     pub fn cover(&self, p: DVec3, normal: DVec3, rock: u16, elevation: f64) -> [f32; 4] {
         let up = p.normalize_or(DVec3::Y);
         let latitude = det::asin(up.y.clamp(-1.0, 1.0)).abs();
         let slope = det::acos(normal.normalize_or(up).dot(up).clamp(-1.0, 1.0));
-        let forest = (self.forest.iter())
-            .map(|f| f.at(latitude, elevation, slope, rock))
-            .fold(0.0, f64::max);
+        let forest = self.forest(latitude, elevation, slope, rock);
         let mut out = [0.0; 4];
         for (k, l) in self.layers.iter().enumerate() {
             let shade = match l.forest {
@@ -157,8 +189,9 @@ impl GroundLook {
 
     /// The share of the ground each layer covers at the surface point `p` of `terrain` (its
     /// natural height read by `heights`, a sampler at the chunk's own spacing: a finer one
-    /// would make tiles of a metre for every vertex of a chunk kilometres wide), or nothing if
-    /// `p` lies more than `tolerance` (m) below the natural surface: dug.
+    /// would make tiles of a metre for every vertex of a chunk kilometres wide), and how fully
+    /// a forest grows there; nothing if `p` lies more than `tolerance` (m) below the natural
+    /// surface: dug.
     pub fn cover_on(
         &self,
         terrain: &Terrain,
@@ -166,18 +199,17 @@ impl GroundLook {
         (p, normal): (DVec3, DVec3),
         rock: u16,
         tolerance: f64,
-    ) -> [f32; 4] {
-        if self.layers.is_empty() {
-            return [0.0; 4];
-        }
+    ) -> ([f32; 4], f32) {
         let up = p.normalize_or(DVec3::Y);
         let datum = terrain.planet().datum.radius(up);
         let natural = heights.height(up);
         let elevation = p.length() - datum;
         if elevation < natural - tolerance {
-            return [0.0; 4];
+            return ([0.0; 4], 0.0);
         }
-        self.cover(p, normal, rock, natural)
+        #[allow(clippy::cast_possible_truncation)] // a share, 0–1
+        let forest = self.forest_at(p, normal, rock, natural) as f32;
+        (self.cover(p, normal, rock, natural), forest)
     }
 }
 

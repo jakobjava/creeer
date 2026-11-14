@@ -46,6 +46,9 @@ struct Globals {
     ground_layers: array<vec4<f32>, 4>,
     ground_grain: vec4<f32>,
     ground_density: vec4<f32>,
+    // The forest's crowns seen from afar (`terrain.wgsl`): rgb linear colour, w from how far
+    // away (m; 0 none).
+    ground_canopy: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;

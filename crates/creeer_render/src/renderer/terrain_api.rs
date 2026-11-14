@@ -30,7 +30,18 @@ impl Renderer {
     /// The ground's layers, in the order the vertices' `cover` names them (at most four; the
     /// rest are dropped).
     pub fn set_ground_layers(&mut self, layers: &[crate::GroundLayer]) {
-        self.terrain.layers = GroundUniform::of(layers);
+        let canopy = self.terrain.layers.canopy;
+        self.terrain.layers = GroundUniform {
+            canopy,
+            ..GroundUniform::of(layers)
+        };
+    }
+
+    /// The forest's crowns as the ground shows them from `from` metres on, where trees are no
+    /// longer drawn (`colour` linear; `from` 0: never), weighted by how fully a forest grows at
+    /// each vertex (`TerrainVertex::with_forest`).
+    pub fn set_canopy(&mut self, colour: [f32; 3], from: f32) {
+        self.terrain.layers.canopy = [colour[0], colour[1], colour[2], from.max(0.0)];
     }
 
     /// The decoratives to draw this frame, camera-relative: grass tufts and grit (`cover.rs`).

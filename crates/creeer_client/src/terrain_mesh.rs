@@ -23,10 +23,11 @@ pub fn render_mesh(terrain: &Terrain, key: ChunkKey) -> Option<TerrainMeshData> 
             // Cap vertices stand for the surface point they are shaded as.
             let at = origin + mesh.anchor(v).as_dvec3();
             let surface = (at, n.as_dvec3());
-            let cover = look.cover_on(terrain, &mut heights, surface, m, tolerance);
+            let (cover, forest) = look.cover_on(terrain, &mut heights, surface, m, tolerance);
             TerrainVertex::new(p, n, mesh.openness[v], color, 0.88)
                 .with_coarser(mesh.coarse_normals[v], mesh.morph[v])
                 .with_cover(cover)
+                .with_forest(forest)
         })
         .collect();
     let index = |i: usize| u32::try_from(i).expect("chunk mesh too large");

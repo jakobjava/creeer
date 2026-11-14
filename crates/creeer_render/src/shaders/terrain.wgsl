@@ -46,6 +46,8 @@ struct VertexOut {
     // x: roughness, y: openness.
     @location(4) material: vec2<f32>,
     @location(5) cover: vec4<f32>,
+    // How fully a forest grows here.
+    @location(6) forest: f32,
 };
 
 // Steps of the aerial-perspective ray march.
@@ -69,6 +71,7 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.color = srgb_to_linear(v.color.rgb);
     out.material = vec2<f32>(v.color.a, clamp(v.normal.w, 0.0, 1.0));
     out.cover = v.cover;
+    out.forest = clamp(v.coarse_normal.w, 0.0, 1.0);
     return out;
 }
 
@@ -84,7 +87,8 @@ fn sky_radiance(mu_s: f32) -> vec3<f32> {
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let smooth_normal = normalize(in.normal);
     let footprint = max(length(fwidth(in.local)), 1e-4);
-    let ground = ground_at(in.local, in.color, in.cover, footprint);
+    let floor = ground_at(in.local, in.color, in.cover, footprint);
+    let ground = canopy_over(floor, in.local, in.forest, length(in.world), footprint);
     // The fine relief turns the normal the light sees (not the shadows' offset).
     let n = relief(smooth_normal, in.world, ground.height);
     let v = normalize(-in.world);

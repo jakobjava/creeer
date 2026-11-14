@@ -101,6 +101,30 @@ fn ground_at(local: vec3<f32>, rock: vec3<f32>, cover: vec4<f32>, footprint: f32
     return out;
 }
 
+// A closed forest's share of the ground under crowns, seen from above.
+const CROWN_COVER: f32 = 0.85;
+// A canopy seen from afar is darker than its leaves: the crowns shade one another and the
+// gaps between them (conifer forests' albedo is about half their needles' reflectance).
+const CANOPY_SHADE: f32 = 0.55;
+
+/// The ground `g` at pattern point `local`, `distance` metres away, where a forest grows
+/// `forest` fully: beyond where trees are drawn (`globals.ground_canopy.w`), it shows their
+/// crowns as one sees a forest from afar, crown by crown (5 m) and stand by stand (60 m).
+fn canopy_over(g: Ground, local: vec3<f32>, forest: f32, distance: f32, footprint: f32) -> Ground {
+    let start = globals.ground_canopy.w;
+    let k = forest * CROWN_COVER * smoothstep(0.65 * start, 1.05 * start, distance);
+    if start <= 0.0 || k <= 0.0 {
+        return g;
+    }
+    let crowns = band(local, 5.0, 20.0, footprint);
+    let stands = band(local, 60.0, 21.0, footprint);
+    let canopy = globals.ground_canopy.rgb * CANOPY_SHADE * (1.0 + 0.3 * crowns + 0.12 * stands);
+    var out = g;
+    out.colour = mix(g.colour, canopy, k);
+    out.height = mix(g.height, 0.0, k);
+    return out;
+}
+
 /// The normal `n` turned by the relief `height` (m) across the pixel (Mikkelsen 2010, "Bump
 /// mapping unparametrized surfaces on the GPU": the surface gradient from screen derivatives).
 /// Called in uniform control flow.

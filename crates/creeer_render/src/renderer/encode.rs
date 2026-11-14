@@ -36,6 +36,7 @@ pub(super) struct Globals {
     ground_layers: [[f32; 4]; 4],
     ground_grain: [f32; 4],
     ground_density: [f32; 4],
+    ground_canopy: [f32; 4],
 }
 
 impl Renderer {
@@ -117,6 +118,7 @@ impl Renderer {
             ground_layers: self.terrain.layers.layers,
             ground_grain: self.terrain.layers.grain,
             ground_density: self.terrain.layers.density,
+            ground_canopy: self.terrain.layers.canopy,
             ..sky_globals(frame.sky, frame.camera)
         };
         self.queue

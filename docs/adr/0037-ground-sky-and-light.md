@@ -29,6 +29,8 @@
 
 5. **Decoratives** (`data/ground/decoratives.ron`, `creeer_client::ground_cover`, `creeer_render::cover`, `cover_pass.rs`, `cover.wgsl`): grass tufts (seven tapering, curving blades, 35 triangles) and grit (a dome sunk a third, 40 triangles), drawn instanced within 24 m of the camera. The ground is cut into cells of 4 m on the cube-sphere's faces; what stands in a cell comes from the planet's seed and the cell alone (the same every time, whatever the level of detail), made on a worker thread: so many per square metre, each on the ground as physics has it (the heights at 1 m), a tuft only where the shader draws its layer (`ground_pattern.rs`), nothing on ground steeper than 50° or changed by an edit (an edit forgets the cells it reaches). Each frame the client hands the renderer what stands about the camera, camera-relative, each shrinking into the ground over the last quarter of its reach (600 times its size, at most 24 m: grit goes at 15 m), and tufts pressed flat within 12 cm of a thing lying loose or a body, so what the player needs to find stays in sight. Their limits are data checks (`creeer_art::ground`): nothing taller than 0.35 m, no grit over 3 cm (it would be taken for a stone to pick up). They are drawn in the depth prepass (they take ambient occlusion and give the ground contact shadows) and lit as the parts are; they cast nothing into the shadow maps.
 
+6. **The forest from afar** (distance reads). Trees are drawn within 160 m (`tree_view.rs`); beyond, a forested land was bare floor, so from 300 m up the land read as an empty brown plain. Each terrain vertex now also carries how fully a forest grows there (the best of the tree species' ranges, in the coarse normal's spare byte), and beyond where trees are drawn (blending in from 104 to 168 m) the ground shows the crowns: the mean of the species' foliage colours, darkened by half for the crowns shading one another and the gaps (a conifer forest's albedo is about half its needles' reflectance), mottled crown by crown (5 m) and stand by stand (60 m), seen through the atmosphere's own aerial perspective. The sky itself is the physical model of ADR-0003 and unchanged: clouds, which it lacks, are a limit.
+
 ## Measured and rejected
 
 | Variant | Measured | Why not |
@@ -48,6 +50,7 @@ Surface view (forest clearing, 1600×900, RTX 4070 SUPER, other agents' builds r
 | Scene | 1.19 ms | 1.32 ms with the 7×7 filter (decision 2); 1.41 ms with the ground's materials (decision 4; 1.08 ms without any of the ground's detail) |
 | Occlusion's last pass | 0.09 ms | 0.14 ms with contact shadows (decision 3) |
 | Depth prepass | 0.51 ms | 0.55 ms with the decoratives (decision 5; the scene pass 1.41 → 1.43 ms) |
+| Scene, with the forest from afar | | 1.51 ms (decision 6: two more fetches, only where a pixel lies beyond 104 m) |
 | All passes | 4.34 ms | 4.68 ms |
 
 The decoratives' CPU work each frame (gathering the cells about the camera, a few thousand instances) did not show in the frame's time against the noise of other builds (p50 8.5–8.7 ms either way); filling a cell runs on its own thread.

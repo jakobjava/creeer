@@ -23,7 +23,7 @@ pub struct TerrainVertex {
     pub normal: [i8; 4],
     /// Base colour (sRGB) and roughness in `w`.
     pub color: [u8; 4],
-    /// Unit normal of the next coarser level (snorm; `w` unused).
+    /// Unit normal of the next coarser level (snorm), and in `w` how fully a forest grows here.
     pub coarse_normal: [i8; 4],
     /// Distance along `normal` to the next coarser level's surface (m).
     pub morph: f32,
@@ -52,6 +52,8 @@ pub(crate) struct GroundUniform {
     pub layers: [[f32; 4]; 4],
     pub grain: [f32; 4],
     pub density: [f32; 4],
+    /// The forest's crowns seen from afar: linear colour, and from how far away (m; 0 none).
+    pub canopy: [f32; 4],
 }
 
 impl GroundUniform {
@@ -61,6 +63,7 @@ impl GroundUniform {
             layers: [[0.0, 0.0, 0.0, 1.0]; 4],
             grain: [0.01; 4],
             density: [0.0; 4],
+            canopy: [0.0; 4],
         };
         for (k, l) in layers.iter().take(4).enumerate() {
             out.layers[k] = [l.colour[0], l.colour[1], l.colour[2], l.patch.max(1e-3)];
@@ -104,6 +107,14 @@ impl TerrainVertex {
         }
     }
 
+    /// The same vertex where a forest grows `forest` fully (0–1): its crowns are drawn on the
+    /// ground beyond where trees are (in `coarse_normal`'s spare byte).
+    #[must_use]
+    pub fn with_forest(mut self, forest: f32) -> Self {
+        self.coarse_normal[3] = snorm(forest);
+        self
+    }
+
     /// The same vertex with the ground's layers covering `cover` of it each (0–1).
     #[must_use]
     pub fn with_cover(mut self, cover: [f32; 4]) -> Self {
@@ -116,7 +127,7 @@ impl TerrainVertex {
     #[must_use]
     pub fn with_coarser(mut self, normal: Vec3, distance: f32) -> Self {
         let n = normal.normalize_or(Vec3::Y);
-        self.coarse_normal = [snorm(n.x), snorm(n.y), snorm(n.z), 0];
+        self.coarse_normal = [snorm(n.x), snorm(n.y), snorm(n.z), self.coarse_normal[3]];
         self.morph = distance;
         self
     }

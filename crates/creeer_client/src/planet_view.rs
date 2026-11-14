@@ -211,7 +211,9 @@ impl PlanetView {
         self.draw.clear();
         self.draw
             .extend(update.draw.iter().map(|(key, caps)| (key.id(), *caps)));
-        renderer.set_ground_layers(&crate::ground_look::GroundLook::current().drawn());
+        let look = crate::ground_look::GroundLook::current();
+        renderer.set_ground_layers(&look.drawn());
+        renderer.set_canopy(look.canopy, crate::ground_look::TREES_DRAWN);
     }
 
     /// Height of `p` above the ground below it (m; negative underground).
