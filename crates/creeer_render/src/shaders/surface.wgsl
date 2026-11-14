@@ -163,14 +163,18 @@ struct Surface {
 
 /// The surface of a model's vertex of `token`, with its baked `occlusion`, `wear`, part `tone`
 /// and `height`, on an object `exposure` years weathered with `used` wear from use; `accent` is
-/// its instance's colour (a player's, for per-player tokens).
+/// its instance's colour (a player's, for per-player tokens). `pattern` is its token's pattern's
+/// brightness there (`pattern_of`, or a part's: `parts.wgsl`), `marks` a second token (its
+/// index, −1 for none) and how much of it covers the first there.
 fn model_surface(
     token_id: u32, accent: vec3<f32>, occlusion: f32, wear: f32, tone: f32, height: f32,
-    exposure: f32, used: f32, at: Place,
+    exposure: f32, used: f32, at: Place, pattern: f32, marks: vec2<f32>,
 ) -> Surface {
     let token = palette[token_id];
     var colour = select(token.colour, accent, token.per_player > 0.5);
-    let pattern = pattern_of(token.pattern, at);
+    if marks.x >= 0.0 {
+        colour = mix(colour, palette[u32(marks.x)].colour, marks.y);
+    }
     // 1-3: the part's tone (±18 %), its pattern, mottling (±15 %) and fine grain (±10 %).
     colour *= (0.82 + 0.36 * tone) * pattern;
     colour *= 0.85 + 0.30 * local_fbm(at, 3.5, 3u);
@@ -221,9 +225,14 @@ fn model_surface(
 }
 
 /// A procedural mesh's surface: its instance's material with mottling and fine grain only (it
-/// carries no bake).
-fn plain_surface(colour: vec3<f32>, roughness: f32, metalness: f32, at: Place) -> Surface {
+/// carries no bake), and the token pattern `pattern` its vertices name, if any (a stone's).
+fn plain_surface(
+    colour: vec3<f32>, roughness: f32, metalness: f32, at: Place, pattern: u32,
+) -> Surface {
     var c = colour * (0.92 + 0.16 * local_fbm(at, 3.5, 3u));
+    if pattern != 0u {
+        c *= pattern_of(pattern, at);
+    }
     c *= 0.95 + 0.10 * local_fbm(at, 420.0, 1u);
     return Surface(c, roughness, metalness, 0.0);
 }

@@ -41,7 +41,11 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         sun_elevation = -30.0;
     }
 
-    let mut view = PlanetView::singleplayer(true)?;
+    let mut view = if crate::planet_shot_things::VIEWS.contains(&view_name.as_str()) {
+        crate::planet_shot_things::view(&view_name)?
+    } else {
+        PlanetView::singleplayer(true)?
+    };
     let terrain = Arc::clone(&view.terrain);
     play(&mut view, 0.0)?;
     // Where players appear (land with relief at a temperate latitude, G1.3i): bodies are
@@ -155,6 +159,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         other if crate::planet_shot_build::VIEWS.contains(&other) => {
             crate::planet_shot_build::camera(&mut view, other)?
         }
+        other if crate::planet_shot_things::VIEWS.contains(&other) => {
+            crate::planet_shot_things::camera(&mut view, other)?
+        }
         other => return Err(format!("unknown planet view `{other}`").into()),
     };
 
@@ -225,9 +232,13 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| args.get(i + 1)?.parse::<usize>().ok());
     if let Some(n) = frames {
         let mut stats = creeer_core::TimingStats::new(n);
+        // The CPU's share: what there is to draw, and the scene made of it (best of the frames).
+        let (mut told, mut built) = (f64::MAX, f64::MAX);
         for _ in 0..n {
             let started = Instant::now();
             let snapshot = view.snapshot();
+            told = told.min(started.elapsed().as_secs_f64() * 1e3);
+            let lap = Instant::now();
             let mut scene = Scene::default();
             let pair = (&snapshot, &snapshot, 1.0);
             physics_view::draw(
@@ -237,6 +248,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 pair,
                 crate::demo::Overlay::Off,
             );
+            built = built.min(lap.elapsed().as_secs_f64() * 1e3);
             people.draw(&drawn, 0.0, &ground, &mut scene);
             renderer.render_offscreen(Frame {
                 camera: &camera,
@@ -252,13 +264,20 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             });
             stats.push(started.elapsed());
         }
-        let p = |q| stats.percentile_ms(q).unwrap_or(0.0);
+        let (p, s) = (|q| stats.percentile_ms(q).unwrap_or(0.0), renderer.stats());
+        let gpu: Vec<String> = (renderer.gpu_times().iter())
+            .map(|t| format!("{} {:.2}", t.name, t.ms))
+            .collect();
         println!(
-            "{n} frames: p50 {:.2} ms, p99 {:.2} ms; {} rods, {} blobs",
+            "{n} frames: p50 {:.2} ms, p99 {:.2} ms; {} things, {} masses of foliage; {} drawn, \
+             {} in shadows; CPU (best) snapshot {told:.2} ms, scene {built:.2} ms; GPU ms: {}",
             p(50.0),
             p(99.0),
-            snapshot.rods.len(),
-            snapshot.blobs.len()
+            snapshot.things.len(),
+            snapshot.foliage.len(),
+            s.instances_drawn,
+            s.shadow_instances,
+            gpu.join(", ")
         );
     }
     Ok(())

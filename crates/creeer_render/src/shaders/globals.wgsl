@@ -59,13 +59,42 @@ const NO_TOKEN: u32 = 0xffffu;
 const BEVEL_SHARE: f32 = 0.08;
 const BEVEL_MAX: f32 = 0.025;
 
+// Marks a part's token (vertex.rs, `PART`): a unit primitive naming a palette token.
+const PART: u32 = 0x8000u;
+// A part's bevel (`art-style.md` §7): a share of its smallest side, at least and at most (m),
+// and at most this share of its smallest side (primitives.rs, `part_bevel_radius`).
+const PART_BEVEL_SHARE: f32 = 0.02;
+const PART_BEVEL_MIN: f32 = 0.005;
+const PART_BEVEL_THIN: f32 = 0.2;
+
+/// Whether a vertex's `material` is a part's (vertex.rs, `PART`).
+fn is_part(material: u32) -> bool {
+    let token = material & 0xffffu;
+    return token != NO_TOKEN && (token & PART) != 0u;
+}
+
 /// Where a mesh vertex is drawn in its instance's space: scaled, and if it is a bevelled
 /// primitive's, at its corner of the inner shape plus its normal times the bevel radius, so
-/// bevels keep their size in metres (primitives.rs, `shaped`).
+/// bevels keep their size in metres (primitives.rs, `shaped`). A part's narrows along Y, its
+/// top `taper` times as wide as its bottom (its instance colour's blue: `Material::part`).
+fn placed(
+    position: vec3<f32>, normal: vec3<f32>, material: u32, scale: vec3<f32>, taper: f32,
+) -> vec3<f32> {
+    let part = is_part(material);
+    let bevelled = ((material & 0xffffu) == NO_TOKEN || part) && (material >> 24u) != 0u;
+    let width = select(1.0, mix(1.0, taper, position.y + 0.5), part);
+    let smallest = min(scale.x, min(scale.y, scale.z));
+    var radius = min(BEVEL_SHARE * smallest, BEVEL_MAX);
+    if part {
+        radius = min(clamp(PART_BEVEL_SHARE * smallest, PART_BEVEL_MIN, BEVEL_MAX), PART_BEVEL_THIN * smallest) * width;
+    }
+    let inner = position * scale * vec3<f32>(width, 1.0, width);
+    return inner + (normal - 2.0 * position) * select(0.0, radius, bevelled);
+}
+
+/// As `placed`, untapered.
 fn shaped(position: vec3<f32>, normal: vec3<f32>, material: u32, scale: vec3<f32>) -> vec3<f32> {
-    let bevelled = (material & 0xffffu) == NO_TOKEN && (material >> 24u) != 0u;
-    let radius = min(BEVEL_SHARE * min(scale.x, min(scale.y, scale.z)), BEVEL_MAX);
-    return position * scale + (normal - 2.0 * position) * select(0.0, radius, bevelled);
+    return placed(position, normal, material, scale, 1.0);
 }
 
 /// How far a terrain vertex at `position` (chunk-local) blends towards the next coarser level

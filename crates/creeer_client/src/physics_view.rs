@@ -182,14 +182,6 @@ pub fn draw(
             Look::Radiator => WHITE_PAINT,
             Look::Canvas => CANVAS,
             Look::Water => WATER,
-            Look::Colour([r, g, b]) => Material::dielectric(
-                [
-                    f32::from(r) / 255.0,
-                    f32::from(g) / 255.0,
-                    f32::from(b) / 255.0,
-                ],
-                0.85,
-            ),
         }
         .aged(exposure, wear);
         match meshes.models.crate_box {
@@ -238,7 +230,11 @@ pub fn draw(
             },
         );
     }
-    coloured(scene, meshes, origin, current);
+    // Things as what they are (G2.11); what has no mesh of its own, plainly in its colour.
+    for t in crate::part_view::draw(scene, &meshes.parts, origin, &current.things) {
+        plain_thing(scene, meshes, origin, &t);
+    }
+    crate::tree_draw::draw(scene, &meshes.parts, origin, &current.foliage);
     if let Some(fire) = current.fire {
         fire_bed(scene, meshes, origin, fire);
     }
@@ -247,49 +243,35 @@ pub fn draw(
     }
 }
 
-/// The snapshot's coloured rods and ellipsoids (G1.7: trees, drawn plainly).
-fn coloured(scene: &mut Scene, meshes: &DemoMeshes, origin: DVec3, current: &PhysicsSnapshot) {
-    let paint = |[r, g, b]: [u8; 3], rough: f32| {
-        Material::dielectric(
-            [
-                f32::from(r) / 255.0,
-                f32::from(g) / 255.0,
-                f32::from(b) / 255.0,
-            ],
-            rough,
-        )
+/// A thing with no mesh of its own (a rod or block of a material that is not wood), plainly in
+/// its colour: a rod as a cylinder, anything else as its box.
+fn plain_thing(scene: &mut Scene, meshes: &DemoMeshes, origin: DVec3, t: &crate::part_view::Thing) {
+    use crate::part_view::{Form, Made};
+    let [r, g, b] = match t.made {
+        Made::Colour(c) => c,
+        _ => [128; 3],
     };
-    for &(a, b, radius, colour) in &current.rods {
-        let along = b - a;
-        let length = along.length();
-        if length < 1e-9 {
-            continue;
+    let material = Material::dielectric([r, g, b].map(|c| f32::from(c) / 255.0), 0.85);
+    match t.form {
+        Form::Rod { radius, length, .. } => {
+            #[allow(clippy::cast_possible_truncation)] // render-space sizes
+            let d = (2.0 * radius) as f32;
+            #[allow(clippy::cast_possible_truncation)]
+            let scale = Vec3::new(d, length as f32, d);
+            let lying = DQuat::from_rotation_z(-std::f64::consts::FRAC_PI_2);
+            scene.add(
+                meshes.cylinder,
+                Instance {
+                    frame: Frame64::new(origin + t.centre, t.turn * lying),
+                    scale,
+                    material,
+                    heat: None,
+                },
+            );
         }
-        #[allow(clippy::cast_possible_truncation)] // render-space sizes
-        let scale = Vec3::new(2.0 * radius as f32, length as f32, 2.0 * radius as f32);
-        scene.add(
-            meshes.cylinder,
-            Instance {
-                frame: Frame64::new(
-                    origin + (a + b) * 0.5,
-                    DQuat::from_rotation_arc(DVec3::Y, along / length),
-                ),
-                scale,
-                material: paint(colour, 0.9),
-                heat: None,
-            },
-        );
-    }
-    for &(c, q, half, colour) in &current.blobs {
-        scene.add(
-            meshes.sphere,
-            Instance {
-                frame: Frame64::new(origin + c, q),
-                scale: (half * 2.0).as_vec3(),
-                material: paint(colour, 0.85),
-                heat: None,
-            },
-        );
+        Form::Block(half) | Form::Lump(half) | Form::Piece(half) => {
+            add_box(scene, meshes, origin, (t.centre, t.turn, half), material, None);
+        }
     }
 }
 

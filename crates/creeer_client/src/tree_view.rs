@@ -1,13 +1,13 @@
 //! The trees about the player, as this client grows them (G1.7, ADR-0031): the same forest as
 //! the server's, cell by cell near the camera, less what the server says was felled (their
-//! stumps stand). Drawn plainly, as the plan has it: stems and branches as rods in the bark's
-//! colour, the crown as rough masses in the foliage's, finer the nearer (branch by branch, then
-//! a few layers, then one mass). Felled trees' parts are drawn the same from what the server
-//! tells of them. Aimed at by the crosshair's ray against their stems; their trunks are laid as
-//! the server lays them, for the avatar's prediction.
+//! stumps stand). Drawn as `tree_draw.rs` draws them (G2.11): stems and branches as tapering
+//! logs in their bark, the crown as tiers or clumps of foliage, finer the nearer (branch by
+//! branch, then a few masses, then one). Felled trees' parts are drawn the same from what the
+//! server tells of them. Aimed at by the crosshair's ray against their stems; their trunks are
+//! laid as the server lays them, for the avatar's prediction.
 
 use crate::physics_sandbox::PhysicsSnapshot;
-use crate::tree_draw::{branches, crown, rods};
+use crate::tree_draw::{Placing, branches, crown, stem as stem_logs};
 use creeer_math::glam::DVec3;
 use creeer_net::entity::Kind;
 use creeer_physics::world::shape::StaticShape;
@@ -25,8 +25,11 @@ const LAYERS: f64 = 50.0;
 const REGATHER: f64 = 10.0;
 /// Beyond `LAYERS`, stems thinner than this (m) are not drawn.
 const FAR_STEMS: f64 = 0.15;
-/// A stem drawn near is this many rods.
-const SEGMENTS: usize = 6;
+/// A stem drawn near is this many logs (their linear taper within a centimetre of the stem's:
+/// ADR-0037).
+const SEGMENTS: usize = 3;
+/// Between `BRANCHES` and `LAYERS`, a crown is this many tiers or clumps.
+const MASSES: usize = 7;
 
 /// The trees near the camera.
 #[derive(Debug)]
@@ -127,11 +130,17 @@ impl TreeView {
             let stem = Tree::stem_only(species, t.dbh);
             let tree = self.grown.get(&t.id).unwrap_or(&stem);
             let to = felled.unwrap_or(tree.height);
-            let place = |p: DVec3| t.base + t.turn * p;
+            let at = Placing {
+                place: |p: DVec3| t.base + t.turn * p,
+                turn: t.turn,
+                species: t.species,
+                key: t.id,
+            };
             // Far, a thin stem is under a pixel: its crown alone.
             if d < LAYERS || t.dbh > FAR_STEMS || felled.is_some() {
-                let n = if d < BRANCHES { SEGMENTS } else { 1 };
-                rods(out, tree, (0.0, to), place, species.bark, n);
+                // A stump is one piece; a stem in pieces whose ends meet within the crown.
+                let n = if felled.is_some() || d >= LAYERS { 1 } else { SEGMENTS };
+                stem_logs(out, tree, (0.0, to), &at, n);
             }
             if felled.is_some() {
                 continue;
@@ -145,21 +154,10 @@ impl TreeView {
                     to: tree.height,
                     cut: Vec::new(),
                 };
-                branches(
-                    out,
-                    tree,
-                    &all,
-                    (place, t.turn),
-                    (species.bark, species.leaves),
-                );
+                branches(out, tree, &all, &at, species);
             } else {
-                crown(
-                    out,
-                    &stem,
-                    species,
-                    (place, t.turn),
-                    if d < LAYERS { 3 } else { 1 },
-                );
+                let masses = if d < LAYERS { MASSES } else { 1 };
+                crown(out, &stem, species, &at, masses);
             }
         }
         let poses = c.poses();
@@ -187,15 +185,16 @@ impl TreeView {
                 }
             };
             let (centre, turn) = (p.centre, pose.orientation);
-            let place = |q: DVec3| pose.position + turn * (q - centre);
-            rods(out, tree, (p.from, p.to), place, species.bark, SEGMENTS);
-            branches(
-                out,
-                tree,
-                &part,
-                (place, turn),
-                (species.bark, species.leaves),
-            );
+            let at = Placing {
+                place: |q: DVec3| pose.position + turn * (q - centre),
+                turn,
+                species: p.species,
+                key: u64::from(id.0) << 20,
+            };
+            // A felled part: one log, or two whose ends meet where its crown begins.
+            let n = if p.from < tree.crown_base && p.to > tree.crown_base + 1.0 { 2 } else { 1 };
+            stem_logs(out, tree, (p.from, p.to), &at, n);
+            branches(out, tree, &part, &at, species);
         }
     }
 
@@ -251,6 +250,14 @@ impl TreeView {
             }
         }
         best
+    }
+
+    /// The standing tree about the camera at least `dbh` thick (m) nearest `p`, if any.
+    pub fn nearest(&self, p: DVec3, dbh: f64) -> Option<Standing> {
+        (self.cells.values().flatten())
+            .filter(|t| t.dbh >= dbh)
+            .min_by(|a, b| (a.base - p).length().total_cmp(&(b.base - p).length()))
+            .copied()
     }
 
     /// Standing tree `id`, if its cell is about the camera; and the forest.

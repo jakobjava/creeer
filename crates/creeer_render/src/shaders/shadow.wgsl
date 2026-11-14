@@ -12,8 +12,8 @@ fn vs_main(
     @location(4) scale: vec3<f32>,
     @location(5) color: vec4<f32>,
 ) -> @builtin(position) vec4<f32> {
-    // Placed as the camera's pass places it, bevels and all.
-    let local = shaped(position, normal, material, scale);
+    // Placed as the camera's pass places it, bevels and a part's taper and all.
+    let local = placed(position, normal, material, scale, color.b);
     let world = rotate(rotation, local) + position_metal.xyz;
     return cascade_view_proj * vec4<f32>(world, 1.0);
 }

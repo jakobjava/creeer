@@ -31,6 +31,26 @@ pub struct MeshVertex {
 /// The token of a vertex drawn in its instance's own material (procedural meshes).
 pub const NO_TOKEN: u16 = u16::MAX;
 
+/// Marks the token of a part's vertex (G2.11, ADR-0037): a unit primitive naming a palette token
+/// (the token is the bits below), bevelled as a procedural primitive is, its grain and wear found
+/// from where it is drawn (`mesh.wgsl`), its tone, seed and taper its instance's
+/// ([`crate::Material::part`]).
+pub const PART: u16 = 0x8000;
+
+/// How a part's surface follows its wood (`detail` bits 8–15; `mesh.wgsl`'s `GRAIN_*`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Grain {
+    /// Along its Y axis, the pith on the axis: a pole's or a log's wood (rings on its ends).
+    Round = 1,
+    /// Along its longest side, the pith beside it: a sawn board's (its rings cut across).
+    Sawn = 2,
+    /// Bark, its furrows along its Y axis: a log's or a branch's side.
+    Bark = 3,
+    /// No grain (a stone, foliage): the token's pattern over its place.
+    Solid = 4,
+}
+
 /// `x` (0–1) in `bits` bits, rounded.
 pub(crate) fn quantise(x: f32, bits: u32) -> u32 {
     #[allow(clippy::cast_precision_loss)] // at most 16 bits
@@ -72,9 +92,38 @@ impl MeshVertex {
         }
     }
 
-    /// True for a bevelled procedural vertex.
+    /// This procedural vertex as a part's (G2.11), bevelled if it was: of `token`, its wood
+    /// following `grain`; `marks` a second token drawn over it in patches (a birch's dark
+    /// marks), if any.
+    pub fn as_part(self, token: u16, grain: Grain, marks: Option<u16>) -> Self {
+        assert!(token < PART, "a token below the part's mark");
+        let bevelled = if self.is_bevelled() { 1.0 } else { 0.0 };
+        Self {
+            material: pack_material(PART | token, 1.0, bevelled),
+            detail: pack_detail(0.5, 0.0) | u32::from(grain as u8) << 8,
+            grain: [marks.map_or(-1.0, f32::from), 0.0],
+            ..self
+        }
+    }
+
+    /// This procedural vertex with the token pattern `pattern` drawn over its instance's colour
+    /// (`detail` bits 8–15; `surface.wgsl`'s `PATTERN_*`, 0: none).
+    pub fn with_pattern(self, pattern: u8) -> Self {
+        Self {
+            detail: (self.detail & !0xff00) | u32::from(pattern) << 8,
+            ..self
+        }
+    }
+
+    /// True for a part's vertex ([`MeshVertex::as_part`]).
+    pub fn is_part(&self) -> bool {
+        let token = self.material & 0xffff;
+        token != u32::from(NO_TOKEN) && token & u32::from(PART) != 0
+    }
+
+    /// True for a bevelled procedural vertex or part's (their wear marks them).
     pub fn is_bevelled(&self) -> bool {
-        self.material & 0xffff == u32::from(NO_TOKEN) && self.material >> 24 != 0
+        (self.material & 0xffff == u32::from(NO_TOKEN) || self.is_part()) && self.material >> 24 != 0
     }
 
     /// A model's vertex, its token an index into the palette the renderer holds.
@@ -116,5 +165,14 @@ mod tests {
             ..plain
         };
         assert!(!worn.is_bevelled());
+        // A part keeps its primitive's bevel, names its token below the mark, and its grain.
+        let rim = MeshVertex::bevelled([0.5; 3], [0.0, 1.0, 0.0]).as_part(5, Grain::Bark, Some(7));
+        assert!(rim.is_part() && rim.is_bevelled());
+        assert_eq!(rim.material & 0x7fff, 5);
+        assert_eq!((rim.detail >> 8) & 0xff, Grain::Bark as u32);
+        assert!((rim.grain[0] - 7.0).abs() < 1e-6);
+        let sharp = plain.as_part(5, Grain::Sawn, None);
+        assert!(sharp.is_part() && !sharp.is_bevelled());
+        assert!(sharp.grain[0] < 0.0, "no marks");
     }
 }

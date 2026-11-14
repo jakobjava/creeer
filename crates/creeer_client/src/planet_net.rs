@@ -192,9 +192,6 @@ impl PlanetSession {
             let (p, q) = (pose.position, pose.orientation);
             match kind {
                 Kind::Body(Shape::Box(half), matter) => {
-                    out.boxes.push((p, q, *half));
-                    out.box_look
-                        .push(matter.colour.map_or(Look::Crate, Look::Colour));
                     // Its age as of the moment drawn (G1.3c).
                     let age = c.ages.get(id).map_or((0.0, 0.0), |a| {
                         let exposure = a.exposure_at(c.drawn_at(), TICK_RATE);
@@ -202,9 +199,24 @@ impl PlanetSession {
                         let drawn = (exposure as f32, a.wear as f32);
                         drawn
                     });
+                    // An item (G2.11): a block of its material, as what it is (`part_view.rs`).
+                    if let Some(colour) = matter.colour {
+                        out.things
+                            .push(crate::part_view::block(id.0, (p, q), *half, colour, age));
+                        continue;
+                    }
+                    out.boxes.push((p, q, *half));
+                    out.box_look.push(Look::Crate);
                     out.box_age.push(age);
                 }
-                Kind::Body(Shape::Sphere(radius), _) => out.spheres.push((p, *radius)),
+                // An item (a cobble, G2.11) as a stone in its rock's colour; else the sandbox's ball.
+                Kind::Body(Shape::Sphere(radius), matter) => match matter.colour {
+                    Some(colour) => out.things.push(crate::part_view::Thing {
+                        form: crate::part_view::Form::Lump(DVec3::splat(*radius)),
+                        ..crate::part_view::block(id.0, (p, q), DVec3::ZERO, colour, (0.0, 0.0))
+                    }),
+                    None => out.spheres.push((p, *radius)),
+                },
                 // A character (G1.3e): standing, its body's frame; fallen, its segments'.
                 Kind::Character {
                     look,
@@ -238,27 +250,17 @@ impl PlanetSession {
                 }
                 // Drawn with its person.
                 Kind::Segment { .. } => {}
-                // An item's hull (a stone, a stick: G1.6c) as the box about it in its colour; the
-                // sandbox's other hulls as the ball around them.
+                // An item's hull (a stone, a rod, a made thing's pieces: G1.6c, G2.11) as what it
+                // is (`part_view.rs`); the sandbox's other hulls as the ball around them.
                 Kind::Body(Shape::Hull(corners), matter) => {
                     if in_hand.contains(id) {
                         continue;
                     }
-                    let parts = c.items.get(id).map(|l| &l.parts).filter(|p| !p.is_empty());
-                    if let Some(parts) = parts {
-                        // A made thing as its pieces (G1.6).
-                        for part in parts {
-                            out.boxes.push((p + q * part.at, q * part.turn, part.half));
-                            out.box_look.push(Look::Colour(part.colour));
-                            out.box_age.push((0.0, 0.0));
-                        }
-                    } else if let Some(colour) = matter.colour {
-                        let (lo, hi) = (corners.iter())
-                            .fold((DVec3::MAX, DVec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
-                        out.boxes
-                            .push((p + q * ((lo + hi) * 0.5), q, (hi - lo) * 0.5));
-                        out.box_look.push(Look::Colour(colour));
-                        out.box_age.push((0.0, 0.0));
+                    let parts = c.items.get(id).map_or(&[][..], |l| l.parts.as_slice());
+                    if !parts.is_empty() || matter.colour.is_some() {
+                        let colour = matter.colour.unwrap_or([128, 120, 110]);
+                        let at = (p, q);
+                        crate::part_view::item(&mut out.things, at, corners, colour, parts, id.0);
                     } else {
                         let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
                         out.spheres.push((p, radius));
