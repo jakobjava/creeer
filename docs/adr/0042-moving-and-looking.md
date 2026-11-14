@@ -1,6 +1,6 @@
 # ADR-0042: Moving and looking, as the player meets them
 
-- **Status:** in progress (G2.11, stream A4, 2026-11-13).
+- **Status:** Built (G2.11 stream A4, 2026-11-13/14): decisions 1, 2, 4 and 5 in; two limits found and left open, measured (logs climbed, decision 2; the soles giving way standing, decision 3); the speeds the user's to choose. Waiting on the user's play.
 - **Context:** the user, after playing G2: "plays horrible", "many bugs" (`docs/playability-plan.md`). The character (ADR-0023) had been validated by physics tests; nobody had measured what the player's eye and hands get while moving. This ADR measures it through the real client, sets targets from human data and other games, and records the fixes.
 - **Builds on:** ADR-0023 (the character: one body on a legs' strut, the walk a force at the feet), ADR-0025 (prediction and its smoothing), ADR-0027 (the gait drawn), ADR-0036 (holding).
 - **Evidence:** `creeer_server/src/play/walking.rs` (the courses and the frame-by-frame harness), `play/walking_tests.rs` (the measurements, by hand), `play/walking_gates.rs` (the gates); `creeer_sim/src/character/legs.rs`, `feet.rs`; `creeer_client/src/planet_camera.rs`; frames `--planet avatar|third-crates|first-down`.
