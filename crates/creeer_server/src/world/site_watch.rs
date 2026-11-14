@@ -23,6 +23,8 @@ pub const COLLAPSE: u64 = 120;
 pub(crate) struct Watch {
     /// Each built structure's elements as of the last step it was awake in.
     last: BTreeMap<EntityId, Vec<Carried>>,
+    /// Each built structure's members named while they held ("a stringer"), by element.
+    called: BTreeMap<EntityId, Vec<Option<String>>>,
     failures: Vec<Failure>,
     /// The kit's parts by their sections, to name members: name, material, the section's
     /// larger half extent and its thickness (m).
@@ -63,7 +65,7 @@ impl ServerWorld {
             return;
         }
         let built: Vec<EntityId> = self.building.built.keys().copied().collect();
-        let mut new = Vec::new();
+        let (mut new, mut fresh) = (Vec::new(), Vec::new());
         for id in built {
             let Some(i) = self.index(id) else { continue };
             let body = &self.world.bodies[i];
@@ -71,18 +73,31 @@ impl ServerWorld {
                 continue;
             }
             let now = body.structure.carried();
-            if let Some(before) = self.watch.last.get(&id).filter(|b| b.len() == now.len()) {
-                for (k, (b, n)) in before.iter().zip(&now).enumerate() {
-                    if n.broken && !b.broken {
-                        let s = &body.structure;
-                        let at = (s.position[n.a] + s.position[n.b]) * 0.5;
-                        new.push((id, k, *b, at));
+            match self.watch.last.get(&id).filter(|b| b.len() == now.len()) {
+                Some(before) => {
+                    for (k, (b, n)) in before.iter().zip(&now).enumerate() {
+                        if n.broken && !b.broken {
+                            let s = &body.structure;
+                            let at = (s.position[n.a] + s.position[n.b]) * 0.5;
+                            new.push((id, k, *b, at));
+                        }
                     }
                 }
+                // Made or changed: its members named while they hold.
+                None => fresh.push(id),
             }
             self.watch.last.insert(id, now);
         }
+        for id in fresh {
+            let count = self
+                .index(id)
+                .map_or(0, |i| self.world.bodies[i].structure.element_count());
+            let names = (0..count).map(|e| self.part_named(id, e)).collect();
+            self.watch.called.insert(id, names);
+        }
         self.watch.last.retain(|id, _| self.index.contains_key(id));
+        let watch = &mut self.watch;
+        watch.called.retain(|id, _| watch.last.contains_key(id));
         for (id, k, carried, at) in new {
             let words = self.failure_words(id, k, &carried);
             let first = !(self.watch.failures.iter()).any(|f| self.tick - f.tick < COLLAPSE);
@@ -135,14 +150,24 @@ impl ServerWorld {
         }
     }
 
-    /// Element `k` of built structure `id`, broken, in words with what it carried before.
-    fn failure_words(&mut self, id: EntityId, k: usize, c: &Carried) -> String {
+    /// Element `k` of built structure `id`, broken, in words with what it carried before (its
+    /// parts named as they were while they held).
+    fn failure_words(&self, id: EntityId, k: usize, c: &Carried) -> String {
         let kn = |n: f64| format!("{:.1} kN", n.abs() * 1e-3);
+        let called = |e: usize| {
+            (self.watch.called.get(&id))
+                .and_then(|n| n.get(e).cloned())
+                .flatten()
+        };
         if c.joint {
-            let names: Vec<String> = [c.a, c.b]
-                .iter()
-                .filter_map(|&node| self.part_at(id, node, k))
-                .collect();
+            // The members at its two nodes.
+            let elements = self.watch.last.get(&id);
+            let at = |node: usize| {
+                (elements?.iter().enumerate())
+                    .filter(|(e, x)| *e != k && !x.joint && (x.a == node || x.b == node))
+                    .find_map(|(e, _)| called(e))
+            };
+            let names: Vec<String> = [c.a, c.b].iter().filter_map(|&n| at(n)).collect();
             let between = match names.as_slice() {
                 [a, b] => format!("the joint between {a} and {b}"),
                 [a] => format!("the joint holding {a}"),
@@ -160,7 +185,7 @@ impl ServerWorld {
             };
             format!("{between} {how}: {along}{} across", kn(c.across))
         } else {
-            let part = self.part_named(id, k).unwrap_or_else(|| "a member".into());
+            let part = called(k).unwrap_or_else(|| "a member".into());
             let axial = if c.along.abs() > 1000.0 {
                 let way = if c.along > 0.0 {
                     "tension"
@@ -176,16 +201,6 @@ impl ServerWorld {
                 c.across.abs() * 1e-3
             )
         }
-    }
-
-    /// The part a member at node `node` of structure `id` is (not element `not`), named.
-    fn part_at(&mut self, id: EntityId, node: usize, not: usize) -> Option<String> {
-        let i = self.index(id)?;
-        let s = &self.world.bodies[i].structure;
-        let e = (0..s.element_count())
-            .filter(|&e| e != not)
-            .find(|&e| s.member(e).is_some_and(|(a, b, _)| a == node || b == node))?;
-        self.part_named(id, e)
     }
 
     /// Member `e` of structure `id` named as the kit's part of its section and wood ("a

@@ -119,7 +119,6 @@ pub fn hud(ctx: &egui::Context, camera: &Camera, seen: &Inspection, tick: u64) {
     ));
     let screen = ctx.content_rect();
     let red = egui::Color32::from_rgb(255, 120, 100);
-    let font = egui::FontId::proportional(16.0);
     if let Some((first, n)) = told.first() {
         let more = if *n > 1 {
             format!(" (then {} more)", n - 1)
@@ -128,20 +127,29 @@ pub fn hud(ctx: &egui::Context, camera: &Camera, seen: &Inspection, tick: u64) {
         };
         let text = format!("First to fail: {}{more}", first.words);
         let top = egui::pos2(screen.center().x, screen.top() + 60.0);
-        painter.text(top, egui::Align2::CENTER_TOP, text, font.clone(), red);
+        label(&painter, (top, egui::Align2::CENTER_TOP), text, 17.0);
     }
     for (f, _) in &told {
         if let Some(at) = on_screen(camera, f.at, screen) {
-            painter.circle_stroke(at, 12.0, egui::Stroke::new(2.0, red));
-            painter.text(
-                at + egui::vec2(16.0, -8.0),
-                egui::Align2::LEFT_TOP,
-                &f.words,
-                egui::FontId::proportional(13.0),
-                red,
-            );
+            painter.circle_stroke(at, 12.0, egui::Stroke::new(2.5, red));
+            let beside = (at + egui::vec2(18.0, -8.0), egui::Align2::LEFT_TOP);
+            label(&painter, beside, f.words.clone(), 13.0);
         }
     }
+}
+
+/// `text` in the failure's red on a dark ground, readable over sky and earth alike.
+fn label(
+    painter: &egui::Painter,
+    (at, align): (egui::Pos2, egui::Align2),
+    text: String,
+    size: f32,
+) {
+    let red = egui::Color32::from_rgb(255, 120, 100);
+    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(size), red);
+    let rect = align.anchor_size(at, galley.size());
+    painter.rect_filled(rect.expand(5.0), 4.0, egui::Color32::from_black_alpha(180));
+    painter.galley(rect.min, galley, red);
 }
 
 /// Where `p` is drawn on `screen`, if before the camera.

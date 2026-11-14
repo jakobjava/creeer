@@ -18,3 +18,4 @@ builders 600 dc77ff9caf169d71
 log_bridge 600 76a2d8d6d3c6bc89
 builders 1800 0300e798ee7a4d77
 log_bridge 1800 4cb60c605bcc94b5
+bridge_demo 150 78a6a9d188557a7e

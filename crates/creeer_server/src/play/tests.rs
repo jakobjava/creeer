@@ -101,7 +101,7 @@ fn what_the_clients_recorded_replays_to_the_same_state() {
 /// faces' friction now keeps what each step built (before, a patch with its corners on B forgot
 /// it every step, and a crate on a crate crept down a ramp it should have held). 24 iterations
 /// for each of the two at 0.35 ms; a tenth above. (To be confirmed by the parent: a gate raised.)
-const WORK: [(&str, u64, u64); 10] = [
+const WORK: [(&str, u64, u64); 11] = [
     ("crowd", 183, 7_300),
     ("work", 216, 216),
     ("lumberjack", 57, 57),
@@ -132,6 +132,11 @@ const WORK: [(&str, u64, u64); 10] = [
     // Making them took 129 (the joints made with the stringer less settled); 106 at tick 1
     // with the old times. A tenth above.
     ("log_bridge", 142, 142),
+    // G2.11, the bridge site (ADR-0037), measured 2026-11-14: 618 at tick 0, the site and its
+    // nailed footbridge (125 elements) settling, before anyone walks onto it (CI's 150 ticks).
+    // Not the scene's worst, and not hidden: a person on the deck took 228,742 in one tick (by
+    // hand, `what_the_bridge_costs`), for streams A4 and A6. A tenth above.
+    ("bridge_demo", 680, 680),
 ];
 
 /// Each scene's most work one client's prediction took in a tick at CI's length (Newton
@@ -149,7 +154,7 @@ const WORK: [(&str, u64, u64); 10] = [
 /// with a person's legs or a load in their hands no longer stops the group dead, on the client
 /// as on the server: *work*'s 94 → 136 at tick 103 and *log_bridge*'s 156 → 176 at tick 11,
 /// a tenth above.
-const CLIENT_WORK: [(&str, u64); 10] = [
+const CLIENT_WORK: [(&str, u64); 11] = [
     ("crowd", 174),
     ("work", 150),
     ("lumberjack", 6),
@@ -162,6 +167,8 @@ const CLIENT_WORK: [(&str, u64); 10] = [
     // Its nails made at tick 361 since they take 2 s (2026-10-30, the user's OK): 382, the
     // client predicting the joints made (G2P's, docs/future-improvements.md). A tenth above.
     ("log_bridge", 420),
+    // G2.11, the bridge site (ADR-0037): 4 at tick 38. A tenth above.
+    ("bridge_demo", 5),
 ];
 
 /// The headings each scene is played at for its ensemble (`Play::heading`).
@@ -203,7 +210,9 @@ fn every_scene_keeps_within_its_work_and_its_bandwidth() {
         // (The steel towers and bridge take minutes a tick in a debug build: their hashes and
         // work are measured in a release build (`creeer_tools play --short --check`, its hashes
         // checked in CI; `cargo test --release` runs this test with them).
-        if cfg!(debug_assertions) && ["tower", "collapse", "drop"].contains(&s.name) {
+        // *bridge_demo*'s nailed footbridge of 125 elements alike: ADR-0037.)
+        if cfg!(debug_assertions) && ["tower", "collapse", "drop", "bridge_demo"].contains(&s.name)
+        {
             continue;
         }
         let (_, median, ceiling) = *WORK.iter().find(|w| w.0 == s.name).expect("a gate");

@@ -27,7 +27,7 @@ What a well-built footbridge carries: three 150 × 75 mm C24 beams over 2.7 m be
 4. **What each element carries** (`Structure::carried`, read only): a member's axial force, largest bending moment and share of its capacity (as `utilization`); a joint's pull and slip force (measured as `Fastened::withdrawn` measures them), its share of what breaks it — the fasteners' interaction (F_ax/R_ax)^e + (F_la/R_la)^e, or its slip's way to its last slip, whichever is more — and how far it has slipped.
 5. **What failed** (`world/site_watch.rs`): on a creative server alone, after each step and before a broken structure falls apart, each awake built structure is read; an element broken since the step before is a failure, kept (the last 16) with its tick, place and words: "the joint between a stringer and a deck board pulled apart: 1.9 kN of pull, 0.3 kN across", "a stringer broke: 6.8 kN·m bending". The parts are named by their sections and woods against the kit's items. The first failure of a collapse (others within 2 s of it are its own) is told as a note to every player within 40 m.
 6. **Seen** (`stress_view.rs`; O on a creative server this process hosts): every structure drawn by the overlay, built members coloured by their share of what breaks them (viridis, 0–100 %), each joint a 10 cm ball in the same colours, with the legend. A failure is marked by a red ball where it was, and told at the top of the screen ("First to fail: …", with how many followed) and beside its mark for a minute, overlay or not. The host publishes what the client asks for after each tick (`Host::inspection`); a survival server publishes nothing, and survival players see only sag, sway and the break.
-7. **The scene** (`play/bridge_demo.rs`, *bridge_demo*): the site, its three stringers and twelve deck boards assembled across the gully by the scene's world, as the tower is, a 100 mm nail at each of the 36 crossings with the joints a player's J makes (`ServerWorld::fasten_now`; `nail_within` closes the loops a player's J cannot close yet). Ada and Ben walk over and back, carry two granite blocks each onto the deck, Ada sets twelve more from the kit, then 1 t test weights on the middle every 4 s until it breaks. CI plays its first 600 ticks (the builders crossing it, nothing broken).
+7. **The scene** (`play/bridge_demo.rs`, *bridge_demo*): the site, its three stringers and twelve deck boards assembled across the gully by the scene's world, as the tower is, a 100 mm nail at each of the 36 crossings, driven down through the board, with the joints a player's J makes (`ServerWorld::fasten_now`; `nail_within` closes the loops a player's J cannot close yet), each stringer's ends on the highest ground under their bearings. After 3 s Ada and Ben walk over and back, carry two granite blocks each onto the deck, Ada sets twelve more from the kit, then 1 t test weights on the middle every 4 s. 4,200 ticks; CI plays its first 150 (the site and the bridge settling unbroken: its hash and work). The frames of the bridge loaded and broken come from the client's own game (`creeer_client --planet bridge --built --blocks <n> --weights <n>`): with people on the deck the scene takes seconds a tick (Cost).
 
 ## Measured and rejected
 
@@ -35,6 +35,8 @@ What a well-built footbridge carries: three 150 × 75 mm C24 beams over 2.7 m be
 |---|---|---|
 | A round boulder (a ball) in a dug hollow | It rocked in the hollow, still at 6 mm/s after 3 s (a ball rolls without loss) | A lump (an ellipsoid) lies still where it is put; the kit takes `Lump` forms |
 | The deck boards' row 0.23 m apart from 1.25 m west | The last board (1.28 m east, 3.45 m north of the start) lay still and never slept: 7 Newton iterations a tick, 1,233 in 3 s | Moved (0.22 m apart from 1.3 m west): all sleep. The board at rest that never sleeps is reported to stream A6 (tick time) |
+| The scene's bridge nailed with the stringer named first (`fasten(stringer, board)`) | The nail is driven from the part named first: up through the 75 mm stringer, it reaches 25 mm into the board, under the 8 diameters a smooth nail needs to hold against pulling (EN 1995-1-1 §8.3.2), yet over the 6 accepted (`would_hold`). All twelve such joints let go as the bridge settled 1 cm onto its banks ("pulled apart: 0.0 kN across") | The board is named first: down through the board, 50 mm into the stringer. In the game J names the part aimed at: a player aiming at the stringer under a board makes the same weak joint (stream B) |
+| The scene's bridge put on the ground under its ends' middles, then lifted clear of the ground by a centimetre (`lift_clear`) | Laid on the ground line, its ends were in the higher ground under their bearings; lifted clear, it dropped 1 cm onto its banks: at tick 34 two joints pulled apart and a stringer broke between two boards, carrying 0.1 kN and 0.1 kN·m the tick before | Each end rests on the highest ground under its bearing (sampled across and along it): it settles unbroken. That a 1 cm drop broke a nailed deck goes to stream A6 |
 | The scene's deck boards laid loose on the stringers and nailed by the players one by one, as a player builds (each board to the outer stringers) | From the fourth board on (tick 560) ticks of 0.3–4.9 s, up to 172,538 Newton iterations; p50 103 ms over CI's 600 ticks. A player's J nails each later board to one stringer only (the loop is refused), so boards hung on one nail and the middle stringer lay loose under them | The scene's world assembles and nails the bridge; the loose deck's cost goes to stream A6 with this reproduction (the script: `docs/adr/0037/loose-deck-nailed-by-players.rs.txt`) |
 
 ## Validation
@@ -47,12 +49,24 @@ What a well-built footbridge carries: three 150 × 75 mm C24 beams over 2.7 m be
 | The kit: each part and carried load ≤ 25.6 kg, the boulder within the grab, sixteen blocks in a load crate | As listed |
 | Two poles nailed: the shares, then the nail severed | Shares in [0, 1); one failure, "the joint between a … and a …", with kN, at the crossing; Ada told |
 | The same on a survival server | Nothing shown or told |
-| *bridge_demo* at CI's length | The first boards nailed |
-| *bridge_demo* at full length (by hand, release) | Built, crossed, broken under the test weights, its failures told |
+| *bridge_demo*'s world | The three stringers and twelve boards one structure, 36 joints |
+| A collapse told (the client) | Its first failure, with how many followed within 2 s; none after a minute |
+| *bridge_demo* at CI's length (release) | The bridge settles on its banks unbroken, nothing told |
+| *bridge_demo* at full length (by hand, release) | Not played: people on the deck take seconds a tick (Cost). Its breaking is shown by the frames instead: the built bridge loaded from the kit in the client's own game (`--planet bridge --built --blocks --weights`) |
 
 ## Cost
 
-Measured in the *bridge_demo* scene (below, "Measured"). The watch reads only awake built structures, on creative servers only.
+Measured 2026-11-14 on the development machine while eight other streams built and tested on it (94 % load): the times are to be measured again on a quiet machine; Newton iterations are exact.
+
+| What | Newton iterations | Time |
+|---|---|---|
+| The site at rest (the plain site's 50 items, after 3 s) | 0 a tick | — |
+| *bridge_demo*'s world settling, nobody on the bridge | 10,240 in its first second (780 at most in a tick), 1,642 in its second, 42 in its third, then 0: the bridge asleep | — |
+| A person stepping towards the bridge | 1,710 at most in a tick | — |
+| People on its deck (`what_the_bridge_costs`, by hand) | 228,742 in one tick, 1.76 million in that second; the bridge's own body 65,099 of them, the rest the people standing on a structure of 125 elements | ticks of 1–10 s |
+| *bridge_demo* at CI's length (150 ticks: the settling, before anyone walks onto the bridge; release, two runs) | 618 at most (tick 0); a client's 4 | p50 27.8 / 3.7 ms, p99 387 / 214 ms, worst 400 / 286 ms |
+
+The scene is far over the play gates (worst ≤ 5 ms, p99 ≤ 2 ms), and not hidden: its work ceiling is what it measures, and the people on the bridge go to streams A4 (walking on what is built) and A6 (tick time). Its full length (4,200 ticks) cannot be played in reasonable time while people stand on the bridge. The watch reads only awake built structures, on creative servers only.
 
 ## Limits
 

@@ -49,7 +49,7 @@ impl std::fmt::Debug for Scene {
 pub const PLANET: &str = "planets/home.ron";
 
 /// The scenes.
-pub const SCENES: [Scene; 10] = [
+pub const SCENES: [Scene; 11] = [
     Scene {
         name: "crowd",
         what: "8 players walking, jumping and dropping crates in one place",
@@ -138,6 +138,15 @@ pub const SCENES: [Scene; 10] = [
         ticks: (1800, 600),
         build: super::log_bridge::log_bridge_world,
         script: super::log_bridge::log_bridge,
+        turned: false,
+    },
+    Scene {
+        name: "bridge_demo",
+        what: "the bridge site: a nailed footbridge walked over, loaded and proof-loaded to failure",
+        players: &["ada", "ben"],
+        ticks: (4200, 150),
+        build: super::bridge_demo::bridge_demo_world,
+        script: super::bridge_demo::bridge_demo,
         turned: false,
     },
 ];

@@ -27,6 +27,23 @@ pub fn view() -> Result<(PlanetView, BridgeSite), String> {
     );
     world.creative = true;
     let site = world.prepare_bridge_site();
+    hosted(world, site)
+}
+
+/// The same with the *bridge_demo* scene's footbridge built across the gully (its frames).
+///
+/// # Errors
+/// If the planet cannot be loaded.
+pub fn view_built() -> Result<(PlanetView, BridgeSite), String> {
+    let data = crate::content::data();
+    let terrain = load_terrain(&data, crate::planet_net::PLANET)?;
+    let world = creeer_server::play::bridge_demo::bridge_demo_world(terrain);
+    let site = BridgeSite::of(&world, 1);
+    hosted(world, site)
+}
+
+/// `world` hosted in this process, the player walking in first person, mid-morning.
+fn hosted(world: ServerWorld, site: BridgeSite) -> Result<(PlanetView, BridgeSite), String> {
     let mut view = PlanetView::hosting(world)?;
     view.walking = true;
     view.first_person = true;

@@ -116,10 +116,13 @@ impl ServerWorld {
     /// Makes the bridge site at the spawn: digs the gully, lays the timber and the loads, and
     /// has players appear on the near bank. Returns where everything is.
     pub fn prepare_bridge_site(&mut self) -> BridgeSite {
-        let mut site = BridgeSite::of(self, self.next_id);
+        let first = self.next_id;
+        self.dig_gully(&BridgeSite::of(self, first));
+        // (Found again once dug, as a script finds it: the banks beside the rims settle by about
+        // a centimetre as the ground's smooth field is cut.)
+        let mut site = BridgeSite::of(self, first);
         site.laid.clear();
         let (across, along) = (site.across, site.along);
-        self.dig_gully(&site);
         for (name, n, (x, y), (dx, dy), lengthwise) in TIMBER.into_iter().chain(LOADS) {
             for k in 0..n {
                 #[allow(clippy::cast_precision_loss)] // a few
