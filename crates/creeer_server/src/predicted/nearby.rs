@@ -107,32 +107,6 @@ impl History {
         Some((me, bodies, which))
     }
 
-    /// The avatar's and the bodies' motions as predicted after input `seq`.
-    pub(super) fn after(&self, seq: u32) -> Option<(Motion, &[(EntityId, Motion)])> {
-        let (_, mine, motions) = self.entries.iter().find(|e| e.0 == seq)?;
-        Some((*mine, motions))
-    }
-
-    /// The newest input kept.
-    pub(super) fn newest(&self) -> Option<u32> {
-        self.entries.back().map(|e| e.0)
-    }
-
-    /// Every motion after input `seq` changed by `change` (the avatar's: `None`; a body's: its
-    /// id), given the input it is after.
-    pub(super) fn shift(
-        &mut self,
-        seq: u32,
-        mut change: impl FnMut(Option<EntityId>, u32, Motion) -> Motion,
-    ) {
-        for (at, mine, motions) in self.entries.iter_mut().filter(|e| e.0 > seq) {
-            *mine = change(None, *at, *mine);
-            for (id, m) in motions.iter_mut() {
-                *m = change(Some(*id), *at, *m);
-            }
-        }
-    }
-
     /// Body `id` as predicted after input `seq`.
     fn at(&self, seq: u32, id: EntityId) -> Option<Motion> {
         let (_, _, motions) = self.entries.iter().find(|e| e.0 == seq)?;
