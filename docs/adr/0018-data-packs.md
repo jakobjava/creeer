@@ -21,6 +21,8 @@
 
 The base pack: `--data <dir>`, else `CREEER_DATA`, else a `data/` beside the executable, else the source tree's (development builds). Mods: every `--mods <dir>` and the directories of `CREEER_MODS`, else a `mods/` beside the base pack's directory if there is one. The client and the dedicated server both take `--data` and `--mods`; the server prints its packs at start.
 
+Tools and tests read the `data/` of the source tree they were built from, as it is when they run (`Data::base`): a binary copied aside meets the data of today, not of its build. So `creeer_tools stress` and `play` print the data's content hash and folder before their scenes: two runs of one binary on different data say so (G2.11, ADR-0031's "Found on the way").
+
 ### The validator (`creeer_sim::content`, `creeer_tools validate`)
 
 It loads everything the game would load from the merged packs and reports errors (the data would not load) and warnings (it loads, but looks wrong), each named by pack, file and entry:
