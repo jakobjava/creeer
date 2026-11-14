@@ -389,6 +389,9 @@ mod aim;
 pub use aim::Aimed;
 pub use place::Surface;
 mod apply;
+pub mod bridge_bench;
+#[cfg(test)]
+mod bridge_bench_tests;
 mod draw;
 mod held;
 mod hold;
