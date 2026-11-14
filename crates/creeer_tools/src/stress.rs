@@ -2,7 +2,8 @@
 //! (F7.5, plan.md §5): the stress scenarios, headless, each with its tick percentiles (p50,
 //! p99, worst; the first tick, which takes the setup, apart) and a hash of its state at the
 //! end. `STRESS_TRACE=<ms>` lists the ticks over that (10 ms if not a number; with the physics phases when built with
-//! `--features creeer_physics/profile`).
+//! `--features creeer_physics/profile`). `STRESS_TICK_HASH` prints the `server` scene's physics
+//! hash after every tick on stderr: two runs that end apart are compared tick by tick.
 //!
 //! - `--short`: the lengths CI runs (on every OS, so the hashes compare platforms at scale);
 //! - `--check`: fails if a hash differs from `tests/scenarios/stress.txt`;
@@ -90,6 +91,20 @@ fn p(stats: &TimingStats, q: f64) -> f64 {
     stats.percentile_ms(q).unwrap_or(f64::NAN)
 }
 
+/// The packs the scenes are made of: their content hash and where they are read from. A build
+/// reads the data of the tree it was built in, as it is when it runs (`Data::base`): a copy of
+/// it kept aside and run after the data changed made another world, and its hash looked like
+/// the same binary's run going another way (G2.11).
+pub(crate) fn print_data() {
+    let data = creeer_data::Data::base();
+    let root = data.packs().first().map(|p| p.root.display().to_string());
+    println!(
+        "data {:016x} from {}",
+        data.hash(),
+        root.unwrap_or_default()
+    );
+}
+
 pub fn run(args: &[String]) -> ExitCode {
     let flag = |f: &str| args.iter().any(|a| a == f);
     let value = |f: &str| args.windows(2).find(|w| w[0] == f).map(|w| w[1].clone());
@@ -102,6 +117,7 @@ pub fn run(args: &[String]) -> ExitCode {
         .ok()
         .map(|ms| ms.parse::<f64>().unwrap_or(10.0) / 1e3);
     let golden = std::fs::read_to_string(GOLDEN).unwrap_or_default();
+    print_data();
     let (mut lines, mut metrics, mut failed) = (String::new(), String::new(), false);
     for Scenario {
         name,
