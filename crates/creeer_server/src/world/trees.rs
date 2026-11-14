@@ -53,11 +53,14 @@ pub(crate) struct Trees {
 }
 
 impl Trees {
-    /// The packs' forest for `terrain` (none if the packs have no trees).
+    /// The packs' forest for `terrain`. Trees that do not load stop the world being made, as its
+    /// species do (packs without tree species are broken: `creeer_tools validate`). A world
+    /// quietly without its forest is another world: a tool built before `flora/trees.ron` gained
+    /// a field, run on the data after, lost the stress scene `server`'s forest and its hash, G2.11.
     pub(super) fn from_data(data: &Data, terrain: &Terrain, spawn: DVec3) -> Self {
+        let forest = Forest::from_data(data, terrain).expect("the packs' trees load");
         Self {
-            forest: (Forest::from_data(data, terrain).ok())
-                .map(|f| Arc::new(f.with_clearing(spawn, SPAWN_CLEARING))),
+            forest: Some(Arc::new(forest.with_clearing(spawn, SPAWN_CLEARING))),
             ..Self::default()
         }
     }
