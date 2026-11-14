@@ -102,7 +102,9 @@ mod sandbox;
 mod shimmer;
 mod sound_render;
 mod sounds;
+mod sounds_blows;
 mod sounds_bodies;
+mod sounds_things;
 #[cfg(test)]
 mod struck_bench_tests;
 mod style_board;

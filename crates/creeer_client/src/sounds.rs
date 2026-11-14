@@ -8,7 +8,7 @@
 //! The settings menu sets the volumes with [`Sounds::set_volumes`] and reads them with
 //! [`Sounds::volumes`] (`PlanetView::sound`).
 
-use crate::sounds_bodies::Extra;
+use crate::sounds_things::Extra;
 use creeer_audio::happenings::{Underfoot, footstep, wind};
 use creeer_audio::{Audio, Library, Volumes};
 use creeer_math::glam::DVec3;
@@ -49,13 +49,13 @@ pub struct Cost {
 
 /// A driving blow to come: when (s, the clock's), and blow `k` of what into what.
 #[derive(Clone, Debug)]
-struct Blow {
-    at: f64,
-    k: u32,
-    fastener: String,
-    point: DVec3,
-    body: Option<EntityId>,
-    axis: DVec3,
+pub(crate) struct Blow {
+    pub(crate) at: f64,
+    pub(crate) k: u32,
+    pub(crate) fastener: String,
+    pub(crate) point: DVec3,
+    pub(crate) body: Option<EntityId>,
+    pub(crate) axis: DVec3,
 }
 
 /// The game's sounds.
@@ -70,11 +70,12 @@ pub struct Sounds {
     pub(crate) seen: u32,
     pub(crate) velocities: HashMap<EntityId, (DVec3, u32)>,
     pub(crate) rubbing: HashMap<EntityId, (u64, f64)>,
-    /// The members known broken, by structure.
+    /// The members known broken, by structure, and each structure's frame as last seen to change.
     broken: HashMap<EntityId, BTreeSet<u32>>,
-    note: Option<Instant>,
-    blows: Vec<Blow>,
-    swung: Option<f64>,
+    frames: HashMap<EntityId, creeer_net::entity::Frame>,
+    pub(crate) note: Option<Instant>,
+    pub(crate) blows: Vec<Blow>,
+    pub(crate) swung: Option<f64>,
     down: HashMap<u32, [bool; 2]>,
     wind: Option<f64>,
     pub(crate) clock: f64,
@@ -244,10 +245,44 @@ impl Sounds {
             known.clone_from(members);
         }
         self.broken.retain(|id, _| c.broken.contains_key(id));
+        // A structure come apart is told as its members replaced by fewer (its pieces entities
+        // of their own), not which broke: the largest member gone cracks.
+        let mut apart = Vec::new();
+        for (id, kind) in &c.kinds {
+            let Kind::Structure(frame) = kind else {
+                continue;
+            };
+            let known = self.frames.get(id).map(|f| f.members.len());
+            if known != Some(frame.members.len()) {
+                let old = self.frames.insert(*id, frame.clone());
+                if let Some(old) = old.filter(|o| o.members.len() > frame.members.len()) {
+                    apart.push((*id, old));
+                }
+            }
+        }
+        self.frames.retain(|id, _| c.kinds.contains_key(id));
         for (id, member) in cracks.into_iter().take(MOST) {
             let seed = self.next_seed();
             let Some(lib) = &self.lib else { return };
-            if let Some(body) = crate::sounds_bodies::member(lib, c, id, member) {
+            let frame = match c.kinds.get(&id) {
+                Some(Kind::Structure(f)) => f,
+                _ => continue,
+            };
+            if let Some(body) = crate::sounds_things::member(lib, c, (id, frame), member) {
+                let spec = creeer_audio::happenings::crack(&body, 0.5, seed);
+                self.play(spec, h.ears.0);
+            }
+        }
+        for (id, old) in apart.into_iter().take(MOST) {
+            let seed = self.next_seed();
+            let Some(lib) = &self.lib else { return };
+            let Some(Kind::Structure(now)) = c.kinds.get(&id) else {
+                continue;
+            };
+            let gone = crate::sounds_things::gone(&old, now);
+            if let Some(body) =
+                gone.and_then(|k| crate::sounds_things::member(lib, c, (id, &old), k))
+            {
                 let spec = creeer_audio::happenings::crack(&body, 0.5, seed);
                 self.play(spec, h.ears.0);
             }
@@ -280,11 +315,11 @@ impl Sounds {
             let scale = (speed / 1.4).clamp(0.6, 2.0);
             let seed = self.next_seed();
             let Some(lib) = &self.lib else { return };
-            let under = crate::sounds_bodies::underfoot(lib, &self.extra, h, at, up);
+            let under = crate::sounds_things::underfoot(lib, &self.extra, h, at, up);
             let specs = match &under {
                 Some(body) => footstep(lib, &Underfoot::Body(*body), (at, -up), scale, seed),
                 None => {
-                    let ground = crate::sounds_bodies::ground(lib, h.terrain, at - up * 0.05);
+                    let ground = crate::sounds_things::ground(lib, h.terrain, at - up * 0.05);
                     footstep(lib, &Underfoot::Ground(ground), (at, -up), scale, seed)
                 }
             };
@@ -293,81 +328,5 @@ impl Sounds {
             }
         }
         self.down.retain(|k, _| c.kinds.contains_key(&EntityId(*k)));
-    }
-
-    /// The player's own blow, when its swing reaches it, on what the crosshair is on.
-    fn swings(&mut self, h: &Heard<'_>) {
-        let c = h.connection;
-        let Some(avatar) = c.welcome.as_ref().map(|w| w.avatar) else {
-            return;
-        };
-        let now = c.swinging(avatar);
-        let was = std::mem::replace(&mut self.swung, now);
-        let blow = creeer_sim::strike::TO_BLOW;
-        if !(was.is_some_and(|w| w < blow) && now.is_some_and(|n| n >= blow)) {
-            return;
-        }
-        let Some((point, body)) = (h.aimed)() else {
-            return;
-        };
-        let seed = self.next_seed();
-        let Some(lib) = &self.lib else { return };
-        let spec = crate::sounds_bodies::tool_blow(lib, &self.extra, h, (point, body), seed);
-        if let Some(spec) = spec {
-            self.play(spec, h.ears.0);
-        }
-    }
-
-    /// A fastening the player is told of ("fastening: 2 s"): its driver's blows over its time,
-    /// each on the fastener and the part the crosshair was on.
-    fn fastenings(&mut self, h: &Heard<'_>) {
-        let c = h.connection;
-        if let Some((note, when)) = &c.noted
-            && self.note != Some(*when)
-        {
-            self.note = Some(*when);
-            let seconds = (note.strip_prefix("fastening: "))
-                .and_then(|rest| rest.trim_end_matches(" s").parse::<f64>().ok());
-            let driver = (h.fastener).and_then(|f| self.lib.as_ref()?.driver(f).cloned());
-            if let (Some(seconds), Some(driver), Some((point, body))) =
-                (seconds, driver, (h.aimed)())
-            {
-                let axis = (point - h.ears.0).normalize_or(DVec3::NEG_Y);
-                for k in 0..driver.blows {
-                    self.blows.push(Blow {
-                        at: self.clock + seconds * (f64::from(k) + 0.5) / f64::from(driver.blows),
-                        k,
-                        fastener: driver.fastener.clone(),
-                        point,
-                        body,
-                        axis,
-                    });
-                }
-            }
-        }
-        let due: Vec<Blow> = self
-            .blows
-            .iter()
-            .filter(|b| b.at <= self.clock)
-            .cloned()
-            .collect();
-        self.blows.retain(|b| b.at > self.clock);
-        for b in due {
-            let seed = self.next_seed();
-            let Some(lib) = &self.lib else { return };
-            let part = (b.body)
-                .and_then(|id| crate::sounds_bodies::part(lib, &self.extra, c, id, b.point));
-            let spec = crate::sounds_bodies::blow(
-                lib,
-                &self.extra,
-                (&b.fastener, b.k),
-                part,
-                (b.point, b.axis),
-                seed,
-            );
-            if let Some(spec) = spec {
-                self.play(spec, h.ears.0);
-            }
-        }
     }
 }
