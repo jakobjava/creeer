@@ -1,0 +1,20 @@
+// Driving nails by hand (G2.11, ADR-0036 amended 2026-11-14): how hard and how fast a person's
+// hammer blows come. A nail's time is the blows its driving work needs (creeer_building's
+// `hammering.rs`: the wood's withdrawal grip on it, EN 1995-1-1's f_ax = 20e-6·ρ², integrated
+// as it goes in), not a time written down for it. The first entry is a player's.
+//
+// HOW TO ADD ONE (data work; the tests check every entry):
+// - `name`: unique id;
+// - `blow`: a blow's energy at the head (J);
+// - `share`: the share of it that drives the nail (the rest goes back into the hammer and the
+//   wood), found from blows counted driving a known nail;
+// - `rate`: blows a second.
+[
+    // A carpenter with a framing hammer. Blow: a 1.09 kg framing hammer swung at about 10 m/s
+    // gives about 55 J (ADR-0027's sources). Share: framers drive a 16d common nail (88.9 ×
+    // 4.11 mm, 47 J of work in framing timber of ρ_k 380) in 2.3–2.7 swings (Pro Tool Reviews'
+    // framing hammer tests; Bob Vila: 3–4 for a professional): 47 / (2.5 × 55) = 0.34. Rate:
+    // repeated hand-tool strokes come about twice a second (self-paced sawing 2.0 ± 0.4 Hz,
+    // PLOS ONE 2017; hammering was studied paced at 1–5 Hz, EPFL).
+    (name: "carpenter", blow: 55.0, share: 0.34, rate: 2.0),
+]

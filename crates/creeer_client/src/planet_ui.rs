@@ -1,5 +1,7 @@
-//! The planet sandbox's window: tools, walking or flying, time of day, a geology probe at the
-//! crosshair, saving and loading the world (when this process hosts it), and live numbers.
+//! The planet game's debug window (F3, off by default; G2.11 A3): the sandbox's tools for
+//! flying, walking or flying, time of day, a geology probe at the crosshair, saving and loading
+//! the world (when this process hosts it), and live numbers. The player's look is chosen in
+//! the menu's settings (`menu.rs`), the keys are listed in its controls.
 
 use crate::planet_view::{PlanetView, TOOL_REACH, Tool};
 use creeer_net::message::Command;
@@ -28,7 +30,7 @@ pub enum Request {
 pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Request {
     let mut request = Request::None;
     let snapshot = view.snapshot();
-    egui::Window::new("Planet")
+    egui::Window::new("Planet (F3)")
         .default_pos([12.0, 330.0])
         .resizable(false)
         .show(ctx, |ui| {
@@ -93,7 +95,6 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 }
             });
             machines(ui, view, camera);
-            look(ui, view);
             let edits = view.session.connection.edits.len();
             if view.session.hosted() && Path::new(WORLD_FILE).exists() {
                 ui.small(format!("{edits} edits · saved world: {WORLD_FILE}"));
@@ -151,12 +152,20 @@ pub fn window(ctx: &egui::Context, view: &mut PlanetView, camera: &Camera) -> Re
                 "terrain: {} chunks drawn · {cached} cached · {outstanding} to build",
                 view.draw.len()
             ));
-            ui.label("Right mouse: look · WASD/Space/Ctrl: fly (speed follows altitude)");
-            ui.label("V: walk the avatar (WASD, Space jumps, Shift runs, Ctrl: jetpack)");
-            ui.label("Mouse wheel: speed · Left click: use tool at the crosshair");
-            ui.label("Walking: 1–4 take a tool in hand (0 puts it away); left click strikes");
         });
     request
+}
+
+/// Saves the world this process hosts; says where, or why not.
+///
+/// # Errors
+/// If it is not hosted here, or the file cannot be written.
+pub(crate) fn save_world(view: &PlanetView) -> Result<String, String> {
+    if !view.session.hosted() {
+        return Err("the world is the server's: only it saves".into());
+    }
+    view.session.save(Path::new(WORLD_FILE))?;
+    Ok(format!("Saved to {WORLD_FILE}"))
 }
 
 /// What lies under the crosshair: rock, its density, province and any ore deposit.
@@ -190,35 +199,6 @@ fn probe(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
     }
 }
 
-/// A small cross at the centre of the screen, where tools act; walking, ringed when what it is
-/// on is within reach, and named beneath (G1.4d).
-pub fn crosshair(ctx: &egui::Context, target: Option<&crate::planet_aim::Target>) {
-    let center = ctx.content_rect().center();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("crosshair"),
-    ));
-    let stroke = egui::Stroke::new(1.5, egui::Color32::from_white_alpha(200));
-    for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)] {
-        let d = egui::vec2(dx, dy) * 8.0;
-        painter.line_segment([center - d, center + d], stroke);
-    }
-    let Some(target) = target else {
-        return;
-    };
-    let alpha = if target.in_reach { 220 } else { 110 };
-    if target.in_reach {
-        painter.circle_stroke(center, 12.0, stroke);
-    }
-    painter.text(
-        center + egui::vec2(0.0, 20.0),
-        egui::Align2::CENTER_TOP,
-        crate::planet_aim::label(target),
-        egui::FontId::proportional(13.0),
-        egui::Color32::from_white_alpha(alpha),
-    );
-}
-
 /// The world's machines (F7.4): each one's mode (active near a player, abstract beyond
 /// 3 km of every player, caught up when one comes near), distance, water and hydrogen.
 fn machines(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
@@ -247,7 +227,7 @@ fn machines(ui: &mut egui::Ui, view: &PlanetView, camera: &Camera) {
 
 /// The player's skin tone and hair colour (G1.3e): chosen here, kept by the server
 /// (`Command::Look`), which gives their colour and outfit.
-fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
+pub(crate) fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
     static CHOICES: std::sync::OnceLock<(Vec<String>, Vec<String>)> = std::sync::OnceLock::new();
     let (skins, hairs) = CHOICES.get_or_init(|| {
         crate::models::palette().map_or_else(Default::default, |p| {
@@ -280,54 +260,4 @@ fn look(ui: &mut egui::Ui, view: &mut PlanetView) {
     if (skin, hair) != (look.skin, look.hair) {
         view.send(Command::Look { skin, hair });
     }
-}
-
-/// The keys for what the hands hold (G2.10), low on the screen while something is held.
-pub fn hold_hint(ctx: &egui::Context, hint: Option<&str>) {
-    let Some(hint) = hint else { return };
-    let rect = ctx.content_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("hold hint"),
-    ));
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 48.0),
-        egui::Align2::CENTER_BOTTOM,
-        hint,
-        egui::FontId::proportional(13.0),
-        egui::Color32::from_white_alpha(200),
-    );
-}
-
-/// The work under way (fastening, backfilling a post: G2.10), as a ring filling round the
-/// crosshair over its time, from the server's note ("fastening: 2 s") when it came.
-pub fn work_ring(ctx: &egui::Context, noted: Option<&(String, std::time::Instant)>) {
-    let Some((note, when)) = noted else { return };
-    let Some(seconds) = ["fastening: ", "backfilling: ", "finishing the lashing: "]
-        .iter()
-        .find_map(|w| note.strip_prefix(w))
-        .and_then(|rest| rest.trim_end_matches(" s").parse::<f32>().ok())
-    else {
-        return;
-    };
-    let done = when.elapsed().as_secs_f32() / seconds.max(0.1);
-    if done >= 1.0 {
-        return;
-    }
-    let center = ctx.content_rect().center();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("work ring"),
-    ));
-    let points: Vec<egui::Pos2> = (0..=64)
-        .map(|k| {
-            #[allow(clippy::cast_precision_loss)] // 64 steps
-            let a = std::f32::consts::TAU * done * (k as f32) / 64.0 - std::f32::consts::FRAC_PI_2;
-            center + egui::vec2(a.cos(), a.sin()) * 18.0
-        })
-        .collect();
-    painter.add(egui::Shape::line(
-        points,
-        egui::Stroke::new(3.0, egui::Color32::from_rgb(240, 160, 60)),
-    ));
 }

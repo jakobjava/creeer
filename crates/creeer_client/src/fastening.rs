@@ -15,11 +15,15 @@ pub struct Fastening {
 }
 
 impl Fastening {
-    /// The base packs' fasteners.
+    /// The base packs' fasteners, after the one the hand reaches for (no name: the server picks
+    /// the shortest nail that holds, then a peg, then a lashing, of those at hand; G2.11: the
+    /// 75 mm nail chosen first was too short for a 60 mm rail, and was refused).
     pub fn from_data() -> Self {
-        let names = creeer_building::fasteners::Fastener::all(&creeer_data::Data::base())
-            .map(|all| all.into_iter().map(|f| f.name).collect())
-            .unwrap_or_default();
+        let names: Vec<String> =
+            creeer_building::fasteners::Fastener::all(&creeer_data::Data::base())
+                .map(|all| all.into_iter().map(|f| f.name).collect())
+                .unwrap_or_default();
+        let names = std::iter::once(String::new()).chain(names).collect();
         Self { names, chosen: 0 }
     }
 
@@ -38,13 +42,25 @@ impl Fastening {
 
 impl PlanetView {
     /// Fastens the parts touching where the crosshair is on a part, with the chosen fastener;
-    /// on a standing tree's trunk, the part touching it there to the tree (G2.9).
+    /// on a standing tree's trunk, the part touching it there to the tree (G2.9). What the hands
+    /// hold is fastened where the crosshair rests it against something (G2.11: aimed past it,
+    /// the crosshair was on the ground and nothing was asked).
     pub fn fasten(&mut self, camera: &Camera) {
         let Some(fastener) = self.fastening.name().map(str::to_owned) else {
             return;
         };
-        if let Some(target) = self.reached_or_trunk(camera) {
+        let c = &self.session.connection;
+        let held = (c.own_load().zip(self.holding.touch())).map(|(load, at)| Target {
+            body: Some(load),
+            at,
+            seen: c.drawn_at(),
+        });
+        let pins = held.is_some();
+        if let Some(target) = held.or_else(|| self.reached_or_trunk(camera)) {
             self.send(Command::Fasten { target, fastener });
+            if pins {
+                self.holding.pin();
+            }
         }
     }
 

@@ -360,5 +360,11 @@ mod steered;
 #[path = "held_view_tests.rs"]
 mod held_view;
 
+#[path = "builder_tests.rs"]
+mod builder;
+
 #[path = "build_flow_tests.rs"]
 mod build_flow;
+
+#[path = "build_play_tests.rs"]
+mod build_play;

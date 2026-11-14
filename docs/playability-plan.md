@@ -83,6 +83,27 @@ The project's rules hold as written (plan.md §1, §6, Phase B's principles; `do
 10. **Disk and machine:** the user's disk is watched. Prefix every cargo command with `CARGO_INCREMENTAL=0`, build release only when you need frames or timings, start no further agents.
 11. **Report** when done (and only then): what changed in the player's words, the frames to look at, numbers before and after, what is not done and why, your commits, and any file where a merge may conflict.
 
+## State of the streams
+
+Kept by the coordinator as streams are merged.
+
+| Stream | State |
+|---|---|
+| A7 Sound | Merged 2026-11-14 (ADR-0037). 16 reference sounds rendered for the user's ear |
+| A6 Tick time | First pass merged 2026-11-14: the "breaking tick" was a felled player's ragdoll laid inside a crate (ADR-0005 amended). Going on: two defects in how wood breaks, the pile that does not converge, loose poles (`docs/g2p-plan.md`) |
+| A3 HUD | Merged 2026-11-14 (ADR-0038). Its volume setting drives the sound |
+| A1, A2, B, C | At work |
+| A4, A5 | Cut off by the usage limit on 2026-11-13 with work in their worktrees; resumed as slots free |
+
+**Wanted from the protocol** (only stream B changes it; to be scheduled with B's report):
+- For sound (ADR-0037, Limits): each loaded structure's most-loaded members and their share of strength (creaking); a member's material; which element broke; the target of a `Swing` and a `Fastening` note to nearby clients (other players' blows).
+- For the HUD (ADR-0038, Limits): which bodies are fastened ("Take apart" is offered on every part today); whether a block is a container; whether a post stands in a hole; whether the server is creative (the kit is offered on survival servers and refused there).
+- Pausing a singleplayer world behind the Esc menu (a server matter).
+
+**For the user to decide at the check-in:**
+- The crosshair's plate sits beside the screen's centre, which `docs/art-style.md` §10 keeps for the world: approve, or move it.
+- The looks' new golden images (A1, A2).
+
 ## Check-in
 
 When the streams are merged the user gets: a build to play, a short note of what to try, and before/after frames. Their word decides what is good. Feedback is taken in before anything further is built on top.

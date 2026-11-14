@@ -36,6 +36,14 @@ pub(super) struct Building {
     pub(super) under_way: BTreeMap<EntityId, UnderWay>,
     /// Cuts into built members (G2.6): by structure and element, the wood taken out (m³).
     pub(super) cuts: BTreeMap<(EntityId, usize), f64>,
+    /// How a player drives nails (`data/hammering.ron`'s first), the nails being driven (by
+    /// player: begun at which tick, how many blows), and the blows landed not yet told (G2.11).
+    pub(super) hammering: Option<creeer_building::hammering::Hammering>,
+    pub(super) hammer: BTreeMap<EntityId, (u64, u32)>,
+    pub(super) blows: Vec<(EntityId, DVec3)>,
+    /// Nails driven into a part still in its driver's hands (by player): what it touched, where,
+    /// with which fastener. Made joints when the hands let go (`nailing.rs`).
+    pub(super) driven: BTreeMap<EntityId, Vec<(EntityId, DVec3, usize)>>,
 }
 
 /// A built structure's record: the items its parts and fasteners were (for salvage, G2.6),
@@ -79,6 +87,8 @@ impl Building {
         Self {
             fasteners: Fastener::all(data).unwrap_or_default(),
             materials: MaterialTable::from_data(data).ok(),
+            hammering: (creeer_building::hammering::Hammering::all(data).ok())
+                .and_then(|h| h.into_iter().next()),
             ..Self::default()
         }
     }
@@ -86,7 +96,9 @@ impl Building {
 
 impl ServerWorld {
     /// Player `by` begins fastening the parts touching nearest `at` on `part` with one of
-    /// `fastener`: refused unless they can (the parts, the fastener and their hands).
+    /// `fastener` (none named: the one they reach for, `nailing.rs`): refused unless they can
+    /// (the parts, the fastener and their hands). A part in their hands is fastened where it
+    /// touches another nearest `at` (G2.11: the crosshair rests it there).
     pub(super) fn begin_fastening(
         &mut self,
         by: EntityId,
@@ -94,16 +106,28 @@ impl ServerWorld {
         at: DVec3,
         fastener: &str,
     ) -> Result<(), String> {
-        let k = (self.building.fasteners.iter())
-            .position(|f| f.name == fastener)
-            .ok_or_else(|| format!("no fastener {fastener}"))?;
+        let at = match self.carried(by) {
+            Some(held) if held == part => self.nearest_touch(part, at).unwrap_or(at),
+            _ => at,
+        };
+        let k = if fastener.is_empty() {
+            self.touching_any(part, at)?;
+            self.reach_for(by, part, at)?
+        } else {
+            (self.building.fasteners.iter())
+                .position(|f| f.name == fastener)
+                .ok_or_else(|| format!("no fastener {fastener}"))?
+        };
         let work = self.fastening_work(part, at, k)?;
         let whole = &self.building.fasteners[k];
-        let tack = whole.tacked().map_or(0.0, |t| t.seconds);
+        let tack = whole.tacked().and_then(|t| t.seconds).unwrap_or(0.0);
+        let (driving, blows) = self.fastening_time(k, part, at);
+        let whole = &self.building.fasteners[k];
         let (seconds, doing) = match work {
-            Work::Tack => (tack, "tacking"),
-            Work::Finish => (whole.seconds - tack, "finishing the lashing"),
-            _ => (whole.seconds, "fastening"),
+            Work::Tack => (tack, "tacking".to_owned()),
+            Work::Finish => (driving - tack, "finishing the lashing".to_owned()),
+            _ if blows > 0 => (driving, format!("nailing ({}, {blows} blows)", whole.name)),
+            _ => (driving, format!("fastening ({})", whole.name)),
         };
         if work != Work::Finish {
             // (A tack's strip was taken when it was made.)
@@ -122,7 +146,8 @@ impl ServerWorld {
                 work,
             },
         );
-        self.note(by, format!("{doing}: {seconds:.0} s"));
+        self.building.hammer.insert(by, (self.tick, blows));
+        self.note(by, format!("{doing}: {seconds:.1} s"));
         Ok(())
     }
 
@@ -169,12 +194,14 @@ impl ServerWorld {
     /// Each tick: fastenings whose time is up are made, if their maker still reaches the
     /// parts and the parts still touch; told either way.
     pub(super) fn fastenings_due(&mut self) {
+        self.blows_now();
         let due: Vec<(EntityId, UnderWay)> = (self.building.under_way.iter())
             .filter(|(_, u)| u.done <= self.tick)
             .map(|(by, u)| (*by, u.clone()))
             .collect();
         for (by, u) in due {
             self.building.under_way.remove(&by);
+            self.building.hammer.remove(&by);
             let undone = match u.work {
                 Work::Fasten | Work::Tack => None,
                 Work::Finish => Some(self.finish_due(by, &u).map(|()| "lashed fast")),
@@ -210,12 +237,18 @@ impl ServerWorld {
             Work::Tack => whole.tacked().ok_or("it cannot be tacked")?,
             _ => whole.clone(),
         };
-        // Held, it is fastened wherever else it touches a part too (a beam held on two posts'
-        // tops is nailed to both by one J): let go after one nail, a beam pivoted on it and slid
-        // off the second post's narrow top (G2.10).
-        let held = self
-            .carried(by)
-            .filter(|l| *l == u.part || matches!(other, Touched::Part(id) if id == *l));
+        // One fastener where it is aimed (G2.11, the user: "they choose where nails go and how
+        // many"; G2.10's one J nailing every crossing a held part touched is gone). In the hands
+        // still, it is driven and the hands keep holding it still where it is, for another; its
+        // joints are made as they let go (`nailing.rs`: let go after one nail, a beam pivoted
+        // on it and slid off the other post's narrow top, G2.10; kept held while made one
+        // structure, the solver failed, G2.10).
+        if self.carried(by) == Some(u.part)
+            && let Touched::Part(id) = other
+        {
+            (self.building.driven.entry(by).or_default()).push((id, point, u.fastener));
+            return Ok(());
+        }
         match other {
             Touched::Part(id) => {
                 self.fasten(u.part, id, point, &fastener)?;
@@ -225,9 +258,6 @@ impl ServerWorld {
                 self.fasten_to_tree(u.part, tree, point, &fastener)?;
                 self.hands_off(&[u.part]);
             }
-        }
-        if held.is_some() {
-            self.fasten_the_rest(by, u.part, (u.fastener, &fastener));
         }
         if let Some((pocket, k)) = from {
             let item = self.change_pockets(by, |p| p[pocket].take(k));

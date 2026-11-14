@@ -15,6 +15,7 @@ mod buckling;
 #[cfg(test)]
 mod buckling_tests;
 mod builder;
+mod carried;
 mod coupled;
 mod coupling;
 mod dashpot;
@@ -73,6 +74,7 @@ mod validation_tests;
 
 pub use added::AddedMass;
 pub use builder::StructureBuilder;
+pub use carried::Carried;
 pub use dashpot::Dashpot;
 use element::Element;
 pub use fastened::JointLaw;
