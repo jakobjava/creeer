@@ -93,7 +93,10 @@ struct AoConstants {
     steps: f32,
     base_mip: f32,
     denoise_on: f32,
-    pad: [f32; 2],
+    pad: [f32; 4],
+    /// Towards the sun in view space (x right, y up, z ahead); w 1 when it is above the
+    /// camera's horizon plane enough to cast contact shadows (`ao_denoise.wgsl`).
+    sun: [f32; 4],
 }
 
 /// What the scene's shaders read (bind group 3): x, y one over the screen's size, z 1 when
@@ -222,8 +225,15 @@ impl AoPass {
                 .sample_bind_group(device, &self.sample_layout, &self.view);
     }
 
-    /// Writes this frame's constants for the camera's projection.
-    pub(super) fn prepare(&self, queue: &wgpu::Queue, camera: &Camera, aspect: f32) {
+    /// Writes this frame's constants for the camera's projection and the sun (a unit vector
+    /// towards it, in simulation space).
+    pub(super) fn prepare(
+        &self,
+        queue: &wgpu::Queue,
+        camera: &Camera,
+        aspect: f32,
+        sun: creeer_math::glam::DVec3,
+    ) {
         let (w, h) = self.textures.full;
         #[allow(clippy::cast_precision_loss)] // screen sizes
         let inverse_full = [1.0 / w as f32, 1.0 / h as f32];
@@ -266,7 +276,8 @@ impl AoPass {
             steps,
             base_mip: base as f32,
             denoise_on: f32::from(u8::from(self.settings.denoise)),
-            pad: [0.0; 2],
+            pad: [0.0; 4],
+            sun: view_sun(camera, sun),
         };
         queue.write_buffer(&self.constants, 0, bytemuck::bytes_of(&constants));
     }
@@ -310,6 +321,22 @@ impl AoPass {
     pub(super) fn result(&self) -> (&wgpu::Texture, (u32, u32)) {
         (&self.textures.result, self.textures.grid)
     }
+}
+
+/// The direction towards the sun in the occlusion's view space (x right, y up, z ahead), and
+/// whether it casts contact shadows (w: 1 while it is up; at night the moon casts none).
+fn view_sun(camera: &Camera, sun: creeer_math::glam::DVec3) -> [f32; 4] {
+    let rotation = camera.rotation();
+    let axis = |a: creeer_math::glam::DVec3| {
+        #[allow(clippy::cast_possible_truncation)] // a unit vector's components
+        let c = sun.dot(rotation * a) as f32;
+        c
+    };
+    let x = creeer_math::glam::DVec3::X;
+    let y = creeer_math::glam::DVec3::Y;
+    let ahead = creeer_math::glam::DVec3::NEG_Z;
+    let up = sun.dot(camera.up()) > 0.0;
+    [axis(x), axis(y), axis(ahead), f32::from(u8::from(up))]
 }
 
 fn base_mip(settings: AoSettings) -> u32 {

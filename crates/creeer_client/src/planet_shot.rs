@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
-//!
-//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]
+//! [--ao <off|low|medium|high>] [--frames <n>]` (`--frames`: the view drawn n times more, timed, GPU pass by pass)
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -169,12 +169,17 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     let size = hud.as_ref().map_or((1600, 900), |h| h.size);
     let mut renderer = pollster::block_on(Renderer::new_headless(size))?;
+    renderer.set_ao(creeer_render::renderer::AoSettings {
+        quality: crate::headless::ao_quality(args)?,
+        ..renderer.ao_settings()
+    });
     let meshes = DemoMeshes::register_for(&mut renderer);
     // Stream until settled.
     let start = Instant::now();
     loop {
         view.update_terrain(&mut renderer, camera.position);
-        if view.streaming().1 == 0 && start.elapsed() > Duration::from_millis(500) {
+        let filling = view.update_cover(&mut renderer, &camera);
+        if view.streaming().1 + filling == 0 && start.elapsed() > Duration::from_millis(500) {
             view.update_terrain(&mut renderer, camera.position);
             break;
         }
@@ -204,9 +209,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
     crate::hud_shot::not_own(&view, &view_name, &mut drawn);
     let mut overlay = (hud.as_ref()).map(|h| crate::hud_shot::overlay(h, &mut view, &camera));
-    let ground = crate::people_ground::PlanetGround {
-        terrain: &view.terrain,
-    };
+    let ground = crate::people_ground::PlanetGround { terrain: &terrain };
     people.draw(&drawn, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,
@@ -237,8 +240,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| args.get(i + 1)?.parse::<usize>().ok());
     if let Some(n) = frames {
         let mut stats = creeer_core::TimingStats::new(n);
+        let mut passes = crate::gpu_passes::GpuPasses::default();
         for _ in 0..n {
             let started = Instant::now();
+            view.update_cover(&mut renderer, &camera);
             let snapshot = view.snapshot();
             let mut scene = Scene::default();
             let pair = (&snapshot, &snapshot, 1.0);
@@ -263,6 +268,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 clear_color: crate::BACKGROUND,
             });
             stats.push(started.elapsed());
+            passes.push(renderer.gpu_times());
         }
         let p = |q| stats.percentile_ms(q).unwrap_or(0.0);
         println!(
@@ -272,6 +278,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             snapshot.rods.len(),
             snapshot.blobs.len()
         );
+        println!("{}", passes.report());
     }
     Ok(())
 }
