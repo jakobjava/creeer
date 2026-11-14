@@ -110,8 +110,20 @@ struct SpeciesDef {
     fresh: f64,
     bark: String,
     leaves: String,
+    /// A token drawn over the bark in patches (a birch's dark marks), if any (G2.11).
+    #[serde(default)]
+    marks: Option<String>,
     #[serde(default)]
     sources: String,
+}
+
+/// The palette tokens a species is drawn in (`art-style.md` §3.4): its bark, its foliage, and
+/// the marks over its bark, if any (G2.11, ADR-0037).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tokens {
+    pub bark: String,
+    pub leaves: String,
+    pub marks: Option<String>,
 }
 
 /// A species, resolved.
@@ -146,9 +158,10 @@ pub struct Species {
     pub branch_mass: Biomass,
     pub foliage_mass: Biomass,
     pub fresh: f64,
-    /// Colours (sRGB) of the bark and the foliage.
+    /// Colours (sRGB) of the bark and the foliage, and the tokens they are drawn in.
     pub bark: [u8; 3],
     pub leaves: [u8; 3],
+    pub tokens: Tokens,
 }
 
 impl Species {
@@ -249,6 +262,14 @@ pub fn load(data: &Data) -> Result<Vec<Species>, String> {
             fresh: s.fresh,
             bark: colour(&s.bark)?,
             leaves: colour(&s.leaves)?,
+            tokens: Tokens {
+                marks: match &s.marks {
+                    Some(m) => colour(m).map(|_| Some(m.clone()))?,
+                    None => None,
+                },
+                bark: s.bark.clone(),
+                leaves: s.leaves.clone(),
+            },
             name: s.name,
         };
         if species.height_at(species.dbh.1) <= 1.3 || species.height_at(species.dbh.0) <= 1.3 {

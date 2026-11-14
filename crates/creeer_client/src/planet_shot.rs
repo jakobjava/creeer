@@ -1,6 +1,6 @@
 //! Headless screenshots of the planet sandbox, for reviewing terrain and lighting:
-//!
-//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]`
+//! `creeer_client --planet <orbit|high|low|coast|surface|avatar|tunnel|night|holes|post|rail> <file.png> [--sun <deg>]
+//! [--ao <off|low|medium|high>] [--frames <n>]` (`--frames`: the view drawn n times more, timed, GPU pass by pass)
 //!
 //! The camera looks at a land spot with the sun `--sun` degrees above its horizon (40° by
 //! default; `night` puts it 30° below). The terrain is streamed until nothing is left to build
@@ -47,7 +47,11 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return crate::planet_shot_bridge::run(args);
     }
 
-    let mut view = PlanetView::singleplayer(true)?;
+    let mut view = if crate::planet_shot_things::VIEWS.contains(&view_name.as_str()) {
+        crate::planet_shot_things::view(&view_name)?
+    } else {
+        PlanetView::singleplayer(true)?
+    };
     let terrain = Arc::clone(&view.terrain);
     play(&mut view, 0.0)?;
     // Where players appear (land with relief at a temperate latitude, G1.3i): bodies are
@@ -161,6 +165,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         other if crate::planet_shot_build::VIEWS.contains(&other) => {
             crate::planet_shot_build::camera(&mut view, other)?
         }
+        other if crate::planet_shot_things::VIEWS.contains(&other) => {
+            crate::planet_shot_things::camera(&mut view, other)?
+        }
         other if crate::hud_shot::VIEWS.contains(&other) => {
             crate::hud_shot::camera(&mut view, other)?
         }
@@ -169,12 +176,17 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     let size = hud.as_ref().map_or((1600, 900), |h| h.size);
     let mut renderer = pollster::block_on(Renderer::new_headless(size))?;
+    renderer.set_ao(creeer_render::renderer::AoSettings {
+        quality: crate::headless::ao_quality(args)?,
+        ..renderer.ao_settings()
+    });
     let meshes = DemoMeshes::register_for(&mut renderer);
     // Stream until settled.
     let start = Instant::now();
     loop {
         view.update_terrain(&mut renderer, camera.position);
-        if view.streaming().1 == 0 && start.elapsed() > Duration::from_millis(500) {
+        let filling = view.update_cover(&mut renderer, &camera);
+        if view.streaming().1 + filling == 0 && start.elapsed() > Duration::from_millis(500) {
             view.update_terrain(&mut renderer, camera.position);
             break;
         }
@@ -204,9 +216,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
     crate::hud_shot::not_own(&view, &view_name, &mut drawn);
     let mut overlay = (hud.as_ref()).map(|h| crate::hud_shot::overlay(h, &mut view, &camera));
-    let ground = crate::people_ground::PlanetGround {
-        terrain: &view.terrain,
-    };
+    let ground = crate::people_ground::PlanetGround { terrain: &terrain };
     people.draw(&drawn, 0.0, &ground, &mut scene);
     let image = renderer.capture(Frame {
         camera: &camera,
@@ -232,46 +242,20 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         snapshot.counts.0,
     );
     // `--frames n`: the same view drawn n times more, each from the snapshot on (G1.7: what a
-    // forest costs a frame).
+    // forest costs a frame; `planet_shot_things::time_frames`).
     let frames = (args.iter().position(|a| a == "--frames"))
         .and_then(|i| args.get(i + 1)?.parse::<usize>().ok());
     if let Some(n) = frames {
-        let mut stats = creeer_core::TimingStats::new(n);
-        for _ in 0..n {
-            let started = Instant::now();
-            let snapshot = view.snapshot();
-            let mut scene = Scene::default();
-            let pair = (&snapshot, &snapshot, 1.0);
-            physics_view::draw(
-                &mut scene,
-                &meshes,
-                DVec3::ZERO,
-                pair,
-                crate::demo::Overlay::Off,
-            );
-            people.draw(&drawn, 0.0, &ground, &mut scene);
-            renderer.render_offscreen(Frame {
-                camera: &camera,
-                scene: &scene,
-                terrain: &view.draw,
-                terrain_frames: &[],
-                lighting: &lighting,
-                lines: &DebugLines::default(),
-                sky: Some(&sky),
-                heatmap: None,
-                overlay: None,
-                clear_color: crate::BACKGROUND,
-            });
-            stats.push(started.elapsed());
-        }
-        let p = |q| stats.percentile_ms(q).unwrap_or(0.0);
-        println!(
-            "{n} frames: p50 {:.2} ms, p99 {:.2} ms; {} rods, {} blobs",
-            p(50.0),
-            p(99.0),
-            snapshot.rods.len(),
-            snapshot.blobs.len()
-        );
+        let timed = crate::planet_shot_things::Timed {
+            camera: &camera,
+            lighting: &lighting,
+            sky: &sky,
+            meshes: &meshes,
+            drawn: &drawn,
+            ground: &ground,
+        };
+        let gpu = (&mut renderer, &mut people);
+        crate::planet_shot_things::time_frames(n, &mut view, gpu, &timed);
     }
     Ok(())
 }

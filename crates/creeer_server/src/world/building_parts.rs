@@ -141,6 +141,9 @@ impl ServerWorld {
             self.changed.push(id);
         }
         let woods = vec![Some(g.wood); self.world.bodies[i].structure.element_count()];
+        // A body become a structure: whoever has it is told it again (G2.11: clients went on
+        // drawing it as the item's hull at its first node, the part merged into it gone).
+        self.changed.push(id);
         self.building.built.insert(
             id,
             Built {

@@ -603,3 +603,42 @@ The bound: the bodies' energy never above what they had plus what lifting the pu
 ### Limits (`docs/future-improvements.md`)
 - **What a born body's contacts still hold after its first step is the motion's.** A 13.4 cm overlap is resolved 79 % in one 60 Hz step; the rest lifted the box 6.8 mm above where it rests (0.47 J).
 - **A ragdoll is still laid out inside what knocked it down** (the character's): now pushed out, not thrown.
+
+## Amended in G2.11 (2026-11-14): how wood breaks (fixed and validated; held back for a work ceiling and a blow-up it showed)
+
+The breaking tick's investigation (`docs/g2p-plan.md`) found two defects in how brittle members break. Both are fixed and validated in `docs/adr/0005/brittle-elastic-and-wood-damping.diff`, **not applied**: with it, *log_bridge*'s work at CI's length would rise over its ceiling, and its full length showed a blow-up of the pile it leaves (below). The user's question, "do beams still break realistically?", has this answer: they did not fully before either.
+
+### The defects
+1. **A plank held 1.5 times its strength under a slow load.** A brittle member's bending capacity was σ·Z, the plastic section modulus (bh²/4). A modulus of rupture (MOR), the strength the tables give, is the stress at failure computed as if the beam stayed elastic: the breaking moment is MOR·bh²/6 (*Wood Handbook* ch. 5; ASTM D143; EN 1995-1-1 checks bending as M/W). A round member held 1.7 times.
+2. **A plank broke at a third to a half of its strength in fast loading, by its damping force.** A member's material damping acts in series with its plastic slider, so spring and dashpot together are capped at the capacity; a brittle member breaks when anything flows. Green woods' damping c = 0.02 s (ζ = c·ω/2) is 120 % of critical at a 2 m plank's first mode (19 Hz), where timber has about 1 % (its loss factor about 0.02 green, 0.008 seasoned: Wegst 2006, the sound's `sound/materials.ron`). In an impact's 0.5 ms substeps (γ = c/β ≈ 60) the dashpot carried most of the force: *log_bridge*'s plank broke at a spring moment of 23 % of its capacity under a crate and a man lying still on it. Timber is in fact *stronger* under fast loading (the duration-of-load effect: Wood 1951's Madison curve; Gerhards 1977). The bridge-site stream saw the same: a 25 kg block landing from 0.2 m broke a deck board, a 1 cm drop of a nailed bridge broke two nails and a stringer piece.
+
+### Decision (in the patch)
+- **Brittle members** (a material with no elongation at break, no joint) break in bending at σ·W_el, W_el = I/c from the section (`plastic.rs`, `Element::brittle`).
+- **Wood's damping from its own loss**: c = η/ω at 20 Hz, the first modes of what is built from it (a 2 m plank 19 Hz, a 3 m pole 18 Hz): 1.6·10⁻⁴ s for the green woods, 6.4·10⁻⁵ s for C24 (`data/materials/engineering.ron`). About 1 % of critical at 20 Hz, less below, more above (stiffness-proportional damping grows with frequency; a frequency-independent model is a limit). No tree sways by it: standing trees and felled parts do not bend in the solver. The sound keeps its own loss factors.
+- **The dashpot stays in series** (a dashpot beside a brittle member's slider was built and rejected, below).
+
+### Prior work
+| Source | What it does | For Creëer |
+|---|---|---|
+| *Wood Handbook* (FPL-GTR-282, 2021) ch. 5; ASTM D143 | MOR = 3PL/(2bh²) from a 50 × 50 mm bar on a 710 mm span, loaded at its middle to failure in about 5 minutes | W_el; the validation test reproduces the test |
+| EN 1995-1-1 §6.1.6 | Bending checked as σ_m = M/W_el ≤ f_m | The same |
+| Thelandersson & Larsen (eds.), *Timber Engineering* (2003) | Timber linear to brittle failure in tension and bending | Brittle at its elastic stress |
+| Wood (1951), FPL R1916; Gerhards (1977), FPL-RP-283 | Strength rises as load duration falls: about 1.3–1.4 times the 5-minute strength at 1 s, more under impact | A damping force that weakens wood in fast loading is the opposite of timber; the model takes the 5-minute strength at every rate (a limit) |
+| Wegst (2006), *Am. J. Bot.* 93; Ono & Norimoto (1983) | Wood's loss factor along the grain 0.006–0.012, nearly independent of frequency | The damping's value |
+| Chopra, *Dynamics of Structures*; Hall (2006), *EESD* 35 | Stiffness-proportional (Rayleigh) damping: ζ grows with ω; damping forces taken for stress at failure are spurious | Why c must be chosen at the members' frequencies, and its limit |
+
+### Validation (`structure/brittle_tests.rs` in the patch; `docs/physics/g2p-validation.md`)
+| Case (green spruce from the materials table, MOR 41 MPa) | Before | After | Tolerance |
+|---|---|---|---|
+| ASTM D143 static bending, loaded to failure in about 10 s | MOR 61.6 MPa (1.50 times) | 41.07 MPa (+0.2 %) | 1 % |
+| The same bar loaded to its breaking load in 30 ms in 0.5 ms steps: the largest elastic moment before it broke | 400 N·m of 854 (47 %) | 846 N·m (99.0 %) | 97–100 % |
+- Every physics test passes (227). `creeer_building`'s self-contact test frames its arms with its own copy of C24: its damping follows the data's (6.4·10⁻⁵ s; with 0.01 s and W_el a 1.6 kg pole frame broke landing from 0.3 m).
+
+### Why it is held back (for the user and the coordinator)
+- **A work ceiling would rise.** Every play hash at CI's length holds but *builders* and *log_bridge*. *log_bridge*'s nailing (tick 360): 133 → 181 Newton iterations (ceiling 142): the plank, a rigid item until nailed, is made a member straight and released under its own weight (`building_parts.rs`); at its real damping it rings, and its friction takes a third refresh (64 iterations after refreshes against 42). Its ticks after: 111 and 75 against 117 and 71. *builders*: the same most work (1,031), another hash. Raising the ceiling, or the part settled into its sag when it is made (the building stream's), is the decision asked.
+- **A blow-up it showed.** With the patch, *log_bridge*'s second crate lands on the pile in the gap (the man, the first crate, the plank's pieces). The pile's Newton steps end at their limit, leave bodies deep in each other, and the next turn substeps find contacts holding up to 233 GJ that the energy guard admits: at tick 1029 the man's segments leave at up to 170 km/s. Without the patch the same scene plays to tick 1100 without it. The hole is the guard's (found-anew energy is held to the last step's books only where they are known and an impact did not drop them, ADR-0005 F6, G2.9) and the pile's non-convergence: G2P's next work, not the patch's.
+
+### Measured and rejected
+| Tried | Measured | Why rejected |
+|---|---|---|
+| **The dashpot beside a brittle member's slider** (it breaks on its spring's stress alone), the damping value left at 0.02 s (`docs/adr/0005/brittle-dashpot-beside.diff`) | ASTM D143: 41.1 MPa; struck: 99 % (both met). *log_bridge*: the plank held a crate and a man as a viscous beam until tick 975, then broke and the world's energy rose by 11 kJ in one tick (pieces at up to 93 m/s) | A dashpot of 120 % of critical beside the slider carries forces far past the member's strength; the value is what was wrong |

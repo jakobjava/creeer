@@ -1,7 +1,8 @@
 //! What lies loose about the player, as this client makes it (G1.6c, ADR-0029): the same scatter
 //! as the server's, cell by cell near the camera, less what the server says was taken. Drawn as
-//! plain boxes in their rock's colour (or the wood's), and aimed at as the crosshair's ray meets
-//! them; nothing of it is simulated here.
+//! what each is (G2.11, `part_view.rs`: a stone a lump in its rock's colour, a dead branch a
+//! stick with its bark), and aimed at as the crosshair's ray meets them; nothing of it is
+//! simulated here.
 
 use creeer_math::glam::{DQuat, DVec3};
 use creeer_net::message::Laid;
@@ -166,31 +167,48 @@ pub fn aim(things: &[Thing], origin: DVec3, direction: DVec3, length: f64) -> Op
 }
 
 impl LooseView {
-    /// Everything lying about into `out`: a made thing as its pieces (G1.6), else as its box, in
-    /// its colours.
+    /// Everything lying about into `out` as what it is (G2.11, `part_view.rs`): a stone a lump
+    /// in its rock's colour, a dead branch a stick with its bark, a made thing its pieces.
     pub fn draw(
         &self,
         out: &mut crate::physics_sandbox::PhysicsSnapshot,
         c: &creeer_server::Connection,
         rocks: &creeer_terrain::geology::rocks::RockTable,
     ) {
-        use crate::physics_sandbox::Look;
+        use crate::part_view::{Form, Made, Thing as Drawn};
         for t in self.things(&c.taken, &c.laid, rocks) {
             let parts = (c.laid.get(&t.id))
                 .map(|l| l.parts.as_slice())
                 .unwrap_or_default();
-            let boxes: Vec<(DVec3, DQuat, DVec3, [u8; 3])> = if parts.is_empty() {
-                vec![(t.centre, t.turn, t.half, t.colour)]
-            } else {
-                (parts.iter())
-                    .map(|p| (t.centre + t.turn * p.at, t.turn * p.turn, p.half, p.colour))
-                    .collect()
+            let mut drawn = Drawn {
+                centre: t.centre,
+                turn: t.turn,
+                form: Form::Piece(t.half),
+                made: Made::Colour(t.colour),
+                key: t.id,
+                age: (0.0, 0.0),
             };
-            for (centre, turn, half, colour) in boxes {
-                out.boxes.push((centre, turn, half));
-                out.box_look.push(Look::Colour(colour));
-                out.box_age.push((0.0, 0.0));
+            if !parts.is_empty() {
+                let at = (t.centre, t.turn);
+                let key = u32::try_from(t.id & 0xffff_ffff).unwrap_or(0);
+                crate::part_view::item(&mut out.things, at, &[], t.colour, parts, key);
+                continue;
             }
+            match t.word {
+                "branch" => {
+                    drawn.form = Form::Rod {
+                        radius: t.half.y,
+                        length: 2.0 * t.half.x,
+                        taper: 1.0,
+                    };
+                    drawn.made = Made::Deadwood;
+                }
+                "stone" | "flake" | "worked stone" | "grit" | "chips" => {
+                    drawn.form = Form::Lump(t.half);
+                }
+                _ => {}
+            }
+            out.things.push(drawn);
         }
     }
 }

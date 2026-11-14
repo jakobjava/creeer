@@ -1,0 +1,53 @@
+// The ground's layers (G2.11, ADR-0040; creeer_art::ground): what covers the bare rock where the
+// ground is drawn, laid in patches over the rock's own colour (geology/rocks.ron). Drawn only:
+// the ground the physics touches is the same with or without them. A dug hole shows the rock it
+// was dug into, with no layer on its walls.
+//
+// To add a layer: a new entry here, or a file of its own in a pack's `ground/` (packs merge the
+// lists by name). The renderer lays at most four, in the order listed (the first lowest).
+// `creeer_tools validate` checks every entry: its token a palette token with a fixed colour, its
+// grounds rocks, its numbers in range.
+//
+// Each layer:
+// - token: the palette token it is drawn in (docs/art-style.md §3; muted and earthy, §4).
+// - on: the grounds it covers (rocks.ron names).
+// - latitude (|°|), elevation (m above the datum), slope (the steepest, °): where it grows, as
+//   a tree species' ranges (flora/trees.ron); it thins out over the last few degrees or metres.
+// - forest: Only (under trees: where a tree species of flora/trees.ron grows), Not (in the
+//   open), or Any.
+// - cover: the share of the ground it covers where it grows (0–1); patch: the size of its
+//   patches (m); grain: the size of its fine structure (m: a blade, a moss cushion, a needle);
+//   density: how thickly it covers within its patches (0–1; 1 hides the ground beneath).
+//
+// Sources: a boreal spruce forest's floor is feather moss (Hylocomium, Pleurozium) over 50–90 %
+// of it and needle litter between (Hart & Chen 2006, Crit. Rev. Plant Sci. 25); in the open,
+// grass. ESTIMATES of cover and patch sizes, to be refined.
+//
+// Tokens: `bark_spruce` stands in for fallen needles and `leaves_spruce` for moss until the
+// palette has tokens of their own (art-style.md changes only with the user's approval).
+[
+    (
+        name: "litter",
+        token: "bark_spruce",
+        on: ["soil", "gravel"],
+        latitude: (20.0, 72.0), elevation: (5.0, 2200.0), slope: 40.0,
+        forest: Only,
+        cover: 0.75, patch: 1.0, grain: 0.012, density: 0.85,
+    ),
+    (
+        name: "moss",
+        token: "leaves_spruce",
+        on: ["soil", "gravel"],
+        latitude: (30.0, 72.0), elevation: (5.0, 2000.0), slope: 45.0,
+        forest: Only,
+        cover: 0.4, patch: 1.4, grain: 0.025, density: 0.55,
+    ),
+    (
+        name: "grass",
+        token: "grass",
+        on: ["soil"],
+        latitude: (0.0, 66.0), elevation: (2.0, 1800.0), slope: 32.0,
+        forest: Not,
+        cover: 0.75, patch: 3.0, grain: 0.006, density: 0.8,
+    ),
+]

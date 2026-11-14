@@ -116,8 +116,17 @@ Subcycling the struck region (ADR-0035) is not what this scene needs: the plank 
 
 1. **The pile's convergence** (G2P, P1): the group at the 500-iteration limit, taken apart on its own saved states (ADR-0024's method: `play/break_probe.rs` can write them).
 2. **Impact substeps for points**, measured on the same states (`docs/adr/0005/points-by-yield-energy.diff`).
-3. **The break's realism** (above): the damping law and the bending capacity of brittle members, each validated on a timber case (ASTM D143 three-point bending against the *Wood Handbook*'s MOR; a measured damping ratio of timber members), before any of it changes the trees and buildings.
+3. **The break's realism: done as a patch, held back** (2026-11-14; ADR-0005, "how wood breaks"; `docs/adr/0005/brittle-elastic-and-wood-damping.diff`). Brittle members break in bending at MOR·W_el, and wood's damping is its own (1 % at 20 Hz, not 120 %). ASTM D143 is met within 0.2 %, a struck bar breaks at 99 % of its breaking moment (47 % before). Held back: *log_bridge*'s CI work at its nailing 133 → 181 (ceiling 142), and at full length the pile it leaves blew up through a hole in the energy guard (233 GJ). Next: the guard's hole and the pile's convergence, then the patch again. (Planned:) the damping law and the bending capacity of brittle members, each validated on a timber case (ASTM D143 three-point bending against the *Wood Handbook*'s MOR; a measured damping ratio of timber members), before any of it changes the trees and buildings.
 4. **The ragdoll laid out clear of what knocked it down** (the character's stream, A4): now pushed out, not thrown, but laid 13 cm inside a crate.
+
+## Part 1b: people on a nailed bridge freeze the game (the bridge site, ADR-0039; measured, not fixed)
+
+The bridge-site stream measured people on *bridge_demo*'s deck at 228,742 Newton iterations in a tick and ticks of 1–10 s. Taken apart (`play/deck_probe.rs`, by hand: the scene as `what_the_bridge_costs` plays it, each slow tick's phases and groups):
+
+- **The bridge breaks under one person.** As the first person (105 kg) steps onto the deck (tick 343), two deck nails are pulled out: their joints carry 1,240 and 1,337 N in withdrawal against a capacity of 706 N. The tick takes 631–1,112 Newton iterations and 229,000–321,000 plastic splits (the deck's joints and members at their capacities). Within four ticks the stringers' members break and the bridge falls into 14 pieces (a 70-node piece and 13 small ones).
+- **The freeze is the pieces.** From then on the man, the 70-node piece and its 13 pieces are one group of 14–17 bodies, stepped in impact substeps (15–40 a tick) at 70–500 Newton iterations each: 32,000–124,000 iterations (summed over the bodies) and 1.3–3 s a tick here.
+- **With the wood patch** (ADR-0005, how wood breaks) the nails are pulled alike (the same tick, 1,240 N), and the bridge then falls into dozens of one-node pieces: the patch does not save it. A member broke at 85 % of its strength in elastic stress with the deck already falling (its dashpot, now 0.2 of its spring's rate in a 0.5 ms substep, the rest).
+- **The cause to find first:** why a person standing on a board pulls its nails with more than his weight. A board pressed down onto its stringers loads its nails in withdrawal only where it lifts (a two-span board loaded in one span lifts its far end by about a tenth of the load). The legs (struts, set each tick: the character's stream, A4) and each step's impact on the deck are the suspects; the solver's share is then the pieces' group (Part 1's pile).
 
 ## Part 2: loose poles at rest
 

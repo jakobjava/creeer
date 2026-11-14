@@ -37,15 +37,16 @@ pub const FACTORY_SIDE: usize = 50;
 pub const PARTS_PER_MACHINE: usize = 4;
 
 /// Meshes used by the demo, registered once.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct DemoMeshes {
     pub cube: MeshId,
     pub cylinder: MeshId,
     pub sphere: MeshId,
     /// The physics sandbox's hulls (`hulls.rs`), at their own size.
     pub hulls: [MeshId; crate::hulls::HULLS],
-    /// The authored models (G1.3b), where the packs have them.
+    /// The packs' authored models (G1.3b), and things as what they are made of (G2.11).
     pub models: crate::models::Models,
+    pub parts: crate::part_meshes::PartMeshes,
 }
 
 impl DemoMeshes {
@@ -62,6 +63,7 @@ impl DemoMeshes {
                 .each_ref()
                 .map(|h| arena.add(&crate::hulls::mesh(h))),
             models: crate::models::register(arena),
+            parts: crate::part_meshes::from_packs(arena),
         }
     }
 }

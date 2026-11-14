@@ -1,0 +1,119 @@
+diff --git a/crates/creeer_physics/src/structure/mod.rs b/crates/creeer_physics/src/structure/mod.rs
+index 673cdf2..27255ce 100644
+--- a/crates/creeer_physics/src/structure/mod.rs
++++ b/crates/creeer_physics/src/structure/mod.rs
+@@ -11,6 +11,8 @@ use rayon::prelude::*;
+ mod added;
+ mod assemble;
+ mod booked;
++#[cfg(test)]
++mod brittle_tests;
+ mod buckling;
+ #[cfg(test)]
+ mod buckling_tests;
+diff --git a/crates/creeer_physics/src/structure/plastic.rs b/crates/creeer_physics/src/structure/plastic.rs
+index 5fe12cf..fb5036a 100644
+--- a/crates/creeer_physics/src/structure/plastic.rs
++++ b/crates/creeer_physics/src/structure/plastic.rs
+@@ -31,6 +31,18 @@
+ //! depth, torsional shear strain over √3) breaks the member once it exceeds the material's
+ //! elongation at break. Necking is not modelled: past its ultimate strength a member flows
+ //! on at it until it breaks, where a real bar would lose strength at its narrowest point.
++//!
++//! **Brittle members** (a material with no elongation at break: wood, stone, concrete, glass,
++//! ice; G2.11, `docs/physics/g2p-validation.md`) break where their stress reaches their
++//! strength, as tables give it:
++//! - in bending at σ·W, the elastic section modulus (bh²/6 for a rectangle), not the plastic
++//!   one: a modulus of rupture is the stress at failure as if the beam were elastic to the end
++//!   (*Wood Handbook* ch. 5, ASTM D143), and on Z a plank carried 1.5 times its moment;
++//! - on their spring's stress alone: their dashpot acts beside the slider, not in series. It
++//!   stands for losses in joints and connections (`Material::damping`), not stress in the
++//!   fibres, and timber is, if anything, stronger under fast loading (the duration-of-load
++//!   effect). In series a plank in an impact's 0.5 ms substeps broke at a quarter of its
++//!   strength. A brittle member flows only in the step it breaks in, so nothing else changes.
+ 
+ use super::Structure;
+ use super::element::{Element, MEASURES, Stiffness};
+@@ -94,14 +106,29 @@ impl Element {
+         } else {
+             (1.0 - (axial / n_p) * (axial / n_p)).max(0.0)
+         };
+-        let (my, mz) = (
+-            sy * sec.plastic_modulus[0] * room,
+-            sy * sec.plastic_modulus[1] * room,
+-        );
++        // A brittle member breaks in bending at its elastic section modulus (module docs).
++        let modulus = if self.brittle() {
++            [sec.i_y / sec.extent[1], sec.i_z / sec.extent[0]]
++        } else {
++            sec.plastic_modulus
++        };
++        let (my, mz) = (sy * modulus[0] * room, sy * modulus[1] * room);
+         let caps = [n_p, sy / 3f64.sqrt() * sec.plastic_torsion, my, my, mz, mz];
+         (caps, force)
+     }
+ 
++    /// Whether the member is brittle (module docs): of a material that breaks without
++    /// elongating, and no joint (a joint's fasteners have their own law, `fastened.rs`).
++    pub(crate) fn brittle(&self) -> bool {
++        !self.is_joint() && self.material.elongation <= 0.0
++    }
++
++    /// The damping its plastic slider sees, of the member's γ = c/β: all of it in series for a
++    /// ductile member, none for a brittle one, whose dashpot acts beside it (module docs).
++    pub(crate) fn slider_gamma(&self, gamma: f64) -> f64 {
++        if self.brittle() { 0.0 } else { gamma }
++    }
++
+     /// What each measure carries before it flows in a step from elastic measures `s_hat`,
+     /// with damping `gamma`: the capacities over 1 + γ, the scaled flows' (`Flow::scaled`)
+     /// bit for bit.
+@@ -212,9 +239,11 @@ impl Element {
+         flows: &mut StepFlows<'_>,
+         guess: &mut Guess,
+     ) -> (f64, f64, [f64; MEASURES]) {
+-        let p = self.damped_split(s, s_hat, gamma, flows, guess);
++        let p = self.damped_split(s, s_hat, self.slider_gamma(gamma), flows, guess);
+         let elastic: [f64; MEASURES] = std::array::from_fn(|m| s[m] - p[m]);
+-        let rate: [f64; MEASURES] = std::array::from_fn(|m| elastic[m] - s_hat[m]);
++        // A brittle member's dashpot acts on its measures whole, beside its slider.
++        let damped = if self.brittle() { s } else { &elastic };
++        let rate: [f64; MEASURES] = std::array::from_fn(|m| damped[m] - s_hat[m]);
+         let stored = self.stiffness.energy(&elastic, &elastic);
+         let damping = gamma * self.stiffness.energy(&rate, &rate);
+         let dissipated = flows.work(self, &p);
+@@ -270,7 +299,7 @@ impl Structure {
+                     ([[Flow::NEVER; MEASURES]; 2], false)
+                 };
+                 let mut step = StepFlows::of(work, index, (&mut flows, &mut built));
+-                let p = e.damped_split(&s, s_hat, gamma, &mut step, &mut guess);
++                let p = e.damped_split(&s, s_hat, e.slider_gamma(gamma), &mut step, &mut guess);
+                 // (Before the member changes: the flows are the step's start's.)
+                 let dissipated = step.work(e, &p);
+                 e.flow_rate = p.map(|p| p / work.h);
+diff --git a/crates/creeer_physics/src/structure/step.rs b/crates/creeer_physics/src/structure/step.rs
+index 0b9953b..cd68c63 100644
+--- a/crates/creeer_physics/src/structure/step.rs
++++ b/crates/creeer_physics/src/structure/step.rs
+@@ -355,7 +355,7 @@ impl ImplicitSolver {
+                     *s -= tau * rate;
+                 }
+                 // The step's plastic limits, from the axial force at its start (`StepFlows`).
+-                *limits = e.limits(s_hat, e.material.damping / beta);
++                *limits = e.limits(s_hat, e.slider_gamma(e.material.damping / beta));
+                 *built = false;
+             });
+     }
+diff --git a/crates/creeer_physics/src/structure/step_flows.rs b/crates/creeer_physics/src/structure/step_flows.rs
+index fbe9002..97559b0 100644
+--- a/crates/creeer_physics/src/structure/step_flows.rs
++++ b/crates/creeer_physics/src/structure/step_flows.rs
+@@ -44,7 +44,7 @@ impl StepFlows<'_> {
+         if !*self.built {
+             let (h, beta) = self.step;
+             let caps = e.capacities(self.s_hat, h);
+-            let gamma = e.material.damping / beta;
++            let gamma = e.slider_gamma(e.material.damping / beta);
+             *self.flows = [caps, caps.map(|f| f.scaled(1.0 + gamma))];
+             *self.built = true;
+         }
