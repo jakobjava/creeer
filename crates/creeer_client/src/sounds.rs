@@ -39,8 +39,12 @@ pub struct Cost {
     pub frames: u64,
     pub total: Duration,
     pub worst: Duration,
-    /// Sounds asked for.
+    /// Sounds asked for, and of each kind: wind, bodies (struck, rolling), breaks, fastenings,
+    /// blows, footsteps (each a command to the mixer: a sound begun, changed or stopped).
     pub sounds: u64,
+    pub kinds: [u64; 6],
+    /// Loading the sound data and opening the device (the first frame's, once).
+    pub opening: Duration,
 }
 
 /// A driving blow to come: when (s, the clock's), and blow `k` of what into what.
@@ -169,19 +173,29 @@ impl Sounds {
             }
             self.out = Some(out);
             self.lib = Some(lib);
+            // (Loading the data and opening the device, once, is not a frame's gathering.)
+            self.cost.opening = start.elapsed();
         }
+        let start = Instant::now();
         self.clock += dt;
         let sent = self.out.as_ref().map_or(0, |o| o.sent);
         if let Some(out) = &mut self.out {
             out.advance(dt);
             out.listen(h.ears.0, h.ears.1);
         }
-        self.air(h);
-        self.bodies(h);
-        self.breaks(h);
-        self.fastenings(h);
-        self.swings(h);
-        self.footsteps(h);
+        let steps: [fn(&mut Self, &Heard<'_>); 6] = [
+            Self::air,
+            Self::bodies,
+            Self::breaks,
+            Self::fastenings,
+            Self::swings,
+            Self::footsteps,
+        ];
+        for (k, step) in steps.into_iter().enumerate() {
+            let before = self.out.as_ref().map_or(0, |o| o.sent);
+            step(self, h);
+            self.cost.kinds[k] += self.out.as_ref().map_or(0, |o| o.sent) - before;
+        }
         let elapsed = start.elapsed();
         self.cost.frames += 1;
         self.cost.total += elapsed;

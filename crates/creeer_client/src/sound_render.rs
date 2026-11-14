@@ -121,7 +121,8 @@ fn played(
     let mean = cost.total.as_secs_f64() / cost.frames.max(1) as f64;
     println!(
         "{}: {:.0} s, {} sounds asked for ({} begun, {} not, {} given way), the mix's peak {:.1} dBFS; \
-         gathering a frame: mean {:.1} µs, worst {:.1} µs over {} frames",
+         gathering a frame: mean {:.1} µs, worst {:.1} µs over {} frames (opening once: {:.1} ms); \
+         commands by kind (wind, bodies, breaks, fastenings, blows, steps): {:?}",
         path.display(),
         seconds,
         cost.sounds,
@@ -132,6 +133,8 @@ fn played(
         mean * 1e6,
         cost.worst.as_secs_f64() * 1e6,
         cost.frames,
+        cost.opening.as_secs_f64() * 1e3,
+        cost.kinds,
     );
     Ok(())
 }

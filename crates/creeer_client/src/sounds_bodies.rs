@@ -301,7 +301,8 @@ pub fn blow(
     ))
 }
 
-/// A change of velocity gravity does not explain, below which nothing is heard (m/s).
+/// A change of velocity beyond what holding a body up against gravity gives it, below which
+/// nothing is heard (m/s).
 const STRUCK: f64 = 0.3;
 
 impl Sounds {
@@ -336,9 +337,13 @@ impl Sounds {
                 if let Some((v0, t0)) = was {
                     let dt = f64::from(s.tick.saturating_sub(t0))
                         / f64::from(creeer_net::channel::TICK_RATE);
+                    // What its contacts gave it: its change of velocity less gravity's. A body at
+                    // rest is given gravity's back every step (g·dt, held up): only a change
+                    // beyond that is a blow.
                     let up = p.normalize_or(DVec3::Y);
-                    let dv = v - (v0 - up * 9.81 * dt);
-                    if dt > 0.0 && dt < 0.2 && dv.length() > STRUCK {
+                    let support = 9.81 * dt;
+                    let dv = v - v0 + up * support;
+                    if dt > 0.0 && dt < 0.2 && dv.length() - support > STRUCK {
                         struck.push((*id, p, dv));
                     }
                 }
