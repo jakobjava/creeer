@@ -1,4 +1,4 @@
-//! The meshes things are drawn with (G2.11, ADR-0037): each wooden token's worked round part and
+//! The meshes things are drawn with (G2.11, ADR-0041): each wooden token's worked round part and
 //! sawn board, each species' log, deadwood and stones, registered once from the palette and the
 //! species (`creeer_render::parts`), found by what a thing is made of.
 
@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 const CUT: &str = "wood_cut";
 /// The token deadwood lying about is drawn in: old, greyed wood.
 const DEADWOOD: &str = "timber_weathered";
-/// The token built members are drawn in, until the frame tells their wood (ADR-0039, Limits).
+/// The token built members are drawn in, until the frame tells their wood (ADR-0041, Limits).
 const BUILT: &str = "timber";
 /// The stone pattern's number in the shader (`surface.wgsl`'s `PATTERN_STONE`).
 const STONE: u8 = 4;
@@ -29,8 +29,10 @@ pub struct PartMeshes {
     foliage: Vec<[MeshId; 3]>,
     /// A dead branch lying about.
     pub deadwood: Option<MeshId>,
-    /// A built structure's member (`part_view::Made::Built`): `timber` worked round.
+    /// A built structure's member (`part_view::Made::Built`): `timber` worked round, and sawn
+    /// (a broken board's piece, `part_fit.rs`).
     pub built: Option<MeshId>,
+    pub built_board: Option<MeshId>,
     /// A stone, in its instance's colour (its rock's), speckled.
     pub stone: Option<MeshId>,
     /// The materials' tokens by their colour (an item's colour is its material's token's: what
@@ -92,6 +94,7 @@ impl PartMeshes {
             arena.add_levels(&parts::cylinder(faces), round())
         });
         out.built = index(BUILT).and_then(|t| out.round.get(&t).copied());
+        out.built_board = index(BUILT).and_then(|t| out.board.get(&t).copied());
         out.stone = Some(arena.add_levels(
             &parts::patterned_sphere(STONE),
             creeer_render::mesh::Round::Sphere,

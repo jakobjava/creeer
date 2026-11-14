@@ -1,4 +1,4 @@
-//! How trees are drawn (G1.7, ADR-0031; G2.11, ADR-0037; `tree_view.rs` gathers them): the stem
+//! How trees are drawn (G1.7, ADR-0031; G2.11, ADR-0041; `tree_view.rs` gathers them): the stem
 //! and branches where the tree's members are, as logs with their species' bark and cut ends,
 //! tapering as the stem does (`part_view.rs`); the foliage as masses where the crown is: a
 //! conifer's (a cone's crown) in tiers drooping from its whorls, others' in lumpy clumps. Finer

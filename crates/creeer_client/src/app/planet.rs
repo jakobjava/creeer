@@ -2,7 +2,8 @@
 //! singleplayer game, or a dedicated server's), leave it, walk or fly, and draw a frame.
 
 use super::*;
-use crate::planet_ui::{self, Request};
+use crate::bindings::Action;
+use crate::planet_ui::Request;
 use crate::planet_view::PlanetView;
 
 /// Walking speed (m/s), and running.
@@ -38,77 +39,75 @@ impl Running {
         Ok(())
     }
 
-    /// A key for the planet sandbox: V walks or flies; 1 to 4 take a tool in hand (G1.4c: the
-    /// tools' table's, until G1.6's inventory), the same again or 0 put it away; G takes what
-    /// the crosshair is on in both hands, or puts down what they hold (G1.4f); E, F and I put
-    /// away, put in and show what is carried (G1.6a, `inventory_ui.rs`); the left click strikes
-    /// with what the hands hold, T throws it, X strips bark from it, B binds the head the
-    /// crosshair is on to it (G1.6d). Returns whether it
-    /// was one.
-    pub(super) fn planet_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
-        use winit::keyboard::KeyCode;
+    /// An action of the planet game (the controls' table, `bindings.rs`): walk or fly; take what
+    /// the crosshair is on in both hands, or put down what they hold (G1.4f); put away, put in
+    /// and show what is carried (G1.6a, `inventory_ui.rs`); throw, strip bark, bind a head on
+    /// (G1.6d); fasten, set a post, take a joint apart, choose a fastener (G2); a tool in hand
+    /// (G1.4c), the same again or put away. Returns whether it was one.
+    pub(super) fn planet_act(&mut self, action: Action) -> bool {
         let Some(planet) = &mut self.planet else {
             return false;
         };
-        let tool = match code {
-            KeyCode::KeyV => {
+        let camera = &self.camera;
+        let tool = match action {
+            Action::WalkOrFly => {
                 planet.walking = !planet.walking;
                 return true;
             }
-            KeyCode::KeyG => {
-                planet.grab_or_drop(&self.camera);
+            Action::Take => {
+                planet.grab_or_drop(camera);
                 return true;
             }
-            KeyCode::KeyE => {
-                planet.stow(&self.camera);
+            Action::Pocket => {
+                planet.stow(camera);
                 return true;
             }
-            KeyCode::KeyF => {
-                planet.put_in_or_open(&self.camera);
+            Action::PutIn => {
+                planet.put_in_or_open(camera);
                 return true;
             }
-            KeyCode::KeyI => {
+            Action::Inventory => {
                 planet.inventory = !planet.inventory;
                 return true;
             }
-            KeyCode::KeyT => {
-                planet.send(creeer_net::message::Command::Throw(self.camera.forward()));
+            Action::Throw => {
+                planet.send(creeer_net::message::Command::Throw(camera.forward()));
                 return true;
             }
             // First person, or the camera behind to look at the build (G2.10).
-            KeyCode::F5 => {
+            Action::Camera => {
                 planet.first_person = !planet.first_person;
                 return true;
             }
-            KeyCode::KeyX => {
+            Action::Strip => {
                 planet.send(creeer_net::message::Command::Strip);
                 return true;
             }
-            KeyCode::KeyJ => {
-                planet.fasten(&self.camera);
+            Action::Fasten => {
+                planet.fasten(camera);
                 return true;
             }
-            KeyCode::KeyP => {
-                planet.set_post(&self.camera);
+            Action::SetPost => {
+                planet.set_post(camera);
                 return true;
             }
-            KeyCode::KeyU => {
-                planet.unfasten(&self.camera);
+            Action::Unfasten => {
+                planet.unfasten(camera);
                 return true;
             }
-            KeyCode::KeyK => {
+            Action::NextFastener => {
                 planet.fastening.next();
                 return true;
             }
-            KeyCode::KeyB => {
-                planet.bind(&self.camera);
+            Action::Bind => {
+                planet.bind(camera);
                 return true;
             }
-            KeyCode::Digit1 => Some(0),
-            KeyCode::Digit2 => Some(1),
-            KeyCode::Digit3 => Some(2),
-            KeyCode::Digit4 => Some(3),
-            KeyCode::Digit0 => None,
+            Action::Tool1 => Some(0),
+            Action::Tool2 => Some(1),
+            Action::Tool3 => Some(2),
+            Action::Tool4 => Some(3),
+            Action::ToolAway => None,
             _ => return false,
         };
         let tool = if tool == planet.wielding { None } else { tool };
@@ -123,7 +122,7 @@ impl Running {
     }
 
     /// Back to the tech demo.
-    fn leave_planet(&mut self) {
+    pub(super) fn leave_planet(&mut self) {
         self.planet = None;
         self.camera = demo::camera_preset("overview", self.scene_origin()).expect("preset exists");
         self.lighting_key = None;
@@ -185,12 +184,11 @@ impl Running {
             Overlay::Off,
         );
         if let Some(people) = &mut self.people {
-            // In first person the player's own body is not drawn: the eyes are in it (G2.10).
+            // In first person the player's own body is seen from within, its head sunk into it
+            // (G2.11: their own arms and hands at work; not drawn, the part floated).
             let own = (planet.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-            let drawn_people: Vec<_> = (snapshot.people.iter())
-                .filter(|p| !(planet.first_person && Some(p.key) == own))
-                .cloned()
-                .collect();
+            people.first_person = own.filter(|_| planet.first_person);
+            let drawn_people = snapshot.people.clone();
             let ground = crate::people_ground::PlanetGround {
                 terrain: &planet.terrain,
             };
@@ -210,6 +208,10 @@ impl Running {
             }
         }
         self.scene_build_times.push(build_start.elapsed());
+        // What is heard of this frame (ADR-0037; the people's feet as just drawn).
+        let mut sound = std::mem::take(&mut planet.sound);
+        sound.frame(planet, &self.camera, self.people.as_ref(), dt);
+        planet.sound = sound;
 
         // Lighting: colours from the atmosphere for the sun's elevation here (costly, so only
         // when it changed), the direction every frame.
@@ -238,27 +240,28 @@ impl Running {
             )
         });
         let mut request = Request::None;
+        let mut asked = crate::menu::Asked::default();
         let mut output = ctx.run_ui(raw_input, |ui| {
-            perf_window(
+            let perf = PerfInfo {
+                frame_times: &self.frame_times,
+                tick_times: &tick_times,
+                tick_rate_hz: TICK_RATE_HZ,
+                tick,
+                adapter: &self.adapter_label,
+            };
+            request = crate::hud::draw(
                 ui.ctx(),
-                &PerfInfo {
-                    frame_times: &self.frame_times,
-                    tick_times: &tick_times,
-                    tick_rate_hz: TICK_RATE_HZ,
-                    tick,
-                    adapter: &self.adapter_label,
-                },
+                planet,
+                &self.camera,
+                (&perf, &mut self.profiler),
+                (&self.game, &mut self.screen),
             );
-            request = planet_ui::window(ui.ctx(), planet, &self.camera);
-            crate::inventory_ui::window(ui.ctx(), planet, &self.camera);
-            let target = crate::planet_aim::target(planet, &self.camera);
-            planet_ui::crosshair(ui.ctx(), target.as_ref());
-            planet_ui::hold_hint(ui.ctx(), planet.holding.hint());
-            planet_ui::work_ring(ui.ctx(), planet.session.connection.noted.as_ref());
-            crate::inventory_ui::told(ui.ctx(), planet, target.as_ref());
-            crate::inventory_ui::vitals(ui.ctx(), &planet.session.connection);
-            self.profiler
-                .window(ui.ctx(), Some(&mut planet.session.connection));
+            asked = crate::menu::draw(
+                ui.ctx(),
+                &mut self.screen,
+                &mut self.game,
+                Some(&mut *planet),
+            );
         });
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);
@@ -288,5 +291,6 @@ impl Running {
                 }
             }
         }
+        self.menu_asked(asked);
     }
 }

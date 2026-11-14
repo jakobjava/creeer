@@ -26,7 +26,7 @@ const REGATHER: f64 = 10.0;
 /// Beyond `LAYERS`, stems thinner than this (m) are not drawn.
 const FAR_STEMS: f64 = 0.15;
 /// A stem drawn near is this many logs (their linear taper within a centimetre of the stem's:
-/// ADR-0037).
+/// ADR-0041).
 const SEGMENTS: usize = 3;
 /// Between `BRANCHES` and `LAYERS`, a crown is this many tiers or clumps.
 const MASSES: usize = 5;

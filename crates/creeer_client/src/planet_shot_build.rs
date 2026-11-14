@@ -15,7 +15,6 @@ use creeer_net::message::{Command, Target};
 use creeer_render::Camera;
 use creeer_terrain::edits::{Brush, Edit};
 use std::time::{Duration, Instant};
-use winit::keyboard::KeyCode;
 
 /// The views this module takes.
 pub(crate) const VIEWS: [&str; 2] = ["post", "rail"];
@@ -124,7 +123,7 @@ pub(crate) fn camera(view: &mut PlanetView, name: &str) -> Result<Camera, String
         return Err(format!("the part was not taken: {told:?}"));
     }
     if !lying {
-        view.holding.key(KeyCode::KeyR, true);
+        view.holding.key(crate::bindings::Action::StandOrLay, true);
     }
     hold(view, target, SETTLE)
 }

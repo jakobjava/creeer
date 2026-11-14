@@ -1,4 +1,4 @@
-//! Parts' meshes (G2.11, ADR-0037): the unit primitives' levels of detail (`primitives.rs`) with
+//! Parts' meshes (G2.11, ADR-0041): the unit primitives' levels of detail (`primitives.rs`) with
 //! their faces naming palette tokens, so a pole, a sawn board or a log is drawn with the full
 //! surface of `art-style.md` §6 (its wood's grain, edge wear, age and grime), the same mesh at
 //! every size. A part's place, tone and taper are its instance's ([`crate::Material::part`]).

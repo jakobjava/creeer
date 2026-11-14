@@ -31,7 +31,7 @@ pub struct MeshVertex {
 /// The token of a vertex drawn in its instance's own material (procedural meshes).
 pub const NO_TOKEN: u16 = u16::MAX;
 
-/// Marks the token of a part's vertex (G2.11, ADR-0037): a unit primitive naming a palette token
+/// Marks the token of a part's vertex (G2.11, ADR-0041): a unit primitive naming a palette token
 /// (the token is the bits below), bevelled as a procedural primitive is, its grain and wear found
 /// from where it is drawn (`mesh.wgsl`), its tone, seed and taper its instance's
 /// ([`crate::Material::part`]).

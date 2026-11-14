@@ -195,6 +195,8 @@ impl ServerWorld {
             }
             self.changed.extend([by, c.load]);
             self.items.changed.insert(by);
+            // The nails driven while it was held hold it now (G2.11, `nailing.rs`).
+            self.make_driven(by, c.load);
         }
     }
 

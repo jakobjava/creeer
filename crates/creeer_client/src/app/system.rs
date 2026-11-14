@@ -1,11 +1,11 @@
 //! The solar-system sandbox mode of the app (F4): enter, leave, input and a frame.
 
 use super::*;
+use crate::bindings::Action;
 use crate::system_cmd::Command;
 use crate::system_frame;
 use crate::system_ui::{self, Request, WARPS};
 use crate::system_view::SystemView;
-use winit::keyboard::KeyCode;
 
 /// Generates the default system and builds its universe.
 pub fn load_universe() -> Result<creeer_sim::Universe, String> {
@@ -41,25 +41,25 @@ impl Running {
         self.lighting_key = None;
     }
 
-    /// A key pressed in the sandbox; returns whether it was used.
-    pub(super) fn system_key(&mut self, code: KeyCode) -> bool {
+    /// An action of the solar-system sandbox (the controls' table); whether it was one.
+    pub(super) fn system_act(&mut self, action: Action) -> bool {
         let Some(view) = &mut self.system else {
             return false;
         };
         let warp = view.snapshot().current.requested_warp;
-        match code {
-            KeyCode::KeyM => view.map = !view.map,
-            KeyCode::Period => {
+        match action {
+            Action::Map => view.map = !view.map,
+            Action::WarpUp => {
                 if let Some(&w) = WARPS.iter().find(|&&w| w > warp) {
                     view.send(Command::Warp(w));
                 }
             }
-            KeyCode::Comma => {
+            Action::WarpDown => {
                 if let Some(&w) = WARPS.iter().rev().find(|&&w| w < warp) {
                     view.send(Command::Warp(w));
                 }
             }
-            KeyCode::KeyB => {
+            Action::Engine => {
                 view.engine.on = !view.engine.on;
                 view.send(Command::Engine(view.engine));
             }
@@ -128,7 +128,9 @@ impl Running {
         let ctx = self.egui_ctx.clone();
         let tick_times = view.sim.tick_times();
         let mut request = Request::None;
+        let mut asked = crate::menu::Asked::default();
         let mut output = ctx.run_ui(raw_input, |ui| {
+            asked = crate::menu::draw(ui.ctx(), &mut self.screen, &mut self.game, None);
             perf_window(
                 ui.ctx(),
                 &PerfInfo {
@@ -173,6 +175,7 @@ impl Running {
         if request == Request::Leave {
             self.leave_system();
         }
+        self.menu_asked(asked);
     }
 
     /// Mouse motion on the map turns its camera.

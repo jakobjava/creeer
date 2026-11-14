@@ -251,19 +251,19 @@ impl PlanetSession {
                 // Drawn with its person.
                 Kind::Segment { .. } => {}
                 // An item's hull (a stone, a rod, a made thing's pieces: G1.6c, G2.11) as what it
-                // is (`part_view.rs`); the sandbox's other hulls as the ball around them.
+                // is (`part_view.rs`); a colourless one, a broken structure's lone piece, fitted
+                // as its member's piece (`part_fit.rs`).
                 Kind::Body(Shape::Hull(corners), matter) => {
                     if in_hand.contains(id) {
                         continue;
                     }
                     let parts = c.items.get(id).map_or(&[][..], |l| l.parts.as_slice());
+                    let at = (p, q);
                     if !parts.is_empty() || matter.colour.is_some() {
                         let colour = matter.colour.unwrap_or([128, 120, 110]);
-                        let at = (p, q);
                         crate::part_view::item(&mut out.things, at, corners, colour, parts, id.0);
                     } else {
-                        let radius = corners.iter().map(|v| v.length()).fold(0.0, f64::max);
-                        out.spheres.push((p, radius));
+                        out.things.extend(crate::part_fit::piece(id.0, at, corners));
                     }
                 }
                 // Drawn as their trees (`tree_view.rs`).

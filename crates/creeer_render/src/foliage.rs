@@ -1,4 +1,4 @@
-//! Foliage's meshes (G2.11, ADR-0037; `art-style.md` §8: "masses of foliage in clumps, not
+//! Foliage's meshes (G2.11, ADR-0041; `art-style.md` §8: "masses of foliage in clumps, not
 //! individual leaves; dark undersides from AO"): a clump, a lumpy ball of smaller lumps, for a
 //! broadleaf's or a pine's crown; a tier, a conifer's whorl of branches drooping to their tips,
 //! for a spruce; and a spire, a conifer's whole crown of tiers in one mesh, for one far off.

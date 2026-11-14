@@ -75,12 +75,14 @@ fn swept(link: Option<Conditions>) -> Held {
     };
     let mut out = Held::default();
     let mut last: Option<DVec3> = None;
+    let mut asked = None;
     for tick in 0..300u32 {
         let t = f64::from(tick) / 60.0;
         let view = view_at(t);
         let client = &mut game.clients[0].0;
         let surface = client.surface_aimed(view, |_, _, _| None);
-        let hold = client.place_hold(view, surface, (0.0, 0.0, 0.0));
+        let hold = client.place_hold(view, surface, (0.0, 0.0, 0.0), asked);
+        asked = hold.map(|h| h.turn);
         client.set_hold(hold);
         let ahead = if (1.0..4.0).contains(&t) {
             (view * DVec3::NEG_Z).reject_from(up).normalize() * 3.0
@@ -140,7 +142,7 @@ fn a_stick_held_in_first_person_stays_put_as_the_view_sweeps_and_walks() {
 }
 
 /// 100–130 ms each way, one packet in twenty lost.
-fn slow() -> Conditions {
+pub(super) fn slow() -> Conditions {
     Conditions {
         latency: Duration::from_millis(100),
         jitter: Duration::from_millis(30),

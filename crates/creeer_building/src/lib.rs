@@ -7,6 +7,7 @@ mod assembly_tests;
 #[cfg(test)]
 mod faces_tests;
 pub mod fasteners;
+pub mod hammering;
 pub mod law;
 #[cfg(test)]
 mod self_contact_tests;

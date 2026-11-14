@@ -324,6 +324,10 @@ impl Coupling for Contacts {
         self.left.take()
     }
 
+    fn owed(&mut self, states: &[MemberState<'_>]) -> f64 {
+        self.owed_energy(states)
+    }
+
     fn project(&mut self, members: &mut [crate::structure::group::Member<'_>]) {
         self.joints.project(members);
     }

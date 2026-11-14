@@ -1,4 +1,4 @@
-# ADR-0039: Things as drawn: parts, logs, stones and trees (G2.11, stream A2)
+# ADR-0041: Things as drawn: parts, logs, stones and trees (G2.11, stream A2)
 
 **Status:** in progress (2026-11-14, G2.11 A2).
 
@@ -28,6 +28,7 @@
 4. **Trees are drawn where their members are, as what they are** (`tree_draw.rs`). The stem in tapering logs (three near, one far: a linear taper within a centimetre of the stem's curve), each with its species' bark and `wood_cut` ends (a stump's cut, a bucked log's ends), the branches as tapering branches. Foliage as masses: a conifer's (a cone's crown) as tiers drooping from its whorls to pointed tips, others' as lumpy clumps along their branches; at mid distance a crown of tiers or clumps over its outline; far, one spire or one clump. Each foliage mesh carries its baked occlusion (dark undersides, darker creases) and tones per lump or tip (`creeer_render::foliage`).
 5. **A body that becomes a structure is told again** (`building_parts.rs`, `make_built`): nailing two parts left clients drawing the first as its item's hull at its first node, the second gone, until it was let go.
 6. **Built members are drawn as wood.** A structure with fastened joints (members of radius 0 in its `Frame`) was built by hand, and every part G2 builds with is wood (`building_parts.rs` refuses anything else): its members are drawn round in `timber`, at their radius, each its own tone. Until the protocol tells a member's wood and profile (Limits), a log's bark and a sill's square section are not drawn once built, and a steel frame (no fastened joints) stays a tube.
+7. **A broken structure's lone pieces are fitted** (`part_fit.rs`). A built structure collides by each member's halves about its nodes (a round member's half a prism of its section, a board's a box: `creeer_building`'s `assemble`); a piece of one node that breaks free is a rigid body of that hull, told with no colour, and was drawn as its bounding ball: a collapse was a heap of large dark balls (the bridge-site stream's finding). The hull is fitted now: its axes the eigenvectors of its corners' spread (Jacobi's rotations), round about the axis its corners lie most evenly far from (within 1 %, twelve corners at least: a box's eight are as far from each of its axes), else a block, in `timber`.
 
 ## Measured and rejected
 

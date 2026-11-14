@@ -1,4 +1,4 @@
-//! Things drawn as what they are (G2.11, ADR-0037): a rod round in its wood, a board sawn, a
+//! Things drawn as what they are (G2.11, ADR-0041): a rod round in its wood, a board sawn, a
 //! stone a speckled lump in its rock's colour, a made tool its haft and head, a dead branch with
 //! its bark. The drawn shape is the simulated one (`art-style.md` §2): a rod's hull is its
 //! sixteen-sided prism (`creeer_server`'s `item_bodies.rs`), drawn as the round it stands for;
@@ -34,7 +34,7 @@ pub enum Made {
     /// Dead wood lying about.
     Deadwood,
     /// A built structure's member: the frame tells no member's wood, and every part G2 builds
-    /// with is wood (`creeer_server`'s `building_parts.rs`), so `timber` (ADR-0039, Limits).
+    /// with is wood (`creeer_server`'s `building_parts.rs`), so `timber` (ADR-0041, Limits).
     Built,
 }
 
@@ -209,8 +209,11 @@ pub fn placed(thing: &Thing, meshes: &PartMeshes) -> Option<(MeshId, Frame64, Ve
                 taper as f32,
             ))
         }
-        (Form::Block(half), Made::Colour(c)) => Some((
-            meshes.board_of(c)?,
+        (Form::Block(half), made @ (Made::Colour(_) | Made::Built)) => Some((
+            match made {
+                Made::Colour(c) => meshes.board_of(c)?,
+                _ => meshes.built_board?,
+            },
             Frame64::new(thing.centre, thing.turn),
             (half * 2.0).as_vec3(),
             1.0,

@@ -19,6 +19,8 @@
 //! `creeer_client --style-board <file.png>` and `creeer_client --shimmer [--frames <n>]` judge
 //! the look (G1.3): the crate at its ages, and how much of the image flickers in slow motion.
 //! `creeer_client --icon <model> [--out <dir>]` renders an item's icons (G1.3h).
+//! `creeer_client --sound <dir>` and `--sound-play <dir>` render sound to WAV files without a
+//! sound device (ADR-0037, `sound_render.rs`).
 //!
 //! The F3 planet sandbox (button in the Sandbox window) streams the reference planet around the
 //! camera, with physics, day and night, digging and filling. Headless:
@@ -38,6 +40,11 @@
 
 mod animate;
 mod app;
+mod bindings;
+mod bindings_keys;
+mod build_play;
+mod build_play_scripts;
+mod build_play_shot;
 mod circuit_bench;
 mod content;
 mod control_panel;
@@ -52,10 +59,17 @@ mod headless;
 mod held;
 mod held_load;
 mod holding;
+mod hud;
+mod hud_crosshair;
+mod hud_feedback;
+mod hud_hands;
+mod hud_seen;
+mod hud_shot;
 mod hulls;
 mod icon_image;
 mod icons;
 mod inventory_ui;
+mod kit_ui;
 mod lab;
 mod lab_ellingham;
 mod lab_plots;
@@ -63,7 +77,10 @@ mod lab_runs;
 #[cfg(test)]
 mod lab_tests;
 mod loose_view;
+mod menu;
+mod menu_controls;
 mod models;
+mod part_fit;
 mod part_meshes;
 mod part_view;
 mod people;
@@ -99,8 +116,15 @@ mod powerhouse_panel;
 mod profiler_ui;
 #[cfg(test)]
 mod profiler_ui_tests;
+mod prompts;
 mod sandbox;
+mod settings;
 mod shimmer;
+mod sound_render;
+mod sounds;
+mod sounds_blows;
+mod sounds_bodies;
+mod sounds_things;
 #[cfg(test)]
 mod struck_bench_tests;
 mod style_board;
@@ -136,9 +160,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{
-    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
-};
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, Window, WindowId};
@@ -196,6 +218,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.iter().any(|a| a == "--planet-bench") {
         return planet_shot::descent_bench(&args);
     }
+    if args.iter().any(|a| a == "--build-play") {
+        return build_play::run(&args);
+    }
     if args.iter().any(|a| a == "--planet") {
         return planet_shot::run(&args);
     }
@@ -207,6 +232,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--shimmer") {
         return shimmer::run(&args);
+    }
+    if args.iter().any(|a| a == "--sound" || a == "--sound-play") {
+        return sound_render::run(&args);
     }
     if args.iter().any(|a| a == "--system-bench") {
         return system_bench::run();

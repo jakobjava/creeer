@@ -243,7 +243,7 @@ impl Predicted {
             a.retain(&kept);
         }
         if world.bodies.is_empty() {
-            world.add(character::body(
+            world.add_copy(character::body(
                 state.position(),
                 state.position().normalize(),
                 DT,

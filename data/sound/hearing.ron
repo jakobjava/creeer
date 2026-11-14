@@ -1,0 +1,32 @@
+// How the game hears (ADR-0037): the mix, the listener's range, and what the client cannot be
+// told yet. Changing a value here changes every sound alike.
+//
+// - `voices`: the most sounds at once (the quietest gives way).
+// - `floor`: the quietest scene's loudness (dB SPL) heard as `headroom` dB below full scale. The
+//   mix's window rides on the loudest sound heard (Frostbite's "HDR audio", DICE: GDC 2009), so a
+//   quiet wood is heard and a hammer by the ear is not crushed; sounds more than `window` dB below
+//   the loudest are not begun, and the window falls back over `release` seconds.
+// - `threshold`: the quietest sound begun at all, at the ears (dB SPL; 0 is hearing's threshold).
+// - `range`: nothing further than this is gathered (m).
+// - `structures`: the material a built structure's members sound as (the client is not told a
+//   member's material yet: ADR-0037, Limits); `tools`: a tool's head's.
+// - `heel`: the foot's effective mass at the heel's strike (kg) and its speed then (m/s; Perry
+//   and Burnfield, Gait Analysis: about 0.3–0.6 m/s; estimates), and the sole's modulus (Pa:
+//   rubber and leather soling, 5–20 MPa).
+// - `wind`: the mean wind (m/s) at 10 m, the ground's roughness length (m: open grassland 0.03,
+//   Wieringa 1993), and its sound at a metre's reference at 5 m/s (dB SPL; an estimate).
+// - `default_crack`: how a material without a `crack` in materials.ron breaks.
+(
+    voices: 32,
+    floor: 70.0,
+    headroom: 6.0,
+    window: 60.0,
+    release: 2.0,
+    threshold: 0.0,
+    range: 300.0,
+    structures: "spruce_green",
+    tools: "steel_s235",
+    heel: (mass: 6.0, speed: 0.45, sole: 10e6),
+    wind: (speed: 5.0, roughness: 0.03, level: 45.0),
+    default_crack: (seconds: 0.02, grains: 40.0, exponent: 1.5, vibration: 0.05),
+)

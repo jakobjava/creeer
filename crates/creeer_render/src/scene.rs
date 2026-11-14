@@ -65,7 +65,7 @@ impl Material {
         }
     }
 
-    /// A part's (G2.11, ADR-0037; a mesh of [`crate::parts`], whose tokens give its colour,
+    /// A part's (G2.11, ADR-0041; a mesh of [`crate::parts`], whose tokens give its colour,
     /// roughness and pattern): its tone (0–1: its token's colour ±18 %, `art-style.md` §6), a
     /// seed (0–1) for where its grain lies, and its taper (its top's radius over its bottom's;
     /// 1 for none). They reach the shader as the instance's linear colour, which a part's

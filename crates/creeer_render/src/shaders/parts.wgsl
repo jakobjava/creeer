@@ -1,4 +1,4 @@
-// Parts' surfaces (G2.11, ADR-0037): a wooden part's pattern as a solid texture, found from
+// Parts' surfaces (G2.11, ADR-0041): a wooden part's pattern as a solid texture, found from
 // where a fragment lies in the wood (after Perlin 1985 and Peachey 1985): a stem's growth rings
 // are cylinders about its pith, so a pole's side shows its fibres running along it, its cut
 // ends the rings, and a sawn board the rings cut across where it was sawn from its log. Bark is
