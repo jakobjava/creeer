@@ -1,8 +1,8 @@
-// Terrain chunks (ADR-0006): rock colours per vertex with a soft triplanar detail texture,
-// lit by the sun as it reaches each point through the atmosphere (so the night side is dark
-// and the terminator glows), by the sky for the sun's elevation there, with sun shadows and
-// baked sky occlusion, and seen through the air between it and the camera (aerial
-// perspective). Positions are camera-relative.
+// Terrain chunks (ADR-0006): the rock's colour per vertex and the ground's layers over it, with
+// procedural detail and a fine relief (`ground.wgsl`, ADR-0037), lit by the sun as it reaches
+// each point through the atmosphere (so the night side is dark and the terminator glows), by the
+// sky for the sun's elevation there, with sun shadows and baked sky occlusion, and seen through
+// the air between it and the camera (aerial perspective). Positions are camera-relative.
 
 @group(1) @binding(0) var shadow_map: texture_depth_2d_array;
 @group(1) @binding(1) var shadow_sampler: sampler_comparison;
@@ -20,6 +20,8 @@ struct VertexIn {
     @location(3) coarse_normal: vec4<f32>,
     // Distance along `normal` to the next coarser level's surface (m).
     @location(4) morph: f32,
+    // The share of the ground each of its four layers covers here.
+    @location(8) cover: vec4<f32>,
 };
 
 struct InstanceIn {
@@ -43,12 +45,11 @@ struct VertexOut {
     @location(3) color: vec3<f32>,
     // x: roughness, y: openness.
     @location(4) material: vec2<f32>,
+    @location(5) cover: vec4<f32>,
 };
 
 // Steps of the aerial-perspective ray march.
 const AIR_STEPS: u32 = 10u;
-// Period of the detail texture (m); it divides PATTERN_PERIOD (terrain_pass.rs, 1024 m).
-const DETAIL_PERIOD: f32 = 32.0;
 
 fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     let low = c / 12.92;
@@ -67,50 +68,8 @@ fn vs_main(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.local = v.position + i.pattern.xyz;
     out.color = srgb_to_linear(v.color.rgb);
     out.material = vec2<f32>(v.color.a, clamp(v.normal.w, 0.0, 1.0));
+    out.cover = v.cover;
     return out;
-}
-
-/// Hash of a lattice point, wrapped to `cells` per period, in [0, 1).
-fn lattice(p: vec3<i32>, cells: i32) -> f32 {
-    let q = vec3<u32>(((p % cells) + cells) % cells);
-    var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u) ^ (q.z * 0xcb1ab31fu);
-    h = (h ^ (h >> 15u)) * 0x2c1b3c6du;
-    h = (h ^ (h >> 12u)) * 0x297a2d39u;
-    return f32(h ^ (h >> 15u)) / 4294967296.0;
-}
-
-/// Value noise in [0, 1] with `cells` cells per period, smoothly interpolated in 3D: no
-/// projection, so it never stretches on slopes.
-fn value_noise(p: vec3<f32>, cells: i32) -> f32 {
-    let cell = floor(p);
-    let f = p - cell;
-    let w = f * f * (3.0 - 2.0 * f);
-    let c = vec3<i32>(cell);
-    let x00 = mix(lattice(c, cells), lattice(c + vec3<i32>(1, 0, 0), cells), w.x);
-    let x10 = mix(lattice(c + vec3<i32>(0, 1, 0), cells), lattice(c + vec3<i32>(1, 1, 0), cells), w.x);
-    let x01 = mix(lattice(c + vec3<i32>(0, 0, 1), cells), lattice(c + vec3<i32>(1, 0, 1), cells), w.x);
-    let x11 = mix(lattice(c + vec3<i32>(0, 1, 1), cells), lattice(c + vec3<i32>(1, 1, 1), cells), w.x);
-    return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z);
-}
-
-/// Soft detail in about [−1, 1]: three octaves (4 m, 1 m, 25 cm), each faded out where a
-/// pixel covers more than half its cells (no shimmer on distant terrain).
-fn detail(local: vec3<f32>) -> f32 {
-    let p = local / DETAIL_PERIOD;
-    let footprint = max(length(fwidth(local)), 1e-4);
-    var sum = 0.0;
-    var amplitude = 0.5;
-    var cells = 8;
-    for (var octave = 0; octave < 3; octave++) {
-        let size = DETAIL_PERIOD / f32(cells);
-        let fade = clamp(size / footprint - 1.0, 0.0, 1.0);
-        if fade > 0.0 {
-            sum += (value_noise(p * f32(cells), cells) * 2.0 - 1.0) * amplitude * fade;
-        }
-        amplitude *= 0.6;
-        cells *= 4;
-    }
-    return sum;
 }
 
 /// Cosine-weighted sky radiance for a sun cosine `mu_s` against the local vertical
@@ -123,12 +82,16 @@ fn sky_radiance(mu_s: f32) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let n = normalize(in.normal);
+    let smooth_normal = normalize(in.normal);
+    let footprint = max(length(fwidth(in.local)), 1e-4);
+    let ground = ground_at(in.local, in.color, in.cover, footprint);
+    // The fine relief turns the normal the light sees (not the shadows' offset).
+    let n = relief(smooth_normal, in.world, ground.height);
     let v = normalize(-in.world);
     let l = globals.sun_direction.xyz;
     let roughness = clamp(in.material.x, 0.045, 1.0);
     let openness = in.material.y;
-    let base = in.color * (1.0 + 0.35 * detail(in.local));
+    let base = ground.colour;
 
     var sun = globals.sun_color.rgb;
     var sky = globals.sky_ambient.rgb;
@@ -150,8 +113,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         up = normalize(globals.up.xyz * r0 + in.world);
     }
     var visibility = 0.0;
-    if dot(n, l) > 0.0 {
-        visibility = sun_visibility(in.world, n);
+    if dot(smooth_normal, l) > 0.0 {
+        visibility = sun_visibility(in.world, smooth_normal);
     }
     let direct = direct_light(n, v, l, base, 0.0, DIELECTRIC_F0, roughness, sun, visibility);
     // Light bounced from the surroundings: the planet's albedo under sun and sky.

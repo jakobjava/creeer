@@ -137,6 +137,15 @@ fn art(data: &Data, rocks: &RockTable, report: &mut Report) {
         report.warnings.push(format!("art style: {finding}"));
     }
     models(data, &palette, report);
+    // The ground's look (G2.11): its layers' and decoratives' tokens, grounds and sizes.
+    match creeer_art::ground::Ground::from_data(data) {
+        Ok(ground) => {
+            report.counts.push(("ground layers", ground.layers.len()));
+            let names: Vec<&str> = rocks.iter().map(|r| r.name).collect();
+            report.errors.extend(ground.problems(&palette, &names));
+        }
+        Err(e) => report.errors.push(e),
+    }
     // The hand tools (G1.4c): catalogue tools, each with its model.
     match (crate::tools::Tool::all(data), Entry::all(data)) {
         (Ok(tools), Ok(entries)) => {

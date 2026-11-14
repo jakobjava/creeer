@@ -1,6 +1,7 @@
 // Lighting shared by the mesh and terrain passes: sun visibility from the cascaded shadow
 // maps, Cook-Torrance/Lambert direct light and hemispheric ambient light ("PBR-lite",
-// ADR-0003). The including shader declares `shadow_map` and `shadow_sampler`.
+// ADR-0003). The including shader declares `shadow_map` and `shadow_sampler`, and includes
+// `ao_sample.wgsl` (contact shadows).
 
 // A non-metal's reflectance at normal incidence (index about 1.5); skin's is lower (surface.wgsl).
 const DIELECTRIC_F0: f32 = 0.04;
@@ -77,8 +78,14 @@ fn cascade_visibility(world: vec3<f32>, normal: vec3<f32>, cascade: u32) -> f32 
     return lit / 2704.0;
 }
 
-/// Fraction of sunlight reaching `world` (0 = fully shadowed).
+/// Fraction of sunlight reaching `world` (0 = fully shadowed): the shadow maps', and the
+/// screen's contact shadows where they are darker (`ao_sample.wgsl`).
 fn sun_visibility(world: vec3<f32>, normal: vec3<f32>) -> f32 {
+    return min(map_visibility(world, normal), contact_light_at(world));
+}
+
+/// Fraction of sunlight reaching `world` by the cascaded shadow maps.
+fn map_visibility(world: vec3<f32>, normal: vec3<f32>) -> f32 {
     let view_depth = dot(world, globals.camera_forward.xyz);
     let shadow_distance = globals.camera_forward.w;
     if view_depth >= shadow_distance {

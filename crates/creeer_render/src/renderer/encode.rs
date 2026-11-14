@@ -29,6 +29,9 @@ pub(super) struct Globals {
     sea_axis: [f32; 4],
     sea_center: [f32; 4],
     sea_color: [f32; 4],
+    ground_layers: [[f32; 4]; 4],
+    ground_grain: [f32; 4],
+    ground_density: [f32; 4],
 }
 
 impl Renderer {
@@ -107,6 +110,9 @@ impl Renderer {
             heatmap: frame
                 .heatmap
                 .map_or([0.0; 4], |h| [1.0, h.min, h.max, h.palette.shader_id()]),
+            ground_layers: self.terrain.layers.layers,
+            ground_grain: self.terrain.layers.grain,
+            ground_density: self.terrain.layers.density,
             ..sky_globals(frame.sky, frame.camera)
         };
         self.queue
@@ -194,7 +200,12 @@ impl Renderer {
             self.timer.as_ref(),
         );
 
-        let prepassed = self.encode_occlusion(&mut encoder, frame.camera, aspect);
+        let prepassed = self.encode_occlusion(
+            &mut encoder,
+            frame.camera,
+            aspect,
+            frame.lighting.sun_direction,
+        );
 
         // Pass 1c: 3D scene into the multisampled HDR target, resolved to a single sample.
         {

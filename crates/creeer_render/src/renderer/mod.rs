@@ -35,7 +35,7 @@ mod grown;
 mod levels;
 mod line_pass;
 mod mesh_pass;
-mod noise;
+pub(crate) mod noise;
 mod palette;
 mod readback;
 mod sea_pass;

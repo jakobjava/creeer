@@ -1,0 +1,46 @@
+// Decoratives (G2.11, ADR-0037; creeer_art::ground): small things drawn on the ground near the
+// camera, many of a kind, so the ground between things is never bare (docs/art-style.md pillar
+// 7). Drawn only: nothing collides with them, and they stand on the simulated ground. They are
+// low and small (art-style.md §8), so what the player needs to find on the ground stays in
+// sight; `creeer_tools validate` refuses one taller than 0.35 m, and grit larger than 3 cm (a
+// stone to pick up is a loose thing of its own, ADR-0029). None stands where the ground was dug.
+//
+// To add one: a new entry here, or a file of its own in a pack's `ground/` (packs merge the lists
+// by name).
+//
+// Each decorative:
+// - shape: Tuft (blades from one root, leaning out) or Pebble (a rounded stone half sunk in).
+// - token: the palette token it is drawn in; None: the ground's own rock colour.
+// - layer: the ground layer (ground/layers.ron) it grows in: it stands only where that
+//   layer covers the ground; None: on any ground.
+// - per_m2: how many stand on a square metre where it grows.
+// - height, width: least and most (m).
+[
+    (
+        name: "grass tuft",
+        shape: Tuft,
+        token: Some("grass"),
+        layer: Some("grass"),
+        per_m2: 8.0,
+        height: (0.07, 0.2),
+        width: (0.06, 0.14),
+    ),
+    (
+        name: "forest grass",
+        shape: Tuft,
+        token: Some("grass"),
+        layer: Some("moss"),
+        per_m2: 2.0,
+        height: (0.08, 0.22),
+        width: (0.05, 0.1),
+    ),
+    (
+        name: "grit",
+        shape: Pebble,
+        token: None,
+        layer: None,
+        per_m2: 3.0,
+        height: (0.006, 0.014),
+        width: (0.01, 0.025),
+    ),
+]

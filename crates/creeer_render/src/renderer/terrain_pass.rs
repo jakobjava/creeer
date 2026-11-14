@@ -6,13 +6,13 @@
 
 use super::*;
 use crate::shadow::LightBasis;
-use crate::terrain::{TerrainMeshData, TerrainVertex, pattern_offset};
+use crate::terrain::{GroundUniform, TerrainMeshData, TerrainVertex, pattern_offset};
 use creeer_math::glam::{DVec3, Vec3};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
-    0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Snorm8x4, 4 => Float32
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+    0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Snorm8x4, 4 => Float32, 8 => Unorm8x4
 ];
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
@@ -71,6 +71,8 @@ pub(super) struct TerrainPass {
     shadow_draws: [Vec<(u64, u32, u8)>; CASCADES],
     /// Triangles drawn for the camera in the last frame.
     pub(super) triangles: usize,
+    /// The ground's layers, as the globals carry them to the shader.
+    pub(super) layers: GroundUniform,
 }
 
 impl TerrainPass {
@@ -88,6 +90,8 @@ impl TerrainPass {
             include_str!("../shaders/atmosphere.wgsl"),
             "\n",
             include_str!("../shaders/lighting.wgsl"),
+            "\n",
+            include_str!("../shaders/ground.wgsl"),
             "\n",
             include_str!("../shaders/terrain.wgsl")
         );
@@ -176,6 +180,7 @@ impl TerrainPass {
             draws: Vec::new(),
             shadow_draws: Default::default(),
             triangles: 0,
+            layers: GroundUniform::of(&[]),
         }
     }
 
@@ -385,6 +390,12 @@ impl Renderer {
     /// Removes terrain chunk `id` (no-op if absent).
     pub fn remove_terrain(&mut self, id: u64) {
         self.terrain.remove(id);
+    }
+
+    /// The ground's layers, in the order the vertices' `cover` names them (at most four; the
+    /// rest are dropped).
+    pub fn set_ground_layers(&mut self, layers: &[crate::GroundLayer]) {
+        self.terrain.layers = GroundUniform::of(layers);
     }
 
     /// Number of terrain chunks on the GPU.

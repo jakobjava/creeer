@@ -7,12 +7,13 @@
 use bytemuck::{Pod, Zeroable};
 use creeer_math::glam::Vec3;
 
-/// A terrain vertex as stored on the GPU (28 bytes).
+/// A terrain vertex as stored on the GPU (32 bytes).
 ///
 /// Besides its own surface it carries the next coarser level of detail: the normal there and
 /// the distance along its normal to that surface. The shader blends towards them over the
 /// distance band where a coarser neighbour may begin (geomorphing, `creeer_terrain::levels`),
-/// so borders between levels and switches between them do not show.
+/// so borders between levels and switches between them do not show. And how much of each of
+/// the ground's layers (grass, moss, litter: [`GroundLayer`]) covers it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub struct TerrainVertex {
@@ -26,6 +27,48 @@ pub struct TerrainVertex {
     pub coarse_normal: [i8; 4],
     /// Distance along `normal` to the next coarser level's surface (m).
     pub morph: f32,
+    /// The share of the ground each of the four layers covers here (unorm, 0–255).
+    pub cover: [u8; 4],
+}
+
+/// One of the ground's layers as the terrain shader lays it over the rock (`terrain.wgsl`;
+/// the data: `creeer_art::ground`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GroundLayer {
+    /// Its colour (linear RGB).
+    pub colour: [f32; 3],
+    /// The size of its patches (m).
+    pub patch: f32,
+    /// The size of its fine grain (m).
+    pub grain: f32,
+    /// How thickly it covers within its patches (0–1).
+    pub density: f32,
+}
+
+/// The ground's layers as `globals.wgsl` carries them: each one's linear colour and patch size
+/// (m), and each one's grain (m) and density.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct GroundUniform {
+    pub layers: [[f32; 4]; 4],
+    pub grain: [f32; 4],
+    pub density: [f32; 4],
+}
+
+impl GroundUniform {
+    /// The first four of `layers`; the rest unused.
+    pub(crate) fn of(layers: &[GroundLayer]) -> Self {
+        let mut out = Self {
+            layers: [[0.0, 0.0, 0.0, 1.0]; 4],
+            grain: [0.01; 4],
+            density: [0.0; 4],
+        };
+        for (k, l) in layers.iter().take(4).enumerate() {
+            out.layers[k] = [l.colour[0], l.colour[1], l.colour[2], l.patch.max(1e-3)];
+            out.grain[k] = l.grain.max(1e-4);
+            out.density[k] = l.density.clamp(0.0, 1.0);
+        }
+        out
+    }
 }
 
 fn snorm(x: f32) -> i8 {
@@ -57,7 +100,15 @@ impl TerrainVertex {
             color: [color[0], color[1], color[2], unorm(roughness)],
             coarse_normal: [snorm(n.x), snorm(n.y), snorm(n.z), 0],
             morph: 0.0,
+            cover: [0; 4],
         }
+    }
+
+    /// The same vertex with the ground's layers covering `cover` of it each (0–1).
+    #[must_use]
+    pub fn with_cover(mut self, cover: [f32; 4]) -> Self {
+        self.cover = cover.map(unorm);
+        self
     }
 
     /// The same vertex with the next coarser level: its normal and the distance (m) along
@@ -133,8 +184,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vertices_pack_into_twenty_eight_bytes() {
-        assert_eq!(std::mem::size_of::<TerrainVertex>(), 28);
+    fn vertices_pack_into_thirty_two_bytes() {
+        assert_eq!(std::mem::size_of::<TerrainVertex>(), 32);
         let v = TerrainVertex::new(
             Vec3::new(1.0, 2.0, 3.0),
             Vec3::Y * 2.0,
@@ -151,6 +202,8 @@ mod tests {
             (w.coarse_normal, w.morph, w.normal),
             ([127, 0, 0, 0], -1.5, v.normal)
         );
+        assert_eq!(v.cover, [0; 4]);
+        assert_eq!(v.with_cover([0.0, 1.0, 0.5, 2.0]).cover, [0, 255, 128, 255]);
     }
 
     /// Two neighbouring chunks of any level see their common face at the same place in the

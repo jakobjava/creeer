@@ -7,6 +7,7 @@ pub mod atmosphere;
 pub mod camera;
 pub mod capture;
 pub mod debug_lines;
+pub mod ground_pattern;
 mod half;
 pub mod heatmap;
 pub mod mesh;
@@ -29,6 +30,6 @@ pub use mesh::{MeshArena, MeshData, MeshId, MeshVertex};
 pub use renderer::{Frame, GpuTime, OverlayFrame, RenderError, RenderStats, Renderer};
 pub use scene::{Character, Instance, Lighting, Material, Scene, srgb_to_linear};
 pub use shadow::ShadowQuality;
-pub use terrain::{TerrainFrame, TerrainMeshData, TerrainVertex};
+pub use terrain::{GroundLayer, TerrainFrame, TerrainMeshData, TerrainVertex};
 /// Re-exported so the client does not need its own (possibly mismatched) wgpu dependency.
 pub use wgpu;
