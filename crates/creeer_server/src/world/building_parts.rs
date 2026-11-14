@@ -133,6 +133,13 @@ impl ServerWorld {
         self.trees.parts.remove(&id);
         self.trees.bucks.remove(&id);
         self.trees.limbing.remove(&id);
+        // A rigid part made a structure is something else to the clients: told anew (G2.11 A5,
+        // ADR-0043: fastened while nobody held it, clients went on drawing and predicting the part
+        // as the lone rigid body it was, its partner gone, and rewound at every snapshot). One in
+        // hands is told as the hands let go of it, as before (a post set while held).
+        if !self.in_hands(id) {
+            self.changed.push(id);
+        }
         let woods = vec![Some(g.wood); self.world.bodies[i].structure.element_count()];
         self.building.built.insert(
             id,

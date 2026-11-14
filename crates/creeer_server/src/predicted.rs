@@ -9,17 +9,20 @@
 //! through.
 
 mod nearby;
+mod nudge;
+#[cfg(test)]
+mod probe_tests;
+mod rewind;
 mod smooth;
 #[cfg(test)]
 mod tests;
 
 use crate::world::DT;
 use creeer_math::glam::{DQuat, DVec3};
-use creeer_net::entity::{EntityId, Kind};
+use creeer_net::entity::EntityId;
 use creeer_net::interp::Pose;
 use creeer_net::message::AvatarInput;
-use creeer_net::predict::{InputLog, Smoothing, reconcile};
-use creeer_net::snapshot::Snapshot;
+use creeer_net::predict::{InputLog, Smoothing};
 use creeer_physics::world::World;
 use creeer_sim::surroundings::Surroundings;
 use creeer_sim::{TerrainGround, character, planet_gravity};
@@ -76,6 +79,39 @@ pub struct Corrections {
     /// The Newton iterations its ticks took, replays included (the client's work, as a play
     /// scene's server's is counted).
     pub work: u64,
+    /// Of the times set back, those that were rewound and replayed (the rest agreed with the
+    /// snapshot: nothing to replay), the inputs replayed in them, and their Newton iterations.
+    pub rewinds: u32,
+    pub replayed: u32,
+    pub replay_work: u64,
+    /// Of the times set back, those moved in place, their mispredictions small (`nudge.rs`).
+    pub nudged: u32,
+    /// Why they were rewound: the avatar mispredicted; it did not, but a body near it did; or
+    /// neither, but the bodies to predict changed.
+    pub for_avatar: u32,
+    pub for_bodies: u32,
+    pub for_choice: u32,
+    /// How far off the avatar and the bodies were at the rewinds (the most of any body): counts
+    /// under 2, 5, 10, 30 and 100 mm, and beyond.
+    pub avatar_off: [u32; 6],
+    pub bodies_off: [u32; 6],
+    /// What was off at the rewinds, the avatar's and any body's: counts of position, velocity,
+    /// spin and orientation beyond twice the snapshots' quanta.
+    pub off_in: [[u32; 4]; 2],
+}
+
+impl Corrections {
+    /// Counts a rewind's errors: the avatar's and the most of any body near it (m).
+    fn count_off(&mut self, avatar: f64, bodies: f64) {
+        let bucket = |m: f64| {
+            [0.002, 0.005, 0.01, 0.03, 0.1]
+                .iter()
+                .position(|limit| m < *limit)
+                .unwrap_or(5)
+        };
+        self.avatar_off[bucket(avatar)] += 1;
+        self.bodies_off[bucket(bodies)] += 1;
+    }
 }
 
 impl Predicted {
@@ -192,108 +228,6 @@ impl Predicted {
     /// The inputs to send this tick.
     pub fn to_send(&self) -> Vec<AvatarInput> {
         self.log.to_send()
-    }
-
-    /// The server had the world as `snapshot` says (the avatar `avatar`, the entities
-    /// `kinds`), after its input `snapshot.last_input`: the avatar and the bodies near it are
-    /// set to it and the inputs since are applied again (if the snapshot is newer than the
-    /// last one it was set to). `drawn` gives where an entity not predicted is drawn now
-    /// (interpolated): a body coming into the prediction slides from there.
-    pub fn reconcile(
-        &mut self,
-        snapshot: &Snapshot,
-        (avatar, kinds): (EntityId, &BTreeMap<EntityId, Kind>),
-        drawn: impl Fn(EntityId) -> Option<DVec3>,
-    ) {
-        let started = std::time::Instant::now();
-        let tick = snapshot.tick;
-        if self.fallen || self.reconciled.is_some_and(|t| t >= tick) {
-            return;
-        }
-        let Some(state) = snapshot.states.get(&avatar) else {
-            return;
-        };
-        self.reconciled = Some(tick);
-        // The bodies it could touch before the next correction (ADR-0025, amended G2.10).
-        let replayed = self
-            .log
-            .pending()
-            .filter(|i| i.seq > snapshot.last_input)
-            .count();
-        let reach = nearby::Reach::of(state, replayed);
-        let picked = nearby::chosen(snapshot, kinds, &reach, &self.nearby);
-        // Predicted as the server had it, and the same bodies near: nothing to correct.
-        let chosen: Vec<EntityId> = picked.iter().map(|c| c.0).collect();
-        if chosen == self.nearby && self.history.agrees(snapshot, avatar, &self.nearby) {
-            self.history.forget_before(snapshot.last_input);
-            self.log.applied(snapshot.last_input);
-            self.corrections.count += 1;
-            self.corrections.replaying += started.elapsed();
-            return;
-        }
-        let before = self.world.bodies.first().map(|b| b.structure.position[0]);
-        let was: BTreeMap<EntityId, DVec3> = (self.nearby.iter())
-            .zip(self.world.bodies.iter().skip(1))
-            .map(|(id, b)| (*id, b.structure.position[0]))
-            .collect();
-        let mut world = std::mem::replace(&mut self.world, World::new(DT));
-        // (The air and sea know the bodies by index: told what was kept.)
-        let kept = world.retain_bodies(|i, _| i == 0);
-        if let Some(a) = self.around.as_mut() {
-            a.retain(&kept);
-        }
-        if world.bodies.is_empty() {
-            world.add_copy(character::body(
-                state.position(),
-                state.position().normalize(),
-                DT,
-            ));
-        }
-        let body = &mut world.bodies[0];
-        body.wake();
-        let s = &mut body.structure;
-        s.position[0] = state.position();
-        s.orientation[0] = state.orientation();
-        s.velocity[0] = state.velocity();
-        s.angular_velocity[0] = state.spin();
-        body.solver.set_mass(
-            &mut body.structure,
-            0,
-            character::DRY + self.gas + self.load,
-        );
-        body.solver.reset_history(&body.structure);
-        // Asleep on the server, asleep here too, as the bodies near it are (`nearby.rs`): a
-        // character standing still sleeps, and woken it would be stepped where the server's
-        // stands as it fell asleep (G1.3i: standing still no longer creeps, so it does sleep).
-        if state.asleep {
-            body.sleep_now();
-        }
-        // The bodies near it, as the server had them at this input (ADR-0025).
-        let last_input = snapshot.last_input;
-        self.templates.retain(kinds);
-        self.nearby.clear();
-        for chosen in picked {
-            let stale = snapshot.stale.binary_search(&chosen.0).is_ok();
-            let from = (stale, &self.history, last_input);
-            if self.templates.add(&mut world, chosen, from) {
-                self.nearby.push(chosen.0);
-            }
-        }
-        self.history.forget_before(last_input);
-        let around = self.around.take();
-        let (ids, history, load) = (&self.nearby, &mut self.history, self.load);
-        let work = &mut self.corrections.work;
-        (self.world, self.around) = reconcile(
-            (world, around),
-            last_input,
-            &mut self.log,
-            |(w, a), input| {
-                *work += Self::step(w, a, input, load);
-                history.record(input.seq, ids, w);
-            },
-        );
-        self.smooth(before, &was, drawn);
-        self.corrections.replaying += started.elapsed();
     }
 
     /// `seconds` passed: the avatar as drawn (the prediction, less what is left of the last
