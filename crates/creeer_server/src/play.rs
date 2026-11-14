@@ -17,6 +17,7 @@ pub mod record;
 pub mod scenes;
 mod steel;
 mod toolmaking;
+pub mod walking;
 mod work;
 
 use crate::client::{Connection, Status};
@@ -95,13 +96,27 @@ impl Play {
     /// # Panics
     /// If they have not joined within [`JOINING`] ticks.
     pub fn new(world: ServerWorld, scene: &str, players: &[&str], terrain: &Arc<Terrain>) -> Self {
+        Self::over(world, (scene, players), terrain, Conditions::default())
+    }
+
+    /// As [`Play::new`], each player's link with `conditions` (G2.11: moving and looking measured
+    /// over a slow, lossy link as well as a lossless one).
+    ///
+    /// # Panics
+    /// If they have not joined within [`JOINING`] ticks.
+    pub fn over(
+        world: ServerWorld,
+        (scene, players): (&str, &[&str]),
+        terrain: &Arc<Terrain>,
+        conditions: Conditions,
+    ) -> Self {
         let content = world.data.hash();
         let play_data = std::sync::Arc::clone(&world.data);
         let mut server = Server::new(world);
         let joined = (players.iter().enumerate())
             .map(|(k, name)| {
                 let end = server.connect_memory();
-                let link = SimulatedLink::new(Conditions::default(), 7 + k as u64);
+                let link = SimulatedLink::new(conditions, 7 + k as u64);
                 let (relay, end) = Relay::new(end, link);
                 let mut client = Connection::memory(end, name, content);
                 // Each its own terrain, as on its own machine (a dig's round applied twice digs
@@ -339,3 +354,9 @@ mod rest_tests;
 mod stood_on_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod walking_gates;
+#[cfg(test)]
+mod walking_loads;
+#[cfg(test)]
+mod walking_tests;

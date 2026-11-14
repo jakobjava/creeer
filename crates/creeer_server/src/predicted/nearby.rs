@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// A body's motion as predicted: position, orientation, velocity, spin.
 pub(super) type Motion = (DVec3, DQuat, DVec3, DVec3);
 
-fn motion(body: &Body) -> Motion {
+pub(super) fn motion(body: &Body) -> Motion {
     let s = &body.structure;
     (
         s.position[0],
@@ -33,13 +33,26 @@ fn motion(body: &Body) -> Motion {
 }
 
 /// Whether a predicted motion is the server's `state` within twice the snapshots' quanta.
-fn agrees((x, q, v, w): Motion, state: &BodyState) -> bool {
-    // Turned apart by θ, 1 − |q·r| ≈ θ²/8: within a milliradian (ten of the rotation's quanta).
-    (x - state.position()).length() < 2.0 / POSITION_SCALE
-        && (v - state.velocity()).length() < 2.0 / VELOCITY_SCALE
-        && (w - state.spin()).length() < 2.0 / VELOCITY_SCALE
-        && 1.0 - q.dot(state.orientation()).abs() < 1e-6 / 8.0
+pub(super) fn agrees(m: Motion, state: &BodyState) -> bool {
+    off_in(m, state) == [false; 4]
 }
+
+/// Which of a predicted motion's position, velocity, spin and orientation are off the server's
+/// `state` by more than twice the snapshots' quanta.
+pub(super) fn off_in((x, q, v, w): Motion, state: &BodyState) -> [bool; 4] {
+    // Turned apart by θ, 1 − |q·r| ≈ θ²/8: within a milliradian (ten of the rotation's quanta).
+    [
+        (x - state.position()).length() >= 2.0 / POSITION_SCALE,
+        (v - state.velocity()).length() >= 2.0 / VELOCITY_SCALE,
+        (w - state.spin()).length() >= 2.0 / VELOCITY_SCALE,
+        1.0 - q.dot(state.orientation()).abs() >= 1e-6 / 8.0,
+    ]
+}
+
+/// How far a prediction was off a snapshot: the avatar's position and velocity (m, m/s), the
+/// most of any body's, and which of position, velocity, spin and orientation were off
+/// (`off_in`), the avatar's and any body's.
+pub(super) type Off = ((f64, f64), (f64, f64), [[bool; 4]; 2]);
 
 /// After an input (its number): the avatar's motion and each body's.
 type Entry = (u32, Motion, Vec<(EntityId, Motion)>);
@@ -71,6 +84,29 @@ impl History {
         }
     }
 
+    /// How far the prediction after `snapshot`'s input was off it (`Off`), none where nothing
+    /// was kept.
+    pub(super) fn off(&self, snapshot: &Snapshot, avatar: EntityId) -> Option<Off> {
+        let (_, mine, motions) = (self.entries.iter()).find(|e| e.0 == snapshot.last_input)?;
+        let by = |(x, _, v, _): Motion, s: &BodyState| {
+            ((x - s.position()).length(), (v - s.velocity()).length())
+        };
+        let state = snapshot.states.get(&avatar)?;
+        let me = by(*mine, state);
+        let mut which = [off_in(*mine, state), [false; 4]];
+        let mut bodies = (0.0f64, 0.0f64);
+        for (id, m) in motions {
+            if let Some(s) = snapshot.states.get(id) {
+                let b = by(*m, s);
+                bodies = (bodies.0.max(b.0), bodies.1.max(b.1));
+                for (k, off) in off_in(*m, s).into_iter().enumerate() {
+                    which[1][k] |= off;
+                }
+            }
+        }
+        Some((me, bodies, which))
+    }
+
     /// Body `id` as predicted after input `seq`.
     fn at(&self, seq: u32, id: EntityId) -> Option<Motion> {
         let (_, _, motions) = self.entries.iter().find(|e| e.0 == seq)?;
@@ -81,21 +117,32 @@ impl History {
     /// bodies `ids` where the snapshot has them, within its quanta (the bodies it left out
     /// unknown, taken as agreeing). Then there is nothing to correct, and nothing to replay
     /// (as Chaos resimulates only on a misprediction).
-    pub(super) fn agrees(&self, snapshot: &Snapshot, avatar: EntityId, ids: &[EntityId]) -> bool {
+    /// It does where this returns (true, 0): whether the avatar's prediction agrees with it, and
+    /// how many of the bodies `ids` do not (all of them where nothing was kept for that input).
+    pub(super) fn disagreeing(
+        &self,
+        snapshot: &Snapshot,
+        avatar: EntityId,
+        ids: &[EntityId],
+    ) -> (bool, usize) {
         let Some((_, mine, motions)) = (self.entries.iter()).find(|e| e.0 == snapshot.last_input)
         else {
-            return false;
+            return (false, ids.len());
         };
         let Some(state) = snapshot.states.get(&avatar) else {
-            return false;
+            return (false, ids.len());
         };
-        agrees(*mine, state)
-            && motions.len() == ids.len()
-            && (motions.iter().zip(ids)).all(|((id, m), want)| {
-                id == want
-                    && (snapshot.stale.binary_search(id).is_ok()
+        if motions.len() != ids.len() {
+            return (agrees(*mine, state), ids.len());
+        }
+        let off = (motions.iter().zip(ids))
+            .filter(|((id, m), want)| {
+                id != *want
+                    || !(snapshot.stale.binary_search(id).is_ok()
                         || snapshot.states.get(id).is_some_and(|s| agrees(*m, s)))
             })
+            .count();
+        (agrees(*mine, state), off)
     }
 
     /// Forgets what came before input `seq`.

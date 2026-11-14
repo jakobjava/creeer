@@ -134,8 +134,10 @@ impl ServerWorld {
         self.trees.bucks.remove(&id);
         self.trees.limbing.remove(&id);
         let woods = vec![Some(g.wood); self.world.bodies[i].structure.element_count()];
-        // A body become a structure: whoever has it is told it again (G2.11: clients went on
-        // drawing it as the item's hull at its first node, the part merged into it gone).
+        // A rigid part made a structure is something else to the clients: told anew, whoever
+        // has it (G2.11, A2 and A5, ADR-0041 and ADR-0043). Not told, clients went on drawing
+        // it as the item's hull at its first node, the part merged into it gone, and predicting
+        // it as the lone rigid body it was, rewinding at every snapshot.
         self.changed.push(id);
         self.building.built.insert(
             id,

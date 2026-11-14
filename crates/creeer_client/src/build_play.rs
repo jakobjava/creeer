@@ -203,9 +203,17 @@ impl Player {
         p.normalize() * (t.planet().datum.radius(p) + t.surface_height(p))
     }
 
-    /// The camera at the eyes looking at `self.look`, as first person puts it.
+    /// The camera at the eyes looking at `self.look`, as first person puts it: played at the
+    /// site, where the drawn head's eyes are as the body stoops, and in the head when down (as
+    /// the game puts them, `planet_camera`; set each frame by `hear`).
     fn camera(&self) -> Camera {
-        let eye = self.eye();
+        let c = &self.view.session.connection;
+        let down = (c.fallen && self.hud)
+            .then(|| crate::planet_camera::own_head(c))
+            .flatten();
+        let eye = down
+            .or(c.eyes.filter(|_| self.hud))
+            .unwrap_or_else(|| self.eye());
         let way = (self.look - eye).try_normalize().unwrap_or(self.east);
         let mut c = crate::planet_view::place(eye, way);
         c.level_to(self.up());
@@ -258,10 +266,17 @@ impl Player {
             terrain: &self.view.terrain,
         };
         let own = (self.view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-        self.people.first_person = own.filter(|_| self.view.first_person);
+        let c = &self.view.session.connection;
+        self.people.first_person = own.filter(|_| self.view.first_person && !c.fallen);
+        self.people.looking = Some(self.camera.forward());
         let mut scratch = creeer_render::Scene::default();
         self.people
             .draw(&snapshot.people, dt, &ground, &mut scratch);
+        // The eyes where the drawn head's are as the body stoops, and placing aims from there.
+        let standing = self.eye();
+        let eyes = (self.people.first_person.is_some())
+            .then(|| (self.view.eyes).follow(standing, self.people.eye(), dt));
+        self.view.session.connection.eyes = eyes;
         let mut sound = std::mem::take(&mut self.view.sound);
         sound.frame(&self.view, &self.camera, Some(&self.people), dt);
         self.view.sound = sound;

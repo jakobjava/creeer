@@ -101,3 +101,28 @@ impl super::ServerWorld {
         self.trees.hinged.contains(&id)
     }
 }
+
+impl super::ServerWorld {
+    /// Lifts body `index` along the vertical until no part of it is in the ground or in
+    /// another body (one put on a slope, or where a crate stands, would be in it, and be
+    /// thrown out of it), with a centimetre to spare.
+    pub(super) fn lift_clear(&mut self, index: usize) {
+        let up = self.world.bodies[index].structure.position[0].normalize();
+        for _ in 0..20 {
+            let lift = self
+                .world
+                .touching(index, 0.0)
+                .iter()
+                .map(|t| (0.01 - t.gap) / t.normal.dot(up).max(0.2))
+                .fold(0.0, f64::max);
+            if lift <= 0.0 {
+                break;
+            }
+            let body = &mut self.world.bodies[index];
+            for p in &mut body.structure.position {
+                *p += up * lift;
+            }
+            body.solver.reset_history(&body.structure);
+        }
+    }
+}

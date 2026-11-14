@@ -76,6 +76,9 @@ pub struct PlanetView {
     pub cover: Option<crate::ground_cover::GroundCover>,
     /// Steering what the hands hold (G2.10).
     pub holding: crate::holding::Holding,
+    /// The third-person camera's boom, and the first person's eyes as they stoop (G2.11).
+    pub boom: crate::planet_camera::Boom,
+    pub eyes: crate::planet_camera::Eyes,
     streamer: Streamer<TerrainMeshData>,
     /// Edit count and generation the streamed chunks reflect.
     seen_edits: (u64, usize),
@@ -147,6 +150,8 @@ impl PlanetView {
             wielding: None,
             inventory: false,
             holding: crate::holding::Holding::default(),
+            boom: crate::planet_camera::Boom::default(),
+            eyes: crate::planet_camera::Eyes::default(),
             loose: crate::loose_view::LooseView::new(&terrain),
             trees: crate::tree_view::TreeView::new(&terrain),
             cover: Some(crate::ground_cover::GroundCover::new(&terrain)),
@@ -248,23 +253,6 @@ impl PlanetView {
         (avatar.position.normalize() + walk.normalize_or_zero() * 0.4).clamp_length_max(1.0)
     }
 
-    /// Puts the camera at the avatar's eyes (first person) or behind and above it, looking the way
-    /// it looks, never in the
-    /// ground.
-    pub fn follow(&self, camera: &mut Camera) {
-        let Some(avatar) = self.session.connection.avatar() else {
-            return;
-        };
-        let up = avatar.position.normalize();
-        camera.level_to(up);
-        // First person, at the eyes (G2.10: building is done looking at the work); else behind.
-        camera.position = if self.first_person {
-            creeer_sim::reach::eye(avatar.position, up)
-        } else {
-            avatar.position + up * 1.2 - camera.forward() * 4.5
-        };
-        self.constrain_camera(camera);
-    }
     /// Keeps the camera level with the local horizon and above the ground.
     pub fn constrain_camera(&self, camera: &mut Camera) {
         let up = camera.position.normalize();
