@@ -12,6 +12,12 @@ impl Running {
                 if ui.button("Planet sandbox (F3) ▸").clicked() {
                     self.enter_planet();
                 }
+                // The bridge to build and break (G2.11: also `--bridge`).
+                if ui.button("Bridge site (creative) ▸").clicked()
+                    && let Err(e) = self.enter_bridge()
+                {
+                    eprintln!("could not make the bridge site: {e}");
+                }
                 if ui.button("Solar system sandbox (F4) ▸").clicked() {
                     self.enter_system();
                 }

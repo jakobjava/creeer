@@ -42,6 +42,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     // `--hud`: the game's screen drawn over it (`hud_shot.rs`).
     let hud = crate::hud_shot::HudShot::parse(args)?;
+    // The bridge site's frames (G2.11): a game of their own (`planet_shot_bridge.rs`).
+    if view_name == "bridge" {
+        return crate::planet_shot_bridge::run(args);
+    }
 
     let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
