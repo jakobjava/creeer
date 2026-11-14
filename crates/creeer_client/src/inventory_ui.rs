@@ -247,6 +247,7 @@ fn hint(
                 keys.extend([lift, "E: into a pocket".into()]);
                 // (Two parts touching there are fastened: the hands must be free, G2.3.)
                 if let Some(f) = fastener {
+                    let f = if f.is_empty() { "a nail at hand" } else { f };
                     keys.push(format!(
                         "J: fasten with {f} (K: another) · U: take a joint apart"
                     ));

@@ -337,6 +337,7 @@ mod made_tools_tests;
 pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
+mod nailing;
 mod posts;
 #[cfg(test)]
 mod raising_tests;

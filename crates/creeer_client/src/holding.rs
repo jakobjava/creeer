@@ -30,6 +30,13 @@ pub struct Holding {
     yaw: f64,
     tilt: f64,
     slide: f64,
+    /// The turn last asked of the hands (`Connection::place_hold`'s `from`).
+    asked: Option<creeer_math::glam::DQuat>,
+    /// Where the crosshair last rested it against something: J fastens it there (G2.11).
+    touch: Option<creeer_math::glam::DVec3>,
+    /// Nailed while held: the hands keep it still where it is (the crosshair free to aim at
+    /// another crossing) until it is let go (G2.11).
+    pinned: bool,
     /// Q held: the mouse turns it. Ctrl held: finer.
     turning: bool,
     pub fine: bool,
@@ -39,6 +46,16 @@ impl Holding {
     /// Whether anything is held.
     pub fn holding(&self) -> bool {
         self.load.is_some()
+    }
+
+    /// Where the crosshair rests what is held against something, if it does.
+    pub fn touch(&self) -> Option<creeer_math::glam::DVec3> {
+        self.touch.filter(|_| self.holding())
+    }
+
+    /// J pressed on what is held: from now on the hands keep it still where it is.
+    pub fn pin(&mut self) {
+        self.pinned = self.holding();
     }
 
     /// A key (R, Q, Ctrl); whether it was one for what is held. Q and Ctrl are followed with
@@ -99,18 +116,41 @@ impl Holding {
         let view = camera.rotation();
         let load = connection.own_load();
         if load != self.load {
-            (self.load, self.yaw, self.tilt, self.slide) = (load, 0.0, 0.0, 0.0);
+            // Taken, it is held the way it lay (G2.11: turned at once to lie across the view, a
+            // pole swung round in the hands as it was taken), lying level or standing, as R
+            // puts it (a pole taken from a pile, where it lay tilted 30° over another, was carried
+            // so tilted).
+            let (yaw, tilt) = connection.held_turn(view).unwrap_or_default();
+            let tilt = if tilt.abs() > 0.25 * std::f64::consts::PI {
+                FRAC_PI_2
+            } else {
+                0.0
+            };
+            (self.load, self.yaw, self.tilt, self.slide) = (load, yaw, tilt, 0.0);
+            (self.asked, self.pinned) = (None, false);
         }
-        let hold = self
-            .load
-            .and_then(|_| connection.place_hold(view, surface, (self.yaw, self.tilt, self.slide)));
+        self.touch = surface.filter(|_| self.load.is_some()).map(|s| s.point);
+        let turned = (self.yaw, self.tilt, self.slide);
+        let hold =
+            (self.load).and_then(|_| connection.place_hold(view, surface, turned, self.asked));
+        self.asked = hold.map(|h| h.turn);
+        // Nailed while held: held still where it is (the server holds a steady hold where it is).
+        let hold = hold.map(|h| creeer_net::message::Hold {
+            steady: self.pinned,
+            ..h
+        });
         connection.set_hold(hold);
     }
 
     /// The keys' hint while something is held.
     pub fn hint(&self) -> Option<&'static str> {
+        if self.pinned && self.holding() {
+            return Some(
+                "held still · J another nail where it touches · G let go: the nails hold it",
+            );
+        }
         self.holding().then_some(
-            "aim where it goes · R stand/lie · Q+mouse turn · wheel slide · J fasten · P set post · G put down · T throw",
+            "aim where it goes · R stand/lie · Q+mouse turn · wheel slide · J nail where it touches · P set post · G put down",
         )
     }
 }
