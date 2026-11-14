@@ -76,6 +76,11 @@ pub struct People {
     /// The person seen from within (first person, G2.11): drawn with the head sunk into the
     /// body, so the eyes see their own arms, hands and what they hold.
     pub first_person: Option<u32>,
+    /// Where that person's eyes look (the view's way): standing, the body faces it.
+    pub looking: Option<DVec3>,
+    /// That person's eyes as last drawn, before the head was sunk (the camera goes there along
+    /// the line of sight, G2.11: `planet_camera::along_the_view`).
+    eye: Option<DVec3>,
 }
 
 impl std::fmt::Debug for People {
@@ -136,6 +141,8 @@ impl People {
             outfits: HashMap::new(),
             animator,
             first_person: None,
+            looking: None,
+            eye: None,
         };
         for worn in [&STARTING_OUTFIT[..], &["base_layer"]] {
             people.add_outfit(renderer, worn);
@@ -152,6 +159,11 @@ impl People {
             let outfit = renderer.add_outfit(self.id, &parts);
             self.outfits.insert(names, outfit);
         }
+    }
+
+    /// The eyes of the person seen from within ([`Self::first_person`]) as last drawn, standing.
+    pub fn eye(&self) -> Option<DVec3> {
+        self.eye
     }
 
     /// Person `key`'s feet as last drawn (their footsteps' sound: `sounds.rs`).
@@ -171,6 +183,7 @@ impl People {
         scene: &mut Scene,
     ) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
         let mut in_hands = Vec::new();
+        self.eye = None;
         let keys: Vec<u32> = people.iter().map(|p| p.key).collect();
         self.animator.retain(&keys);
         for p in people {
@@ -182,6 +195,8 @@ impl People {
             let swing = (swung.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
             self.animator.swing(p.key, swing);
             self.animator.holding(p.key, p.holding);
+            let seen_from = self.first_person == Some(p.key);
+            (self.animator).looking(p.key, self.looking.filter(|_| seen_from));
             let mut bones = self.animator.bones(p.key, &p.body, dt, ground);
             // Seen from within (first person): the head, where the eyes are, sunk into the body,
             // its neck into the trunk, so the eyes see their own arms and hands at work (G2.11:
@@ -192,6 +207,11 @@ impl People {
                 && matches!(p.body, Body::Standing(..))
                 && let Some(&trunk) = bones.get(TRUNK)
             {
+                // (Its eyes first, where the head was drawn: the camera goes there. The eyes lie
+                // before the head's centre, as a face's do, the model facing +z: from its centre,
+                // looking down, the camera saw into the collar and the head sunk below it.)
+                let rest = creeer_sim::character::bones::centres()[HEAD] + DVec3::Z * 0.09;
+                self.eye = Some(bones[HEAD].transform_point(rest));
                 bones[HEAD] = trunk * Frame64::new(DVec3::NEG_Y * SUNK, DQuat::IDENTITY);
             }
             let made = p

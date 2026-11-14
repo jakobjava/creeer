@@ -168,6 +168,8 @@ impl Running {
         let Some(planet) = &mut self.planet else {
             return;
         };
+        // Whether the player's own body is not drawn: the camera at its eyes, or near them.
+        let mut hide_own = false;
         if planet.walking {
             // The keys steer the avatar; the camera follows it.
             self.fly.look(&mut self.camera);
@@ -191,7 +193,7 @@ impl Running {
             planet
                 .session
                 .update(dt, (walk, self.fly.jumping(), thrust));
-            planet.follow(&mut self.camera);
+            hide_own = planet.follow(&mut self.camera, dt);
         } else {
             // Flying speed follows the height above the ground: the wheel sets how many
             // heights per second (10 m/s base speed = one height per second at 10 m).
@@ -226,10 +228,15 @@ impl Running {
         stress.draw(&mut self.scene, &self.meshes, c, &seen);
         if let Some(people) = &mut self.people {
             // In first person the player's own body is seen from within, its head sunk into it
-            // (G2.11: their own arms and hands at work; not drawn, the part floated).
+            // (G2.11: their own arms and hands at work; not drawn, the part floated). Not drawn
+            // when down (the eyes in its head) or with the third person's camera by its head.
             let own = (planet.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
-            people.first_person = own.filter(|_| planet.first_person);
-            let drawn_people = snapshot.people.clone();
+            people.first_person = own.filter(|_| planet.first_person && planet.walking);
+            people.looking = Some(self.camera.forward());
+            let drawn_people: Vec<_> = (snapshot.people.iter())
+                .filter(|p| !(hide_own && Some(p.key) == own))
+                .cloned()
+                .collect();
             let ground = crate::people_ground::PlanetGround {
                 terrain: &planet.terrain,
             };
@@ -246,6 +253,15 @@ impl Running {
                     material,
                     None,
                 );
+            }
+            // In first person the eyes go where the drawn head's are as the body stoops to what
+            // the hands hold, and placing aims from there (G2.11, `planet_camera::Eyes`).
+            if people.first_person.is_some() && !hide_own {
+                let eyes = (planet.eyes).follow(self.camera.position, people.eye(), dt);
+                self.camera.position = eyes;
+                planet.session.connection.eyes = Some(eyes);
+            } else {
+                planet.session.connection.eyes = None;
             }
         }
         self.scene_build_times.push(build_start.elapsed());

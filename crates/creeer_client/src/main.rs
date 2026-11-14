@@ -112,6 +112,7 @@ mod planet_shot;
 mod planet_shot_bridge;
 mod planet_shot_build;
 mod planet_shot_things;
+mod planet_shot_walk;
 mod planet_ui;
 mod planet_view;
 mod play_bench;

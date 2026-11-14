@@ -86,6 +86,8 @@ struct State {
     /// drop (m), each with its rate; the hands' shapes at rest.
     held: Option<grasp::Load>,
     holding: bool,
+    /// Where its eyes look, seen through them (`Animator::looking`).
+    looking: Option<DVec3>,
     reaching: f64,
     grasps: [Option<grasp::Reach>; 2],
     holds: [Hold; 2],
@@ -173,6 +175,16 @@ impl Animator {
         }
     }
 
+    /// Where character `key` looks this frame, if the player sees through its eyes (first
+    /// person, G2.11): standing, its body turns to face that way as it does to what it holds.
+    /// (Facing the way it last walked, looking aside and down the eyes saw its own shoulder and
+    /// collar.)
+    pub fn looking(&mut self, key: u32, way: Option<DVec3>) {
+        if let Some(state) = self.states.get_mut(&key) {
+            state.looking = way;
+        }
+    }
+
     /// How character `key`'s fingers hold this frame (right, left).
     pub fn holds(&self, key: u32) -> [Hold; 2] {
         self.states
@@ -237,6 +249,7 @@ impl State {
             swing: None,
             held: None,
             holding: false,
+            looking: None,
             reaching: 0.0,
             grasps: [None; 2],
             holds: [Hold::Relaxed; 2],

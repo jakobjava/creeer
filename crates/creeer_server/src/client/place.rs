@@ -66,7 +66,11 @@ impl Connection {
         also: impl Fn(DVec3, DVec3, f64) -> Option<f64>,
     ) -> Option<Surface> {
         let avatar = self.avatar()?;
-        let eye = reach::eye(avatar.position, avatar.position.normalize());
+        let standing = reach::eye(avatar.position, avatar.position.normalize());
+        // From where the eyes are drawn as the body stoops (the camera's place), near the
+        // standing eyes (G2.11 A4: aimed from the standing eyes, the crosshair missed by the
+        // stoop's parallax).
+        let eye = (self.eyes.filter(|e| (*e - standing).length() < 1.0)).unwrap_or(standing);
         let skip = self.own_load();
         let along = view * DVec3::NEG_Z;
         let hit = |from: DVec3| {

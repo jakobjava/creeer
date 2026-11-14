@@ -322,6 +322,7 @@ mod building_parts;
 #[cfg(test)]
 mod building_tests;
 mod carry;
+mod courses;
 mod digging;
 mod felling;
 mod holes;

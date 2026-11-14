@@ -54,9 +54,17 @@ pub(super) fn carried(
     };
     let s = &world.bodies[b].structure;
     let (x, q) = (s.position[node], s.orientation[node]);
+    // The node's shape the ray met: the one whose surface the point lies on. (A structure's node
+    // has a shape for each member it joins: taken as its first, a nailed deck's board was read as
+    // the sill under it, the patch lay off the soles, and the balance pushed the person over
+    // instead of upright, or carried nothing, and they toppled walking over it: G2.11.)
     let Some(shape) = (world.bodies[b].shapes.iter())
-        .find(|(n, _)| *n == node)
+        .filter(|(n, _)| *n == node)
         .map(|(_, shape)| shape)
+        .min_by(|a, c| {
+            let off = |s: &Shape| s.distance(x, q, hit.point).abs();
+            off(a).total_cmp(&off(c))
+        })
     else {
         return torque;
     };

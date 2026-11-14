@@ -78,6 +78,7 @@ impl Player {
         let drawn = snapshot.people.clone();
         let own_key = (self.view.session.connection.welcome.as_ref()).map(|w| w.avatar.0);
         self.people.first_person = own_key.filter(|_| !own);
+        self.people.looking = Some(self.camera.forward());
         let ground = crate::people_ground::PlanetGround {
             terrain: &self.view.terrain,
         };
@@ -88,6 +89,13 @@ impl Player {
         let mut scratch = Scene::default();
         self.people.draw(&drawn, dt.max(1.0), &ground, &mut scratch);
         self.people.draw(&drawn, 0.0, &ground, &mut scene);
+        // In first person the eyes where the drawn head's are, as the game puts them (G2.11 A4,
+        // `planet_camera::Eyes`; a frame is long after the last: followed all the way).
+        let mut camera = camera;
+        if !own {
+            let mut eyes = crate::planet_camera::Eyes::default();
+            camera.position = eyes.follow(camera.position, self.people.eye(), 10.0);
+        }
         let mut image = self.renderer.capture(Frame {
             camera: &camera,
             scene: &scene,

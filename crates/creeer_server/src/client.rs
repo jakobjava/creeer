@@ -117,6 +117,8 @@ pub struct Connection {
     steered: steered::Steered,
     terrain: Option<Arc<Terrain>>,
     pub(crate) predicted: Option<Predicted>,
+    /// Where the eyes are drawn, stooping (first person; G2.11 A4): placing aims from there.
+    pub eyes: Option<DVec3>,
     /// Whether this tick is a send round (every [`INPUT_EVERY`]: the inputs, and renet's
     /// acknowledgements with them, go out together).
     due: bool,
@@ -172,6 +174,7 @@ impl Connection {
             steered: steered::Steered::default(),
             terrain: None,
             predicted: None,
+            eyes: None,
             due: true,
             recording: None,
         }
