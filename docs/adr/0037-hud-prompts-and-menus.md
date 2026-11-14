@@ -87,3 +87,71 @@ Sources: the games as shipped and their controls pages (each game's own wiki doc
 - **Rebinding:** an action takes one key; another action that would be active at the same time loses it (shown "unbound"). Esc (the menu) and the wheel (sliding, flying speed) cannot be moved. Ctrl is shared on purpose by the jetpack and "finer" while holding (`SHARED`).
 - **Settings file:** only the player's changes, by action id: a version with new actions loads an old file, and an unknown id or key is left out and printed.
 - **For stream B:** an action is added, changed or removed in `TABLE` and `Action`, done in `Running::act` (`app/input.rs`), and offered in `prompts.rs`; the controls list, rebinding and the file follow.
+
+### 2. A crosshair that informs
+
+`hud_seen.rs` reads what the hands hold and what the crosshair is on, and names it as a person would: by its shape and how it lies (a rod over 0.8 m is a *pole* lying, a *post* standing; near its ends *the top of the post*, *the end of the pole*; a squared one a *beam*; the sandbox's metre box a *crate*; the ground with the rock it is made of). `prompts.rs` turns that into what can be done now (pure, tested): beside the crosshair what can be done with what it is on (take or lift one end, pocket, fasten with the chosen fastener, set a standing post, take apart, strike, dig, bind a head on), at the bottom by the hands what can be done with what they hold (put down, stand up or lay down, turn, slide, set in the ground, strip bark, throw, finer). `hud_crosshair.rs` draws them: a raised plate right of the crosshair, each action a key cap and a verb, the crosshair ringed in the highlight when something can be done, faint when out of reach.
+
+Only what a person on site would know: *too far*, *heavy (70 kg)* (one end can be raised: beyond the 58.6 kg a man lifts), *too heavy (200 kg)* (beyond twice that nothing moves it, as the server judges). The distance to the thing and a blow's energy in joules are gone.
+
+### 3. Feedback where the player looks
+
+`hud_feedback.rs`: work under way (any server note of the form "doing: N s") fills a ring round the crosshair over its time, its word above it; otherwise the server's last answer (refusal or note) is shown just above the crosshair, refusals in the warning colour, for four seconds, the last fading. Terse reasons are written out in plain words (`plain`: "down" → "You are down", "seen 12 ticks ago" → "It moved: aim again", "N kg: too heavy to move" → "Too heavy to move (N kg)"; ids lose their underscores).
+
+### 4. What the player has
+
+`hud_hands.rs`: at the bottom right, what the hands hold (named as the crosshair names it), the tool in hand, each pocket's fill as a bar, and the key for the rest. The inventory window (`inventory_ui.rs`, "What you carry") lists the hands, each pocket under its name ("thigh, left (coverall)") with a bar and its litres, each item with its colour, word, description and a Take button, and the container looked into.
+
+### 5. The creative kit
+
+`kit_ui.rs`: C opens a palette of `data/kit.ron`'s parts with their name, material (from the materials table), size as a catalogue gives it and weight; "Put down" drops the part on the ground 1.3 m before the player, to be taken up by hand. A catalogue, not a placing tool: no ghost, no snapping (principle 13).
+
+### 6. The menu
+
+`menu.rs`, `menu_controls.rs`, `app/menu.rs`: Esc opens a menu over a dimmed world: resume, controls, settings, save the world (when hosted), leave the planet, quit. The controls page is the table, grouped, each key a button that takes the next key or button pressed (Esc cancels). Settings: mouse sensitivity, invert up and down, field of view, interface size (applied when the slider is let go), volume (stored for A7), and the character's look (moved from the debug window). They apply at once and are saved to `settings.ron` (`settings.rs`: `%APPDATA%\Creeer` on Windows, the platform's settings folder elsewhere, or `CREEER_SETTINGS`) as the menu closes; a file that does not read is renamed `.bad` and the defaults used. Esc closes what is on top first (a key being rebound, a page, the kit, the inventory). Opening the menu lets go of every held key; losing the window's focus opens it. The world does not stop: it is a server's.
+
+**The cursor:** walking on the planet with nothing open, the cursor is captured and the mouse looks about, as in first-person games (before, the right button had to be held). Flying and the tech demo keep the right button.
+
+### 7. A clean default view
+
+The performance window and the planet's window of numbers and sandbox tools are the debug view, F3, off by default (the profiler stays on F9). Until the player has once opened the controls, a hint at the top of the screen says which key opens them.
+
+### The look
+
+`creeer_ui::theme` gives egui `art-style.md` §10: the tokens (checked against `data/art/palette.ron` by a test, as §11.2 asks), square corners, a light edge above and a dark one below, a hard shadow under windows instead of a blur, the highlight for what is chosen; text 15 points (12.5 small, 21 headings). `creeer_ui::paint` draws the HUD's plates, key caps, crosshair, work ring and fill bars in the same tokens. The interface size setting scales all of it.
+
+## Measured and rejected
+
+| Tried | Measured | Why not |
+|---|---|---|
+| Every prompt in one list beside the crosshair | Holding a post gave nine rows at the centre of the screen | The world's centre covered; split into what the crosshair is on (beside it) and what the hands hold (at the bottom) |
+| The kit palette in egui's grid without a wrap setting | Names and sizes broken a letter a line in narrow columns | `TextWrapMode::Extend` in the palette and the inventory |
+| Frames drawn three egui passes after the scene | A scroll area (the controls page) not settled: its last rows and the Back button missing | Six passes, a second apart |
+| Refusals and notes drawn as of the frame's capture | Terrain streaming takes 4–9 s after the scene: the answer had faded | `hud_shot` moves the server's answers on by the streaming's time |
+
+## Validation
+
+- Tests: `bindings_tests.rs` (every action one row, defaults clash only where shared on purpose, rebinding moves a key and frees the one that clashed, Esc and the wheel fixed, changes saved by id and loaded back, unknown ids and keys left out), `prompts_tests.rs` (a part in reach, too far, too heavy and heavy, holding a part, a stick and a stone, digging, a standing post, flying), `settings.rs` (saved and loaded the same, defaults for missing values, out-of-range values clamped, a bad file set aside), `hud_seen.rs` (names by shape, standing, ends), `hud_feedback.rs` (work notes, plain words, fading), `hud_hands.rs` (pocket names, fill), `kit_ui.rs` (sizes and weights of the base kit), `menu.rs` (every page draws and asks nothing by itself), `creeer_ui::theme` (the tokens against the palette).
+- Frames, 1080p and 4K at interface size 2 (`<frames>/hud/after-*.png`): aim, aim-far, heavy, refused, work, post, carry, the inventory, the kit, the menu's three pages, the first start's hint, the debug view.
+
+## Cost
+
+The screen laid out and tessellated, `--hud-frames 600` at 1080p (best of two runs; other agents were compiling):
+
+| View | Before (bc11c37) p50 / p99 | After p50 / p99 |
+|---|---|---|
+| aim (a pole in reach, hands empty) | 0.57 / 0.84 ms | 0.11 / 0.13 ms |
+| work (a rail held, fastening) | 0.62 / 0.93 ms | 0.12 / 0.43 ms |
+| carry (a stick in hand, pockets) | — | 0.08 / 0.15 ms |
+| aim with the debug view (F3) | (always shown before) | 0.85 ms p50 |
+
+Most of the time before was the performance plot and the planet window (which builds a whole snapshot to count bodies); they are now behind F3. The crosshair's naming reads every body's pose once a frame (`Connection::poses`) for the one aimed at: a single-pose accessor would cut it. A few frames of up to 20 ms appeared in two runs and not in others: to be measured again on a quiet machine.
+
+## Limits
+
+- **The world does not stop for the menu**, singleplayer included: a hosted server could pause (not done: the server is other streams').
+- **Built or not:** the client is not told which parts are fastened, so "Take apart" (U) is offered on every part; a fastened flag per body would show it only where it applies. Likewise whether a block is a container (`ItemLook` has no wall), whether a post stands in a hole, and whether the server is creative (the kit is offered on survival servers too, and refused with a reason).
+- **Rebinding:** one key per action (but Ctrl's left and right for finer); no second key, no wheel actions moved, no gamepad.
+- **The font** is egui's own until G11's (`art-style.md` §10).
+- **The HUD sits partly at the centre**, beside the crosshair, where `art-style.md` §10 gives the centre to the world: the user's approval is asked.
+- The tools 1–4 are named by number in the controls list (their names come from the tools' table at the bottom right).
