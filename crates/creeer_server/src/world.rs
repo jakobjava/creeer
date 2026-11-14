@@ -20,8 +20,7 @@ use creeer_sim::surroundings::Surroundings;
 use creeer_sim::{TerrainGround, character, planet_gravity};
 use creeer_terrain::edits::{Brush, Edit, Edits};
 use creeer_terrain::{Planet, Terrain};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// The time step (s).
 pub const DT: f64 = 1.0 / TICK_RATE as f64;
