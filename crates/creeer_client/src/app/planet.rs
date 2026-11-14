@@ -6,6 +6,16 @@ use crate::bindings::Action;
 use crate::planet_ui::Request;
 use crate::planet_view::PlanetView;
 
+/// How the game starts (`main.rs`): the tech demo, a dedicated server joined at once, or the
+/// bridge site.
+#[derive(Debug, Default)]
+pub(crate) enum Start {
+    #[default]
+    Demo,
+    Connect(std::net::SocketAddr, String),
+    Bridge,
+}
+
 /// Walking speed (m/s), and running.
 const WALK: f64 = 3.0;
 const RUN: f64 = 6.5;
@@ -23,6 +33,25 @@ impl Running {
             }
             Err(e) => eprintln!("could not load the planet: {e}"),
         }
+    }
+
+    /// Starts as asked (`main.rs`).
+    pub(super) fn start(&mut self, start: Start) -> Result<(), String> {
+        match start {
+            Start::Demo => Ok(()),
+            Start::Connect(server, name) => self.enter_connected(server, &name),
+            Start::Bridge => self.enter_bridge(),
+        }
+    }
+
+    /// Opens the bridge site (G2.11, ADR-0039; `bridge_site.rs`): a creative game at a gully, the
+    /// player on its near bank looking across.
+    pub(super) fn enter_bridge(&mut self) -> Result<(), String> {
+        let (view, site) = crate::bridge_site::view()?;
+        self.camera = crate::bridge_site::camera(&site);
+        self.planet = Some(view);
+        self.lighting_key = None;
+        Ok(())
     }
 
     /// Joins the dedicated server at `server` as `name`, walking from the start.
@@ -108,6 +137,11 @@ impl Running {
             Action::Tool3 => Some(2),
             Action::Tool4 => Some(3),
             Action::ToolAway => None,
+            // The stress overlay, on a creative server this process hosts (G2.11, ADR-0039).
+            Action::StressOverlay => {
+                planet.stress.on = !planet.stress.on;
+                return true;
+            }
             _ => return false,
         };
         let tool = if tool == planet.wielding { None } else { tool };
@@ -170,12 +204,17 @@ impl Running {
         }
         planet.advance_day(dt);
         planet.update_terrain(&mut self.renderer, self.camera.position);
+        planet.update_cover(&mut self.renderer, &self.camera);
 
         let build_start = Instant::now();
         self.scene.clear();
         self.lines.clear();
         // Drawn where the connection has everything now (it interpolates).
-        let snapshot = planet.snapshot();
+        let mut snapshot = planet.snapshot();
+        // What a creative server shows of what is built: the overlay draws the structures.
+        let stress = planet.stress;
+        let seen = (planet.session.inspection(stress.on)).unwrap_or_default();
+        stress.leave_out(&mut snapshot.beams);
         physics_view::draw(
             &mut self.scene,
             &self.meshes,
@@ -183,6 +222,8 @@ impl Running {
             (&snapshot, &snapshot, 1.0),
             Overlay::Off,
         );
+        let c = &planet.session.connection;
+        stress.draw(&mut self.scene, &self.meshes, c, &seen);
         if let Some(people) = &mut self.people {
             // In first person the player's own body is seen from within, its head sunk into it
             // (G2.11: their own arms and hands at work; not drawn, the part floated).
@@ -262,6 +303,10 @@ impl Running {
                 &mut self.game,
                 Some(&mut *planet),
             );
+            if let Some(scale) = stress.heatmap() {
+                heatmap_legend(ui.ctx(), &scale, "Share of what breaks it", "%");
+            }
+            crate::stress_view::hud(ui.ctx(), &self.camera, &seen, tick);
         });
         self.egui_state
             .handle_platform_output(&self.window, output.platform_output);
@@ -273,7 +318,7 @@ impl Running {
             terrain_frames: &[],
             lighting: &self.lighting,
             sky: Some(&sky),
-            heatmap: None,
+            heatmap: stress.heatmap().as_ref(),
             lines: &self.lines,
             overlay: Some(OverlayFrame {
                 primitives: &primitives,

@@ -6,6 +6,21 @@
 // darkest it may make the ambient light (`art-style.md` §5).
 @group(3) @binding(2) var<uniform> ao_view: vec4<f32>;
 
+/// How much sun the screen's contact shadows let reach camera-relative point `world` (1 lit,
+/// 0 shadowed; `ao_denoise.wgsl`), 1 with occlusion off.
+fn contact_light_at(world: vec3<f32>) -> f32 {
+    if ao_view.z <= 0.5 {
+        return 1.0;
+    }
+    let clip = globals.view_proj * vec4<f32>(world, 1.0);
+    let uv = vec2<f32>(clip.x, -clip.y) / clip.w * 0.5 + 0.5;
+    // The pixel's own value, unfiltered: blended with a neighbour's across an edge, a thing's
+    // rim would take the ground's shadow (a dark line round it).
+    let size = vec2<i32>(textureDimensions(ao_map));
+    let texel = clamp(vec2<i32>(uv * vec2<f32>(size)), vec2<i32>(0), size - 1);
+    return textureLoad(ao_map, texel, 0).g;
+}
+
 /// GTAO's multi-bounce fit (Jimenez et al. 2016, eq. 10): light bounced within a crease
 /// lightens it more on bright surfaces, so white paint is not greyed like dark rock.
 fn multi_bounce(v: f32, albedo: vec3<f32>) -> vec3<f32> {

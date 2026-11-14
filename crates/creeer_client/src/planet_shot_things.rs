@@ -306,21 +306,24 @@ pub(crate) struct Timed<'a> {
     pub ground: &'a crate::people_ground::PlanetGround<'a>,
 }
 
-/// Draws `view` `n` times more, each from the snapshot on, and prints what a frame cost: its
-/// wall time (p50, p99), the CPU's share (the snapshot and the scene made of it, best of the
-/// frames), the instances on screen and in shadows, and each pass's GPU time.
+/// Draws `view` `n` times more, each from the snapshot on (its ground cover kept, as the game
+/// keeps it), and prints what a frame cost: its wall time (p50, p99), the CPU's share (the
+/// snapshot and the scene made of it, best of the frames), the instances on screen and in
+/// shadows, and each pass's GPU time (`gpu_passes.rs`).
 pub(crate) fn time_frames(
     n: usize,
-    view: &PlanetView,
+    view: &mut PlanetView,
     (renderer, people): (&mut creeer_render::Renderer, &mut crate::people::People),
     at: &Timed<'_>,
 ) {
     use std::time::Instant;
     let mut stats = creeer_core::TimingStats::new(n);
+    let mut passes = crate::gpu_passes::GpuPasses::default();
     let (mut told, mut built) = (f64::MAX, f64::MAX);
     let mut counts = (0, 0);
     for _ in 0..n {
         let started = Instant::now();
+        view.update_cover(renderer, at.camera);
         let snapshot = view.snapshot();
         told = told.min(started.elapsed().as_secs_f64() * 1e3);
         counts = (snapshot.things.len(), snapshot.foliage.len());
@@ -344,20 +347,18 @@ pub(crate) fn time_frames(
             clear_color: crate::BACKGROUND,
         });
         stats.push(started.elapsed());
+        passes.push(renderer.gpu_times());
     }
     let (p, s) = (|q| stats.percentile_ms(q).unwrap_or(0.0), renderer.stats());
-    let gpu: Vec<String> = (renderer.gpu_times().iter())
-        .map(|t| format!("{} {:.2}", t.name, t.ms))
-        .collect();
     println!(
         "{n} frames: p50 {:.2} ms, p99 {:.2} ms; {} things, {} masses of foliage; {} drawn, \
-         {} in shadows; CPU (best) snapshot {told:.2} ms, scene {built:.2} ms; GPU ms: {}",
+         {} in shadows; CPU (best) snapshot {told:.2} ms, scene {built:.2} ms",
         p(50.0),
         p(99.0),
         counts.0,
         counts.1,
         s.instances_drawn,
         s.shadow_instances,
-        gpu.join(", ")
     );
+    println!("{}", passes.report());
 }

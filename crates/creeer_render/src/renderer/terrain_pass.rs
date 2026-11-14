@@ -6,19 +6,22 @@
 
 use super::*;
 use crate::shadow::LightBasis;
-use crate::terrain::{TerrainMeshData, TerrainVertex};
+use crate::terrain::{GroundUniform, TerrainMeshData, TerrainVertex, pattern_offset};
 use creeer_math::glam::{DVec3, Vec3};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
-    0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Snorm8x4, 4 => Float32
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+    0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Snorm8x4, 4 => Float32, 8 => Unorm8x4
 ];
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![5 => Float32x4, 6 => Float32x4];
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
 /// Bytes per instance: camera-relative origin (xyz) with the chunk's size (w, for the blend
-/// towards the coarser level), and the body's rotation.
-const INSTANCE_SIZE: u64 = 32;
+/// towards the coarser level), the body's rotation, and where the chunk's origin lies in the
+/// ground's pattern (xyz, `terrain::PATTERN_PERIOD`).
+const INSTANCE_SIZE: u64 = 48;
+/// Floats per instance.
+const INSTANCE_FLOATS: usize = 12;
 
 fn vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
     [
@@ -38,6 +41,8 @@ fn vertex_layouts() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
 /// One uploaded chunk.
 struct GpuChunk {
     origin: DVec3,
+    /// Its origin within the ground's pattern ([`pattern_offset`]).
+    pattern: [f32; 3],
     /// Index of the body frame it is drawn in.
     frame: u16,
     /// Edge length (m), for blending towards the coarser level (0: none).
@@ -66,6 +71,10 @@ pub(super) struct TerrainPass {
     shadow_draws: [Vec<(u64, u32, u8)>; CASCADES],
     /// Triangles drawn for the camera in the last frame.
     pub(super) triangles: usize,
+    /// The ground's layers, as the globals carry them to the shader.
+    pub(super) layers: GroundUniform,
+    /// The decoratives on the ground, drawn with it.
+    pub(super) cover: super::cover_pass::CoverPass,
 }
 
 impl TerrainPass {
@@ -83,6 +92,8 @@ impl TerrainPass {
             include_str!("../shaders/atmosphere.wgsl"),
             "\n",
             include_str!("../shaders/lighting.wgsl"),
+            "\n",
+            include_str!("../shaders/ground.wgsl"),
             "\n",
             include_str!("../shaders/terrain.wgsl")
         );
@@ -171,6 +182,11 @@ impl TerrainPass {
             draws: Vec::new(),
             shadow_draws: Default::default(),
             triangles: 0,
+            layers: GroundUniform::of(&[]),
+            cover: super::cover_pass::CoverPass::new(
+                device,
+                [globals_layout, shadow_sample_layout, luts_layout, ao_layout],
+            ),
         }
     }
 
@@ -204,6 +220,7 @@ impl TerrainPass {
             id,
             GpuChunk {
                 origin,
+                pattern: pattern_offset(origin),
                 frame,
                 size: mesh.chunk_size,
                 center,
@@ -241,13 +258,14 @@ impl TerrainPass {
         frustum: &Frustum,
         shadows: Option<(&[Cascade; CASCADES], &LightBasis)>,
     ) {
-        let mut origins: Vec<[f32; 8]> = Vec::new();
+        let mut origins: Vec<[f32; INSTANCE_FLOATS]> = Vec::new();
         self.draws.clear();
         for draws in &mut self.shadow_draws {
             draws.clear();
         }
         self.triangles = 0;
-        let mut per_cascade: [Vec<(u64, u8, [f32; 8])>; CASCADES] = Default::default();
+        let mut per_cascade: [Vec<(u64, u8, [f32; INSTANCE_FLOATS])>; CASCADES] =
+            Default::default();
         for &(id, caps) in ids {
             let Some(chunk) = self.chunks.get(&id) else {
                 continue;
@@ -259,10 +277,11 @@ impl TerrainPass {
             let rotation = body.rotation.as_quat();
             let origin = (body.rotation * chunk.origin + body.position - camera).as_vec3();
             let center = origin + rotation * chunk.center;
-            let mut instance_data = [0.0f32; 8];
+            let mut instance_data = [0.0f32; INSTANCE_FLOATS];
             instance_data[..3].copy_from_slice(&origin.to_array());
             instance_data[3] = chunk.size;
-            instance_data[4..].copy_from_slice(&rotation.to_array());
+            instance_data[4..8].copy_from_slice(&rotation.to_array());
+            instance_data[8..11].copy_from_slice(&chunk.pattern);
             if frustum.intersects_sphere(center, chunk.radius) {
                 let instance = u32::try_from(origins.len()).expect("instance count");
                 origins.push(instance_data);
@@ -319,14 +338,14 @@ impl TerrainPass {
         ao: &wgpu::BindGroup,
         prepassed: bool,
     ) {
-        if self.draws.is_empty() {
-            return;
+        if !self.draws.is_empty() {
+            pass.set_pipeline(&self.pipeline[usize::from(prepassed)]);
+            pass.set_bind_group(1, shadow_sampling, &[]);
+            pass.set_bind_group(2, luts, &[]);
+            pass.set_bind_group(3, ao, &[]);
+            self.issue(pass, &self.draws);
         }
-        pass.set_pipeline(&self.pipeline[usize::from(prepassed)]);
-        pass.set_bind_group(1, shadow_sampling, &[]);
-        pass.set_bind_group(2, luts, &[]);
-        pass.set_bind_group(3, ao, &[]);
-        self.issue(pass, &self.draws);
+        (self.cover).draw(pass, [shadow_sampling, luts, ao], prepassed);
     }
 
     /// Draws the camera's chunks into the depth prepass (globals bound by the caller).
@@ -335,6 +354,7 @@ impl TerrainPass {
             pass.set_pipeline(&self.prepass);
             self.issue(pass, &self.draws);
         }
+        self.cover.draw_prepass(pass);
     }
 
     /// Draws the shadow casters of one cascade (globals and cascade bound by the caller).
@@ -354,33 +374,4 @@ fn instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
-}
-
-impl Renderer {
-    /// Uploads (or replaces) terrain chunk `id`, whose vertices are relative to `origin`.
-    pub fn insert_terrain(&mut self, id: u64, origin: DVec3, mesh: &TerrainMeshData) {
-        self.terrain.insert(&self.device, id, 0, origin, mesh);
-    }
-
-    /// Uploads terrain chunk `id` of the body drawn in `Frame::terrain_frames[frame]`; its
-    /// origin and vertices are in that body's fixed frame.
-    pub fn insert_terrain_in(
-        &mut self,
-        id: u64,
-        frame: u16,
-        origin: DVec3,
-        mesh: &TerrainMeshData,
-    ) {
-        self.terrain.insert(&self.device, id, frame, origin, mesh);
-    }
-
-    /// Removes terrain chunk `id` (no-op if absent).
-    pub fn remove_terrain(&mut self, id: u64) {
-        self.terrain.remove(id);
-    }
-
-    /// Number of terrain chunks on the GPU.
-    pub fn terrain_chunk_count(&self) -> usize {
-        self.terrain.len()
-    }
 }

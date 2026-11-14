@@ -37,11 +37,15 @@
 //! The planet sandbox is a client of a server (F5): of one it hosts itself, or with
 //! `creeer_client --connect <address:port> [--name <player>]` of a dedicated server
 //! (`creeer_server`), joined at once, walking.
+//!
+//! `creeer_client --bridge` starts at the bridge site (G2.11, ADR-0039; `bridge_site.rs`): a
+//! creative game beside a gully, the timber for a footbridge and its loads a few steps away.
 
 mod animate;
 mod app;
 mod bindings;
 mod bindings_keys;
+mod bridge_site;
 mod build_play;
 mod build_play_scripts;
 mod build_play_shot;
@@ -55,6 +59,8 @@ mod fastening;
 mod fly_camera;
 mod golden;
 mod gpu_passes;
+mod ground_cover;
+mod ground_look;
 mod headless;
 mod held;
 mod held_load;
@@ -103,6 +109,7 @@ mod planet_aim;
 mod planet_camera;
 mod planet_net;
 mod planet_shot;
+mod planet_shot_bridge;
 mod planet_shot_build;
 mod planet_shot_things;
 mod planet_ui;
@@ -125,6 +132,7 @@ mod sounds;
 mod sounds_blows;
 mod sounds_bodies;
 mod sounds_things;
+mod stress_view;
 #[cfg(test)]
 mod struck_bench_tests;
 mod style_board;
@@ -263,7 +271,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App::default();
-    app.connect = connect;
+    app.start = match connect {
+        Some((server, name)) => app::Start::Connect(server, name),
+        None if args.iter().any(|a| a == "--bridge") => app::Start::Bridge,
+        None => app::Start::Demo,
+    };
     event_loop.run_app(&mut app)?;
     if let Some(error) = app.error {
         return Err(error.into());

@@ -18,6 +18,7 @@ enum FormDef {
     Block { size: (f64, f64, f64) },
     Ball { radius: f64 },
     Rod { radius: f64, length: f64 },
+    Lump { size: (f64, f64, f64) },
 }
 
 impl From<FormDef> for Form {
@@ -28,6 +29,9 @@ impl From<FormDef> for Form {
             },
             FormDef::Ball { radius } => Self::Ball { radius },
             FormDef::Rod { radius, length } => Self::Rod { radius, length },
+            FormDef::Lump { size: (x, y, z) } => Self::Lump {
+                size: DVec3::new(x, y, z),
+            },
         }
     }
 }

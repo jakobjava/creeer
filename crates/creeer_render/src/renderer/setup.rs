@@ -147,7 +147,7 @@ impl Renderer {
             &ao.sample_layout,
         );
         let line_pass = LinePass::new(&device, &globals_layout);
-        let sky_pipeline = SkyPass::new(&device, &globals_layout);
+        let sky_pipeline = SkyPass::new(&device, &queue, &globals_layout);
         let terrain = TerrainPass::new(
             &device,
             &globals_layout,

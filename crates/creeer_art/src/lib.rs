@@ -15,6 +15,7 @@
 pub mod checks;
 pub mod colour;
 pub mod exception;
+pub mod ground;
 pub mod model;
 pub mod model_check;
 pub mod model_levels;
