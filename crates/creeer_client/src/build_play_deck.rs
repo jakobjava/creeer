@@ -16,6 +16,9 @@ use winit::keyboard::KeyCode;
 const STRINGERS: [f64; 3] = [0.0, -0.4, 0.4];
 /// Where the player stands to lay and nail: this far short of the near rim (m).
 const SHORT_OF_RIM: f64 = 0.6;
+/// How far a stringer aimed at the near rim is slid out along itself (m): its middle over the
+/// gully's, its 3 m on both banks (the gully 2.3 m across at its rims).
+const SLID_OUT: f64 = 1.25;
 /// The deck boards laid from the near bank (within the placing reach), their first place
 /// across (m east of the start) and their spacing (BTCV: four to the metre).
 const BOARDS: usize = 6;
@@ -54,6 +57,15 @@ fn take(p: &mut Player, id: EntityId, name: &str, frames: bool) -> Result<(), St
     Ok(())
 }
 
+/// Takes what lies at `at` (G, looking at it), and waits for the hands.
+fn take_at(p: &mut Player, at: DVec3, name: &str) -> Result<(), String> {
+    look(p, at, 0.4);
+    p.shot(&format!("{name}-looked-at"))?;
+    p.key(KeyCode::KeyG);
+    p.play(0.6, DVec3::ZERO);
+    p.shot(&format!("{name}-taken"))
+}
+
 /// The top of stringer `id` as drawn, `x` m east of the start (on its axis's line there).
 fn stringer_top(p: &Player, id: EntityId, x: f64) -> DVec3 {
     let up = p.up();
@@ -75,18 +87,30 @@ pub(crate) fn deck(p: &mut Player, site: &BridgeSite) -> Result<(), String> {
     let stringers: Vec<EntityId> = (0..3).filter_map(|k| site.item("stringer", k)).collect();
     for (k, (id, y)) in stringers.iter().zip(STRINGERS).enumerate() {
         let name = format!("stringer{}", k + 1);
-        p.walk_to(now(p, *id), 1.3, 1.0);
-        take(p, *id, &name, true)?;
-        // Turned along the view by the row, then carried to the bank (turned at the bank, its
-        // 3 m swept the stringers laid there).
+        // From the row's south side: taken across the view, looked up level (carried before the
+        // chest, clear of the others in the row) and turned along the view there (turned while
+        // resting on the ground among them, it never came round).
+        let lies = now(p, *id);
+        p.walk_to(lies, 1.3, 1.0);
+        take_at(p, lies, &name)?;
+        let ahead = (lies - p.eye()).reject_from(p.up()).normalize_or_zero();
+        look(p, p.eye() + ahead * 3.0, 0.5);
         p.turn_to(FRAC_PI_2);
-        p.play(0.6, DVec3::ZERO);
+        p.play(3.0, DVec3::ZERO);
         p.shot(&format!("{name}-turned-along"))?;
         p.walk_to(at(p, rim - 1.6, y), 0.3, 0.3);
         p.walk_to(at(p, rim - SHORT_OF_RIM, y), 0.15, 0.3);
+        // Looking across, level, while it comes round with the view (a 3 m stringer turns no
+        // faster than the hands' torque stops it: about two seconds).
+        look(p, at(p, OUT, y) + p.up() * 1.6, 3.0);
         p.shot(&format!("{name}-at-the-bank"))?;
-        look(p, at(p, OUT, y), 1.5);
-        p.shot(&format!("{name}-aimed-across"))?;
+        // Slid out along itself (the wheel) and aimed at the near rim: it is laid from there out
+        // over the gully onto both banks (the gully's floor is beyond the hands' reach to aim
+        // at; aimed at the rim before it was slid out, its near half lay under her feet, and
+        // sliding it out shoved her back and over the rim).
+        p.wheel(SLID_OUT / 0.05);
+        look(p, at(p, rim - 0.1, y), 3.0);
+        p.shot(&format!("{name}-slid-across"))?;
         p.key(KeyCode::KeyG);
         p.play(0.5, DVec3::ZERO);
         p.shot(&format!("{name}-let-go"))?;
@@ -95,19 +119,24 @@ pub(crate) fn deck(p: &mut Player, site: &BridgeSite) -> Result<(), String> {
     }
     look(p, at(p, OUT, 0.0), 0.5);
     p.shot("the-stringers")?;
+    // From the row's east end (12 boards lying north, 0.22 m apart): each taken from beside it,
+    // across the view (taken end-on from the row's south side, one stood up in the hands among
+    // its neighbours).
     let boards: Vec<EntityId> = (0..BOARDS)
-        .filter_map(|k| site.item("deck board", k))
+        .filter_map(|k| site.item("deck board", 11 - k))
         .collect();
     for (k, id) in boards.iter().enumerate() {
         let name = format!("board{}", k + 1);
         // Every frame of the first board's, the last frame of the others'.
         let frames = k == 0;
-        p.walk_to(now(p, *id), 1.2, 1.0);
+        p.walk_to(now(p, *id) + p.east * 0.9, 0.2, 1.0);
         take(p, *id, &name, frames)?;
-        p.walk_to(at(p, rim - 1.6, 0.0), 0.3, 0.3);
-        p.walk_to(at(p, rim - SHORT_OF_RIM, 0.0), 0.15, 0.3);
         #[allow(clippy::cast_precision_loss)] // six
         let x = FIRST_BOARD + BOARD_EVERY * k as f64;
+        // Standing 0.8 m short of where it goes, on the bank (closer, it went under her feet).
+        let stand = (x - 0.8).min(rim - SHORT_OF_RIM);
+        p.walk_to(at(p, stand - 1.2, 0.0), 0.3, 0.3);
+        p.walk_to(at(p, stand, 0.0), 0.15, 0.3);
         // Across the view (along the gully), aimed at the middle stringer where it goes.
         p.turn_to(0.0);
         look(p, stringer_top(p, stringers[0], x), 1.5);

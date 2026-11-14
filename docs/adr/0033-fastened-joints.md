@@ -252,3 +252,31 @@ The play and stress hashes are unchanged at both lengths: their scenes keep with
 - A notch cut into the stem beside a joint does not weaken it, and bark is taken as wood.
 - The part rests on the trunk's box (a square of the disc's area) while the joint is measured to the round stem.
 - A lashing round a trunk takes one strip whatever the girth.
+
+## G2.11: nails where parts cross, by hand (2026-11-14, stream B2)
+
+Found building the bridge site's deck (ADR-0039): a player's J could not nail two parts already of one structure (the third crossing of a board whose first made the deck one), and a nail went through whichever part was aimed at (up through a 150 mm stringer, 25 mm into the board above it: under the 8 diameters a smooth nail needs to resist pulling, accepted by the 6 diameters `law.rs` asked, and let go at once).
+
+**Prior work** (for what is decided here; the laws' sources are G2.2's above):
+- EN 1995-1-1 §8.3.1.2 and §8.3.2(7): a smooth nail's pointside penetration at least 8·d; its withdrawal cut by (t_pen/4d − 2) below 12·d, to nothing at 8·d. §7.1 and §8.3.1.1: a group's slip moduli and capacities add per fastener.
+- Carpenters' practice (framing and decking guides; BTCV *Footpaths*): a deck board is nailed down through the board into the joist or stringer, two nails at each crossing, the nail two and a half to three times the board's thickness, driven from the side the carpenter stands on.
+- Games: The Enjenir nails pieces where they meet, one nail a joint, chosen by the game; Besiege and KSP join parts rigidly at attachment points. None nails through a part the player chooses.
+
+**Decision:**
+1. **What touches at the aim** (`world/building_crossing.rs`): another body (the world's contacts), a standing tree, or another member of the same built structure. A built structure's members do not collide with each other, so where two touch is found from how they lie: their axes' nearest points, each section about its axis (`Structure::member_frame`), touching within 3 cm and across both (two pieces of one member, end to end, are no crossing).
+2. **Which way:** from the side the player stands on (the part between their eyes and the other), through it into the other; seen edge-on (the eyes within a fifth of the way of the crossing's plane), through the thinner. A scene's world nails through the part it names first, as before.
+3. **How thick along it:** each part's section's reach along the nail (`MemberFrame::reach`: a round part's radius, a box's |n·y|·h_y + |n·z|·h_z): a stringer on edge is 150 mm down a nail, 75 mm across one. The bearing is still the thinner's thickness squared (an estimate, as before).
+4. **Several nails at a crossing are one joint**, the law of their number and spread (Σr² about the crossing, `Placement`): the joint stays between the two axes at the crossing's middle where the first was made; each further nail remakes its law in place (`Structure::refasten`: its frames and slip so far kept). How many it holds and their spread are read back from the joint itself (its withdrawal is n nails', its twist k·(Σr² + n·d²): `Structure::joint_twist`), so nothing more is saved (the count to within 15 %: the parts settle by a millimetre between nails, and a nail just reaching 12 diameters into the part behind loses some of its grip by it). A nail goes in nearest where aimed within the crossing, two diameters inside both parts' edges. A crossing fastened with another fastener already is refused. Between two bodies, the two members taken are those that touch nearest where they touch (a deck board laid beside one nailed already: the nailed board's member, nearest the touch on the stringer under it, was taken at first, and the two boards were to be pegged side by side).
+5. **A smooth nail reaches 8·d** into the second part (was 6·d), or is refused, before any blow, in the player's words ("too short: a 100 mm nail does not come through the 151 mm of this part. Nail from the other side"). The hand reaches for the shortest nail that grips fully (12·d), else the one reaching deepest (the shortest that held at all reached 8·d into a stringer through a deck board and held nothing against pulling).
+
+**Validation** (`world/building_crossing_tests.rs`, `structure/nails_tests.rs`):
+
+| Test | Result |
+|---|---|
+| J aimed at a stringer's side under a deck board (no fastener named) | down through the board: a 100 mm nail, 50 mm into the stringer, 706 N of withdrawal (20·10⁻⁶·420²·4·50) |
+| A board nailed to one stringer, then J at its crossing with the next | nailed there too: a joint at each crossing |
+| A second nail 4 cm along the stringer at that crossing | one joint still; twice the withdrawal (within 1 %: the crossing as it lies then), turning over ten times stiffer |
+| A stringer on edge across a board, J at its top with the 100 mm nail | refused in words, nothing made one |
+| A joint refastened with the law of two, loaded | moves as a joint made with that law, to 10⁻¹² m; turns by T/k (0.0100 rad, then 0.0025) |
+
+**Limits:** a joint's nails are known by their count and spread only, so a third nail driven where the second was is not refused for its spacing (only the first's place is known). A joint of nails of two sizes is refused another. The joint is at the crossing's middle: nails off it stiffen its turning, they do not shift it.
