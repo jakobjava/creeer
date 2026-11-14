@@ -76,4 +76,5 @@ The scene is far over the play gates (worst ≤ 5 ms, p99 ≤ 2 ms), and not hid
 - The overlay and the failure marks reach a client only from a server its own process hosts: a dedicated creative server's players get the note in words, not the overlay. A message for them is the protocol's (stream B).
 - Play scenes cannot carry and place parts by hand (`Act` has no hold): the scene's bridge is laid and nailed by its world.
 - A player's J cannot nail two parts that are already one structure (`touching_part` looks at other bodies only): once the stringers are joined through one board, every further board can be nailed to one stringer only. A deck needs its loops closed; stream B's.
+- The overlay's joint balls lie mostly inside the members they join and show little; built members are drawn as round bars, deck boards too, and a broken structure's one-node pieces as dark balls (the drawing of parts and pieces: streams A2 and A5).
 - A well-built footbridge does not visibly sag under what people carry (about 18 mm at L/150 before it breaks): the sag reads near the break only, or in lighter builds.
