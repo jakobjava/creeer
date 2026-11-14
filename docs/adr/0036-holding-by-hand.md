@@ -214,6 +214,7 @@ The user, 2026-11-13, after the first-person placing: "troubleshooting the same 
 | The fastener chosen by K, the 75 mm nail first | Too short for the kit's 60 mm rail into anything: refused | The shortest nail at hand that holds |
 | One J nailing every crossing a held part touches (G2.10) | Not the user's way (2026-11-13: they choose where nails go and how many) | One J, one nail |
 | A nail's time written in the catalogue (2 s) | Not from the work (plan.md principle 1) | Its blows: driving work over a blow's share, at two blows a second |
+| Lifted clear while far from where it is aimed (its depth and 0.25 m, wholly from 0.5 m off, level; `0036/travel-lift.diff`), so a rail taken from the ground passes over poles lying in its way | Posts let down into their holes were lifted again while near: 8–12° off upright, their feet short of the floor; a pole laid across the gap over a slow link 23° off the way across | Not taken (rule 7, its first try; lying parts only is the next try): a part is carried, not dragged, from the chest (`docs/future-improvements.md`) |
 
 ## Validation
 
