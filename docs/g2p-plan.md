@@ -1,6 +1,6 @@
 # G2P plan: tick time (the A6 stream of G2.11)
 
-Status: **in progress** (written 2026-11-13, at the start of the stream, as plan.md's G2P asks). Branch `g2`. This plan covers the parts of G2P that G2.11 brought forward (`docs/playability-plan.md`, stream A6): P3's *log_bridge* breaking tick and P1's loose poles at rest. The rest of G2P (P2's second pass, P1's ragdolls and piles, *builders*' and *drop*'s worst ticks) keeps plan.md's order and is planned when it starts.
+Status: **in progress** (written 2026-11-13, at the start of the stream, as plan.md's G2P asks). G2.11's pass (2026-11-14) found and fixed the breaking tick's cause, energy from nothing; its gates are not met, and what remains is measured below ("What comes next"). The loose poles are not started. Branch `g2`. This plan covers the parts of G2P that G2.11 brought forward (`docs/playability-plan.md`, stream A6): P3's *log_bridge* breaking tick and P1's loose poles at rest. The rest of G2P (P2's second pass, P1's ragdolls and piles, *builders*' and *drop*'s worst ticks) keeps plan.md's order and is planned when it starts.
 
 ## Why
 
@@ -106,9 +106,19 @@ Not met: the gates (worst ≤ 5 ms, p99 ≤ 2 ms). What the remaining cost is, m
 - **Every point impact on a structure is stepped in 34 impact substeps** (0.5 ms). A ragdoll's segment or the crate rocking on a piece of the plank closes faster than 5 cm/s, and the whole group (the man's 14 segments, the crate, the pieces: 16–17 bodies, 150–300 contacts) is stepped in substeps, about 250 Newton iterations each, as ADR-0024's ragdoll under a crate takes. Faces (prisms) are judged by whether the impact can yield a member at all (ADR-0005, G2.3: a hundredth of the least yielding energy at the struck node); points are not, because the save fixtures held their motion then. They no longer do (the user, 2026-10-26). Judging points alike is the next step (a hand at 0.3 m/s brings mJ, a member stores tens of J at yield).
 - **Fast-spinning fragments put their groups in turn substeps** (up to 16 world steps a tick, and a redo): single nodes of the plank, 0.9–4.3 kg, spinning at 15–100 rad/s once both their members broke.
 - **The man under the crate** is ADR-0024's open case (a ragdoll and a crate: 40 iterations a substep).
+- **The pile does not converge.** From tick 997 on, the man, the crate, the sills and the plank's pieces (about 22 bodies) lie in the gap nearly still, and their group's Newton steps end at the 500-iteration safety net: 10,005–22,004 iterations a tick with no impact substeps at all (`break_probe.rs`, the profile's iterations 1,004 in two group steps). That is ADR-0024's open work on piles (friction's lagged normal forces, the ragdoll's joints), met here first.
+
+Measured and set aside (ADR-0005, G2.11): point impacts judged as faces are (impact substeps only where the impact could yield a member): ticks 936–1009, 2.34 million iterations against 3.06 million (whole runs, chaotic), the most in a tick 113,072 against 173,505; the pile's non-convergence as before.
 
 Subcycling the struck region (ADR-0035) is not what this scene needs: the plank is 12 nodes, struck whole.
 
+### What comes next for the breaking tick (in this order)
+
+1. **The pile's convergence** (G2P, P1): the group at the 500-iteration limit, taken apart on its own saved states (ADR-0024's method: `play/break_probe.rs` can write them).
+2. **Impact substeps for points**, measured on the same states (`docs/adr/0005/points-by-yield-energy.diff`).
+3. **The break's realism** (above): the damping law and the bending capacity of brittle members, each validated on a timber case (ASTM D143 three-point bending against the *Wood Handbook*'s MOR; a measured damping ratio of timber members), before any of it changes the trees and buildings.
+4. **The ragdoll laid out clear of what knocked it down** (the character's stream, A4): now pushed out, not thrown, but laid 13 cm inside a crate.
+
 ## Part 2: loose poles at rest
 
-(Not started in this pass: see the report and `docs/future-improvements.md`.)
+**Not started in this pass.** The breaking tick took the pass: its cause was not the one planned for, and the scene it left (a pile in the gap) needs P1's own work first (above). P1's rest starts, as plan.md says, from `docs/adr/0005/anchors-kept-and-clamped.diff` and its tests; its gates are those above. Its survey is ADR-0005's and ADR-0024's (above).
