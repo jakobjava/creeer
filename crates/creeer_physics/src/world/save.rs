@@ -165,6 +165,8 @@ impl Decode for Body {
             sleep,
             crushing: r.get()?,
             held: if r.version() >= 8 { r.get()? } else { false },
+            // A body saved was in the world before: not new to it (not saved).
+            born: false,
         })
     }
 }

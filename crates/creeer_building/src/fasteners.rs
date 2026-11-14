@@ -46,8 +46,10 @@ pub struct Fastener {
     pub strength: Option<f64>,
     pub peak_slip: f64,
     pub failure_slip: f64,
-    /// How long fastening one takes by hand (s).
-    pub seconds: f64,
+    /// How long fastening one takes by hand (s). None for a nail: its time is the hammer blows
+    /// its driving work needs (`hammering.rs`, G2.11).
+    #[serde(default)]
+    pub seconds: Option<f64>,
 }
 
 /// Room temperature (K): the strengths a joint is made with.
@@ -152,7 +154,7 @@ impl Fastener {
         if let Kind::Lashing { wraps: w, .. } = &mut tacked.kind {
             *w = tack;
         }
-        tacked.seconds = self.seconds * f64::from(tack) / f64::from(wraps);
+        tacked.seconds = (self.seconds).map(|s| s * f64::from(tack) / f64::from(wraps));
         (tack > 0).then_some(tacked)
     }
 
@@ -245,8 +247,14 @@ pub fn problems(fasteners: &[Fastener], materials: &MaterialTable) -> Vec<String
                 f.peak_slip, f.failure_slip
             ));
         }
-        if !(f.seconds > 0.0 && f.seconds < 600.0) {
-            out.push(format!("fastener {at}: takes {} s", f.seconds));
+        // A nail's time is its blows'; anything else's is written down.
+        let timed = match (f.kind, f.seconds) {
+            (Kind::Nail { .. }, None) => true,
+            (_, Some(s)) => s > 0.0 && s < 600.0,
+            (_, None) => false,
+        };
+        if !timed {
+            out.push(format!("fastener {at}: takes {:?} s", f.seconds));
         }
         if f.strength.is_some_and(|s| !(1e6..5e9).contains(&s)) {
             out.push(format!("fastener {at}: strength {:?} Pa", f.strength));

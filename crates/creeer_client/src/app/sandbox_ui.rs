@@ -4,16 +4,6 @@ use super::*;
 use creeer_render::renderer::AoQuality;
 
 impl Running {
-    /// A key pressed: the profiler's (F9), the solar system's or the planet's. Returns
-    /// whether it was one.
-    pub(super) fn key(&mut self, code: winit::keyboard::KeyCode) -> bool {
-        if code == winit::keyboard::KeyCode::F9 {
-            self.profiler.toggle();
-            return true;
-        }
-        self.system_key(code) || self.planet_key(code)
-    }
-
     pub(super) fn sandbox_window(&mut self, ctx: &egui::Context, snapshot: &SandboxSnapshot) {
         egui::Window::new("Sandbox")
             .default_pos([12.0, 330.0])
@@ -21,6 +11,12 @@ impl Running {
             .show(ctx, |ui| {
                 if ui.button("Planet sandbox (F3) ▸").clicked() {
                     self.enter_planet();
+                }
+                // The bridge to build and break (G2.11: also `--bridge`).
+                if ui.button("Bridge site (creative) ▸").clicked()
+                    && let Err(e) = self.enter_bridge()
+                {
+                    eprintln!("could not make the bridge site: {e}");
                 }
                 if ui.button("Solar system sandbox (F4) ▸").clicked() {
                     self.enter_system();

@@ -20,8 +20,7 @@ use creeer_sim::surroundings::Surroundings;
 use creeer_sim::{TerrainGround, character, planet_gravity};
 use creeer_terrain::edits::{Brush, Edit, Edits};
 use creeer_terrain::{Planet, Terrain};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// The time step (s).
 pub const DT: f64 = 1.0 / TICK_RATE as f64;
@@ -95,10 +94,11 @@ pub struct ServerWorld {
     carrying: std::collections::BTreeMap<EntityId, carry::Carry>,
     /// The bodies that are items, and what each player carries (G1.6a, `items.rs`).
     items: items::Items,
-    /// What was done to its trees (G1.7, `trees.rs`) and dug from its ground (G1.5, `digging.rs`).
+    /// Its trees (G1.7), what was dug (G1.5), built (G2.3) and failed (G2.11, `site_watch.rs`).
     trees: trees::Trees,
     digging: digging::Digging,
     building: building::Building,
+    watch: site::Watch,
     /// A creative (or test) server: its players may drop crates, frames and machines and dig
     /// and fill anywhere within 500 m ([`REACH`]); on others, only what they reach (G1.4d).
     pub creative: bool,
@@ -161,6 +161,7 @@ impl ServerWorld {
             trees,
             digging: digging::Digging::default(),
             building,
+            watch: site::Watch::default(),
             creative: false,
         }
     }
@@ -338,11 +339,13 @@ mod made_tools_tests;
 pub(crate) mod making;
 #[cfg(test)]
 mod making_tests;
+mod nailing;
 mod posts;
 #[cfg(test)]
 mod raising_tests;
 #[cfg(test)]
 mod rim_tests;
+pub mod site;
 mod spawn;
 mod step;
 mod survival;

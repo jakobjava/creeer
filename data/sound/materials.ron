@@ -1,0 +1,46 @@
+// How materials sound (ADR-0037): what the physics does not already say. Every engineering
+// material (materials/*.ron) sounds by its own E, G and density; this file adds, for those that
+// need it, the acoustic loss factor and how it cracks and creaks. A material not listed rings
+// with its structure solver's `damping` as its loss factor and cracks as `default_crack` says
+// (hearing.ron).
+//
+// HOW TO ADD ONE (data work; `cargo test -p creeer_audio` checks every entry):
+// - `material`: an engineering material's id (materials/engineering.ron).
+// - `loss`: its loss factor η where the acoustic one differs from the solver's damping: each mode
+//   of f Hz dies away at π·f·η per second (a T60 of 2.2/(f·η) s). Measured values, with the
+//   source in a comment.
+// - `crack`: how it breaks: `seconds` the fracture lasts (a clean snap: milliseconds; green wood
+//   tearing its fibres: a tenth of a second and more), `grains` the micro-fractures in it,
+//   `exponent` their energies' power law (crackling noise: about 1.3–1.5), `vibration` the share
+//   of the strain energy it held that sets its pieces ringing (an estimate everywhere for now).
+// - `creak`: how it creaks under load, after timber's acoustic emission: from `onset` (a share of
+//   its strength) its creaks begin, up to `rate` bursts a second as it breaks, each slip of up to
+//   `energy` J into its modes (estimates: to be refined with acoustic-emission counts).
+//
+// Sources: Wegst, "Wood for sound" (Am. J. Botany 93, 2006): spruce along the grain tan δ about
+// 0.006–0.01; Cremer, Heckl and Petersson, Structure-Borne Sound (2005): loss factors of steel
+// 1e-4–6e-4, glass 6e-4–2e-3, concrete 4e-3–8e-3, timber about 0.01; green wood damps about twice
+// as much as dry (Ouis, "On the frequency dependence of the modulus of elasticity of wood", Wood
+// Sci. Technol. 36, 2002).
+[
+    (material: "spruce_c24", loss: Some(0.008),
+     crack: Some((seconds: 0.03, grains: 60.0, exponent: 1.4, vibration: 0.05)),
+     creak: Some((onset: 0.5, rate: 3.0, energy: 2e-5))),
+    (material: "spruce_green", loss: Some(0.02),
+     crack: Some((seconds: 0.15, grains: 250.0, exponent: 1.3, vibration: 0.05)),
+     creak: Some((onset: 0.4, rate: 4.0, energy: 3e-5))),
+    (material: "pine_green", loss: Some(0.02),
+     crack: Some((seconds: 0.15, grains: 250.0, exponent: 1.3, vibration: 0.05)),
+     creak: Some((onset: 0.4, rate: 4.0, energy: 3e-5))),
+    (material: "birch_green", loss: Some(0.02),
+     crack: Some((seconds: 0.12, grains: 200.0, exponent: 1.3, vibration: 0.05)),
+     creak: Some((onset: 0.4, rate: 4.0, energy: 3e-5))),
+    (material: "steel_s235", loss: Some(3e-4),
+     crack: Some((seconds: 0.01, grains: 15.0, exponent: 1.5, vibration: 0.1))),
+    (material: "glass_soda_lime", loss: Some(1e-3),
+     crack: Some((seconds: 0.008, grains: 120.0, exponent: 1.5, vibration: 0.1))),
+    (material: "concrete_c30", loss: Some(6e-3),
+     crack: Some((seconds: 0.01, grains: 40.0, exponent: 1.5, vibration: 0.05))),
+    (material: "granite",
+     crack: Some((seconds: 0.006, grains: 30.0, exponent: 1.5, vibration: 0.05))),
+]

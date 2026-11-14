@@ -17,6 +17,13 @@ use creeer_render::{Character, Material, Renderer, Scene};
 use creeer_sim::character::bones::{SEGMENT_NAMES, STARTING_OUTFIT, finger_bones};
 use std::collections::HashMap;
 
+/// The trunk's and the head's segments (the ragdoll's order), and how far the head is sunk into
+/// the trunk when the person is seen from within (m, in the trunk's frame: its centre from the
+/// eyes' height to the belly's).
+const TRUNK: usize = 1;
+const HEAD: usize = 2;
+const SUNK: f64 = 0.55;
+
 /// The catalogue's axe (`tools.ron`), whose swing a made tool's is drawn with.
 const AXE: u8 = 2;
 
@@ -66,6 +73,14 @@ pub struct People {
     outfits: HashMap<Vec<String>, OutfitId>,
     /// Their animation (G1.3g).
     animator: Animator,
+    /// The person seen from within (first person, G2.11): drawn with the head sunk into the
+    /// body, so the eyes see their own arms, hands and what they hold.
+    pub first_person: Option<u32>,
+    /// Where that person's eyes look (the view's way): standing, the body faces it.
+    pub looking: Option<DVec3>,
+    /// That person's eyes as last drawn, before the head was sunk (the camera goes there along
+    /// the line of sight, G2.11: `planet_camera::along_the_view`).
+    eye: Option<DVec3>,
 }
 
 impl std::fmt::Debug for People {
@@ -125,6 +140,9 @@ impl People {
             held,
             outfits: HashMap::new(),
             animator,
+            first_person: None,
+            looking: None,
+            eye: None,
         };
         for worn in [&STARTING_OUTFIT[..], &["base_layer"]] {
             people.add_outfit(renderer, worn);
@@ -143,6 +161,16 @@ impl People {
         }
     }
 
+    /// The eyes of the person seen from within ([`Self::first_person`]) as last drawn, standing.
+    pub fn eye(&self) -> Option<DVec3> {
+        self.eye
+    }
+
+    /// Person `key`'s feet as last drawn (their footsteps' sound: `sounds.rs`).
+    pub fn feet(&self, key: u32) -> Option<[(DVec3, bool); 2]> {
+        self.animator.feet(key)
+    }
+
     /// The people into `scene` as the renderer draws them this frame, `dt` seconds after the
     /// last, animated on `ground`, with the tools they hold (those no longer drawn are
     /// forgotten). Returns the pieces of the made tools in their hands (G1.10), as boxes (centre,
@@ -155,6 +183,7 @@ impl People {
         scene: &mut Scene,
     ) -> Vec<(DVec3, DQuat, DVec3, [u8; 3])> {
         let mut in_hands = Vec::new();
+        self.eye = None;
         let keys: Vec<u32> = people.iter().map(|p| p.key).collect();
         self.animator.retain(&keys);
         for p in people {
@@ -166,7 +195,25 @@ impl People {
             let swing = (swung.zip(p.swing)).and_then(|(t, s)| self.held.swing_progress(t, s));
             self.animator.swing(p.key, swing);
             self.animator.holding(p.key, p.holding);
-            let bones = self.animator.bones(p.key, &p.body, dt, ground);
+            let seen_from = self.first_person == Some(p.key);
+            (self.animator).looking(p.key, self.looking.filter(|_| seen_from));
+            let mut bones = self.animator.bones(p.key, &p.body, dt, ground);
+            // Seen from within (first person): the head, where the eyes are, sunk into the body,
+            // its neck into the trunk, so the eyes see their own arms and hands at work (G2.11:
+            // not drawn at all, the part held floated before the eyes in no hands).
+            // (Sunk with the trunk's own turn, so stooping it stays inside: sunk straight down,
+            // the top of the head showed between the stooped shoulders.)
+            if self.first_person == Some(p.key)
+                && matches!(p.body, Body::Standing(..))
+                && let Some(&trunk) = bones.get(TRUNK)
+            {
+                // (Its eyes first, where the head was drawn: the camera goes there. The eyes lie
+                // before the head's centre, as a face's do, the model facing +z: from its centre,
+                // looking down, the camera saw into the collar and the head sunk below it.)
+                let rest = creeer_sim::character::bones::centres()[HEAD] + DVec3::Z * 0.09;
+                self.eye = Some(bones[HEAD].transform_point(rest));
+                bones[HEAD] = trunk * Frame64::new(DVec3::NEG_Y * SUNK, DQuat::IDENTITY);
+            }
             let made = p
                 .made
                 .as_ref()

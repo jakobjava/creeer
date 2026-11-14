@@ -135,7 +135,8 @@ fn a_lashing_tacked_is_its_first_turns_in_their_time() {
     let (all, m) = catalogue();
     let whole = named(&all, "bast_lashing");
     let tacked = whole.tacked().expect("a lashing is tacked");
-    assert!((tacked.seconds - 4.0).abs() < 1e-12, "{} s", tacked.seconds);
+    let seconds = tacked.seconds.expect("a lashing's time");
+    assert!((seconds - 4.0).abs() < 1e-12, "{seconds} s");
     let sides = (&c24(&m, 0.15), &c24(&m, 0.15));
     let (law, full) = (
         tacked.law(&m, sides, &ONE, 0.15).expect("holds"),

@@ -140,3 +140,7 @@ The *tower* play scene (17 × 20 × 17 bays, about 19,600 beams) took 2.2–3 s 
 **Measured and rejected:** the same materiality for contacts too. It moved the save fixtures' steel frame (it changed when that frame refactorised), and seven fixture tests failed: they hold that motion bit for bit.
 
 **Still open (the user decided on 2026-10-24 to record it and move on):** the tower runs p50 28 ms at full length and about 120 ms a tick while awake. The cost is its solve and factorisation, against the 5 ms gate.
+
+## G2.11 (2026-11-14): *log_bridge*'s breaking tick was not a struck structure's cost
+
+P3's target named *log_bridge*'s breaking tick (445,513 Newton iterations, 2.6 s). Taken apart (`docs/g2p-plan.md`), it was energy from nothing: a fallen builder's head laid out 13.4 cm inside the crate that felled him, 222 MJ in one contact, let through by the energy guard (fixed: ADR-0005, amended in G2.11). After the fix the plank breaks at one section in a tick of 11,496 iterations; the landing before it takes 64,269. What remains is a pile (the man, the crates, the plank's pieces) whose Newton steps end at their 500-iteration limit, and point impacts that put whole groups in impact substeps: P1's work and ADR-0005's, not subcycling's (the plank is 12 nodes, struck whole). Measured and set aside there: point impacts judged by the energy that could yield a member.

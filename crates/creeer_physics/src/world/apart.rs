@@ -49,6 +49,8 @@ impl World {
                 } else {
                     self.add(body)
                 };
+                // A piece goes on as the body was: what its contacts hold is the motion's.
+                self.bodies[at].born = old.born;
                 for (k, &n) in nodes.iter().enumerate() {
                     moved.push((n, at, k));
                 }

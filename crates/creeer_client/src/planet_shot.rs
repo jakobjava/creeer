@@ -40,6 +40,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if view_name == "night" {
         sun_elevation = -30.0;
     }
+    // `--hud`: the game's screen drawn over it (`hud_shot.rs`).
+    let hud = crate::hud_shot::HudShot::parse(args)?;
+    // The bridge site's frames (G2.11): a game of their own (`planet_shot_bridge.rs`).
+    if view_name == "bridge" {
+        return crate::planet_shot_bridge::run(args);
+    }
 
     let mut view = PlanetView::singleplayer(true)?;
     let terrain = Arc::clone(&view.terrain);
@@ -161,10 +167,14 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         other if crate::planet_shot_build::VIEWS.contains(&other) => {
             crate::planet_shot_build::camera(&mut view, other)?
         }
+        other if crate::hud_shot::VIEWS.contains(&other) => {
+            crate::hud_shot::camera(&mut view, other)?
+        }
         other => return Err(format!("unknown planet view `{other}`").into()),
     };
 
-    let mut renderer = pollster::block_on(Renderer::new_headless((1600, 900)))?;
+    let size = hud.as_ref().map_or((1600, 900), |h| h.size);
+    let mut renderer = pollster::block_on(Renderer::new_headless(size))?;
     let meshes = DemoMeshes::register_for(&mut renderer);
     // Stream until settled.
     let start = Instant::now();
@@ -199,6 +209,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut people = crate::people::People::register(&mut renderer)?;
     let mut drawn = crate::planet_shot_build::people(&view, &view_name, &snapshot.people);
     crate::planet_shot_walk::people(&view, &view_name, &mut drawn);
+    crate::hud_shot::not_own(&view, &view_name, &mut drawn);
+    let mut overlay = (hud.as_ref()).map(|h| crate::hud_shot::overlay(h, &mut view, &camera));
     let ground = crate::people_ground::PlanetGround {
         terrain: &view.terrain,
     };
@@ -212,7 +224,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         lines: &DebugLines::default(),
         sky: Some(&sky),
         heatmap: None,
-        overlay: None,
+        overlay: overlay.as_mut().map(crate::hud_shot::Overlay::frame),
         clear_color: crate::BACKGROUND,
     });
     image.save_png(std::path::Path::new(&path))?;
@@ -273,7 +285,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The time of day (fraction) at which the sun stands `elevation` degrees above the horizon
 /// at `up`, in the morning.
-fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
+pub(crate) fn day_for_sun(view: &PlanetView, up: DVec3, elevation: f64) -> f64 {
     let target = det::sin(elevation.to_radians());
     let mut best = (f64::MAX, 0.0);
     for i in 0..4000 {

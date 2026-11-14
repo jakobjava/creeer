@@ -274,6 +274,10 @@ pub struct Contacts {
     weight: f64,
     /// The elastic energy the last step left in these contacts, if known (`Self::set_left`).
     left: Option<f64>,
+    /// Which members are new to the world this step (`Self::set_born`), and what their
+    /// contacts held when first measured (index in `Self::energies`, J; `Self::owed_energy`).
+    born: Vec<bool>,
+    owed: Option<Vec<(usize, f64)>>,
     /// The twist (rad) within which drilling friction sticks in this step (`twist.rs`).
     twist_smoothing: f64,
     /// The group's joints (`world/joint.rs`): terms of the same minimisation.
@@ -308,6 +312,8 @@ impl Contacts {
             kept: geometry::Kept::default(),
             weight: 0.0,
             left: None,
+            born: Vec::new(),
+            owed: None,
             twist_smoothing: 1.0,
             joints: crate::world::joint::Joints::default(),
         }

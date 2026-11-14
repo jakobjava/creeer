@@ -47,6 +47,14 @@ fn the_sandbox_windows_draw_without_panicking() {
     view.corotating = true;
     view.selected = None;
     frame(&mut view);
+    // The path is predicted on the simulation's thread: on a loaded machine it comes some
+    // frames later, so frames are drawn until it is there (ten seconds at most).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while view.snapshot().current.prediction.1.points.len() <= 10
+        && std::time::Instant::now() < deadline
+    {
+        frame(&mut view);
+    }
     let s = view.snapshot().current;
     assert!(s.focus.is_some(), "the ship is focused");
     assert!(s.prediction.1.points.len() > 10, "a path was predicted");

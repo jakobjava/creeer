@@ -13,8 +13,12 @@ use creeer_net::entity::{EntityId, Kind, Shape as NetShape};
 use creeer_net::message::Hold;
 use creeer_sim::reach;
 
-/// How far before the eyes a held part hangs when the view meets nothing within reach (m).
-const HANGS: f64 = 1.0;
+/// Meeting nothing within reach, a held part is carried before the chest: its middle at least
+/// this far ahead of the eyes (m), its near side this far clear of them, and this far below
+/// them (the lower chest of the 1.85 m engineer: `carry::held`'s height, about 1.3 m up).
+const HANGS: f64 = 0.6;
+const CLEAR_OF_EYES: f64 = 0.35;
+const HANGS_BELOW: f64 = 0.4;
 /// How far beside the aimed ray two more are cast to find the surface's normal (m).
 const SPAN: f64 = 0.02;
 /// Stood up (its long axis this near upright: the cosine), how far below where it is aimed its
@@ -62,7 +66,11 @@ impl Connection {
         also: impl Fn(DVec3, DVec3, f64) -> Option<f64>,
     ) -> Option<Surface> {
         let avatar = self.avatar()?;
-        let eye = reach::eye(avatar.position, avatar.position.normalize());
+        let standing = reach::eye(avatar.position, avatar.position.normalize());
+        // From where the eyes are drawn as the body stoops (the camera's place), near the
+        // standing eyes (G2.11 A4: aimed from the standing eyes, the crosshair missed by the
+        // stoop's parallax).
+        let eye = (self.eyes.filter(|e| (*e - standing).length() < 1.0)).unwrap_or(standing);
         let skip = self.own_load();
         let along = view * DVec3::NEG_Z;
         let hit = |from: DVec3| {
@@ -89,12 +97,14 @@ impl Connection {
     /// The hold placing what the hands hold: its long axis turned `yaw` from across the view's
     /// heading, tilted `tilt` up from level and slid `slide` along itself (the wheel: to lay a
     /// beam from one post's top to the next), resting flush against `surface` (the point aimed
-    /// at where they touch) or, with none, hanging before the eyes.
+    /// at where they touch) or, with none, carried before the chest. `from`: the turn the last
+    /// hold asked for (none: as it is drawn).
     pub fn place_hold(
         &self,
         view: DQuat,
         surface: Option<Surface>,
         (yaw, tilt, slide): (f64, f64, f64),
+        from: Option<DQuat>,
     ) -> Option<Hold> {
         let load = self.own_load()?;
         let avatar = self.avatar()?;
@@ -105,8 +115,26 @@ impl Connection {
         let across = (heading * DVec3::X) * yc + (heading * DVec3::NEG_Z) * ys;
         let (ts, tc) = det::sin_cos(tilt);
         let axis = (across * tc + up * ts).normalize();
-        let turn = DQuat::from_rotation_arc(long_axis(&corners), axis).normalize();
+        let long = long_axis(&corners);
+        let drawn = self.poses().get(&load).map(|p| p.orientation);
+        // Turned from the turn last asked for (`from`; at first, as it is drawn) by the least
+        // turn that lays its length along `axis`, so it is never rolled about its own length: a
+        // whole turn to a set frame rolled it as it went, a pole taken lying swinging up 28° on
+        // the way; and from how it was drawn each frame (ahead of the server's by what it was
+        // last asked), the asked turn ran away from the pole's by 2 rad (G2.11). A plank taken
+        // flat stays flat. (A rod's two ends are alike: the nearer way along it is taken.)
         let standing = axis.dot(up) > STANDING;
+        // (Stood up, as before: a set frame. Turned from the last, posts swung 10–80° off
+        // upright as they were let into their holes, G2.11.)
+        let turn = from.or(drawn).filter(|_| !standing).map_or_else(
+            || DQuat::from_rotation_arc(long, axis),
+            |q| {
+                let now = q * long;
+                let now = if now.dot(axis) < 0.0 { -now } else { now };
+                DQuat::from_rotation_arc(now, axis) * q
+            },
+        );
+        let turn = turn.normalize();
         // Stood up, it goes down from where it is aimed until its foot meets what lies below, as
         // a post is let down into its hole (seen from a few metres, a hole's floor is hidden by
         // its rim: aimed at its mouth, the post meets the floor).
@@ -153,16 +181,25 @@ impl Connection {
                     s.point + s.normal * support(&corners, turn, -s.normal) + axis * slide
                 }
             }
-            None => reach::eye(avatar.position, up) + (view * DVec3::NEG_Z) * HANGS,
+            // Carried before the chest, below the eyes and clear of them, the way the view heads
+            // (held a metre before the eyes, a pole across the view hid all but the sky, and
+            // along it ran back through the camera: G2.11).
+            None => {
+                let ahead = (heading * DVec3::NEG_Z).reject_from(up).normalize_or_zero();
+                let near = support(&corners, turn, -ahead);
+                reach::eye(avatar.position, up) + ahead * (near + CLEAR_OF_EYES).max(HANGS)
+                    - up * HANGS_BELOW
+            }
         };
-        // Still turning (stood up from lying, or laid down), it is lifted clear to turn and let
-        // down when turned, as a post is lifted, swung up and lowered in: turned where it lies,
-        // its end met the ground and it never stood (G2.10).
-        let drawn = self.poses().get(&load).map(|p| p.orientation);
+        // Still turning against what it rests on (stood up from lying, or laid down), it is
+        // lifted clear to turn and let down when turned, as a post is lifted, swung up and
+        // lowered in: turned where it lies, its end met the ground and it never stood (G2.10).
+        // Carried in the air it has nothing to clear: lifted there too, by how far it was turned
+        // as drawn, a pole bobbed 0.4–1.8 m above the eyes for as long as it was held (G2.11).
         // (Its length's way only: a round pole rolls in the hands about its own axis.)
-        let long = long_axis(&corners);
         let off = drawn.map_or(0.0, |q| det::acos((q * long).dot(axis).abs().min(1.0)));
         let share = ((off - TURNING) / (TURNED - TURNING)).clamp(0.0, 1.0);
+        let share = if surface.is_some() { share } else { 0.0 };
         let lifted = up * ((support(&corners, DQuat::IDENTITY, long) + CLEAR) * share);
         // Gripped within the placing reach of the eyes, as the server's hands hold it
         // (`hands.rs`): the client draws it by their law (`steered.rs`).
@@ -174,6 +211,30 @@ impl Connection {
             turn,
             steady: false,
         })
+    }
+
+    /// How what the hands hold lies as drawn, as `place_hold` takes it: its length turned
+    /// `yaw` from across the view `view`'s heading (within a quarter turn either way: a rod's
+    /// two ends are alike) and tilted `tilt` up from level (rad). Taken, it is held as it lay
+    /// (turned at once to lie across the view, a pole taken lying along the way swung round in
+    /// the hands: G2.11).
+    pub fn held_turn(&self, view: DQuat) -> Option<(f64, f64)> {
+        let load = self.own_load()?;
+        let up = self.avatar()?.position.normalize();
+        let q = self.poses().get(&load)?.orientation;
+        let axis = q * long_axis(&self.corners(load)?);
+        let heading = heading(view, up);
+        let (across, ahead) = (heading * DVec3::X, heading * DVec3::NEG_Z);
+        let (a, f) = (axis.dot(across), axis.dot(ahead));
+        // The end that lies across to the right, or ahead (a quarter turn either way).
+        let axis = if a < 0.0 || (a == 0.0 && f < 0.0) {
+            -axis
+        } else {
+            axis
+        };
+        let yaw = det::atan2(axis.dot(ahead), axis.dot(across));
+        let tilt = det::asin(axis.dot(up).clamp(-1.0, 1.0));
+        Some((yaw, tilt))
     }
 
     /// The corners of `id`'s shape about its drawn frame, as this connection knows it.

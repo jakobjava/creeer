@@ -37,12 +37,76 @@ const OWN_BODY: f64 = 0.7;
 /// constant): pulled in at once, let out gently (Cinemachine's collider damps the way back).
 const BACK_OUT: f64 = 0.3;
 
+impl crate::planet_view::PlanetView {
+    /// Puts the camera at the avatar's eyes (first person; the head's when down) or on its boom
+    /// behind them, pulled in before what is between ([`Boom`]), looking the way it looks, `dt`
+    /// seconds after the last frame (G2.11, ADR-0042). Returns whether the player's own body is
+    /// not to be drawn: down in first person (the eyes in its head), or the third person's
+    /// camera by its head. (Standing in first person it is drawn from within, its head sunk, and
+    /// the eyes then brought to the drawn head's: [`Eyes`].)
+    pub fn follow(&mut self, camera: &mut Camera, dt: f64) -> bool {
+        let Some(avatar) = self.session.connection.avatar() else {
+            return false;
+        };
+        let up = avatar.position.normalize();
+        camera.level_to(up);
+        let c = &self.session.connection;
+        if self.first_person {
+            // (Down, the avatar is its pelvis: the eyes are in its head, wherever it lies.)
+            camera.position = (c.fallen.then(|| own_head(c)).flatten())
+                .unwrap_or_else(|| eye(avatar.position, up));
+            return c.fallen;
+        }
+        let trees = self.trees.as_ref();
+        let blocked = |from: DVec3, way: DVec3, most: f64| {
+            let body = c.aim(from, way, most).map(|a| a.distance);
+            let tree = trees.and_then(|t| t.aim(c, from, way, most)).map(|a| a.2);
+            body.into_iter().chain(tree).reduce(f64::min)
+        };
+        let (at, hide) = (self.boom).place((avatar.position, up, camera.forward()), dt, blocked);
+        camera.position = at;
+        hide
+    }
+}
+
 /// The first-person eye of an avatar whose body's centre is at `centre`, upright along `up`.
 /// (Not lifted off the ground, as the free camera is: the eyes are where the head is, in a
 /// hole or on a mound's flank alike. Lifted 1.5 m clear of the ground under them, as before, they
 /// rose wherever the ground's density read less than the height, near edits and when down.)
 pub fn eye(centre: DVec3, up: DVec3) -> DVec3 {
     reach::eye(centre, up)
+}
+
+/// The first-person eyes where the drawn head's are (G2.11): the body is drawn stooping and
+/// squatting to what the hands hold, its head sunk out of sight, and the eyes go with it. (Left
+/// at the standing eyes, the camera looked down on the drawn body's own head, shoulders and
+/// back; brought only along the line of sight, it still did when the head went far forward.)
+/// Followed over [`EYES_FOLLOW`], so a drawn pose's jump is not the view's; the hips' bob
+/// walking is kept (about 5 cm: the head's own, Hirasaki et al. 1999; the view's turn is the
+/// mouse's alone, so the far world stays still, as a gaze keeps it).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Eyes {
+    off: DVec3,
+}
+
+/// How fast the first-person eyes follow the drawn head (s, a time constant).
+const EYES_FOLLOW: f64 = 0.08;
+/// The farthest a stooping, squatting head goes from the standing eyes (m): 0.7 down and 0.35
+/// on (`reach::STOOP_DOWN`, `reach::STOOP_OUT`), and room.
+const STOOPS: f64 = 1.0;
+
+impl Eyes {
+    /// The eyes for a body standing with its eyes at `standing`, its head drawn with its eyes at
+    /// `drawn` (if it was), `dt` seconds after the last frame. (A drawn head further than a
+    /// stoop takes it is not believed: in one frame of a post set in its hole the drawn head was
+    /// 280,000 km off.)
+    pub fn follow(&mut self, standing: DVec3, drawn: Option<DVec3>, dt: f64) -> DVec3 {
+        let off = (drawn.map(|d| d - standing))
+            .filter(|o| o.length() <= STOOPS)
+            .unwrap_or(DVec3::ZERO);
+        self.off += (off - self.off) * (1.0 - det::exp(-dt / EYES_FOLLOW));
+        standing + self.off
+    }
 }
 
 /// Where the player's own head is while they are down: their ragdoll's head segment, as drawn.
@@ -146,6 +210,30 @@ mod tests {
             frames += 1;
         }
         assert!(frames < 288, "backed out in {frames} frames");
+    }
+
+    /// Stooping, the eyes go to the drawn head's within a few frames, no frame jumping more than
+    /// a stoop's speed allows; a drawn head further off than a body stoops is not followed.
+    #[test]
+    fn the_eyes_follow_the_stooping_head() {
+        let standing = DVec3::new(0.0, 1.68, 0.0);
+        let drawn = standing + DVec3::new(0.0, -0.6, -0.45);
+        let mut eyes = Eyes::default();
+        let mut last = standing;
+        for _ in 0..72 {
+            let at = eyes.follow(standing, Some(drawn), 1.0 / 144.0);
+            assert!(
+                (at - last).length() < 0.07,
+                "a jump of {}",
+                (at - last).length()
+            );
+            last = at;
+        }
+        assert!((last - drawn).length() < 0.01, "{last}");
+        for _ in 0..144 {
+            last = eyes.follow(standing, Some(standing + DVec3::Y * 3e8), 1.0 / 144.0);
+        }
+        assert!((last - standing).length() < 1e-6, "{last}");
     }
 
     /// Against something at the eyes' back the camera comes to the eyes, and the own body is not

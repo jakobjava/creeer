@@ -50,10 +50,10 @@ impl State {
     /// Standing still holding something (`centre`, upright along `up`): turns towards it, at
     /// most [`TURN`] a second, until it is within [`FACING`] of the front.
     pub(super) fn face_held(&mut self, up: DVec3, dt: f64) {
-        let Some(load) = self.held.filter(|_| self.holding) else {
-            return;
-        };
-        let Some(want) = (load.held() - self.centre).reject_from(up).try_normalize() else {
+        // (Or where its eyes look, seen through them: G2.11.)
+        let to_load = (self.held.filter(|_| self.holding)).map(|l| l.held() - self.centre);
+        let Some(want) = (self.looking.or(to_load)).and_then(|w| w.reject_from(up).try_normalize())
+        else {
             return;
         };
         let angle = self.heading.angle_between(want);
