@@ -1,4 +1,4 @@
-// The ground's surface (G2.11, ADR-0037), for `terrain.wgsl`: the rock's own colour mottled
+// The ground's surface (G2.11, ADR-0040), for `terrain.wgsl`: the rock's own colour mottled
 // and speckled, the ground's layers (grass, moss, litter: `creeer_art::ground`) laid over it in
 // patches, each with a fine grain of its own, and a fine relief for the sun to catch. All in
 // the ground's pattern coordinates (body-fixed metres, continuous across chunks: terrain.rs's

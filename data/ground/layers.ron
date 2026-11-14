@@ -1,4 +1,4 @@
-// The ground's layers (G2.11, ADR-0037; creeer_art::ground): what covers the bare rock where the
+// The ground's layers (G2.11, ADR-0040; creeer_art::ground): what covers the bare rock where the
 // ground is drawn, laid in patches over the rock's own colour (geology/rocks.ron). Drawn only:
 // the ground the physics touches is the same with or without them. A dug hole shows the rock it
 // was dug into, with no layer on its walls.

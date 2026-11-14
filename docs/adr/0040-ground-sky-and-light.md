@@ -1,4 +1,4 @@
-# ADR-0037: The ground, its cover, and the light on it (G2.11 A1)
+# ADR-0040: The ground, its cover, and the light on it (G2.11 A1)
 
 - **Status:** Accepted (2026-11-14).
 - **Context:** the user's verdict after playing G2, "looks horrible" (`docs/playability-plan.md`). Frames of 2026-11-13 showed the ground one flat brown, shaded in visible triangles, with nothing on it; shadow edges stair-stepped; things not seated on the ground. `docs/art-style.md` pillars 1, 3, 4, 5, 7 and 9 were not met.
@@ -59,5 +59,11 @@ The vertices' four bytes of cover cost 14 % more terrain vertex memory; working 
 
 ## Limits
 
+Each is also in `docs/future-improvements.md`.
+
 - No contact hardening by blocker distance (PCSS): a tree's shadow 10 m from its crown has the same penumbra as a stick's.
-- Ground layers do not follow actual trees, only where trees may grow: a clearing reads as forest floor.
+- Ground layers do not follow actual trees, only where trees may grow: a clearing reads as forest floor. Litter and moss are drawn in stand-in tokens until the palette has their own (the user's approval).
+- Decoratives cast no shadow-map shadows and do not sway; there are no bushes or ferns yet; none on other bodies. They and the layers are read once a run (no hot-reload).
+- The forest from afar is flat colour on the ground: no canopy height on the horizon. `ground_look::TREES_DRAWN` must be kept equal to `tree_view.rs`'s `DRAWN` by hand.
+- No clouds: the sky is the atmosphere's clear sky.
+- The shadow passes cost 2.3 ms of the frame at the spawn, mostly the near terrain's fine chunks drawn into every cascade; not looked into here.

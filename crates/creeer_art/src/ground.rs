@@ -1,4 +1,4 @@
-//! The ground's look (G2.11, ADR-0037): what covers the bare rock where the ground is drawn.
+//! The ground's look (G2.11, ADR-0040): what covers the bare rock where the ground is drawn.
 //!
 //! - **Layers** (`ground/layers.ron`): grass, moss, fallen litter, laid in patches over the
 //!   rock's own colour (`geology/rocks.ron`) where their ranges allow: the ground's rock, its

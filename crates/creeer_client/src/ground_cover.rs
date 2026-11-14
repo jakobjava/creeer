@@ -1,4 +1,4 @@
-//! Decoratives near the camera (G2.11, ADR-0037): grass tufts and grit on the drawn ground,
+//! Decoratives near the camera (G2.11, ADR-0040): grass tufts and grit on the drawn ground,
 //! from the packs' `ground/decoratives.ron`.
 //!
 //! The ground is cut into cells about [`CELL`] metres a side on the cube-sphere's faces, fixed to

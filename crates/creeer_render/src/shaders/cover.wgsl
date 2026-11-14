@@ -1,4 +1,4 @@
-// Decoratives on the ground (G2.11, ADR-0037; `cover.rs`): grass tufts and grit, instanced,
+// Decoratives on the ground (G2.11, ADR-0040; `cover.rs`): grass tufts and grit, instanced,
 // placed by the client on the drawn ground. Lit as the parts are (sun with its shadows and the
 // contact shadows, sky and ground ambient with the screen's occlusion); they cast no shadow of
 // their own into the shadow maps (the contact shadows give theirs).

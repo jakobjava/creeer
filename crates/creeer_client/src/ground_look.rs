@@ -1,4 +1,4 @@
-//! The ground's look on this client (G2.11, ADR-0037): the packs' ground layers
+//! The ground's look on this client (G2.11, ADR-0040): the packs' ground layers
 //! (`creeer_art::ground`) resolved against the rocks, the palette and the tree species, and
 //! what each layer covers at a point of the ground.
 //!

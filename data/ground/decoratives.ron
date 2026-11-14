@@ -1,4 +1,4 @@
-// Decoratives (G2.11, ADR-0037; creeer_art::ground): small things drawn on the ground near the
+// Decoratives (G2.11, ADR-0040; creeer_art::ground): small things drawn on the ground near the
 // camera, many of a kind, so the ground between things is never bare (docs/art-style.md pillar
 // 7). Drawn only: nothing collides with them, and they stand on the simulated ground. They are
 // low and small (art-style.md §8), so what the player needs to find on the ground stays in

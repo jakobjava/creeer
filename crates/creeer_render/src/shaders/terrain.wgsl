@@ -1,5 +1,5 @@
 // Terrain chunks (ADR-0006): the rock's colour per vertex and the ground's layers over it, with
-// procedural detail and a fine relief (`ground.wgsl`, ADR-0037), lit by the sun as it reaches
+// procedural detail and a fine relief (`ground.wgsl`, ADR-0040), lit by the sun as it reaches
 // each point through the atmosphere (so the night side is dark and the terminator glows), by the
 // sky for the sun's elevation there, with sun shadows and baked sky occlusion, and seen through
 // the air between it and the camera (aerial perspective). Positions are camera-relative.

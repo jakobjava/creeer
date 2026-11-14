@@ -1,4 +1,4 @@
-//! The ground's patches on the CPU, mirroring `ground.wgsl` (G2.11, ADR-0037): where a layer
+//! The ground's patches on the CPU, mirroring `ground.wgsl` (G2.11, ADR-0040): where a layer
 //! (grass, moss, litter) covers the ground, so decoratives can stand where the shader draws
 //! their layer (a grass tuft in a grass patch, not on bare soil beside it).
 //!

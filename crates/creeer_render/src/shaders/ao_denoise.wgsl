@@ -27,7 +27,7 @@ fn slope(before: f32, centre: f32, after: f32) -> f32 {
     return select(ahead, back, abs(back) < abs(ahead));
 }
 
-// Contact shadows (G2.11, ADR-0037; after Bend Studio's screen-space shadows, Days Gone 2019):
+// Contact shadows (G2.11, ADR-0040; after Bend Studio's screen-space shadows, Days Gone 2019):
 // from each pixel, a short ray towards the sun through the screen's depth. What the shadow map
 // is too coarse or too biased to catch (the line where a thing meets the ground, the shadow of
 // a stick or a stone) is found here, sharp to the pixel; the scene takes the darker of the two.

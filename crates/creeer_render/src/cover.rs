@@ -1,4 +1,4 @@
-//! Decoratives on the ground (G2.11, ADR-0037): grass tufts and grit, many of a kind, drawn
+//! Decoratives on the ground (G2.11, ADR-0040): grass tufts and grit, many of a kind, drawn
 //! instanced near the camera (`renderer/cover_pass.rs`, `cover.wgsl`). The client places them
 //! (`creeer_client::ground_cover`); this is what the GPU is given.
 

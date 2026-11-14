@@ -1,4 +1,4 @@
-//! Decoratives on the ground (G2.11, ADR-0037; `cover.rs`, `cover.wgsl`): one instanced draw a
+//! Decoratives on the ground (G2.11, ADR-0040; `cover.rs`, `cover.wgsl`): one instanced draw a
 //! shape, in the depth prepass (so they take ambient occlusion and give the ground their contact
 //! shadows) and in the scene pass, drawn with the terrain. The client hands the instances over
 //! each frame, camera-relative and already culled (`Renderer::set_cover`).
