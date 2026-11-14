@@ -17,3 +17,14 @@ What changed in the physics for G2P's work brought forward into G2.11 (`docs/g2p
 The tenth allowed above m·g·d is the limit recorded in ADR-0005: what a new body's contacts still hold after its first step (21 % of a 13.4 cm overlap after one 60 Hz step) is the motion's, here 0.47 J, 5 % of the lift.
 
 **In the play scene** (`creeer_server/src/play/break_probe.rs`): across *log_bridge*'s breaking tick the world's energy rose from 4,299 J to 388,487 J before the change; after it, it only falls (the audit: `docs/g2p-plan.md`).
+
+## How wood breaks (ADR-0005, G2.11: fixed in a patch, held back)
+
+**The physics.** A timber member breaks in bending where the stress the tables give reaches its strength: the modulus of rupture (MOR) is computed from the breaking load as if the beam stayed elastic, so the breaking moment is MOR·W_el (bh²/6 for a rectangle). Its damping (losses in joints and connections) must not count towards its strength; timber is, if anything, stronger under fast loading.
+
+**The cases** (`structure/brittle_tests.rs` in `docs/adr/0005/brittle-elastic-and-wood-damping.diff`): ASTM D143's static bending of green spruce from the materials table (MOR 41 MPa, E 9.2 GPa): a 50 × 50 mm bar on a 710 mm span, pinned at one end and on a roller at the other, loaded at its middle until it breaks.
+
+| Case | Measure | Before | With the patch | Tolerance |
+|---|---|---|---|---|
+| loaded to the breaking load in about 10 s, 60 Hz steps | MOR = 3PL/(2bh²) at the breaking load | 61.6 MPa | 41.07 MPa | within 1 % of 41.0 |
+| loaded to it in 30 ms, 0.5 ms steps (an impact's) | the largest elastic moment before it broke, of MOR·W_el = 854 N·m | 400 N·m (47 %) | 846 N·m (99.0 %) | 97–100 % |

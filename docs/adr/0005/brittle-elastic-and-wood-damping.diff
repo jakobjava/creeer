@@ -1,0 +1,236 @@
+diff --git a/crates/creeer_building/src/assembly_tests.rs b/crates/creeer_building/src/assembly_tests.rs
+index 28b346a..36319ba 100644
+--- a/crates/creeer_building/src/assembly_tests.rs
++++ b/crates/creeer_building/src/assembly_tests.rs
+@@ -16,7 +16,7 @@ pub(crate) fn spruce() -> Material {
+         elongation: 0.0,
+         hardening_start: 0.0,
+         uniform_elongation: 0.0,
+-        damping: 0.01,
++        damping: 6.4e-5,
+         ..STEEL_S235
+     }
+ }
+diff --git a/crates/creeer_physics/src/structure/brittle_tests.rs b/crates/creeer_physics/src/structure/brittle_tests.rs
+new file mode 100644
+index 0000000..44882c9
+--- /dev/null
++++ b/crates/creeer_physics/src/structure/brittle_tests.rs
+@@ -0,0 +1,101 @@
++//! Brittle members break where their stress reaches their strength (G2.11; `plastic.rs`'s
++//! module docs; `docs/physics/g2p-validation.md`): ASTM D143's static bending test of a small
++//! clear specimen, on green spruce as the materials table gives it.
++//!
++//! ASTM D143: a 50 × 50 mm bar on a 710 mm span, loaded at its middle until it breaks; its
++//! modulus of rupture is MOR = 3·P·L / (2·b·h²) at the breaking load P, the stress at failure as
++//! if the bar were elastic to the end. The *Wood Handbook*'s tables (FPL-GTR-282, Table 5-3a)
++//! are such tests. A bar of the model must give back the table's MOR it was made from.
++
++use super::section::{Material, Section};
++use super::*;
++use creeer_math::glam::DVec3;
++
++const SPAN: f64 = 0.71;
++const SIDE: f64 = 0.05;
++/// Elements along the bar: its middle a node.
++const PIECES: usize = 8;
++
++fn spruce() -> Material {
++    let table = creeer_materials::MaterialTable::reference();
++    Material::from(table.get("spruce_green").expect("shipped").structural(293.15))
++}
++
++/// The bar loaded at its middle by a load growing at `rate` (N/s), stepped by `h` seconds:
++/// the load it broke at (N), and the largest elastic moment its middle carried in the steps
++/// before (N·m).
++fn bend(rate: f64, h: f64) -> (f64, f64) {
++    let mut b = StructureBuilder::new();
++    let nodes: Vec<NodeId> = (0..=PIECES)
++        .map(|i| b.node(DVec3::X * (SPAN * i as f64 / PIECES as f64)))
++        .collect();
++    // Pinned at one end (not spinning about its axis), on a roller at the other.
++    b.support(
++        nodes[0],
++        Support::Custom {
++            translation: DVec3::ZERO,
++            rotation: DVec3::new(0.0, 1.0, 1.0),
++        },
++    );
++    b.support(
++        nodes[PIECES],
++        Support::Custom {
++            translation: DVec3::X,
++            rotation: DVec3::ONE,
++        },
++    );
++    for k in 0..PIECES {
++        b.beam(nodes[k], nodes[k + 1], Section::rectangle(SIDE, SIDE), spruce());
++    }
++    let mut s = b.build();
++    s.gravity = DVec3::ZERO;
++    let middle = PIECES / 2;
++    let mut solver = ImplicitSolver::new(&s, Scheme::Newmark, h, 1);
++    let mut carried = 0.0f64;
++    for step in 1..=200_000 {
++        let load = rate * h * f64::from(step);
++        s.load[nodes[middle]] = DVec3::NEG_Y * load;
++        solver.step(&mut s);
++        if solver.last_yielding.broke > 0 {
++            return (load, carried);
++        }
++        // The elastic end moments of the two elements at the middle.
++        for e in [&s.elements[middle - 1], &s.elements[middle]] {
++            let r = |n: usize| creeer_math::glam::DMat3::from_quat(s.orientation[n]);
++            let m = e.measures(s.position[e.a], r(e.a), s.position[e.b], r(e.b));
++            let force = e.stiffness.apply(&m);
++            carried = force[2..].iter().fold(carried, |c, f| c.max(f.abs()));
++        }
++    }
++    panic!("never broke");
++}
++
++/// The breaking moment by the table: MOR·b·h²/6.
++fn rupture() -> f64 {
++    spruce().yield_strength * SIDE * SIDE * SIDE / 6.0
++}
++
++#[test]
++fn a_green_spruce_bar_breaks_at_its_modulus_of_rupture() {
++    // Loaded to the table's breaking load in about 10 s, at 60 Hz (the test's own takes
++    // minutes; the bar's first mode is 150 Hz: quasi-static either way).
++    let breaking = 4.0 * rupture() / SPAN;
++    let (load, carried) = bend(breaking / 10.0, 1.0 / 60.0);
++    let mor = 3.0 * load * SPAN / (2.0 * SIDE * SIDE * SIDE);
++    let table = spruce().yield_strength;
++    println!("MOR {:.2} MPa (table {:.2}), carried {carried:.1} of {:.1} N·m", mor / 1e6, table / 1e6, rupture());
++    assert!((mor / table - 1.0).abs() < 0.01, "MOR {mor:.4e} against {table:.4e}");
++    assert!(carried <= rupture() * 1.001, "carried {carried:.1} N·m before breaking");
++}
++
++#[test]
++fn a_bar_struck_breaks_on_its_stress_not_its_damping() {
++    // Loaded to its breaking load in 30 ms (an impact), in 0.5 ms steps as impacts are: its
++    // damping (c = material.damping) is then 60 times its spring's rate. It breaks where the
++    // stress in its fibres reaches the strength, not before.
++    let breaking = 4.0 * rupture() / SPAN;
++    let (load, carried) = bend(breaking / 0.03, 0.5e-3);
++    println!("struck: broke at {load:.0} N, carried {carried:.1} of {:.1} N·m", rupture());
++    assert!(carried >= 0.97 * rupture(), "carried {carried:.1} N·m, breaks at {:.1}", rupture());
++    assert!(carried <= rupture() * 1.001, "carried {carried:.1} N·m before breaking");
++}
+diff --git a/crates/creeer_physics/src/structure/mod.rs b/crates/creeer_physics/src/structure/mod.rs
+index 673cdf2..27255ce 100644
+--- a/crates/creeer_physics/src/structure/mod.rs
++++ b/crates/creeer_physics/src/structure/mod.rs
+@@ -11,6 +11,8 @@ use rayon::prelude::*;
+ mod added;
+ mod assemble;
+ mod booked;
++#[cfg(test)]
++mod brittle_tests;
+ mod buckling;
+ #[cfg(test)]
+ mod buckling_tests;
+diff --git a/crates/creeer_physics/src/structure/plastic.rs b/crates/creeer_physics/src/structure/plastic.rs
+index 5fe12cf..f3a3beb 100644
+--- a/crates/creeer_physics/src/structure/plastic.rs
++++ b/crates/creeer_physics/src/structure/plastic.rs
+@@ -31,6 +31,14 @@
+ //! depth, torsional shear strain over √3) breaks the member once it exceeds the material's
+ //! elongation at break. Necking is not modelled: past its ultimate strength a member flows
+ //! on at it until it breaks, where a real bar would lose strength at its narrowest point.
++//!
++//! **Brittle members** (a material with no elongation at break: wood, stone, concrete, glass,
++//! ice; G2.11, `docs/physics/g2p-validation.md`) break in bending at σ·W, the elastic section
++//! modulus (bh²/6 for a rectangle), not the plastic one: a modulus of rupture is the stress at
++//! failure as if the beam were elastic to the end (*Wood Handbook* ch. 5, ASTM D143), and on Z
++//! a plank carried 1.5 times its breaking moment. Their dashpot stays in series: what it adds
++//! to a member's force is c·ω of it at a vibration of ω, a percent or two with a timber's own
++//! damping (`data/materials/engineering.ron`).
+ 
+ use super::Structure;
+ use super::element::{Element, MEASURES, Stiffness};
+@@ -94,14 +102,23 @@ impl Element {
+         } else {
+             (1.0 - (axial / n_p) * (axial / n_p)).max(0.0)
+         };
+-        let (my, mz) = (
+-            sy * sec.plastic_modulus[0] * room,
+-            sy * sec.plastic_modulus[1] * room,
+-        );
++        // A brittle member breaks in bending at its elastic section modulus (module docs).
++        let modulus = if self.brittle() {
++            [sec.i_y / sec.extent[1], sec.i_z / sec.extent[0]]
++        } else {
++            sec.plastic_modulus
++        };
++        let (my, mz) = (sy * modulus[0] * room, sy * modulus[1] * room);
+         let caps = [n_p, sy / 3f64.sqrt() * sec.plastic_torsion, my, my, mz, mz];
+         (caps, force)
+     }
+ 
++    /// Whether the member is brittle (module docs): of a material that breaks without
++    /// elongating, and no joint (a joint's fasteners have their own law, `fastened.rs`).
++    pub(crate) fn brittle(&self) -> bool {
++        !self.is_joint() && self.material.elongation <= 0.0
++    }
++
+     /// What each measure carries before it flows in a step from elastic measures `s_hat`,
+     /// with damping `gamma`: the capacities over 1 + γ, the scaled flows' (`Flow::scaled`)
+     /// bit for bit.
+diff --git a/data/materials/engineering.ron b/data/materials/engineering.ron
+index b3221ef..b2e941c 100644
+--- a/data/materials/engineering.ron
++++ b/data/materials/engineering.ron
+@@ -186,7 +186,8 @@
+         elongation: 0.0,
+         hardening_start: 0.0,
+         uniform_elongation: 0.0,
+-        damping: 0.01,
++        // Damping: see the green woods below; seasoned wood's loss factor 0.008 at 20 Hz.
++        damping: 6.4e-5,
+         conductivity: "0.13 W/(m·K)",
+         specific_heat: "1600 J/(kg·K)",
+         expansion: "4e-6 K^-1",
+@@ -332,6 +333,14 @@
+     // Handbook's green specific gravity) with its water, sapwood 120–160 % and heartwood
+     // 30–50 % moisture in spruce and pine (Swedish Wood), birch's about 75 %: whole-stem
+     // estimates. `across` is compression across the grain (stress at the proportional limit).
++    // `damping` is the structure solver's stiffness-proportional c (s): a vibration of ω gets
++    // ζ = c·ω/2, where wood's own loss is about the same at every frequency (its loss factor η,
++    // green about 0.02, seasoned 0.008: Wegst 2006, and `sound/materials.ron`). So c = η/ω at
++    // 20 Hz, the first modes of what is built from it (a 2 m plank 19 Hz, a 3 m pole 18 Hz):
++    // about 1 % of critical there, less below, more above. (0.02 s, a hundred times it, made a
++    // plank's first mode 120 % of critical and broke it by its dashpot at a quarter of its
++    // strength, G2.11. Standing trees and felled parts do not bend in the solver: no tree sways
++    // by it.)
+     (
+         id: "spruce_green",
+         name: "Spruce, green (Norway spruce; red spruce's values)",
+@@ -350,7 +359,7 @@
+         elongation: 0.0,
+         hardening_start: 0.0,
+         uniform_elongation: 0.0,
+-        damping: 0.02,
++        damping: 1.6e-4,
+         conductivity: "0.25 W/(m·K)",
+         specific_heat: "2800 J/(kg·K)",
+         expansion: "4e-6 K^-1",
+@@ -377,7 +386,7 @@
+         elongation: 0.0,
+         hardening_start: 0.0,
+         uniform_elongation: 0.0,
+-        damping: 0.02,
++        damping: 1.6e-4,
+         conductivity: "0.25 W/(m·K)",
+         specific_heat: "2700 J/(kg·K)",
+         expansion: "4e-6 K^-1",
+@@ -404,7 +413,7 @@
+         elongation: 0.0,
+         hardening_start: 0.0,
+         uniform_elongation: 0.0,
+-        damping: 0.02,
++        damping: 1.6e-4,
+         conductivity: "0.25 W/(m·K)",
+         specific_heat: "2600 J/(kg·K)",
+         expansion: "4e-6 K^-1",
