@@ -97,8 +97,22 @@ Kept by the coordinator as streams are merged.
 | A1 Ground, sky, light | Merged 2026-11-14 (ADR-0040): the facets (a detail texture breaking at chunk borders), smooth shadow edges, contact shadows, the forest floor's layers, ground cover, the forest from afar |
 | A2 Things | Merged 2026-11-14 (ADR-0041): round rods, wood with grain and cut ends, trees as trees, built members and broken pieces as timber |
 | A6, second pass | Merged 2026-11-14 (docs and probes): the two defects in how wood breaks fixed and validated as a patch, held back until the energy guard's hole is closed and a made member starts in its sag; the bridge's freeze traced to its nails pulled by the first person stepping on |
-| A4, A5 | At work (stopped twice by the usage limit, resumed) |
-| A6 third pass, B2, Q | At work: the guard's hole, the wood patch and the pile (A6); nails within a structure, the nail's direction, rolling a part, the protocol's additions (B2); the whole ten minutes played through the client with the HUD on (Q) |
+| A5 A client's frame | Merged 2026-11-14 (ADR-0043): a part fastened told to clients as the structure it became; a client's work in builders 40 % less, log_bridge 70 % less; gated at the bridge site. Not met: the whole frame within 16.7 ms at worst |
+| D Determinism | Merged 2026-11-14: the simulation is deterministic; the stray hash was a world whose tree data failed to load, dropped without a word. Trees that do not load now stop the world |
+| Q The play-through | First pass merged 2026-11-14 (ADR-0038 amended): the ten minutes played through the client with the whole screen drawn (`--build-play site`), the screen's seams fixed, the rest handed on (below) |
+| B2 Building, second pass | Merged 2026-11-15: every crossing nailed, also within one structure; several nails add up; the nail driven from the player's side; a nail in a held part holds at its last blow; Z rolls a part; scenes' players steer what they hold |
+| A4 Moving, second pass | Merged 2026-11-15 (ADR-0042): the cameras; the legs press a deck with a person's weight: the footbridge holds under the first step |
+
+**Stopped for the night on 2026-11-15, each with work in its worktree (branch `worktree-agent-<id>`), to be resumed by a message to the agent:**
+| Stream | Agent id | Committed there, not on `g2` | In hand |
+|---|---|---|---|
+| A4, third pass | `ad6a804a2cb8db3b3` | nothing | the feet's footprint: walking the footbridge's deck without falling through its gaps (8 files uncommitted) |
+| B2, third pass | `aa619e762443efa77` | nothing | a stringer laid across the site's gully in the game itself (gate: `--build-play site`, ten of ten on both links); a held part must not strike what it is laid against (14 files uncommitted) |
+| N (A6's stream, taken over) | `a70d27039d743ffa3` | A6's third pass (how wood breaks, validated; the energy guard's hole; members starting in their sag), `g2` merged in, a nail in withdrawal yielding within the step (12 commits) | the nail law's tests; then re-measuring the gate `a_builder_at_the_bridge_keeps_her_client_within_its_work`, which is what keeps the wood fix off `g2`; then the piece that falls through the ground, the pile, loose poles |
+| Q, second pass | `a416ece14d84d8024` | a collapse heard; a body resting on a structure drawn where the server has it; a kit part put on the highest thing under it; where "Leave" goes (12 commits) | lone pieces heard; then CI and its report |
+| L2 Looks at the site | `a34bf0243cc078ccf` | the gully's saw-tooth and checker (colour edges between vertices, not shadows); the loads drawn as what they are (3 commits) | what drawing costs at the site; the overlay's grey world |
+
+None of the committed work above was run through CI by the coordinator: merge only what an agent reports as checked.
 
 **What the play-through found (Q, 2026-11-14), handed on:**
 - *Building (B2):* laying a 3 m stringer across the site's 2.3 m gully mostly fails (6 of 13 attempts over four runs, 0 of 4 in the last) and can pull the player in: aimed over the gap the ray meets the floor beyond reach, slid out from the bank the stringer tips down the wall. A part taken by its end stands up in the hands. A board's second nail is refused. Prompts offered that will be refused (J, U, K on a lone part; P and T on a held stringer).
